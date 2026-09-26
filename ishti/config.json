@@ -54,6 +54,8 @@
     "whisper_compute": "int8_float16",
     "wake_enabled": true,
     "wake_model": "hey_jarvis",
+    "wake_phrases": ["hey ishti", "hey jarvis", "hey my assistant"],
+    "languages": ["en", "ur", "ps"],
     "wake_threshold": 0.5,
     "barge_in": {"enabled": true, "vad_threshold": 0.6, "min_ms": 120, "check_ms": 700, "echo_overlap": 0.5, "cooldown_s": 1.0,
                  "note": "Tune on the real room: raise vad_threshold/min_ms if speaker echo interrupts; lower echo_overlap if your own words get ignored"},

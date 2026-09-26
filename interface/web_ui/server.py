@@ -275,18 +275,9 @@ def _execute(prompt, session_id, on_token=None, on_event=None) -> dict:
     """Dispatcher call shared by /api/execute and /api/execute_stream (runs in a worker thread)."""
     global last_execution_state, last_research_state
     try:
-        speech = None
-        if get_user_memory().get_preferences().audio_output:
-            # speak sentence by sentence while the answer streams, not after it is complete
-            from ishti.talk import Sentences, talker
-            speech = Sentences(talker())
-            shown = on_token
-            on_token = lambda tok: (speech.feed(tok), shown and shown(tok))
+        # Typed (mode B) and recorded (mode A) messages get text replies only - ISHTI speaks only in Live mode
+        # (/ws/live) and hands-free wake-word mode. It used to speak typed chats whenever audio was switched on.
         res = ishti_handle(prompt, session_id=session_id, on_token=on_token, on_event=on_event)
-        answer = res.get("final_answer", "")
-        if answer and speech:
-            speech.flush(None if speech.spoke else answer)  # non-streaming skills: the whole answer, still chunked
-            res["spoken"] = True
     except Exception as exc:
         ErrorLogger.log_error(subsystem="SERVER", error=exc, user_prompt=prompt, context="execute endpoint")
         res = {"error": str(exc), "final_answer": f"Server error: {str(exc)[:200]}"}
@@ -404,6 +395,70 @@ async def trigger_rebenchmark():
     await broadcast_event("benchmark_completed", {"scores": scores})
     speak("Model re-benchmarking complete. Optimal models selected.", wait=False)
     return JSONResponse({"status": "success", "scores": scores})
+
+
+LIVE = {"stop": None}  # one Live conversation at a time
+
+
+@app.websocket("/ws/live")
+async def live_ws(ws: WebSocket):
+    """Mode C - Live agent: the browser streams its microphone (16 kHz mono int16, binary frames); the voice loop runs
+    in Live mode (no wake word, barge-in, replies spoken sentence by sentence on this PC) and every event (state,
+    live transcript, steps, reply, stage timings) comes back on this socket. The talk is saved in the open chat."""
+    import queue as queue_mod
+    import threading
+    import numpy as np
+    from ishti import wake
+    from ishti.talk import talker
+    if not authorized(ws):
+        await ws.close(code=1008)
+        return
+    await ws.accept()
+    session_id = ws.query_params.get("session") or None
+    loop = asyncio.get_running_loop()
+    frames, stop = queue_mod.Queue(), threading.Event()
+    if LIVE["stop"]:
+        LIVE["stop"].set()
+    LIVE["stop"] = stop
+
+    def send(kind, data):  # called from worker threads
+        if not stop.is_set():
+            asyncio.run_coroutine_threadsafe(ws.send_text(json.dumps({"type": kind, "data": data}, default=str)), loop)
+
+    def on_command(text, on_token=None):
+        res = ishti_handle(text, session_id=session_id, channel="voice", on_token=on_token,
+                           on_event=lambda ev: send("trace", ev))
+        send("reply", {"user": text, "reply": res["final_answer"], "session_id": res.get("session_id")})
+        return res["final_answer"]
+
+    listener = wake.Listener(on_command, send, live=True)
+
+    def read_block():
+        while not stop.is_set():
+            try:
+                return frames.get(timeout=0.5)
+            except queue_mod.Empty:
+                continue
+        return None
+    threading.Thread(target=listener.loop, args=(read_block, stop), daemon=True, name="live").start()
+    carry = np.zeros(0, np.int16)
+    try:
+        while True:
+            msg = await ws.receive()
+            if msg.get("type") == "websocket.disconnect":
+                break
+            if msg.get("bytes"):
+                carry = np.concatenate([carry, np.frombuffer(msg["bytes"], np.int16)])
+                while len(carry) >= wake.BLOCK:
+                    frames.put(carry[:wake.BLOCK].copy())
+                    carry = carry[wake.BLOCK:]
+            elif msg.get("text") == "end":
+                break
+    except WebSocketDisconnect:
+        pass
+    finally:
+        stop.set()
+        talker().stop()
 
 
 @app.websocket("/ws")

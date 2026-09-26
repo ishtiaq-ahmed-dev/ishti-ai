@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUp, Maximize2, MessageSquare, Mic, Minimize2, Network, PanelLeft, PanelLeftClose, Plus, Square, X } from "lucide-react";
+import { ArrowUp, AudioLines, Maximize2, MessageSquare, Mic, Minimize2, Network, PanelLeft, PanelLeftClose, Plus, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { del, getJSON, postJSON, streamChat, type Result, type Source, type TraceEvent } from "@/lib/api";
 import { ActivityGraph, ConversationGraph, type Turn } from "@/components/ActivityGraph";
@@ -13,6 +13,7 @@ import DeleteButton from "@/components/rare/delete-button";
 import { IshtiBrand } from "@/components/IshtiBrand";
 import { Markdown } from "@/components/Markdown";
 import { MediaPreview } from "@/components/MediaPreview";
+import { LiveMode } from "@/components/LiveMode";
 import { cn } from "@/lib/utils";
 
 type Msg = {
@@ -148,6 +149,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   }, [historyWidth]);
   const [graphFor, setGraphFor] = useState<number | null>(null);
   const [recording, setRecording] = useState(false);
+  const [liveOpen, setLiveOpen] = useState(false);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [graphView, setGraphView] = useState<"answer" | "chat">("answer");
   const [fullGraph, setFullGraph] = useState(false);
@@ -304,11 +306,26 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
 
   const patch = (id: number, f: (m: Msg) => Msg) => setMsgs((all) => all.map((m) => (m.id === id ? f(m) : m)));
 
+  const adjustTextareaHeight = useCallback(() => {
+    if (box.current) {
+      box.current.style.height = "auto";
+      const scrollH = box.current.scrollHeight;
+      box.current.style.height = `${Math.min(Math.max(scrollH, 40), 220)}px`;
+    }
+  }, []);
+
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [input, adjustTextareaHeight]);
+
   async function send(text: string) {
     text = text.trim();
     if (!text) return;
     isInitialLoad.current = false;
     setInput("");
+    if (box.current) {
+      box.current.style.height = "40px";
+    }
     if (!canStart) { setQueue((q) => [...q, text]); return; }
     const reply: Msg = { id: nextId++, role: "ishti", text: "", events: [], live: true, sources: [], request: text };
     setMsgs((all) => [...all, { id: nextId++, role: "user", text, events: [], live: false, sources: [] }, reply]);
@@ -364,15 +381,23 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
         stream.getTracks().forEach((t) => t.stop());
         setAudioStream(null);
         setRecording(false);
-        const form = new FormData();
-        form.append("audio", new Blob(chunks, { type: rec.mimeType }), "speech.webm");
-        const { text } = await fetch("/api/stt", { method: "POST", body: form }).then((r) => r.json());
-        if (text) send(text);
+        try {
+          if (!chunks.length) return;
+          const form = new FormData();
+          form.append("audio", new Blob(chunks, { type: rec.mimeType }), "speech.webm");
+          const res = await fetch("/api/stt", { method: "POST", body: form });
+          if (!res.ok) throw new Error(`STT failed with HTTP ${res.status}`);
+          const data = await res.json();
+          if (data?.text && data.text.trim()) send(data.text.trim());
+        } catch (sttErr) {
+          console.warn("[Voice] STT transcription failed:", sttErr);
+        }
       };
       recorder.current = rec;
-      rec.start(1000);  // 1 s chunks feed the live transcript
+      rec.start(1000); // 1 s chunks feed the live transcript
       setRecording(true);
-    } catch {
+    } catch (micErr) {
+      console.warn("[Voice] Microphone access failed or denied:", micErr);
       setRecording(false);
       setAudioStream(null);
     }
@@ -397,7 +422,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
             animate={{ width: historyWidth, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={isResizing ? { duration: 0 } : { duration: 0.2, ease: "easeOut" }}
-            className="relative flex h-full shrink-0 flex-col border-r border-border bg-card/40"
+            className="relative flex h-full shrink-0 flex-col border-r border-border bg-card/40 max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:bg-background/95 max-md:backdrop-blur-md max-md:shadow-2xl"
             style={{ width: historyWidth }}
           >
             <div className="flex h-full w-full flex-col min-h-0 overflow-hidden" style={{ width: historyWidth }}>
@@ -613,6 +638,30 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                 <h1 className="text-2xl font-semibold tracking-tight">{greeting}, {owner}</h1>
                 <p className="mt-1 text-sm text-muted-foreground">Ask anything, or tell me what to do on this PC.</p>
               </div>
+
+              {/* Actionable Prompt Chips */}
+              <div className="flex flex-wrap items-center justify-center gap-2 max-w-xl">
+                {[
+                  { label: "Hardware specs & memory usage", icon: "⚡" },
+                  { label: "What's the weather tomorrow?", icon: "🌤️" },
+                  { label: "Search for latest AI news & models", icon: "🌐" },
+                  { label: "Find large files in Downloads", icon: "📁" },
+                  { label: "Remind me in 30 minutes to take a break", icon: "⏰" },
+                  { label: "Analyze NVIDIA stock performance", icon: "📈" },
+                ].map((chip) => (
+                  <button
+                    key={chip.label}
+                    type="button"
+                    onClick={() => {
+                      send(chip.label);
+                    }}
+                    className="flex items-center gap-2 rounded-xl border border-border/80 bg-card/60 px-3.5 py-2 text-xs font-medium text-foreground hover:border-accent hover:bg-accent-soft/30 hover:text-accent transition-all cursor-pointer shadow-xs active:scale-[0.98]"
+                  >
+                    <span>{chip.icon}</span>
+                    <span>{chip.label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
             <div className="mx-auto w-full max-w-4xl xl:max-w-5xl space-y-5 px-4 sm:px-6 py-6 min-w-0">
@@ -704,9 +753,13 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                   placeholder="Ask or tell ISHTI to do anything…"
                   style={{ fontSize: "var(--chat-input-size)" }}
                   className="scroll-thin max-h-[220px] min-h-[40px] flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 leading-relaxed outline-none placeholder:text-muted-foreground" />
-                <button type="button" onClick={toggleMic} title="Speak (local whisper)"
+                <button type="button" onClick={toggleMic} title="Record a voice message (reply comes as text)"
                   className={`grid h-9 w-9 place-items-center rounded-xl transition-colors cursor-pointer ${recording ? "bg-danger text-white" : "text-muted-foreground hover:bg-muted"}`}>
                   {recording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                </button>
+                <button type="button" onClick={() => setLiveOpen(true)} title="Live: talk with ISHTI out loud (the only mode that speaks)"
+                  className="flex h-9 items-center gap-1.5 rounded-xl border border-accent/40 px-2.5 text-xs font-semibold text-accent transition-colors hover:bg-accent-soft/40 cursor-pointer">
+                  <AudioLines className="h-4 w-4" /> Live
                 </button>
                 <button type="submit" disabled={!input.trim()} title={canStart ? "Send" : "Queue: runs when a slot is free"}
                   className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-white transition-opacity disabled:opacity-40 cursor-pointer">
@@ -728,9 +781,13 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                   placeholder="Ask or tell ISHTI to do anything…"
                   style={{ fontSize: "var(--chat-input-size)" }}
                   className="scroll-thin max-h-[220px] min-h-[40px] flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 leading-relaxed outline-none placeholder:text-muted-foreground" />
-                <button type="button" onClick={toggleMic} title="Speak (local whisper)"
+                <button type="button" onClick={toggleMic} title="Record a voice message (reply comes as text)"
                   className={`grid h-9 w-9 place-items-center rounded-xl transition-colors cursor-pointer ${recording ? "bg-danger text-white" : "text-muted-foreground hover:bg-muted"}`}>
                   {recording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                </button>
+                <button type="button" onClick={() => setLiveOpen(true)} title="Live: talk with ISHTI out loud (the only mode that speaks)"
+                  className="flex h-9 items-center gap-1.5 rounded-xl border border-accent/40 px-2.5 text-xs font-semibold text-accent transition-colors hover:bg-accent-soft/40 cursor-pointer">
+                  <AudioLines className="h-4 w-4" /> Live
                 </button>
                 <button type="submit" disabled={!input.trim()} title={canStart ? "Send" : "Queue: runs when a slot is free"}
                   className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-white transition-opacity disabled:opacity-40 cursor-pointer">
@@ -775,6 +832,18 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                 ? "Every node is a real step. Skills are groups: click one to open or fold its tool calls. Violet = running, green = done, amber = waiting for you, red = failed."
                 : "Each question in this chat, linked to the skill that handled it."}</p>
           </motion.aside>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {liveOpen && (
+          <LiveMode sessionId={sessionId} onClose={() => setLiveOpen(false)}
+            onTurn={(user, reply, sid) => {
+              setMsgs((all) => [...all, { id: nextId++, role: "user", text: user, events: [], live: false, sources: [] },
+                { id: nextId++, role: "ishti", text: reply, events: [], live: false, sources: [], request: user }]);
+              if (sid && !sessionId) setSessionId(sid);
+              loadSessions();
+            }} />
         )}
       </AnimatePresence>
 

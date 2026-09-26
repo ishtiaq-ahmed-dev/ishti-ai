@@ -19,11 +19,15 @@ CAN = re.compile(r"^(?:what can you do|what are your (?:skills|capabilities)|sho
 DOCTOR = re.compile(r"^(?:run (?:the )?diagnostics|(?:ishti )?doctor|system check|health check)\W*$", I)
 ATTRS = (r"university|uni|college|school|major|degree|job|company|employer|profession|birthday|age|email|phone|"
          r"semester|department|field|full\s+name")
-TELL = re.compile(r"^(?:(?:and|also|btw|by\s+the\s+way|fyi)[,\s]+)?(?:i\s+(?:study|am\s+studying|work|am\s+working|teach|"
-                  r"was\s+born|graduated|did\s+my)\b|i(?:'m|\s+am)\s+(?:a|an|in|doing|pursuing|from)\b|"
+TELL = re.compile(r"^(?:(?:and|also|btw|by\s+the\s+way|fyi)[,\s]+)?(?:"
+                  r"i\s+(?:study|am\s+studying|work|am\s+working|teach|was\s+born|graduated|did\s+my)\b|"
+                  r"i(?:'m|\s+am)\s+(?:a|an|in|doing|pursuing|from)\b|"
                   rf"my\s+(?:{ATTRS})\s+(?:is|are)\b|"
-                  # "remember that I'm in 7th semester", "add in memory: I study at…" (after the follow-up rewrite)
-                  r"(?:please\s+)?(?:remember|note|save|add|store|update)\b.{0,40}\b(?:i|i'm|my|me)\b)[^?]*$", I)
+                  r"(?:please\s+)?(?:remember|note|save|add|store|update|keep)\b.*?\b(?:memory|i|i'm|my|me)\b"
+                  r")[^?]*$", I)
+SAVE_MEMORY = re.compile(
+    r"\b(?:add|save|store|update|put|write|keep|remember)\s+(?:this|that|it|everything)?\s*(?:in|to|into)?\s*(?:the\s+|your\s+|my\s+)?memory\b"
+    r"|\b(?:remember|note\s+down|make\s+a\s+note)\s+(?:that\s+)?\b", I)
 ABOUT_ME = re.compile(rf"\bmy\s+(?:{ATTRS}|name|city|country)\b", I)
 VERBS = ("study", "work", "live", "born", "teach", "graduated")
 SELF = re.compile(r"\bwhy\s+(?:are|is|do|did|does|can'?t|cant|won'?t|don'?t|dont|odnt|didn'?t|didnot)\s+(?:you|your|ishti)\b|"
@@ -54,27 +58,42 @@ def asks_about_me(t):
 def match(text):
     t = text.strip()
     return (any(rx.match(t) for rx in (AUDIO_OFF, AUDIO_ON, WHO, KNOW, CAN, DOCTOR))
-            or bool(TELL.match(t) or SELF.search(t)) or asks_about_me(t))
+            or bool(TELL.match(t) or SAVE_MEMORY.search(t) or SELF.search(t)) or asks_about_me(t))
 
 
 def tell(t, session):
     from ishti import llm
     from ishti.skills import trace
-    raw = llm.ask(f"The owner told their assistant this about themselves:\n{t}\n\nExtract every fact about the owner as "
+    context_to_extract = t
+    # If the user says "add in memory" or "save it in memory" without explicit facts,
+    # pull what they just said from session history!
+    history = session.get("history", []) if isinstance(session, dict) else []
+    if len(t.split()) <= 6 and SAVE_MEMORY.search(t) and history:
+        for m in reversed(history):
+            if m.get("role") == "user" and m.get("content") != t:
+                context_to_extract = f"{m['content']}\n(Requested to save: {t})"
+                break
+    raw = llm.ask(f"The owner told their assistant this about themselves:\n{context_to_extract}\n\nExtract every fact about the owner as "
                   "one JSON object of short snake_case attribute -> short value. Current status counts too (semester, "
                   "year, job, current project, tools they use) - it is updated when it changes. Examples: "
-                  '"i am in 5th semester ok" -> {"semester": "5th"}; "i work at Systems Ltd as a data analyst" -> '
-                  '{"job": "data analyst", "company": "Systems Ltd"}; "remember that i use vs code daily" -> '
-                  '{"editor": "VS Code"}. Fix obvious typos and write names with proper capitals. Output {} only if '
-                  "it says nothing about the owner (e.g. a mood like 'I'm tired').", system=None, temperature=0,
-                  max_tokens=80, response_format={"type": "json_object"})
+                  '"i am in 5th semester ok" -> {"semester": "5th"}; "i am in th semester" -> {"semester": "7th"}; '
+                  '"i work at Systems Ltd as a data analyst" -> {"job": "data analyst", "company": "Systems Ltd"}; '
+                  '"remember that i use vs code daily" -> {"editor": "VS Code"}. Fix obvious typos and write names with proper capitals. '
+                  "Output {} only if it says nothing about the owner (e.g. a mood like 'I'm tired').", system=None, temperature=0,
+                  max_tokens=100, response_format={"type": "json_object"})
     try:
         found = json.loads(re.search(r"\{.*\}", raw, re.S)[0])
     except (TypeError, ValueError):
         found = {}
     found = {re.sub(r"\W+", "_", str(k)).strip("_").lower(): str(v).strip()
              for k, v in (found.items() if isinstance(found, dict) else []) if str(v).strip()}
-    if not found:  # "I'm a bit tired today": talk, never a web search
+    if not found:
+        if SAVE_MEMORY.search(t):
+            clean_val = re.sub(r"^(?:please\s+)?(?:remember|add|save|store|update)\s+(?:in|to|into)?\s*(?:the\s+|your\s+|my\s+)?memory[:\s]*", "", t, flags=re.I).strip()
+            if clean_val:
+                get_facts().set("owner", "note", clean_val)
+                trace(session, "memory", f"saved note: {clean_val}")
+                return {"reply": f"Updated your memory: note: {clean_val}.", "sources": []}
         from ishti.skills.chat import skill as chat
         return chat.run(t, session)
     lines = []
@@ -174,10 +193,19 @@ def run(text, session):
     if asks_about_me(t) and not any(rx.match(t) for rx in (WHO, KNOW, CAN)):
         return about_me(t)
     if AUDIO_OFF.match(t) or AUDIO_ON.match(t):
-        from orchestrator.memory.user_profile import get_user_memory
-        on = bool(AUDIO_ON.match(t))
-        get_user_memory().update_preferences(audio_output=on)
-        return {"reply": "Audio on. I'll read my answers aloud." if on else "Audio off.", "sources": []}
+        if re.match(r"^(?:read|say)\b", t, I):  # "read that aloud": speak the last answer once
+            last = next((m["content"] for m in reversed(session.get("history", [])) if m["role"] == "assistant"), "")
+            if last:
+                from ishti.voice import speak
+                speak(last)
+                return {"reply": "Reading it aloud.", "sources": []}
+            return {"reply": "There's nothing to read yet.", "sources": []}
+        if AUDIO_OFF.match(t):
+            from ishti.talk import talker
+            talker().stop()
+            return {"reply": "Stopped speaking.", "sources": []}
+        return {"reply": "Typed chats get text replies. For a spoken conversation press **Live** in the chat (or say "
+                         "the wake word); \"read that aloud\" reads my last answer once.", "sources": []}
     if WHO.match(t):
         o = get_facts().get("owner")
         where = ", ".join(x for x in (o.get("city"), o.get("country")) if x)
