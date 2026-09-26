@@ -1,0 +1,39 @@
+{
+  "llm": {
+    "base_url": "http://127.0.0.1:11434/v1",
+    "models": {
+      "planner": "qwen2.5:14b",
+      "coder": "qwen2.5-coder:14b",
+      "fast": "llama3.2:3b"
+    },
+    "fallback": "qwen2.5:14b",
+    "timeout_s": 120
+  },
+  "memory": {
+    "db_path": "D:\\ISHTI\\data\\ishti.db",
+    "chroma_dir": "D:\\ISHTI\\data\\chroma",
+    "embed_model": "nomic-embed-text",
+    "embed_url": "http://127.0.0.1:11434",
+    "search_roots": ["D:\\", "~\\Desktop", "~\\Downloads"],
+    "search_max_depth": 4,
+    "search_budget_s": 10
+  },
+  "router": {
+    "use_laya": true,
+    "laya_model": "typed-decisions",
+    "min_confidence": 0.2,
+    "default_skill": "chat"
+  },
+  "mcp_servers": {
+    "browser": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest", "--user-data-dir", "D:\\ISHTI\\data\\mcp_browser_profile"]
+    }
+  },
+  "voice": {
+    "whisper_model": "small",
+    "whisper_device": "cuda",
+    "piper_voice": "en_US-lessac-medium",
+    "piper_dir": "D:\\ISHTI\\data\\piper"
+  }
+}

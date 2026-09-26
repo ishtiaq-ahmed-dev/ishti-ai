@@ -27,8 +27,10 @@ from orchestrator.memory.conversation import get_conversation_manager
 from orchestrator.memory.error_logger import ErrorLogger
 from voice.tts import speak, speakable
 from orchestrator.memory.user_profile import get_user_memory
+from ishti.dispatcher import api as ishti_api, handle as ishti_handle, HOOKS as ISHTI_HOOKS
 
 app = FastAPI(title="ISHTI Personal AI Assistant")
+app.include_router(ishti_api)  # /api/chat, /api/skills, /api/facts (the dispatcher)
 
 STATIC_DIR = os.path.join(ROOT_DIR, "interface", "web_ui", "static")
 TEMPLATES_DIR = os.path.join(ROOT_DIR, "interface", "web_ui", "templates")
@@ -111,6 +113,7 @@ engine = ExecutionEngine(
     confirmation_callback=confirmation_gate_ui,
     event_callback=sync_event_callback,
 )
+ISHTI_HOOKS.update(confirm=confirmation_gate_ui, emit=sync_event_callback, engine=engine)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -204,7 +207,7 @@ async def execute_task(req: Request):
     loop = asyncio.get_event_loop()
 
     def run_sync():
-        res = engine.process_request(prompt, session_id=session_id)
+        res = ishti_handle(prompt, session_id=session_id)
         # Speak the whole answer, not just its first line, when audio output is enabled.
         answer = res.get("final_answer", "")
         if answer and get_user_memory().get_preferences().audio_output:
@@ -335,7 +338,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     if prompt:
                         loop = asyncio.get_event_loop()
                         def run_sync():
-                            return engine.process_request(prompt)
+                            return ishti_handle(prompt)
                         res = await loop.run_in_executor(None, run_sync)
                         await websocket.send_text(json.dumps({"type": "task_completed_full", "data": res}))
             except Exception as e:

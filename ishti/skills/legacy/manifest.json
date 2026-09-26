@@ -1,0 +1,9 @@
+{
+  "name": "legacy",
+  "version": "0.9.0",
+  "description": "Bridge to the pre-dispatcher engine (orchestrator/crew.py): PC file search, desktop app launch, video editing, hardware telemetry, deep research reports, URL fetch, planned multi-step tasks. Each route moves to its own skill over time (NEEDS.md).",
+  "route": "searching files on the PC, opening desktop apps, editing videos, CPU/GPU/RAM status, deep research reports, or reading a given URL",
+  "priority": 30,
+  "needs": {"python": ["requests", "psutil"], "models": ["planner"], "mcp": [], "apis": []},
+  "status": "needs-upgrade"
+}
