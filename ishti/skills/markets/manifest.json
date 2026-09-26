@@ -1,0 +1,9 @@
+{
+  "name": "markets",
+  "version": "1.0.0",
+  "description": "Live stocks (yfinance, the free data layer OpenBB uses; PSX from the exchange), crypto (CoinGecko), gold/silver (per ounce and per tola) and currency rates, plus a technical analyzer: trend, RSI, MACD, moving averages, volatility, drawdown.",
+  "route": "stock prices, shares, crypto, gold or silver rates, currency exchange rates, or analysing a stock or coin",
+  "needs": {"python": ["yfinance", "numpy", "requests"], "models": [], "mcp": [], "apis": ["query1.finance.yahoo.com", "dps.psx.com.pk", "api.coingecko.com", "open.er-api.com", "api.gold-api.com"]},
+  "priority": 16,
+  "status": "working"
+}

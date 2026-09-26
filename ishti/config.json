@@ -4,7 +4,8 @@
     "models": {
       "planner": "ishti-qwen2.5:14b",
       "coder": "ishti-qwen2.5-coder:14b",
-      "fast": "llama3.2:3b"
+      "fast": "llama3.2:3b",
+      "translator": "gemma3:4b"
     },
     "fallback": "qwen2.5:14b",
     "timeout_s": 120

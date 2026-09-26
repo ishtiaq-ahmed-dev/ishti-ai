@@ -19,7 +19,7 @@ LABELLED = [
     ("write a python function to reverse a linked list", "chat"), ("how do I fix a segfault in C", "chat"),
     ("draft an email to my professor asking for an extension", "chat"), ("good morning!", "chat"),
     ("thanks, that helped", "chat"), ("who won the champions league final yesterday", "web_search"),
-    ("latest news about nvidia", "web_search"), ("what's the price of gold today", "web_search"),
+    ("latest news about nvidia", "web_search"), ("what's the price of gold today", "markets"),
     ("who is the current prime minister of the UK", "web_search"), ("open the task manager", "apps"),
     ("find the invoice pdf on my computer", "files"), ("how much ram am I using", "system"),
     ("launch vs code", "apps"), ("mujhe batao mera project kahan hai", "memory"),
@@ -42,6 +42,7 @@ LABELLED = [
     ("open chrome and go to github", "browser"), ("open youtube", "browser"), ("open the task manager", "apps"),
     ("find me the cheapest samsung galaxy s25", "shopping"), ("i want to buy an iphone 16, compare prices", "shopping"),
     ("where can I buy a ps5 slim", "shopping"),
+    ("analyze nvidia stock", "markets"), ("usd to pkr rate", "markets"), ("OGDC share price", "markets"),
     ("i study in imsciences", "owner"), ("where i stid ?", "owner"), ("what semester am i in?", "owner"),
     ("why your response is late", "owner"), ("check my whatsap and let me know which chat is unread", "whatsapp"),
 ]

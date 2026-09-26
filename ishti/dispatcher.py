@@ -246,18 +246,35 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
             cond.notify_all()
 
 
+# ponytail: word-list detector for Roman Urdu; English that happens to use two of these words ("hai" is rare in
+# English) would be translated too. Upgrade path: a Laya language question once it is fine-tuned.
+ROMAN_URDU = {"mujhe", "mujhay", "kya", "kia", "hai", "hain", "mera", "meri", "mere", "aap", "ap", "kaise", "kaisay", "karo",
+              "kardo", "sunao", "batao", "btao", "nahi", "nahin", "kyun", "kyon", "kahan", "kab", "acha", "achha", "theek",
+              "hoga", "hogi", "raha", "rahi", "tha", "thi", "wala", "wali", "kuch", "bhi", "yeh", "ye", "woh", "wo", "abhi",
+              "chahiye", "dekho", "bolo", "karna", "karta", "karti", "aur", "lekin", "agar", "tum", "hum", "hamara",
+              "mein", "main", "kaisa", "kaisi", "kal", "ka", "ki", "ke", "ko", "se", "ek", "kitna", "kitni", "kaun", "koi"}
+
+
+def roman_urdu(text):
+    words = re.findall(r"[a-z]+", text.lower())
+    return len(words) >= 2 and sum(w in ROMAN_URDU for w in words) >= max(2, len(words) // 4)
+
+
 def translate(text, to):
     from ishti import llm
-    return llm.ask(f"Translate into {to}. Keep names, numbers, file paths, links and markdown exactly. Output only the "
-                   f"translation.\n\n{text}", system=None, temperature=0, max_tokens=1200).strip() or text
+    # Gemma 3 (config role "translator") writes far better Urdu than Qwen 2.5, which mixes in Chinese characters.
+    hint = (" In Urdu, کل (kal) with a future verb (ہوگا، ہوگی، گا) means tomorrow, with a past verb yesterday; "
+            "it means 'all' only as کُل before a noun." if to == "English" else "")
+    return llm.ask(f"Translate into {to}. Keep names, numbers, file paths, links and markdown exactly.{hint} Output only "
+                   f"the translation.\n\n{text}", role="translator", system=None, temperature=0, max_tokens=1200).strip() or text
 
 
 def _handle(text, sid, conv, s, events, t0, channel):
-    # Urdu script: skills and routing work in English, so understand it in English and answer back in Urdu.
-    # (Roman Urdu stays as typed: the style prompt already answers in the owner's language.)
-    urdu = bool(URDU.search(text))
-    if urdu:
-        s["trace"](type="tool", name="understand", label="Urdu message: reading it in English", status="start")
+    # Urdu (script or Roman): skills and routing work in English, so understand it in English and answer back
+    # in the owner's own form of Urdu. Gemma does both directions (Qwen 2.5 writes poor Urdu).
+    lang = "Urdu" if URDU.search(text) else "Roman Urdu (Urdu written in English letters)" if roman_urdu(text) else None
+    if lang:
+        s["trace"](type="tool", name="understand", label=f"{lang.split(' (')[0]} message: reading it in English", status="start")
         text = translate(text, "English")
         s["trace"](type="tool", name="understand", label=f"understood as: {text[:120]}", status="done", rewritten=text)
 
@@ -300,9 +317,9 @@ def _handle(text, sid, conv, s, events, t0, channel):
                 break
 
     reply = out["reply"]
-    if urdu and not URDU.search(reply):
-        s["trace"](type="tool", name="translate", label="answer in Urdu", status="done")
-        reply = out["reply"] = translate(reply, "Urdu")
+    if lang and not (lang == "Urdu" and URDU.search(reply)):
+        s["trace"](type="tool", name="translate", label=f"answer in {lang.split(' (')[0]}", status="done")
+        reply = out["reply"] = translate(reply, lang)
     s["trace"](type="done", skill=name, ms=round((time.perf_counter() - t0) * 1000))
     s["last_request"], s["last_skill"] = text, name
     s["history"] = (s["history"] + [{"role": "user", "content": text},
