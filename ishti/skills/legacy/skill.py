@@ -3,8 +3,7 @@ import re
 
 from orchestrator.intent_detector import IntentDetector
 
-MODES = {"VIDEO_EDIT", "PC_SEARCH", "PC_TELEMETRY", "APP_CONTROL", "DEEP_RESEARCH",
-         "WEB_FETCH"}
+MODES = {"VIDEO_EDIT", "PC_SEARCH", "PC_TELEMETRY", "APP_CONTROL"}
 _engine = None
 
 

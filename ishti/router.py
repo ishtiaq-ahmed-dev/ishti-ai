@@ -53,11 +53,13 @@ def route(text, skills, exclude=()):
 
     extra = {}
     r = laya()
-    if r and live:
+    # "laya": false = trigger-only skill (deterministic cue exists; as a Laya option it only adds confusion)
+    candidates = {n: s for n, s in live.items() if s.manifest.get("laya", True)}
+    if r and candidates:
         try:
-            a = r.predict({"request": text}, questions(live), model=_cfg["laya_model"])["answers"]
+            a = r.predict({"request": text}, questions(candidates), model=_cfg["laya_model"])["answers"]
             probs = a["skill"]["probabilities"]
-            score = {n: probs[n] + a[f"is_{n}"]["noul"] for n in live}
+            score = {n: probs[n] + a[f"is_{n}"]["noul"] for n in candidates}
             skill = max(score, key=score.get)
             conf = score[skill] / 2
             extra = {"domain": a["domain"]["choice"], "needs_tools": a["needs_tools"]["noul"],

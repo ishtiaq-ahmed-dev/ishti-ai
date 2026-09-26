@@ -28,6 +28,9 @@ LABELLED = [
     ("what's the forecast for the weekend", "weather"), ("what is 17 times 23?", "chat"),
     ("log into my university portal and download the timetable", "browser"),
     ("fill the contact form on my website", "browser"),
+    ("research the best local LLMs for coding and write a report", "deep_research"),
+    ("do an in-depth investigation into solid-state batteries", "deep_research"),
+    ("summarize https://example.com for me", "web_fetch"),
 ]
 
 

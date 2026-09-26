@@ -1,0 +1,9 @@
+# Local SearXNG for ISHTI's web search (open-source metasearch: Google, Brave, DuckDuckGo, Wikipedia, ...).
+# docker run -d --name ishti-searxng --restart unless-stopped -p 127.0.0.1:8890:8080
+#   -v D:/ISHTI/ishti/searxng:/etc/searxng -e SEARXNG_SECRET=<random> searxng/searxng
+use_default_settings: true
+server:
+  limiter: false        # only ISHTI on this PC talks to it (bound to 127.0.0.1)
+  image_proxy: false
+search:
+  formats: [html, json]

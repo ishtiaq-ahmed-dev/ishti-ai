@@ -17,7 +17,7 @@ Each entry lists what's needed, why it's blocked, and what would have to change.
 - **Options:** use `qwen2.5-coder:7b` (both fit), or accept the swap. The config change is one line; no code change.
 
 ## 4. Retire the `legacy` skill
-- **Need:** each remaining `orchestrator/crew.py` route becomes its own skill: `pc_search`, `app_control`, `video_edit`, `telemetry`, `deep_research`, `web_fetch`.
+- **Need:** each remaining `orchestrator/crew.py` route becomes its own skill: `pc_search`, `app_control`, `video_edit`, `telemetry` (`deep_research` and `web_fetch` are already done).
 - **Why deferred:** each route already works through the bridge. Splitting all six is a large rewrite with no user-visible gain today.
 - **Then delete:** `orchestrator/memory/capability_registry.py` + `capability_escalation.py` (800 LOC, replaced by skill manifests), `planner.py`, `intent_detector.py` (replaced by Laya).
 

@@ -1,0 +1,25 @@
+{
+  "name": "deep_research",
+  "version": "1.0.0",
+  "description": "Explicitly requested research reports: several search angles, parallel page reading, relevance filtering, cited report archived to research memory. Wraps orchestrator/deep_research.run_deep_research.",
+  "route": "an explicitly requested research report or in-depth investigation of a topic",
+  "priority": 35,
+  "needs": {
+    "python": [
+      "requests",
+      "bs4"
+    ],
+    "models": [
+      "planner"
+    ],
+    "mcp": [],
+    "apis": [
+      "bing.com",
+      "wikipedia.org",
+      "arxiv.org",
+      "api.github.com"
+    ]
+  },
+  "status": "working",
+  "laya": false
+}

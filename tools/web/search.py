@@ -34,6 +34,38 @@ DEFAULT_HEADERS = {
 }
 
 
+class SearxngSearchProvider(WebSearchProvider):
+    """Local SearXNG metasearch (Docker, ishti/searxng/settings.yml). Aggregates Google, Brave,
+    DuckDuckGo, Wikipedia... Scraping Bing directly now returns unrelated pages (it matched only
+    the first word of multi-word queries), so this is the primary general-web provider."""
+
+    URL = os.environ.get("ISHTI_SEARXNG_URL", "http://127.0.0.1:8890")
+
+    @property
+    def name(self) -> str:
+        return "searxng"
+
+    def is_available(self) -> bool:
+        try:
+            return requests.get(f"{self.URL}/healthz", timeout=2).status_code == 200
+        except Exception:
+            return False
+
+    def search(self, query: str, max_results: int = 5) -> List[WebSearchResult]:
+        try:
+            r = requests.get(f"{self.URL}/search", params={"q": query, "format": "json", "language": "en"},
+                             timeout=10)
+            r.raise_for_status()
+            hits = r.json().get("results", [])
+        except Exception as exc:
+            print(f"[SearXNG] unavailable ({type(exc).__name__}); falling back")
+            return []
+        return [WebSearchResult(title=h.get("title", ""), url=h["url"], snippet=h.get("content", "")[:400],
+                                publication_date=h.get("publishedDate") or "",
+                                metadata={"engines": h.get("engines", [])})
+                for h in hits[:max_results] if h.get("url", "").startswith("http")]
+
+
 class BingLiteSearchProvider(WebSearchProvider):
     """
     Scrapes Bing HTML results and extracts clean URLs by decoding u=a1 base64 links.
@@ -436,6 +468,7 @@ class MultiProviderSearch:
     - Complex Interactive Pages -> Playwright Chrome Sandbox
     """
     def __init__(self):
+        self.searxng = SearxngSearchProvider()
         self.bing = BingLiteSearchProvider()
         self.gh_release = GitHubReleaseProvider()
         self.news = NewsSearchProvider()
@@ -452,7 +485,8 @@ class MultiProviderSearch:
         rel = self.gh_release.search(query, max_results=1)
         if rel:
             print(f"[MultiProviderSearch] GitHub release feed answered '{query}': {rel[0].title}")
-            return rel + self.bing.search(query, max_results=max(0, max_results - 1))
+            rest = max(0, max_results - 1)
+            return rel + (self.searxng.search(query, rest) or self.bing.search(query, rest))
 
         # Route 0b: dated news questions - a real news index beats a scraped search page,
         # which returns front pages and (when rate-limited) unrelated junk.
@@ -481,6 +515,13 @@ class MultiProviderSearch:
         # Route C: no site: rewriting. Bing answers those queries with unrelated pages,
         # and version questions are handled authoritatively by Route 0 above.
         targeted_query = query
+
+        # Step 0: local SearXNG metasearch
+        t0 = time.time()
+        results = self.searxng.search(targeted_query, max_results=max_results)
+        if results:
+            print(f"[MultiProviderSearch] SearXNG returned {len(results)} results in {round(time.time()-t0, 2)}s")
+            return results
 
         # Step 1: Try Bing Lite
         t0 = time.time()

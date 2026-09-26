@@ -32,7 +32,10 @@ ollama pull nomic-embed-text
 ollama create ishti-qwen2.5:14b -f ishti\planner.Modelfile
 ollama create ishti-qwen2.5-coder:14b -f ishti\coder.Modelfile
 venv\Scripts\python -m piper.download_voices en_US-lessac-medium --data-dir data\piper
+docker run -d --name ishti-searxng --restart unless-stopped -p 127.0.0.1:8890:8080 -v D:/ISHTI/ishti/searxng:/etc/searxng -e SEARXNG_SECRET=<random hex> searxng/searxng
 ```
+
+Web search goes through the local SearXNG container first (Google/Brave/DuckDuckGo/Wikipedia aggregated). If Docker isn't running, it falls back to Wikipedia/GitHub/arXiv/Bing.
 
 The Python packages are in `venv` (`torch` cu128, `laya`, `chromadb`, `mcp`, `faster-whisper`, `piper-tts`, `openai`, `fastapi`). The browser MCP server runs through `npx @playwright/mcp` (Node 24).
 
@@ -71,6 +74,7 @@ Each skill is a folder with a manifest:
 {"name": "weather", "version": "1.0.0", "description": "...",
  "route": "weather, temperature, rain or forecast for a place and day",   // Laya's criterion
  "priority": 20,                                                          // trigger order
+ "laya": true,                                   // false = trigger-only, not offered to Laya
  "needs": {"python": ["requests"], "models": [], "mcp": [], "apis": ["open-meteo.com"]},
  "status": "working"}                                  // working | needs-upgrade | broken
 ```
@@ -81,10 +85,12 @@ Each skill is a folder with a manifest:
 |---|---|---|
 | memory | locations, statuses, remembered facts | SQLite, file search |
 | weather | real forecast | Open-Meteo (free, no key) |
-| web_search | live answers with citations | Bing Lite / Wikipedia / GitHub / arXiv + page reader |
+| web_search | live answers with citations | local SearXNG → Wikipedia / GitHub / arXiv / Bing fallback + page reader |
 | browser | open sites, read, click, fill forms | Playwright MCP + local LLM tool calls |
+| deep_research | explicitly requested research reports | multi-query search + parallel reading + relevance filter |
+| web_fetch | answer about a URL in the request | HTTP → Jina reader → Playwright fetch cascade |
 | chat | everything else; code questions use the coder model | Ollama |
-| legacy | PC file search, app launch, video edit, telemetry, research reports, URL reading | `orchestrator/crew.py` (being split up, NEEDS.md #4) |
+| legacy | PC file search, app launch, video edit, telemetry | `orchestrator/crew.py` (being split up, NEEDS.md #4) |
 
 **Adding a skill:** first look for an open-source library or repo that already does it, and wrap it (as `weather` wraps Open-Meteo and `browser` wraps Playwright MCP). If only a commercial product does it, write `ishti/skills/<name>/SPEC.md` describing how it works (from public docs/demos) and how to build it locally, then log it in NEEDS.md for a later build session.
 
