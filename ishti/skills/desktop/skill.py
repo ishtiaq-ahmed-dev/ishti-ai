@@ -53,7 +53,7 @@ def _shot(session=None):
     folder = os.path.join(ROOT, "data", "screenshots")
     os.makedirs(folder, exist_ok=True)
     path = os.path.join(folder, dt.datetime.now().strftime("screen_%Y-%m-%d_%H-%M-%S.png"))
-    with mss.mss() as s:
+    with getattr(mss, "MSS", mss.mss)() as s:
         img = s.grab(s.monitors[0])  # all monitors
         mss.tools.to_png(img.rgb, img.size, output=path)
     return path
