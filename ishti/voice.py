@@ -2,6 +2,7 @@
 Voice is only another input channel: the transcript goes through dispatcher.handle like text."""
 import io
 import os
+import re
 import threading
 import time
 import wave
@@ -40,21 +41,62 @@ def transcribe(audio) -> str:
     """audio: path or file-like in any format PyAV decodes (browser webm/opus, wav, mp3)."""
     global _last_use
     _last_use = time.time()
-    segments, _ = stt_model().transcribe(audio, beam_size=1, vad_filter=True)
+    if hasattr(audio, "seek"):
+        data = audio.read()
+        audio = lambda: io.BytesIO(data)  # a second pass (Urdu) needs to read it again
+    else:
+        audio = (lambda a: lambda: a)(audio)
+    prompt = vocabulary()
+    segments, info = stt_model().transcribe(audio(), beam_size=1, vad_filter=True, initial_prompt=prompt or None)
+    text = " ".join(s.text.strip() for s in segments).strip()
+    # Spoken Urdu and Hindi sound nearly the same; whisper often picks Hindi and writes Devanagari, which the owner
+    # (and the language layer) can't use. Prefer Urdu script.
+    if info.language == "hi" and _cfg.get("prefer_urdu", True):
+        segments, _ = stt_model().transcribe(audio(), beam_size=1, vad_filter=True, language="ur", initial_prompt=prompt or None)
+        text = " ".join(s.text.strip() for s in segments).strip()
     _last_use = time.time()
     _schedule_unload()
-    return " ".join(s.text.strip() for s in segments).strip()
+    return text
+
+
+def vocabulary():
+    """Names whisper should expect (it heard "IMSciences" as "IIM sciences"): the owner, their places, projects."""
+    try:
+        from ishti.facts import get_facts
+        f = get_facts()
+        owner = f.get("owner")
+        words = [owner.get(k) for k in ("name", "city", "university", "company", "country")]
+        with f.lock:
+            words += [e for (e,) in f.db.execute("SELECT DISTINCT entity FROM facts WHERE attr='location'")]
+        words = [re.sub(r"^(?:the|project)\s+|\s+project$", "", str(w), flags=re.I) for w in words if w]
+        seen = {}
+        for w in ["ISHTI"] + words:
+            seen.setdefault(w.lower(), w)
+        return ", ".join(seen.values()) + "."
+    except Exception:
+        return ""
+
+
+_unload_timer = None
+_timer_lock = threading.Lock()
 
 
 def _schedule_unload():
-    def unload():
-        global _stt
-        time.sleep(IDLE_UNLOAD_S + 1)
-        with _load_lock:
-            if _stt is not None and time.time() - _last_use >= IDLE_UNLOAD_S:
-                _stt = None  # CTranslate2 frees its VRAM when the model object goes away
-                print("[voice] whisper unloaded after idle")
-    threading.Thread(target=unload, daemon=True).start()
+    global _unload_timer
+    with _timer_lock:
+        if _unload_timer is not None:
+            _unload_timer.cancel()
+
+        def unload():
+            global _stt
+            with _load_lock:
+                if _stt is not None and time.time() - _last_use >= IDLE_UNLOAD_S:
+                    _stt = None  # CTranslate2 frees its VRAM when the model object goes away
+                    print("[voice] whisper unloaded after idle")
+
+        _unload_timer = threading.Timer(IDLE_UNLOAD_S + 1, unload)
+        _unload_timer.daemon = True
+        _unload_timer.start()
 
 
 def tts_voice():

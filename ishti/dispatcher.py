@@ -127,6 +127,7 @@ def _learn(text):
 
 
 URDU = re.compile("[؀-ۿ]")  # Arabic-script letters (Urdu)
+DEVANAGARI = re.compile("[ऀ-ॿ]")  # Hindi script
 FOLLOW_UP = re.compile(
     r"^\s*(?:why\s+(?:did|didn'?t|did\s*not|didnot|don'?t|won'?t)\s+you|(?:no[,.!]?\s+)?i\s+(?:asked|meant|said|wanted)|"
     r"(?:search|look|check|try|do)\s+(?:it\s+|that\s+|this\s+)?(?:now|again|instead|properly|online)|"
@@ -360,8 +361,8 @@ def roman_urdu(text):
 def translate(text, to):
     from ishti import llm
     # Gemma 3 (config role "translator") writes far better Urdu than Qwen 2.5, which mixes in Chinese characters.
-    hint = (" In Urdu, کل (kal) with a future verb (ہوگا، ہوگی، گا) means tomorrow, with a past verb yesterday; "
-            "it means 'all' only as کُل before a noun." if to == "English" else "")
+    hint = (" In Urdu/Hindi, کل / कल (kal) with a future verb (ہوگا، ہوگی، گا / होगा, होगी) means tomorrow, with a past "
+            "verb yesterday; it means 'all' only as کُل before a noun." if to == "English" else "")
     return llm.ask(f"Translate into {to}. Keep names, numbers, file paths, links and markdown exactly.{hint} Output only "
                    f"the translation.\n\n{text}", role="translator", system=None, temperature=0, max_tokens=1200).strip() or text
 
@@ -369,7 +370,9 @@ def translate(text, to):
 def _handle(text, sid, conv, s, events, t0, channel):
     # Urdu (script or Roman): skills and routing work in English, so understand it in English and answer back
     # in the owner's own form of Urdu. Gemma does both directions (Qwen 2.5 writes poor Urdu).
-    lang = "Urdu" if URDU.search(text) else "Roman Urdu (Urdu written in English letters)" if roman_urdu(text) else None
+    # Devanagari is spoken Urdu that whisper wrote in Hindi script: understood the same way, answered in Urdu script
+    lang = ("Urdu" if URDU.search(text) or DEVANAGARI.search(text)
+            else "Roman Urdu (Urdu written in English letters)" if roman_urdu(text) else None)
     if lang:
         s["trace"](type="tool", name="understand", label=f"{lang.split(' (')[0]} message: reading it in English", status="start")
         text = translate(text, "English")
