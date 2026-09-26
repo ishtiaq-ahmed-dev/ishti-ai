@@ -75,7 +75,11 @@ def text_of(path, limit=60000):
     if ext == ".pdf":
         import pypdfium2 as pdfium
         doc = pdfium.PdfDocument(path)
-        return "\n".join(doc[i].get_textpage().get_text_range() for i in range(min(len(doc), 60)))[:limit]
+        body = "\n".join(doc[i].get_textpage().get_text_range() for i in range(min(len(doc), 60)))
+        if len(body.strip()) < 40 * min(len(doc), 60):  # (almost) no text layer: a scan - read the page images
+            from ishti.ocr import ocr_pdf
+            body = ocr_pdf(path).replace("\f", "\n")
+        return body[:limit]
     if ext == ".docx":
         import docx
         d = docx.Document(path)
@@ -100,7 +104,7 @@ def op_summarize(m, text, session):
     except Exception as exc:  # truncated download, wrong extension, password-protected
         return f"I can't open {os.path.basename(got[0])} - it looks damaged or protected ({type(exc).__name__})."
     if len(body.strip()) < 40:
-        return f"{os.path.basename(got[0])} has no readable text (a scanned PDF needs OCR - say \"read the text from\" with an image of it)."
+        return f"{os.path.basename(got[0])} has no readable text, even with OCR."
     focus = re.sub(PATH, "", text)
     return llm.ask(f"Document: {os.path.basename(got[0])}\n\n{body[:14000]}\n\nThe owner asks: {focus}\n"
                    "Summarise it for them: what it is, the key points, numbers, dates and anything they need to act on. "

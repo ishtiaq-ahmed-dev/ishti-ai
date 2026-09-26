@@ -487,9 +487,12 @@ def op_ocr(m, text, session):
     src = next((p for p in paths(text) if p.lower().endswith(IMAGE)), None)
     if not src:
         return "Give me the image's full path."
-    from ishti.skills.video.pro import look
-    seen = look(src, "Read ALL the text in this image exactly, keeping line breaks.")
-    return f"Text in {os.path.basename(src)}:\n```\n{seen.get('text', '')}\n```"
+    from ishti.ocr import ocr
+    found = ocr(src)
+    if not found.strip():  # handwriting / stylised text: the vision model reads what OCR can't
+        from ishti.skills.video.pro import look
+        found = look(src, "Read ALL the text in this image exactly, keeping line breaks.").get("text", "")
+    return f"Text in {os.path.basename(src)}:\n```\n{found}\n```" if found.strip() else f"I found no text in {os.path.basename(src)}."
 
 
 if __name__ == "__main__":

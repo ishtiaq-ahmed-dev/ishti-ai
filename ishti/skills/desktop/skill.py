@@ -348,7 +348,8 @@ if __name__ == "__main__":
     rows = _table("Name   Id               Version    Available  Source\n----------------------------------------------------\n"
                   "CapCut ByteDance.CapCut 8.9.1.3802 9.5.0.4050 msstore\n")
     assert rows == [("CapCut", "ByteDance.CapCut", "8.9.1.3802", "9.5.0.4050")], rows
-    more_cases = {"new virtual desktop": "vdesk", "switch to the next desktop": "vdesk", "go to desktop 2": "vdesk",
+    more_cases = {"read the text on my screen": "screen_text", "copy the text from my screen": "screen_text",
+                  "new virtual desktop": "vdesk", "switch to the next desktop": "vdesk", "go to desktop 2": "vdesk",
                   "close this desktop": "vdesk", "clipboard history": "clip_history", "copy item 3": "clip_history",
                   "list my monitors": "displays", "extend my displays": "displays", "second screen only": "displays",
                   "print queue": "print_queue", "cancel all print jobs": "print_queue",
@@ -368,6 +369,6 @@ if __name__ == "__main__":
     for i in range(more.CLIP_KEEP + 5):
         more.remember_clip(f"item {i}", db)
     assert len(more.recent_clips(500, db)) == more.CLIP_KEEP and more.recent_clips(1, db)[0][0] == f"item {more.CLIP_KEEP + 4}"
-    assert "display(s)" in more.op_displays(more.OPS[2][1].search("list my monitors"), "", {})
+    assert "display(s)" in more.op_displays(dict(more.OPS)["displays"].search("list my monitors"), "", {})
     print("[self-check] desktop OK - op routing, winget table parsing, virtual desktops/clipboard history/displays/"
           "print/macro routing, clipboard ring (no repeats, no secrets, capped)")
