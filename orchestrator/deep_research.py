@@ -33,6 +33,9 @@ os.makedirs(RESEARCH_MEM_DIR, exist_ok=True)
 
 
 READ_BUDGET_S = 4.0
+MAX_REWORDS = 2  # reformulations after the first search before "no confident match"
+BLOCKED = re.compile(r"enable javascript|access denied|are you a robot|captcha|verify you are human|subscribe to (?:continue|read)|"
+                     r"sign in to (?:continue|read)|403 forbidden|404 not found|page not found|just a moment\.\.\.")
 
 
 class DeepResearchEngine:
@@ -55,64 +58,57 @@ class DeepResearchEngine:
         Quick Search: For single factual current queries.
         1 search query -> read top sources -> synthesize answer with citations.
         """
-        self.emit("status_change", {"state": "SEARCHING", "detail": f"Searching web for: {user_prompt}"})
-
         # Clean query, then localise it if it is a "near me / local" question.
         search_query = re.sub(r"^(what\s+is\s+the|what's\s+the|who\s+is|tell\s+me\s+about|search\s+(?:for|on|the))\s+", "", user_prompt, flags=re.IGNORECASE).strip(" ?.")
         search_query = self._localize(search_query)
-        results = self.search_manager.search(search_query, max_results=5)
 
-        if not results:
-            # Fallback direct search with original prompt
-            results = self.search_manager.search(user_prompt, max_results=5)
+        # Self-verifying loop: search -> read -> keep only pages that really answer the question; if none do,
+        # reword the query and try again (at most MAX_REWORDS times), then say so instead of guessing.
+        tried, skipped, good = [], [], []
+        query = search_query
+        for attempt in range(MAX_REWORDS + 1):
+            tried.append(query)
+            self.emit("status_change", {"state": "SEARCHING", "detail": ("Searching the internet for: " if not attempt
+                                                                         else "Trying a different search: ") + query})
+            results = self.search_manager.search(query, max_results=6)
+            if not results and not attempt:
+                results = self.search_manager.search(user_prompt, max_results=6)
+            if results:
+                # Drop sources that do not address the query (dictionary pages, unrelated products).
+                relevant = filter_sources(query, [r.to_dict() | {"_obj": r} for r in results])
+                results = [r["_obj"] for r in relevant] or results[:3]
+                top = [r for r in results if r.url not in {g["url"] for g in good}][:4]
+                self.emit("status_change", {"state": "RESEARCHING", "detail": f"Found {len(results)} sources, opening the top {len(top)}..."})
+                pages = self._read(top)
+                self.emit("status_change", {"state": "RESEARCHING", "detail": "Reading through them now..."})
+                with concurrent.futures.ThreadPoolExecutor(max_workers=len(pages) or 1) as pool:
+                    verdicts = list(pool.map(lambda pg: self._page_verdict(user_prompt, pg), pages))
+                for pg, (ok, why) in zip(pages, verdicts):
+                    if ok:
+                        good.append(pg)
+                    else:
+                        skipped.append(f"{pg['domain']} ({why})")
+                        self.emit("status_change", {"state": "VERIFYING", "detail": f"Skipped {pg['domain']}: {why}"})
+                if good:
+                    break
+            if attempt < MAX_REWORDS:
+                query = self._reword(user_prompt, tried, skipped)
 
-        if not results:
+        if not good:
             return {
-                "answer": "Unable to verify current online information at this moment. The search providers were unreachable.",
-                "sources": [],
-                "verified": False,
+                "answer": ("I couldn't find a source that confidently answers that. Searched: "
+                           + "; ".join(f"\"{q}\"" for q in tried)
+                           + (". Skipped: " + ", ".join(skipped[:5]) if skipped else ". The search providers returned nothing.")
+                           + " Tell me more (a name, place or date) and I'll look again."),
+                "sources": [], "verified": False, "mode": "QUICK_SEARCH", "confident": False,
             }
 
-        # Drop sources that do not address the query (dictionary pages, unrelated products).
-        relevant = filter_sources(search_query, [r.to_dict() | {"_obj": r} for r in results])
-        results = [r["_obj"] for r in relevant] or results[:2]
-
-        # Read the top sources in parallel under one time budget. A slow page (the reader-mode
-        # fallback can take 10-12 s) must not hold the answer hostage: past the budget its search
-        # snippet is used instead.
-        self.emit("status_change", {"state": "RESEARCHING", "detail": f"Reading top {min(len(results), 3)} sources..."})
-        sources_context = []
-        sources_list = []
-        top = results[:3]
-        pool = concurrent.futures.ThreadPoolExecutor(max_workers=len(top) or 1)
-        futures = [pool.submit(self.fetcher.fetch, r.url, max_chars=2500) for r in top]
-        concurrent.futures.wait(futures, timeout=READ_BUDGET_S)
-        pool.shutdown(wait=False, cancel_futures=True)
-        for idx, (res_obj, fut) in enumerate(zip(top, futures)):
-            fetched = fut.result() if fut.done() and not fut.exception() else {}
-            content = fetched.get("content") or res_obj.snippet
-            sources_context.append(f"[{idx+1}] Title: {res_obj.title}\nURL: {res_obj.url}\nExcerpt: {content[:1000]}")
-            sources_list.append({
-                "id": idx + 1,
-                "title": res_obj.title,
-                "domain": res_obj.source,
-                "url": res_obj.url,
-                "snippet": res_obj.snippet,
-                # verified = the page itself was read in time and had content, not a literal True
-                "verified": bool(fetched.get("content") and len(fetched["content"]) > 80),
-            })
-
-        # Add remaining un-fetched sources as references (not fetched -> not verified)
-        for idx in range(len(sources_list), len(results)):
-            r = results[idx]
-            sources_list.append({
-                "id": idx + 1,
-                "title": r.title,
-                "domain": r.source,
-                "url": r.url,
-                "snippet": r.snippet,
-                "verified": False,
-            })
+        self.emit("status_change", {"state": "VERIFYING", "detail": f"{len(good)} source{'s' if len(good) != 1 else ''} answer it; writing the answer..."})
+        sources_context, sources_list = [], []
+        for idx, pg in enumerate(good[:4], 1):
+            sources_context.append(f"[{idx}] Title: {pg['title']}\nURL: {pg['url']}\nExcerpt: {pg['content'][:1000]}")
+            sources_list.append({"id": idx, "title": pg["title"], "domain": pg["domain"], "url": pg["url"],
+                                 "snippet": pg["snippet"], "verified": pg["read"]})
 
         # Synthesize with local model
         self.emit("status_change", {"state": "VERIFYING", "detail": "Cross-checking facts and synthesizing response..."})
@@ -126,6 +122,50 @@ class DeepResearchEngine:
                 str(s.get("url", "")).startswith("http") for s in sources_list),
             "mode": "QUICK_SEARCH",
         }
+
+    def _read(self, top) -> List[Dict[str, Any]]:
+        """Read pages in parallel under one time budget. A slow page (the reader-mode fallback can take 10-12 s)
+        must not hold the answer hostage: past the budget its search snippet is used instead."""
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=len(top) or 1)
+        futures = [pool.submit(self.fetcher.fetch, r.url, max_chars=2500) for r in top]
+        concurrent.futures.wait(futures, timeout=READ_BUDGET_S)
+        pool.shutdown(wait=False, cancel_futures=True)
+        pages = []
+        for r, fut in zip(top, futures):
+            fetched = fut.result() if fut.done() and not fut.exception() else {}
+            content = fetched.get("content") or ""
+            pages.append({"title": r.title, "url": r.url, "domain": r.source, "snippet": r.snippet,
+                          "content": content or r.snippet, "read": len(content) > 80})
+        return pages
+
+    def _page_verdict(self, question: str, page: Dict[str, Any]):
+        """(keep?, reason). Blocked/paywalled/empty pages are dropped without asking the model; otherwise the
+        local model judges whether the page answers the question - leniently, because its own knowledge ends
+        before today (the wording that rejected correct 2026 answers was tuned out in the dispatcher's verifier)."""
+        head = (page["content"] or "")[:700].lower()
+        if page["read"] and BLOCKED.search(head):
+            return False, "blocked or paywalled"
+        if len((page["content"] or "").strip()) < 60:
+            return False, "no readable content"
+        from ishti import llm
+        verdict = llm.ask(
+            f"Today is {time.strftime('%d %B %Y')}. Question: {question}\nPage title: {page['title']}\nURL: {page['url']}\n"
+            f"Page text: {page['content'][:1400]}\n\nDoes this page contain information that answers the question, about "
+            "the right thing (same product, person, place, event)? Partly is enough. Reply 'yes' or 'no: <reason in "
+            "3-6 words, e.g. wrong product, different person, outdated, only a homepage>'.",
+            system=None, temperature=0, max_tokens=16).strip().lower()
+        if verdict.startswith("no"):
+            return False, verdict.split(":", 1)[-1].strip(" .") or "doesn't answer it"
+        return True, ""
+
+    def _reword(self, question: str, tried: List[str], skipped: List[str]) -> str:
+        from ishti import llm
+        q = llm.ask(
+            f"Today is {time.strftime('%d %B %Y')}. Question: {question}\nSearches already tried: {tried}\n"
+            f"Pages rejected: {skipped[:6]}\nWrite ONE different web search query that is more likely to find a page "
+            "that answers the question (other keywords, add the likely year/place/official site, or make it more "
+            "specific). Output only the query.", system=None, temperature=0.3, max_tokens=30).strip().strip('"')
+        return q if 2 <= len(q.split()) <= 20 and q not in tried else f"{tried[0]} {time.strftime('%Y')}"
 
     def _localize(self, query: str) -> str:
         """Local questions get the owner's city, so the search engine cannot guess by IP."""

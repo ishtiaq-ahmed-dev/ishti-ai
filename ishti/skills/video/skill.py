@@ -16,6 +16,8 @@ VIDEO_FILE = re.compile(r"[\w\-. ]+\.(?:mp4|mov|mkv|avi|webm|m4v|wmv)\b", re.I)
 EDIT_VERB = re.compile(r"\b(?:edit|trim|cut|merge|compress|convert|speed\s+up|slow\s+down|caption|subtitle|"
                        r"overlay|watermark|title|add\s+(?:text|the\s+name|a\s+name|music|captions?)|reframe|vertical|"
                        r"extract\s+(?:the\s+)?audio|thumbnail|duration|how\s+long)\b", re.I)
+# an editor's pass (ad/promo/reel/effects/CapCut), not a single FFmpeg operation - see pro.py
+PRO = re.compile(r"\b(?:ad|ads|advert|advertisement|promo|promotional|commercial|professional(?:ly)?|effects?|cinematic|reel|reels|trailer|teaser|cap\s?cut|like\s+an?\s+editor|showcase|highlight)\b|\ban\s+add\b", re.I)  # "make it like an add" (typo)
 ORGANIZE = re.compile(r"\b(?:organi[sz]e|arrange|sort|folders?|files\s+in\s+video)\b", re.I)
 
 
@@ -58,7 +60,7 @@ OLDEST = re.compile(r"\b(?:first|oldest|earliest)\b", re.I)
 INFO = re.compile(r"\b(?:info|details|duration|how\s+long|length|resolution|size)\b", re.I)
 ANSWER_EDIT = re.compile(r"\b(?:speed|slow|faster|audio|mute|9:16|portrait|shorter|smaller|text|name|first|last|"
                          r"seconds?|minutes?|mb)\b", re.I)
-EDITS = "trim, add a title/text, make it vertical 9:16, compress, speed up/slow down, extract the audio or a thumbnail"
+EDITS = "make it a professional ad or reel (CapCut project included), trim, add a title/text, make it vertical 9:16, compress, speed up/slow down, extract the audio or a thumbnail"
 
 
 def recent_videos(text, n=8):
@@ -101,7 +103,7 @@ def run(text, session):
             return edit(pend["request"], session, src)
         if NEWEST.search(text) or OLDEST.search(text) or VIDEO_FILE.search(text) or PATH.search(text):
             return edit(text, session)  # a new video request, not the answer to "what edit?"
-        if not (EDIT_VERB.search(text) or ANSWER_EDIT.search(text)):
+        if not (EDIT_VERB.search(text) or ANSWER_EDIT.search(text) or PRO.search(text)):
             return None  # moved on to something else
         return edit(f"{text} ({os.path.basename(pend['file'])})", session, pend["file"])  # answer to "what edit?"
     return edit(text, session)
@@ -128,6 +130,10 @@ def edit(text, session, src=None):
         else:
             return {"reply": "I didn't find any videos in Downloads, Videos or Desktop. Give me the file's name or path.",
                     "sources": []}
+    if PRO.search(text):
+        from ishti.skills.video import pro
+        trace(session, "plan", f"editor's pass on {os.path.basename(src)}: copy, grade, cards, captions, CapCut, checks")
+        return {"reply": pro.make(src, text, session), "sources": []}
     trace(session, "plan", f"{p['operation'].replace('_', ' ')} on {os.path.basename(src)}")
     if p["operation"] == "info" and not INFO.search(text):  # "edit that" / a bare path: ask what to do
         session["pending"] = {"skill": "video", "file": src}
