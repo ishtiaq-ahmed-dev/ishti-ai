@@ -1,0 +1,9 @@
+{
+  "name": "system",
+  "version": "1.0.0",
+  "description": "Live CPU, RAM, GPU/VRAM and disk status of this PC (psutil + nvidia-smi).",
+  "route": "how busy this computer is: CPU, RAM, GPU, VRAM or disk space",
+  "priority": 30,
+  "needs": {"python": ["psutil"], "models": [], "mcp": [], "apis": []},
+  "status": "working"
+}

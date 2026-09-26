@@ -33,7 +33,9 @@ RX = {
     # requires "now": keeps "my code is broken, help me" out of the store
     "status_is": re.compile(rf"^(?P<e>.+?)\s+is\s+now\s+(?P<s>{_SW})[.!]?$", I),
     "where": re.compile(r"^(?:where(?:'s|\s+is|\s+are)|where\s+did\s+i\s+(?:put|save|keep|store)|"
-                        r"what(?:'s|\s+is)\s+the\s+(?:path|location)\s+(?:of|for|to))\s+(?P<e>.+?)\s*\??$", I),
+                        r"what(?:'s|\s+is)\s+the\s+(?:path|location)\s+(?:of|for|to)|"
+                        r"(?:which|what)\s+(?:folder|directory|drive)\s+(?:did\s+i\s+)?(?:put|save|keep|store|is|are)(?:\s+(?:in|on))?)"
+                        r"\s+(?P<e>.+?)(?:\s+(?:in|on))?\s*\??$", I),
     "status_q": re.compile(r"^(?:what(?:'s|\s+is)\s+the\s+)?status\s+(?:of|on)\s+(?P<e>.+?)\s*\??$", I),
     "forget": re.compile(r"^forget\s+(?:about\s+)?(?P<e>.+?)[.!]?$", I),
     "city": re.compile(r"^i\s+(?:now\s+)?(?:live|am\s+living|have\s+moved|moved)\s+(?:to|in)\s+"

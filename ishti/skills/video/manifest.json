@@ -1,0 +1,9 @@
+{
+  "name": "video",
+  "version": "1.0.0",
+  "description": "Video edits with FFmpeg (NVENC on the RTX): trim, extract audio, 9:16 vertical, speed, compress, thumbnail, info. The local LLM maps the request to one operation.",
+  "route": "editing a video file: trim, cut, compress, speed up, vertical short, extract audio",
+  "priority": 30,
+  "needs": {"python": [], "models": ["planner"], "mcp": [], "apis": []},
+  "status": "working"
+}

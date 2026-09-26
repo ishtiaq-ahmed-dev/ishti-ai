@@ -1,0 +1,9 @@
+{
+  "name": "apps",
+  "version": "1.0.0",
+  "description": "Opens desktop apps from a fixed alias list or PATH (never through a shell), or focuses an open window. Wraps desktop/computer_use.",
+  "route": "opening, launching or switching to a desktop application",
+  "priority": 30,
+  "needs": {"python": ["psutil"], "models": [], "mcp": [], "apis": []},
+  "status": "working"
+}

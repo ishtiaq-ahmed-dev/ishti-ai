@@ -1,0 +1,9 @@
+{
+  "name": "files",
+  "version": "1.0.0",
+  "description": "Finds files on this PC by name (or content with 'containing'), optional extension filter. Wraps desktop/computer_use.search_pc.",
+  "route": "finding a file on this computer by its name or type",
+  "priority": 30,
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "status": "working"
+}

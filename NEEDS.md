@@ -16,10 +16,11 @@ Each entry lists what's needed, why it's blocked, and what would have to change.
 - **Now:** a code question loads `ishti-qwen2.5-coder:14b` and evicts the planner, so the first reply after a switch costs about 5 s.
 - **Options:** use `qwen2.5-coder:7b` (both fit), or accept the swap. The config change is one line; no code change.
 
-## 4. Retire the `legacy` skill
-- **Need:** each remaining `orchestrator/crew.py` route becomes its own skill: `pc_search`, `app_control`, `video_edit`, `telemetry` (`deep_research` and `web_fetch` are already done).
-- **Why deferred:** each route already works through the bridge. Splitting all six is a large rewrite with no user-visible gain today.
-- **Then delete:** `orchestrator/memory/capability_registry.py` + `capability_escalation.py` (800 LOC, replaced by skill manifests), `planner.py`, `intent_detector.py` (replaced by Laya).
+## 4. Delete the old engine
+- **Now:** every request goes through dispatcher skills. The `legacy` skill is gone, replaced by `files`, `apps`, `system`, `video`, `deep_research` and `web_fetch`. `orchestrator/crew.py` (1100 LOC), `planner.py`, `self_heal.py`, `model_router.py` and `memory/capability_registry.py` + `capability_escalation.py` are no longer on the request path.
+- **Still uses them:** `orchestrator/test_e2e.py`, `test_capabilities.py` and `doctor.py`, which test through `ExecutionEngine`. `server.py` still builds one at import (for `/api/status` and `/api/rebenchmark`).
+- **To change:** port those tests and doctor checks to `ishti.dispatcher.handle`, then delete the modules. `intent_detector.py` stays: skills use it as their trigger library.
+- **Missing feature this leaves:** multi-skill plans ("find my resume and summarize it"). The old DAG planner only knew its own action types. A new planner would ask the LLM for a list of `(skill, request)` steps over the skill manifests and run them in order through `handle`.
 
 ## 6. Custom "hey ishti" wake word
 - **Now:** hands-free listening works (`ishti/wake.py`) with openWakeWord's pretrained **"hey jarvis"** model. Replies are spoken, and each exchange shows up in the HUD. No microphone is connected at the moment; the listener retries every 30 s.

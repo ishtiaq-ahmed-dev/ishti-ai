@@ -11,7 +11,8 @@ dispatcher (FastAPI, ishti/dispatcher.py)
    ├─ skill triggers (regex)  ─┐
    ├─ Laya typed decisions    ─┼→ skill  →  reply (+ Piper audio)
    └─ default: chat           ─┘
-          skills: memory · weather · web_search · browser (MCP) · chat · legacy
+          skills: memory · weather · web_search · deep_research · web_fetch · browser (MCP)
+                  files · apps · system · video · chat
           memory: exact facts (SQLite)  >  semantic recall (ChromaDB)
 ```
 
@@ -54,7 +55,7 @@ The Python packages are in `venv` (`torch` cu128, `laya`, `chromadb`, `mcp`, `fa
 | `ishti/wake.py` | Hands-free: say **"hey jarvis, …"** (openWakeWord) → record until silence (Silero VAD) → dispatcher → spoken reply |
 | `ishti/skills/<name>/` | `manifest.json` + `skill.py` per skill |
 | `interface/web_ui/` | HUD (FastAPI + WebSocket); `/api/execute` goes through the dispatcher |
-| `orchestrator/`, `tools/`, `browser/`, `desktop/`, `voice/` | Pre-dispatcher code, reused by skills (weather, web search, legacy routes) |
+| `orchestrator/`, `tools/`, `browser/`, `desktop/`, `voice/` | Pre-dispatcher code; skills reuse its tools (search, fetch, weather, file search, FFmpeg). `orchestrator/crew.py` is no longer on the request path (NEEDS.md #4) |
 | `AUDIT.md` / `NEEDS.md` | What was found broken and fixed / what's blocked and why |
 
 ## Memory
@@ -90,7 +91,10 @@ Each skill is a folder with a manifest:
 | deep_research | explicitly requested research reports | multi-query search + parallel reading + relevance filter |
 | web_fetch | answer about a URL in the request | direct HTTP → local headless browser |
 | chat | everything else; code questions use the coder model | Ollama |
-| legacy | PC file search, app launch, video edit, telemetry | `orchestrator/crew.py` (being split up, NEEDS.md #4) |
+| files | find files on this PC by name/type/content | `desktop/computer_use.search_pc` |
+| apps | open or switch to desktop apps (alias list / PATH, never a shell) | `desktop/computer_use` |
+| system | CPU / RAM / GPU / disk status | psutil + nvidia-smi |
+| video | trim, extract audio, vertical 9:16, speed, compress, thumbnail, info | FFmpeg (NVENC) via `tools/video` |
 
 **Adding a skill:** first look for an open-source library or repo that already does it, and wrap it (as `weather` wraps Open-Meteo and `browser` wraps Playwright MCP). If only a commercial product does it, write `ishti/skills/<name>/SPEC.md` describing how it works (from public docs/demos) and how to build it locally, then log it in NEEDS.md for a later build session.
 
