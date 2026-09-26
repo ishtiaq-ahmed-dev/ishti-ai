@@ -104,13 +104,14 @@ async def _capture_loop():
     if CONFIG["voice"].get("wake_enabled"):
         from ishti import wake
 
-        def on_voice_command(text):
-            res = ishti_handle(text, channel="voice")
+        def on_voice_command(text, on_token=None):
+            res = ishti_handle(text, channel="voice", on_token=on_token)  # tokens -> spoken sentence by sentence
             sync_event_callback("assistant_message", {"user": text, "reply": res["final_answer"],
                                                       "sources": res.get("sources", []), "channel": "voice"})
             return res["final_answer"]
 
-        wake.start(on_voice_command)
+        # voice_state / stt_partial / stt_final / barge_in go to the dashboard (orb states, live transcript)
+        wake.start(on_voice_command, on_event=sync_event_callback)
 
 
 async def broadcast_event(event_type: str, data: Dict[str, Any]):
@@ -267,12 +268,17 @@ def _execute(prompt, session_id, on_token=None, on_event=None) -> dict:
     """Dispatcher call shared by /api/execute and /api/execute_stream (runs in a worker thread)."""
     global last_execution_state, last_research_state
     try:
+        speech = None
+        if get_user_memory().get_preferences().audio_output:
+            # speak sentence by sentence while the answer streams, not after it is complete
+            from ishti.talk import Sentences, talker
+            speech = Sentences(talker())
+            shown = on_token
+            on_token = lambda tok: (speech.feed(tok), shown and shown(tok))
         res = ishti_handle(prompt, session_id=session_id, on_token=on_token, on_event=on_event)
-        # Speak the whole answer, not just its first line, when audio output is enabled.
         answer = res.get("final_answer", "")
-        if answer and get_user_memory().get_preferences().audio_output:
-            from ishti.voice import speak as piper_speak
-            piper_speak(answer)
+        if answer and speech:
+            speech.flush(None if speech.spoke else answer)  # non-streaming skills: the whole answer, still chunked
             res["spoken"] = True
     except Exception as exc:
         ErrorLogger.log_error(subsystem="SERVER", error=exc, user_prompt=prompt, context="execute endpoint")

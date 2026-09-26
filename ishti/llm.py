@@ -44,6 +44,10 @@ def model_for(role: str) -> str:
     return name
 
 
+class Cancelled(Exception):
+    """Raised by an on_token callback to abort a streaming generation (voice barge-in)."""
+
+
 def style() -> str:
     """What goes with every styled answer: the base style, the owner's own custom instructions (edited in
     About you) and the standing preferences learned from their chats. Shown verbatim in About you."""

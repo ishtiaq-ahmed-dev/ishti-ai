@@ -346,7 +346,20 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
       setAudioStream(stream);
       const chunks: Blob[] = [];
       const rec = new MediaRecorder(stream);
-      rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+      let inflight = false;
+      // every second: transcribe what has been said so far and show it in the input, live
+      rec.ondataavailable = async (e) => {
+        if (!e.data.size) return;
+        chunks.push(e.data);
+        if (rec.state !== "recording" || inflight) return;
+        inflight = true;
+        try {
+          const form = new FormData();
+          form.append("audio", new Blob(chunks, { type: rec.mimeType }), "partial.webm");
+          const { text } = await fetch("/api/stt", { method: "POST", body: form }).then((r) => r.json());
+          if (text && rec.state === "recording") setInput(text);
+        } catch {} finally { inflight = false; }
+      };
       rec.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
         setAudioStream(null);
@@ -357,7 +370,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
         if (text) send(text);
       };
       recorder.current = rec;
-      rec.start();
+      rec.start(1000);  // 1 s chunks feed the live transcript
       setRecording(true);
     } catch {
       setRecording(false);

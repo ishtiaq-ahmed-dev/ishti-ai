@@ -75,24 +75,17 @@ def synthesize(text: str) -> bytes:
 
 
 def speak(text: str, wait: bool = False):
-    """Play on this PC's speakers (in the background unless wait); SAPI5 if Piper is unavailable."""
-    def play():
-        with _play_lock:
-            try:
-                import numpy as np
-                import sounddevice as sd
-                with wave.open(io.BytesIO(synthesize(text))) as wf:
-                    audio = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
-                    sd.play(audio, wf.getframerate())
-                sd.wait()
-            except Exception as exc:
-                print(f"[voice] Piper playback failed ({exc}); falling back to SAPI5")
-                from voice.tts import speak as sapi_speak
-                sapi_speak(speakable(text))
-    t = threading.Thread(target=play, daemon=True)
-    t.start()
-    if wait:
-        t.join()
+    """Play on this PC's speakers through the one Talker (sentence by sentence, interruptible by barge-in);
+    SAPI5 if Piper/the audio device is unavailable."""
+    try:
+        from ishti.talk import Sentences, talker
+        Sentences(talker()).flush(text)
+        if wait:
+            talker().wait()
+    except Exception as exc:
+        print(f"[voice] Piper playback failed ({exc}); falling back to SAPI5")
+        from voice.tts import speak as sapi_speak
+        sapi_speak(speakable(text))
 
 
 if __name__ == "__main__":

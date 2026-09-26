@@ -213,6 +213,8 @@ def _run(text, s, dec):
         try:
             out = SKILLS[name].run(text, s)
         except Exception as exc:
+            if type(exc).__name__ == "Cancelled":  # voice barge-in aborted the reply: not a skill failure
+                raise
             ErrorLogger.log_error(subsystem=f"SKILL_{name.upper()}", error=exc, user_prompt=text,
                                   context="dispatcher.handle")
             out = {"reply": f"The {name} skill failed: {type(exc).__name__}: {str(exc)[:160]}"}
@@ -518,6 +520,11 @@ def warm_up():
     """Load Laya now so the first real request doesn't pay ~4 s. Whisper is NOT preloaded: it would sit
     on ~1.6 GB of VRAM next to the 14B model and push it into slow shared memory; it loads on first use."""
     route("hello", SKILLS)
+    try:  # Piper is small and on the CPU: loaded now, the first spoken sentence starts in ~0.1 s, not ~1 s
+        from ishti.voice import tts_voice
+        tts_voice()
+    except Exception as exc:
+        print(f"[dispatcher] Piper preload skipped: {exc}")
     try:
         import torch
         torch.cuda.empty_cache()

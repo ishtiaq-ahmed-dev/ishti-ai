@@ -6,7 +6,7 @@ import { Chat } from "@/sections/Chat";
 import { Memory, Settings, Skills, System, Tasks } from "@/sections/Pages";
 import { Overview } from "@/sections/Overview";
 import { AboutYou } from "@/sections/AboutYou";
-import { LiveNarration, type Live } from "@/components/LiveNarration";
+import { LiveNarration, type Live, type VoiceState } from "@/components/LiveNarration";
 import { Markets } from "@/sections/Markets";
 import { NotificationBell } from "@/components/rare/notification-bell";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -120,13 +120,21 @@ export default function App() {
     const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
     ws.onmessage = (m) => {
       const msg = JSON.parse(m.data);
+      if (msg.type === "voice_state") {  // hands-free voice: idle / listening / thinking / speaking
+        const v = msg.data?.state as VoiceState;
+        if (v === "idle") setTimeout(() => setLive((l) => (l?.voice === "idle" ? null : l)), 1500);
+        setLive((l) => ({ text: v === "listening" ? "" : l?.text ?? "", step: v === "listening" ? "Say your command" : l?.step ?? "",
+                          done: v === "idle", voice: v }));
+      }
+      if (msg.type === "stt_partial" || msg.type === "stt_final")  // what ISHTI hears, as the owner talks
+        setLive((l) => ({ ...(l ?? { step: "", done: false, voice: "listening" as VoiceState }), text: String(msg.data?.text ?? "") }));
+      if (msg.type === "barge_in") setLive((l) => ({ ...(l ?? { text: "", done: false }), step: "Stopped - listening to you", voice: "listening" }));
       if (msg.type === "trace" && msg.data?.channel === "voice") {  // live steps of a spoken request
         const e = msg.data;
-        if (e.type === "received") setLive({ text: String(e.text ?? ""), step: "Listening done, thinking…", done: false });
-        else if (e.type === "done") { setLive((l) => (l ? { ...l, step: "Done", done: true } : l)); setTimeout(() => setLive(null), 2500); }
-        else {
+        if (e.type === "received") setLive((l) => ({ text: String(e.text ?? ""), step: "Understanding…", done: false, voice: l?.voice ?? "thinking" }));
+        else if (e.type !== "done") {
           const step = e.type === "route" ? `Using ${e.skill}` : e.type === "escalate" ? `Trying ${e.to} instead` : e.label ?? (e.type === "step" ? e.skill : null);
-          if (step) setLive((l) => ({ text: l?.text ?? "", step: String(step), done: false }));
+          if (step) setLive((l) => ({ text: l?.text ?? "", step: String(step), done: false, voice: l?.voice ?? "thinking" }));
         }
       }
       if (msg.type === "assistant_message" && String(msg.data?.reply ?? "").startsWith("⏰")) {

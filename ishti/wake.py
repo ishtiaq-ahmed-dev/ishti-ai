@@ -1,37 +1,57 @@
-"""Hands-free voice: openWakeWord ("hey jarvis" pretrained model, CPU) -> record until
-Silero VAD hears silence -> faster-whisper -> dispatcher -> Piper.
-Voice is just another input channel into handle().
-The ONNX model detects "hey jarvis" phonetically; ISHTI treats this as its own wake word.
-If Whisper transcribes the wake phrase as "jarvis" or similar, ISHTI corrects with humour."""
+"""Hands-free, real-time voice: openWakeWord ("hey jarvis" model, CPU) -> record until Silero VAD hears silence
+(live partial transcripts on the dashboard) -> faster-whisper -> dispatcher -> reply spoken sentence by sentence
+while it is still being written (talk.Talker).
+
+Barge-in: the microphone stays open while ISHTI thinks and speaks. Sustained speech (not a cough: ~120 ms of VAD
+speech) pauses the voice at once; a quick transcript of what was heard is compared word by word with what ISHTI is
+saying - its own voice through the speakers resumes, anything else stops the reply, cancels the generation, keeps
+what was being said (so "continue" picks it up) and records the new command.
+
+States broadcast to the dashboard: idle (waiting for the wake word), listening, thinking, speaking."""
 import collections
 import re
 import threading
+import time
 
 import numpy as np
 
 from ishti import CONFIG
 
 RATE, FRAME = 16000, 1280                 # openWakeWord works on 80 ms frames of 16 kHz int16
+BLOCK = 640                               # mic read size: 40 ms, the barge-in detector's resolution
 PRE_ROLL = 6                              # keep 0.5 s before the trigger: the command often follows in one breath
 END_SILENCE, NO_SPEECH, MAX_LEN = 10, 50, 150   # frames: 0.8 s quiet ends it, 4 s of nothing cancels, 12 s cap
+PARTIAL_EVERY = 12                        # frames (~1 s) between live partial transcripts
 # Regex strips the wake phrase. Covers common Whisper mis-transcriptions of "hey ishti".
 WAKE_TEXT = re.compile(r"^\W*(?:hey|hi|ok|okay)?\W*(?:jarvis|ishti|travis|jessica|istie|ishi|isti|yishti)\b[,.:!?]*\W*", re.I)
 # Detects if Whisper heard a wrong name (not "ishti") so we can correct with humour.
 _WRONG_NAME = re.compile(r"\b(?:jarvis|travis|jessica|alexa|siri|cortana|google)\b", re.I)
+CONTINUE = re.compile(r"^\W*(?:continue|go on|carry on|keep going|resume|as you were saying)\W*$", re.I)
+BARGE = {"enabled": True, "vad_threshold": 0.6, "min_ms": 120, "check_ms": 700, "echo_overlap": 0.5, "cooldown_s": 1.0}
+BARGE.update(CONFIG["voice"].get("barge_in", {}))
 
 
 class Listener:
-    def __init__(self, on_command):
+    def __init__(self, on_command, on_event=None):
         from openwakeword.model import Model
         from openwakeword.vad import VAD
         cfg = CONFIG["voice"]
         self.oww = Model(wakeword_models=[cfg["wake_model"]], inference_framework="onnx")
-        self.vad = VAD()
+        self.vad = VAD()          # end-of-command detection
+        self.barge_vad = VAD()    # separate state: watches for interruptions while ISHTI thinks/speaks
         self.threshold = cfg["wake_threshold"]
         self.on_command = on_command
+        self.on_event = on_event or (lambda kind, data: None)
         self.recent = collections.deque(maxlen=PRE_ROLL)
         self.buf = None
+        self.busy = False                     # a command is being handled
+        self.cancel = threading.Event()
+        self.interrupted = None               # {"request", "rest"} of the reply the owner cut off
+        self._pre = collections.deque(maxlen=int(BARGE["min_ms"] / 40) + 2)
+        self._run_len, self._check, self._decision, self._quiet_until = 0, None, None, 0.0
+        self._partial_busy = False
 
+    # ---------------------------------------------------------------- wake word + command capture
     def feed(self, frame: np.ndarray):
         """One 80 ms frame in. Returns the finished utterance (int16 audio, possibly empty) or None."""
         if self.buf is None:
@@ -39,6 +59,7 @@ class Listener:
             if max(self.oww.predict(frame).values()) < self.threshold:
                 return None
             self.buf, self.heard, self.silent = list(self.recent), False, 0
+            self.state("listening")
             return None
         self.buf.append(frame)
         if self.vad.predict(frame, frame_size=640) >= 0.5:
@@ -46,6 +67,8 @@ class Listener:
         else:
             self.silent += 1
         n = len(self.buf) - PRE_ROLL
+        if n > 0 and n % PARTIAL_EVERY == 0 and self.heard:
+            self._partial(np.concatenate(self.buf))
         if (self.heard and self.silent >= END_SILENCE) or (not self.heard and n >= NO_SPEECH) or n >= MAX_LEN:
             audio = np.concatenate(self.buf) if self.heard else np.zeros(0, np.int16)
             self.buf = None
@@ -65,33 +88,150 @@ class Listener:
     @staticmethod
     def _identity_correction(wrong_name: str) -> str:
         """Playful one-liner when Whisper hears 'Jarvis' (or another wrong name)."""
-        name = wrong_name.capitalize()
-        return (
-            f"Haha, hey! I'm Ishti, not {name}! "
-            f"But no worries, I heard you. Let me help — "
-        )
+        return f"Haha, hey! I'm Ishti, not {wrong_name.capitalize()}! But no worries, I heard you. Let me help. "
+
+    def state(self, name):
+        self.on_event("voice_state", {"state": name})
+
+    def _partial(self, audio):
+        """Live 'what I'm hearing' for the dashboard; skipped if the previous one is still running."""
+        if self._partial_busy:
+            return
+        self._partial_busy = True
+
+        def run():
+            try:
+                from ishti.voice import transcribe
+                text = WAKE_TEXT.sub("", transcribe(audio.astype(np.float32) / 32768)).strip()
+                if text:
+                    self.on_event("stt_partial", {"text": text})
+            finally:
+                self._partial_busy = False
+        threading.Thread(target=run, daemon=True).start()
+
+    # ---------------------------------------------------------------- barge-in
+    def watch(self, block, talker):
+        """While ISHTI thinks or speaks: returns audio frames to start recording a new command from, or None."""
+        if self._decision is not None:            # the echo check finished
+            verdict, self._decision = self._decision, None
+            frames, self._check = self._check, None
+            if verdict == "echo":
+                talker.resume()
+                self._quiet_until = time.time() + BARGE["cooldown_s"]
+                return None
+            self.interrupted = {"request": getattr(self, "request", ""), "rest": talker.stop()}
+            self.cancel.set()
+            self.on_event("barge_in", {"heard": verdict})
+            return frames + [block]
+        if self._check is not None:               # still deciding: keep the audio, it may be a new command
+            self._check.append(block)
+            return None
+        p = self.barge_vad.predict(block, frame_size=BLOCK)
+        self._pre.append(block)
+        if time.time() < self._quiet_until or p < BARGE["vad_threshold"]:
+            self._run_len = 0
+            return None
+        self._run_len += 1
+        if self._run_len * 40 < BARGE["min_ms"]:
+            return None
+        speaking = talker.speaking
+        talker.pause()                            # stop the voice within one audio block
+        self._check, self._run_len = list(self._pre), 0
+        check_frames = int(BARGE["check_ms"] / 40)
+
+        def decide():
+            from ishti.talk import is_echo
+            from ishti.voice import transcribe
+            while self._check is not None and len(self._check) < check_frames:
+                time.sleep(0.02)
+            frames = list(self._check or [])
+            heard = transcribe(np.concatenate(frames).astype(np.float32) / 32768) if frames else ""
+            words = re.findall(r"[a-z0-9']+", heard.lower())
+            if speaking:
+                self._decision = "echo" if is_echo(heard, talker, BARGE["echo_overlap"]) else heard
+            else:  # thinking, nothing playing: no echo possible, but a stray word must not abort the task
+                self._decision = heard if len(words) >= 2 else "echo"
+        threading.Thread(target=decide, daemon=True).start()
+        return None
+
+    # ---------------------------------------------------------------- command handling
+    def _handle(self, audio, talker):
+        from ishti.llm import Cancelled
+        from ishti.talk import Sentences
+        self.busy = True
+        self.cancel = cancel = threading.Event()
+        try:
+            self.state("thinking")
+            text, wrong_name = self.command_text(audio)
+            if not text:
+                return
+            self.on_event("stt_final", {"text": text})
+            print(f"[wake] heard: {text!r}" + (f" (misheard as '{wrong_name}')" if wrong_name else ""))
+            if CONTINUE.match(text) and self.interrupted and self.interrupted.get("rest"):
+                self.state("speaking")
+                Sentences(talker).flush(self.interrupted["rest"])
+                self.interrupted = None
+                talker.wait()
+                return
+            self.request = text
+            speech = Sentences(talker)
+            if wrong_name:
+                talker.say(self._identity_correction(wrong_name))
+
+            def on_token(tok):
+                if cancel.is_set():
+                    raise Cancelled
+                if not speech.spoke:
+                    self.state("speaking")
+                speech.feed(tok)
+            try:
+                reply = self.on_command(text, on_token)
+            except Cancelled:
+                return
+            if cancel.is_set():  # interrupted while a non-streaming skill worked: its answer is dropped
+                return
+            self.state("speaking")
+            speech.flush(None if speech.spoke else reply)
+            while talker.speaking and not cancel.is_set():
+                time.sleep(0.05)
+        finally:
+            self.busy = False
+            if not cancel.is_set():
+                self.state("idle")
 
     def run(self, stop: threading.Event):
         import sounddevice as sd
-        from ishti.voice import speak
+        from ishti.talk import talker
+        tk = talker()
         warned = False
         while not stop.is_set():
             try:
-                # Reopened after every command so audio buffered while ISHTI was talking is dropped.
-                with sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=FRAME) as mic:
-                    print(f"[wake] listening (wake model '{CONFIG['voice']['wake_model']}')")
-                    warned = False
+                with sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=BLOCK) as mic:
+                    print(f"[wake] listening (wake model '{CONFIG['voice']['wake_model']}', barge-in "
+                          f"{'on' if BARGE['enabled'] else 'off'})")
+                    warned, pair = False, []
+                    self.state("idle")
                     while not stop.is_set():
-                        audio = self.feed(mic.read(FRAME)[0][:, 0])
+                        block = mic.read(BLOCK)[0][:, 0].copy()
+                        if (self.busy or tk.speaking) and self.buf is None:
+                            start = self.watch(block, tk) if BARGE["enabled"] else None
+                            if start is None:
+                                continue
+                            # the interruption is the start of the next command: record the rest of it
+                            joined = np.concatenate(start)
+                            self.buf = [joined[i:i + FRAME] for i in range(0, len(joined) - FRAME + 1, FRAME)]
+                            self.heard, self.silent = True, 0
+                            self.state("listening")
+                            continue
+                        pair.append(block)
+                        if len(pair) < 2:
+                            continue
+                        audio, pair = self.feed(np.concatenate(pair)), []
                         if audio is not None:
-                            break
-                text, wrong_name = self.command_text(audio)
-                if text:
-                    print(f"[wake] heard: {text!r}" + (f" (misheard as '{wrong_name}')" if wrong_name else ""))
-                    reply = self.on_command(text)
-                    if wrong_name:
-                        reply = self._identity_correction(wrong_name) + reply
-                    speak(reply, wait=True)
+                            if len(audio):
+                                threading.Thread(target=self._handle, args=(audio, tk), daemon=True).start()
+                            else:
+                                self.state("idle")
             except Exception as exc:
                 if not warned:
                     print(f"[wake] no usable microphone ({exc}); retrying every 30 s")
@@ -99,10 +239,10 @@ class Listener:
                 stop.wait(30)
 
 
-def start(on_command) -> threading.Event:
-    """Background hands-free loop; returns the Event that stops it."""
+def start(on_command, on_event=None) -> threading.Event:
+    """Background hands-free loop; returns the Event that stops it. on_command(text, on_token) -> reply."""
     stop = threading.Event()
-    threading.Thread(target=Listener(on_command).run, args=(stop,), daemon=True, name="wake").start()
+    threading.Thread(target=Listener(on_command, on_event).run, args=(stop,), daemon=True, name="wake").start()
     return stop
 
 
@@ -125,13 +265,45 @@ if __name__ == "__main__":
                 return out
         return None
 
-    lis = Listener(on_command=None)
+    events = []
+    lis = Listener(on_command=None, on_event=lambda k, d: events.append((k, d)))
     assert run_through(lis, pcm16k("What is the weather tomorrow?")) is None, "no wake word -> nothing"
     got = run_through(lis, pcm16k("Hey Jarvis, what is the weather tomorrow?"))
     assert got is not None and len(got), "wake word not detected"
     text, wrong = lis.command_text(got)
     print(f"command: {text!r}, wrong_name: {wrong!r}")
     assert "weather" in text.lower() and "jarvis" not in text.lower(), text
-    if wrong:
-        print(f"[self-check] identity correction would fire for '{wrong}'")
-    print("[self-check] wake OK - ignores speech without the wake word, captures the command after it")
+    assert ("voice_state", {"state": "listening"}) in events
+
+    # barge-in: ISHTI's own sentence coming back through the mic is echo; different words interrupt
+    class FakeTalker:
+        speaking, paused, stopped = True, False, None
+        said = ["Tomorrow in Peshawar it will be sunny and thirty four degrees."]
+        def pause(self): self.paused = True
+        def resume(self): self.paused = False
+        def stop(self): self.stopped = "rest"; return "rest"
+        def recent_words(self): return set(re.findall(r"[a-z0-9']+", " ".join(self.said).lower()))
+
+    def barge(listener, talker, speech):
+        audio = np.concatenate([speech, np.zeros(RATE // 2, np.int16)])
+        audio = audio[: len(audio) // BLOCK * BLOCK]
+        for i in range(0, len(audio), BLOCK):
+            if (out := listener.watch(audio[i:i + BLOCK], talker)) is not None:
+                return out
+            time.sleep(0.005)
+        deadline = time.time() + 10
+        while listener._check is not None and time.time() < deadline:  # let the echo check finish
+            if (out := listener.watch(np.zeros(BLOCK, np.int16), talker)) is not None:
+                return out
+            time.sleep(0.02)
+        return None
+
+    t1 = FakeTalker()
+    assert barge(lis, t1, pcm16k("Tomorrow in Peshawar it will be sunny.")) is None and t1.stopped is None, "echo must not interrupt"
+    assert not t1.paused, "echo: the voice resumes"
+    lis._quiet_until = 0
+    t2 = FakeTalker()
+    frames = barge(lis, t2, pcm16k("Stop. Open YouTube instead."))
+    assert frames is not None and t2.stopped == "rest" and lis.cancel.is_set(), "a real interruption stops and cancels"
+    assert lis.interrupted["rest"] == "rest"
+    print("[self-check] wake OK - wake word, command capture, echo resumes, real speech barges in and keeps context")
