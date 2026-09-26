@@ -108,6 +108,8 @@ async def _capture_loop():
     start_price_watch()  # products the owner asked to track keep being re-priced
     from ishti.skills.lifelog.skill import start_sampler
     start_sampler()  # screen time: the foreground app once a minute, local only
+    from ishti.skills.desktop.more import start_clipboard_history
+    start_clipboard_history()  # "clipboard history": last 100 text copies, local SQLite, secrets skipped
     if CONFIG["voice"].get("wake_enabled"):
         from ishti import wake
 

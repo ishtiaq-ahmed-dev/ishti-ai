@@ -10,6 +10,7 @@ import subprocess
 
 from ishti import ROOT
 from ishti.skills import ask_first, trace
+from ishti.skills.desktop import more
 
 I = re.I
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -34,10 +35,15 @@ OPS = [  # (name, pattern) - first match wins
 
 
 def match(text):
-    return any(rx.search(text) for _, rx in OPS)
+    return more.match(text) or any(rx.search(text) for _, rx in OPS)
 
 
 def run(text, session):
+    for name, rx in more.OPS:  # first: "close this desktop" is a virtual desktop, not a window called "this desktop"
+        if m := rx.search(text):
+            trace(session, "desktop", name.replace("_", " "))
+            out = getattr(more, "op_" + name)(m, text, session)
+            return out if isinstance(out, dict) or out is None else {"reply": out, "sources": []}
     for name, rx in OPS:
         if m := rx.search(text):
             trace(session, "desktop", name.replace("_", " "))
@@ -342,4 +348,26 @@ if __name__ == "__main__":
     rows = _table("Name   Id               Version    Available  Source\n----------------------------------------------------\n"
                   "CapCut ByteDance.CapCut 8.9.1.3802 9.5.0.4050 msstore\n")
     assert rows == [("CapCut", "ByteDance.CapCut", "8.9.1.3802", "9.5.0.4050")], rows
-    print("[self-check] desktop OK - op routing, winget table parsing")
+    more_cases = {"new virtual desktop": "vdesk", "switch to the next desktop": "vdesk", "go to desktop 2": "vdesk",
+                  "close this desktop": "vdesk", "clipboard history": "clip_history", "copy item 3": "clip_history",
+                  "list my monitors": "displays", "extend my displays": "displays", "second screen only": "displays",
+                  "print queue": "print_queue", "cancel all print jobs": "print_queue",
+                  "print D:/docs/cv.pdf": "print_file", "print D:/docs/cv.pdf 2 copies": "print_file",
+                  "record a macro called login": "macro", "stop recording macro": "macro", "play macro login": "macro",
+                  "list my macros": "macro"}
+    for t, want in more_cases.items():
+        got = next((n for n, rx in more.OPS if rx.search(t)), None)
+        assert got == want, (t, got, want)
+    assert not more.match("print hello world in python") and not more.match("close the notepad window")
+    import sqlite3
+    import tempfile
+    db = sqlite3.connect(os.path.join(tempfile.mkdtemp(), "c.db"))
+    db.execute("CREATE TABLE clips(id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, text TEXT)")
+    assert more.remember_clip("first note", db) and not more.remember_clip("first note", db)  # no repeats
+    assert not more.remember_clip("sk-abc123def456ghi789", db) and not more.remember_clip("Xy7kP2mQ9vL4nR8tW3", db)  # secrets
+    for i in range(more.CLIP_KEEP + 5):
+        more.remember_clip(f"item {i}", db)
+    assert len(more.recent_clips(500, db)) == more.CLIP_KEEP and more.recent_clips(1, db)[0][0] == f"item {more.CLIP_KEEP + 4}"
+    assert "display(s)" in more.op_displays(more.OPS[2][1].search("list my monitors"), "", {})
+    print("[self-check] desktop OK - op routing, winget table parsing, virtual desktops/clipboard history/displays/"
+          "print/macro routing, clipboard ring (no repeats, no secrets, capped)")
