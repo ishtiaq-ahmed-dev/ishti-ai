@@ -8,6 +8,8 @@
 import json
 import os
 import re
+import shutil
+import subprocess
 import time
 from collections import deque
 
@@ -37,6 +39,8 @@ RX = {
     "city": re.compile(r"^i\s+(?:now\s+)?(?:live|am\s+living|have\s+moved|moved)\s+(?:to|in)\s+"
                        r"(?P<c>[A-Za-z][A-Za-z .'-]{1,40}?)[.!]?$", I),
     "remember": re.compile(r"^remember\b", I),
+    "open": re.compile(r"^(?:open|show)\s+(?:up\s+)?(?P<e>.+?)(?:\s+(?:in|with)\s+(?P<app>vs\s*code|code|"
+                       r"(?:file\s+)?explorer|terminal))?[.!]?$", I),
 }
 # ponytail: word-list heuristic for "is this where-question about the owner's own stuff?".
 # Upgrade path: ask Laya a noul question once the typed-decisions checkpoint is fine-tuned.
@@ -67,8 +71,34 @@ def extract_path(t):
     return os.path.normpath(s + "\\" if re.fullmatch(r"[A-Za-z]:", s) else s)
 
 
+def _saved_location(text):
+    m = RX["open"].match(text.strip())
+    return m and get_facts().get(m["e"]).get("location")
+
+
+def _open(t, session):
+    m = RX["open"].match(t)
+    f = get_facts().get(m["e"])
+    path, app = f["location"], (m["app"] or "").lower().replace(" ", "")
+    if not os.path.exists(path):
+        return _where(m["e"], "where is my " + m["e"], session)  # stale path: search, confirm, update
+    session["last_entity"] = f["entity"]
+    if app in ("vscode", "code") and shutil.which("code"):
+        subprocess.Popen([shutil.which("code"), path])
+        where = "VS Code"
+    elif app == "terminal" and shutil.which("wt"):
+        subprocess.Popen([shutil.which("wt"), "-d", path if os.path.isdir(path) else os.path.dirname(path)])
+        where = "Terminal"
+    else:
+        os.startfile(path)  # folder -> Explorer, file -> its default app; no shell involved
+        where = "Explorer" if os.path.isdir(path) else "its default app"
+    return R(f"Opened {f['entity']} in {where}: {path}")
+
+
 def match(text):
     t = text.strip()
+    if _saved_location(t):
+        return True
     if extract_path(t) and any(RX[k].search(t) for k in ("move", "moved_passive", "at")):
         return True
     return any(RX[k].match(t) for k in ("status_i", "status_is", "where", "status_q", "forget", "city", "remember"))
@@ -179,6 +209,8 @@ def run(text, session):
     if p and p.get("skill") == "memory":
         session["pending"] = None
         return _pending(t, p, session)
+    if _saved_location(t):
+        return _open(t, session)
     if m := RX["forget"].match(t):
         e = _resolve(m["e"], session)
         return R(f"Forgot {e}." if facts.forget(e) else f"Nothing saved for {e}.")
@@ -235,5 +267,6 @@ if __name__ == "__main__":
     assert "1." in r and "eagle-project" in r and s["pending"], r
     assert "Saved" in run("1", s)["reply"] and F.get_facts().get("eagle")["location"].endswith("eagle-project")
     assert run("where is Paris?", s) is None, "general questions fall through"
+    assert match("open falcon") and not match("open notepad") and not match("open github.com")
     assert "Forgot" in run("forget eagle", s)["reply"] and not F.get_facts().get("eagle")
     print("[self-check] memory skill OK - store, move-update, status, pronoun, search+confirm, forget")

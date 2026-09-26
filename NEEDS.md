@@ -4,8 +4,8 @@ Each entry lists what's needed, why it's blocked, and what would have to change.
 
 ## 1. Fine-tune Laya on ISHTI's own traffic
 - **Need:** a `laya-typed-decisions` checkpoint fine-tuned on real ISHTI routing decisions.
-- **Blocked by:** data. Every decision is already logged to `data/ishti.db` (`route_log`: text, skill, confidence, source, Laya extras), but a fine-tune needs a few hundred **corrected** labels, and so far there are about 25 (`ishti/check.py` `LABELLED`).
-- **To change:** add a "wrong skill" correction (HUD button or "that should have been X"), which writes the corrected label into `route_log`. Then export it and run the upstream Kaggle notebook (`notebooks/laya_finetune_typed_decisions_2xT4_kaggle.ipynb` in NandhaKishorM/laya) and point `router.laya_model` at the new checkpoint. No code change is needed in the router.
+- **Blocked by:** data volume. Every decision is logged to `data/ishti.db` (`route_log`). Saying **"that should have been <skill>"** or **"use the <skill> for that"** re-runs the last request with that skill and logs it with `source = correction` (a gold label). A fine-tune needs a few hundred such labels; so far there are about 25 (`ishti/check.py` `LABELLED`).
+- **To change:** once there are enough, export `GET /api/route_log` (corrections are gold labels, `rule` rows are high-precision weak labels), run the upstream Kaggle notebook (`notebooks/laya_finetune_typed_decisions_2xT4_kaggle.ipynb` in NandhaKishorM/laya), and point `router.laya_model` at the new checkpoint. No router code change is needed.
 
 ## 2. Visual (screenshot) fallback for the browser skill
 - **Need:** click by coordinates on pages whose accessibility tree is useless (canvas apps, some captcha-free widgets).

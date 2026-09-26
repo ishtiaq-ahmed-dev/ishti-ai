@@ -58,6 +58,8 @@ The Python packages are in `venv` (`torch` cu128, `laya`, `chromadb`, `mcp`, `fa
 - **Exact facts win.** "Project Falcon is on D: at D:\work\falcon" stores that path. "Where is falcon?" answers straight from SQLite, with no searching.
 - **Changes update the same record.** Examples: "I moved falcon to D:\archive\falcon", "I finished falcon", "this is now working" ("this" means the last project mentioned).
 - **Unknown locations:** ISHTI searches D:, then Desktop, then Downloads (breadth-first, depth 4, 10 s per root), lists what it found, and saves your pick.
+- **"open falcon"** (or "open falcon in vs code" / "in terminal") opens the saved location.
+- **Wrong skill?** Say "that should have been web search" (or "use the browser for that"). The last request re-runs with that skill, and the correction is logged as training data for Laya.
 - **Semantic memory** (ChromaDB) holds past conversation. Recalls that mention an entity with an exact fact are dropped.
 
 ## Skills

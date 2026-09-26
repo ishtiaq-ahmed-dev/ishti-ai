@@ -2,6 +2,7 @@
 Text and voice both call handle(); voice is just another input channel."""
 import io
 import json
+import re
 import threading
 import time
 
@@ -19,6 +20,13 @@ from orchestrator.response_guard import is_safe_for_history
 
 SKILLS = load_skills()
 SESSIONS = {}
+# "that should have been web search" / "use the browser for that" -> re-run the last request with
+# that skill and log it as a labelled example for fine-tuning Laya (NEEDS.md #1).
+CORRECTION = re.compile(
+    r"^(?:no[,.!]?\s+)?(?:(?:that|this|it)\s+(?:should\s+(?:have\s+)?(?:been|gone\s+to|used)|was\s+(?:meant\s+)?for)"
+    r"|use)\s+(?:the\s+)?(?P<skill>[a-z_ ]+?)(?:\s+skill)?(?:\s+for\s+(?:that|this|it))?[.!]?$", re.I)
+ALIASES = {"search": "web_search", "web": "web_search", "internet": "web_search", "web search": "web_search",
+           "pc": "legacy", "computer": "legacy", "files": "legacy", "browser": "browser", "llm": "chat"}
 HOOKS = {"confirm": None, "emit": None, "engine": None}  # filled by the web server for UI-bound skills
 api = APIRouter()
 
@@ -53,9 +61,15 @@ def handle(text: str, session_id: str = None, channel: str = "text") -> dict:
     sid = session_id or conv.active_session_id or conv.new_chat("New Session")
     s = SESSIONS.setdefault(sid, {"id": sid, "history": [], "pending": None, "last_entity": None})
 
-    pending = s.get("pending")
-    dec = ({"skill": pending["skill"], "confidence": 1.0, "source": "pending"} if pending
-           else route(text, SKILLS))
+    pending, fix = s.get("pending"), CORRECTION.match(text.strip())
+    wanted = fix and ALIASES.get(fix["skill"].lower(), fix["skill"].lower().replace(" ", "_"))
+    if fix and wanted in SKILLS and s.get("last_request"):
+        text = s["last_request"]
+        dec = {"skill": wanted, "confidence": 1.0, "source": "correction", "was": s.get("last_skill")}
+    elif pending:
+        dec = {"skill": pending["skill"], "confidence": 1.0, "source": "pending"}
+    else:
+        dec = route(text, SKILLS)
     tried, out = set(), None
     while dec["skill"]:
         name = dec["skill"]
@@ -74,6 +88,7 @@ def handle(text: str, session_id: str = None, channel: str = "text") -> dict:
         name, out = None, {"reply": "I couldn't handle that - no skill accepted it."}
 
     reply = out["reply"]
+    s["last_request"], s["last_skill"] = text, name
     get_facts().log_route(text, name, dec.get("confidence", 0), dec.get("source", ""), json.dumps(dec))
     s["history"] = (s["history"] + [{"role": "user", "content": text},
                                     {"role": "assistant", "content": reply}])[-20:]
@@ -110,6 +125,16 @@ async def facts_endpoint():
     with f.lock:
         rows = f.db.execute("SELECT entity, attr, value, previous, updated_at FROM facts ORDER BY key").fetchall()
     return {"facts": [dict(zip(("entity", "attr", "value", "previous", "updated_at"), r)) for r in rows]}
+
+
+@api.get("/api/route_log")
+async def route_log_endpoint(limit: int = 500):
+    """Routing decisions for fine-tuning Laya: corrections are gold labels, rules are high-precision."""
+    f = get_facts()
+    with f.lock:
+        rows = f.db.execute("SELECT ts, text, skill, confidence, source FROM route_log ORDER BY ts DESC LIMIT ?",
+                            (limit,)).fetchall()
+    return {"rows": [dict(zip(("ts", "text", "skill", "confidence", "source"), r)) for r in rows]}
 
 
 @api.delete("/api/facts/{name}")
