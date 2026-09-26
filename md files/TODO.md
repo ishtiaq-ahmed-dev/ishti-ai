@@ -99,7 +99,7 @@ New:
 - [x] 1. Desktop & OS: windows, clipboard, screenshot, OCR, volume, brightness, processes, winget install/update, lock/sleep
 - [x] 2. Files: batch rename, zip, dedupe, diff, tags, recycle bin (send2trash)
 - [x] 3. Browser extras: downloads, page-change monitor, scrape, captcha handoff
-- [ ] 10. Development: run code (sandbox), git, tests, lint, explain codebase
+- [x] 10. Development: run code (sandbox), git, tests, lint, explain codebase
 - [ ] 5-9. Media/docs/office: video/audio/image/PDF/Office wrappers
 - [ ] 11-21. Finance ledger, automation, learning, security, travel, health, analytics, meta-skills (demand-driven as the catalog says)
 

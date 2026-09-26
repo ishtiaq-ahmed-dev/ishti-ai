@@ -1,0 +1,11 @@
+{
+  "name": "dev",
+  "version": "1.0.0",
+  "description": "Development: run a pasted Python snippet (sandbox folder, time limit) or a project script, git status/log, commit (asks first) and push (asks first), run a project's tests, lint with ruff, explain a codebase with the coder model, test an API endpoint (non-GET asks first), summarise errors in a log file.",
+  "route": "coding work on the owner's projects: run code, git status/commit/push, run tests, lint, explain a codebase, test an API, check logs",
+  "needs": {"python": ["requests"], "models": [], "mcp": [], "apis": []},
+  "priority": 22,
+  "status": "working",
+  "tier": "T1",
+  "laya": false
+}
