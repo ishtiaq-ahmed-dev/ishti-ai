@@ -10,11 +10,11 @@ import time
 from fastapi import APIRouter, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
 
-from ishti import ROOT
+from ishti import CONFIG, ROOT
 from ishti.facts import get_facts
 from ishti import planner, router as router_mod
 from ishti.router import route
-from ishti.skills import load_skills
+from ishti.skills import answer_of, ask_first, load_skills, log_need
 from orchestrator.memory.conversation import get_conversation_manager
 from orchestrator.memory.error_logger import ErrorLogger
 from orchestrator.response_guard import is_safe_for_history
@@ -203,6 +203,59 @@ def why(dec) -> str:
     return "No skill claimed it with confidence, so the local model answers directly."
 
 
+T2_ACTION = re.compile(r"\b(?:send|message|reply|delete|remove|erase|pay|buy|order|purchase|post|publish|submit|"
+                       r"install|uninstall|kill|shut\s*down|restart|transfer|forward|empty)\b", re.I)
+
+
+def _repeat(s, name, text, window_s=20):
+    """True if the same sensitive action (not a read) ran in this chat within window_s seconds."""
+    last = s.get("last_t2")
+    return bool(T2_ACTION.search(text) and last and last[0] == _t2_key(name, text) and time.time() - last[1] < window_s)
+
+
+def _t2_key(name, text):
+    return name, re.sub(r"\W+", " ", text.lower()).strip()
+
+
+def _did_t2(s, name, text):
+    """Remember a sensitive action that actually ran (not one that was only asked about or cancelled)."""
+    s["last_t2"] = (_t2_key(name, text), time.time())
+
+
+INFLIGHT_FILE = os.path.join(ROOT, "data", "inflight.json")
+
+
+def _inflight(sid, text=None):
+    """Requests running right now, on disk: if ISHTI crashes or restarts mid-task, the next start knows what was lost."""
+    try:
+        with open(INFLIGHT_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        data = {}
+    if text is None:
+        data.pop(sid, None)
+    else:
+        data[sid] = {"text": text, "t": time.time()}
+    try:
+        with open(INFLIGHT_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+    except OSError:
+        pass
+
+
+def _recover():
+    try:
+        with open(INFLIGHT_FILE, encoding="utf-8") as f:
+            left = list(json.load(f).values())
+        os.remove(INFLIGHT_FILE)
+        return left
+    except (OSError, ValueError):
+        return []
+
+
+RECOVER = _recover()  # what the previous run was still doing when it stopped
+
+
 def _run(text, s, dec):
     """Run the decided skill; if it declines ("not mine"), fall through to the next best one."""
     tried, out, name = set(), None, None
@@ -210,13 +263,28 @@ def _run(text, s, dec):
         name = dec["skill"]
         s["route"] = dec
         s["trace"](type="step", skill=name, status="start", why=why(dec), text=text)
+        tier = SKILLS[name].manifest.get("tier", "T1")
         try:
-            out = SKILLS[name].run(text, s)
+            if tier == "T3" and not CONFIG.get("allow_t3", {}).get(name):  # permission check before, not after
+                out = {"reply": f"The {name} skill is blocked (tier T3). Enable it per skill in config.json "
+                                f"\"allow_t3\" if you really want it."}
+            elif tier == "T2" and dec.get("source") != "pending" and _repeat(s, name, text):
+                # rate-limit guard: the same sensitive request twice in a row is usually a double trigger
+                out = ask_first(s, name, "You asked for exactly this a moment ago - do it again",
+                                lambda n=name, t=text: SKILLS[n].run(t, s) or {"reply": "Nothing to do."})
+            else:
+                out = SKILLS[name].run(text, s)
+                gate = s.get("pending")
+                if gate and gate.get("action") and "request" not in gate:
+                    gate["request"] = text  # so a "yes" can record the action that ran
+                elif tier == "T2" and out and not str(out.get("reply", "")).rstrip().endswith(("?", "(yes/no)")):
+                    _did_t2(s, name, text)  # done without a question (e.g. an exact-match WhatsApp send)
         except Exception as exc:
             if type(exc).__name__ == "Cancelled":  # voice barge-in aborted the reply: not a skill failure
                 raise
             ErrorLogger.log_error(subsystem=f"SKILL_{name.upper()}", error=exc, user_prompt=text,
                                   context="dispatcher.handle")
+            log_need("error", name, text, f"{type(exc).__name__}: {str(exc)[:120]}")
             out = {"reply": f"The {name} skill failed: {type(exc).__name__}: {str(exc)[:160]}"}
         if out is not None:
             s["trace"](type="step", skill=name, status="done", summary=out["reply"][:160])
@@ -225,7 +293,8 @@ def _run(text, s, dec):
         tried.add(name)
         dec = route(text, SKILLS, exclude=tried)
     if out is None:
-        name, out = None, {"reply": "I couldn't handle that - no skill accepted it."}
+        log_need("gap", "none", text, "no skill could handle this request")
+        name, out = None, {"reply": "I can't do that yet - no skill handles it. I've logged it in NEEDS.md as a skill to add."}
     get_facts().log_route(text, name, dec.get("confidence", 0), dec.get("source", ""), json.dumps(dec))
     return name, out, dec
 
@@ -263,9 +332,11 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
             cond.wait_for(lambda: not shared.get("running"), timeout=600)
             s["trace"](type="tool", name="wait", label="earlier request finished", status="done")
         shared["running"] = shared.get("running", 0) + 1
+    _inflight(sid, text)
     try:
         return _handle(text, sid, conv, s, events, t0, channel)
     finally:
+        _inflight(sid)
         with cond:
             shared["running"] -= 1
             cond.notify_all()
@@ -308,7 +379,16 @@ def _handle(text, sid, conv, s, events, t0, channel):
     if fix and wanted in SKILLS and s.get("last_request"):
         text = s["last_request"]
         dec = {"skill": wanted, "confidence": 1.0, "source": "correction", "was": s.get("last_skill")}
-    elif pending and not (FOLLOW_UP.search(text) and len(text.split()) > 3):
+    elif pending and pending.get("action") and (ans := answer_of(text)):  # the universal T2 gate's yes/no
+        s["pending"] = None
+        reply = pending["action"]() if ans == "yes" else "Cancelled - nothing was done."
+        if ans == "yes" and pending.get("request"):
+            _did_t2(s, pending["skill"], pending["request"])
+        out = reply if isinstance(reply, dict) else {"reply": reply, "sources": []}
+        s["trace"](type="route", skill=pending["skill"], source="pending", confidence=1.0, why="You answered the confirmation.")
+        return _finish(text, sid, conv, s, events, t0, channel, pending["skill"], out,
+                       {"skill": pending["skill"], "source": "pending", "confidence": 1.0})
+    elif pending and not pending.get("action") and not (FOLLOW_UP.search(text) and len(text.split()) > 3):
         dec = {"skill": pending["skill"], "confidence": 1.0, "source": "pending"}
     else:
         if pending:  # a real follow-up, not an answer to the skill's question: drop the question
@@ -341,10 +421,20 @@ def _handle(text, sid, conv, s, events, t0, channel):
                 name, out = n2, {**out2, "sources": out.get("sources", []) + out2.get("sources", [])}
                 break
 
-    reply = out["reply"]
-    if lang and not (lang == "Urdu" and URDU.search(reply)):
+    if lang and not (lang == "Urdu" and URDU.search(out["reply"])):
         s["trace"](type="tool", name="translate", label=f"answer in {lang.split(' (')[0]}", status="done")
-        reply = out["reply"] = translate(reply, lang)
+        out["reply"] = translate(out["reply"], lang)
+    return _finish(text, sid, conv, s, events, t0, channel, name, out, dec)
+
+
+def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
+    """Close a request: trace, history, persistence, background memory, and the response dict."""
+    reply = out["reply"]
+    if RECOVER and not s.get("recovered"):  # ISHTI restarted mid-task last time: say what didn't finish
+        s["recovered"] = True
+        lost = "; ".join(f"\"{r['text'][:80]}\"" for r in RECOVER[:3])
+        reply = out["reply"] = reply + f"\n\n(Before I restarted, I was working on {lost} and it didn't finish. Ask again if you still need it.)"
+        RECOVER.clear()
     s["trace"](type="done", skill=name, ms=round((time.perf_counter() - t0) * 1000))
     s["last_request"], s["last_skill"] = text, name
     s["history"] = (s["history"] + [{"role": "user", "content": text},

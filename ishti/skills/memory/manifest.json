@@ -3,7 +3,15 @@
   "version": "1.0.0",
   "description": "Exact facts: where the owner's projects/files/folders are, project status, remembered facts. Unknown locations are searched on D:, Desktop, then Downloads, and stored after the owner confirms.",
   "route": "remembering, updating or looking up where the owner's own project, file or folder is stored, or a project's status",
-  "needs": {"python": [], "models": ["planner"], "mcp": [], "apis": []},
+  "needs": {
+    "python": [],
+    "models": [
+      "planner"
+    ],
+    "mcp": [],
+    "apis": []
+  },
   "priority": 10,
-  "status": "working"
+  "status": "working",
+  "tier": "T1"
 }

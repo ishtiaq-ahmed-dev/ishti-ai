@@ -5,6 +5,18 @@
   "route": "reading or sending WhatsApp messages",
   "priority": 16,
   "laya": false,
-  "needs": {"python": ["mcp"], "models": ["planner"], "mcp": ["whatsapp"], "apis": []},
-  "status": "working"
+  "needs": {
+    "python": [
+      "mcp"
+    ],
+    "models": [
+      "planner"
+    ],
+    "mcp": [
+      "whatsapp"
+    ],
+    "apis": []
+  },
+  "status": "working",
+  "tier": "T2"
 }

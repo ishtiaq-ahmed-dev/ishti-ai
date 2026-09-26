@@ -95,7 +95,7 @@ New:
 - [x] 6. Avatar/waveform with distinct listening / thinking / speaking states
 
 ## N. Skills catalog (C:\Users\PC\Downloads\ISHTI_skills_catalog.md) - in its build order
-- [ ] 0. Situation layer in the dispatcher: security tiers T0-T3 in manifests, universal confirmation gate, ambiguity question, multi-step recovery report, error/capability-gap logging to NEEDS.md, rate-limit guard for repeated T2, degraded mode, session recovery, queued announcements
+- [x] 0. Situation layer in the dispatcher: security tiers T0-T3 in manifests, universal confirmation gate, ambiguity question, multi-step recovery report, error/capability-gap logging to NEEDS.md, rate-limit guard for repeated T2, degraded mode, session recovery, queued announcements
 - [ ] 1. Desktop & OS: windows, clipboard, screenshot, OCR, volume, brightness, processes, winget install/update, lock/sleep
 - [ ] 2. Files: batch rename, zip, dedupe, diff, tags, recycle bin (send2trash)
 - [ ] 3. Browser extras: downloads, page-change monitor, scrape, captcha handoff

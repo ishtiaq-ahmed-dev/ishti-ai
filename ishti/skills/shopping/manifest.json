@@ -3,7 +3,17 @@
   "version": "1.0.0",
   "description": "Finds a product's price at the brand's official store and verified retailers (PK and international), cheapest first, as a comparison table with links.",
   "route": "find the cheapest price to buy a product, compare prices across official and verified stores",
-  "needs": {"python": ["requests"], "models": [], "mcp": [], "apis": ["local SearXNG"]},
+  "needs": {
+    "python": [
+      "requests"
+    ],
+    "models": [],
+    "mcp": [],
+    "apis": [
+      "local SearXNG"
+    ]
+  },
   "priority": 17,
-  "status": "working"
+  "status": "working",
+  "tier": "T0"
 }

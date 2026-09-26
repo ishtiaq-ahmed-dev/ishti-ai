@@ -16,5 +16,6 @@
     ],
     "apis": []
   },
-  "status": "working"
+  "status": "working",
+  "tier": "T2"
 }

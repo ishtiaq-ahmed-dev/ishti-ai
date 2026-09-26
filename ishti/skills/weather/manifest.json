@@ -3,7 +3,17 @@
   "version": "1.0.0",
   "description": "Real forecast from Open-Meteo (free, no key). City from the request, else the owner's city from the fact store.",
   "route": "weather, temperature, rain or forecast for a place and day",
-  "needs": {"python": ["requests"], "models": [], "mcp": [], "apis": ["open-meteo.com"]},
+  "needs": {
+    "python": [
+      "requests"
+    ],
+    "models": [],
+    "mcp": [],
+    "apis": [
+      "open-meteo.com"
+    ]
+  },
   "priority": 20,
-  "status": "working"
+  "status": "working",
+  "tier": "T0"
 }

@@ -67,26 +67,53 @@ def run(steps, session, run_step):
     parallel; a chain runs in order and stops if a step waits for the owner (a pending confirmation), so
     nothing after an unconfirmed action runs."""
     dec = lambda i, step: {"skill": step["skill"], "confidence": 1.0, "source": "plan", "step": i}
+
+    def safe(text, d):
+        """A failing step must not take the others down (in parallel the first exception lost every result)."""
+        try:
+            return run_step(text, d)
+        except Exception as exc:
+            if type(exc).__name__ == "Cancelled":
+                raise
+            return {"reply": f"The {d['skill']} skill failed: {type(exc).__name__}: {str(exc)[:120]}", "failed": True}
+
+    failed = lambda o: o.get("failed") or o["reply"].startswith(("The ", "I can't do that yet")) and " failed:" in o["reply"][:80]
+
+    def report(outs, total):
+        """Multi-step recovery: say exactly what completed and what didn't - no silent partial state."""
+        bad = [i for i, o in enumerate(outs, 1) if failed(o)]
+        if not bad and len(outs) == total:
+            return ""
+        done = [str(i) for i in range(1, len(outs) + 1) if i not in bad]
+        skipped = list(range(len(outs) + 1, total + 1))
+        return ("\n\n**Status:** " + (f"done {', '.join(done)}" if done else "nothing completed")
+                + (f"; failed {', '.join(map(str, bad))}" if bad else "")
+                + (f"; not started {', '.join(map(str, skipped))}" if skipped else "") + ".")
+
     if not any(PREV in s["request"] for s in steps):
         # ponytail: one thread per step; model calls still queue on the single GPU, but web, files, APIs and
         # the browser overlap. Browser steps serialize on the browser skill's own lock.
         with cf.ThreadPoolExecutor(len(steps)) as pool:
-            outs = list(pool.map(lambda p: run_step(p[1]["request"], dec(*p)), enumerate(steps, 1)))
+            outs = list(pool.map(lambda p: safe(p[1]["request"], dec(*p)), enumerate(steps, 1)))
         replies = [f"**{i}. {s['request'][:70]}**\n{o['reply']}" for i, (s, o) in enumerate(zip(steps, outs), 1)]
-        return {"reply": "\n\n".join(replies), "sources": [x for o in outs for x in o.get("sources", [])],
-                "mode": "PLAN", "steps": steps}
-    replies, sources, prev = [], [], ""
+        return {"reply": "\n\n".join(replies) + report(outs, len(steps)),
+                "sources": [x for o in outs for x in o.get("sources", [])], "mode": "PLAN", "steps": steps}
+    replies, sources, prev, outs = [], [], "", []
     for i, step in enumerate(steps, 1):
         text = step["request"].replace(PREV, prev[:400])
-        out = run_step(text, dec(i, step))
+        out = safe(text, dec(i, step))
+        outs.append(out)
         replies.append(out["reply"])
         sources += out.get("sources", [])
         prev = out["reply"]
+        if failed(out) and i < len(steps):  # later steps depend on this one's answer
+            break
         if session.get("pending"):
             if i < len(steps):
                 replies.append(f"(Waiting for your answer before the remaining {len(steps) - i} step(s).)")
-            break
-    return {"reply": "\n\n".join(r for r in replies if r), "sources": sources, "mode": "PLAN", "steps": steps}
+            return {"reply": "\n\n".join(r for r in replies if r), "sources": sources, "mode": "PLAN", "steps": steps}
+    return {"reply": "\n\n".join(r for r in replies if r) + report(outs, len(steps)), "sources": sources,
+            "mode": "PLAN", "steps": steps}
 
 
 if __name__ == "__main__":
@@ -112,4 +139,10 @@ if __name__ == "__main__":
     assert out["reply"].index("WEATHER TODAY") < out["reply"].index("LIST VIDEOS")
     assert [p for p in CLAUSE.split("check the weather today and also edit the video. then remind me at 5") if p] == [
         "check the weather today", "edit the video", "remind me at 5"]
+    boom = lambda text, dec: (_ for _ in ()).throw(ValueError("disk full")) if dec["step"] == 2 else {"reply": "ok", "sources": []}
+    par = run([{"skill": "weather", "request": "a"}, {"skill": "video", "request": "b"}, {"skill": "system", "request": "c"}], {}, boom)
+    assert "failed: ValueError" in par["reply"] and "done 1, 3; failed 2" in par["reply"], par["reply"]
+    seq = run([{"skill": "web_search", "request": "x"}, {"skill": "video", "request": "y"},
+               {"skill": "memory", "request": f"z {PREV}"}], {}, boom)
+    assert "done 1; failed 2; not started 3" in seq["reply"], seq["reply"]
     print("[self-check] planner OK - gate, {prev} chaining, stops at a pending confirmation")

@@ -66,6 +66,29 @@ def answer_of(text):
     return "yes" if t in YES else "no" if t in NO else None
 
 
+def ask_first(session, skill, question, action):
+    """The one yes/no gate for sensitive (T2) actions: nothing runs until the owner says yes. action() -> reply
+    text. The dispatcher runs it on "yes", cancels on "no", and drops it if the owner moves on to something else."""
+    session["pending"] = {"skill": skill, "gate": question, "action": action}
+    return {"reply": question.rstrip(" ?") + "? (yes/no)", "sources": []}
+
+
+def log_need(kind, skill, request, detail):
+    """Errors and capability gaps go to NEEDS.md (what was asked, what failed, why) instead of being swallowed.
+    The same kind+skill+detail is logged once."""
+    import time
+    path = os.path.join(os.path.dirname(os.path.dirname(HERE)), "md files", "NEEDS.md")
+    key = f"[{kind}] {skill}: {detail}"[:200]
+    try:
+        with open(path, encoding="utf-8") as f:
+            if key in f.read():
+                return
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(f"\n- {time.strftime('%Y-%m-%d %H:%M')} {key} - asked: \"{request[:120]}\"")
+    except OSError:
+        pass
+
+
 def ground_dates(text, today=None):
     """Relative dates -> real ones before searching ("this year" -> 2026). Search engines match the
     literal words, so "final this year" otherwise returns whichever year's final ranks highest."""

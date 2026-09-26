@@ -15,5 +15,6 @@
     "apis": []
   },
   "status": "working",
-  "priority": 90
+  "priority": 90,
+  "tier": "T0"
 }

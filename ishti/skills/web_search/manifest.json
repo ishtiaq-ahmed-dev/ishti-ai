@@ -4,6 +4,20 @@
   "description": "Live internet answer: multi-provider search (Bing Lite, Wikipedia, GitHub, arXiv, Playwright fallback), reads top pages, answers with citations. Wraps orchestrator/deep_research.quick_search.",
   "route": "current events, news, prices, latest versions, or any fact that needs a live internet search",
   "priority": 40,
-  "needs": {"python": ["requests", "bs4"], "models": ["planner"], "mcp": [], "apis": ["bing.com", "wikipedia.org"]},
-  "status": "working"
+  "needs": {
+    "python": [
+      "requests",
+      "bs4"
+    ],
+    "models": [
+      "planner"
+    ],
+    "mcp": [],
+    "apis": [
+      "bing.com",
+      "wikipedia.org"
+    ]
+  },
+  "status": "working",
+  "tier": "T0"
 }

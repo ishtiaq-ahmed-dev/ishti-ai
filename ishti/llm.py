@@ -44,6 +44,30 @@ def model_for(role: str) -> str:
     return name
 
 
+def _create(**args):
+    """Degraded mode: if Ollama isn't running (after a reboot, or stopped), start it and retry once; if it still
+    can't be reached, say so plainly instead of a raw connection error."""
+    import openai
+    try:
+        return _client.chat.completions.create(**args)
+    except openai.APIConnectionError:
+        import subprocess
+        import time
+        try:
+            subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except OSError:
+            pass
+        for _ in range(15):
+            time.sleep(1)
+            try:
+                return _client.chat.completions.create(**args)
+            except openai.APIConnectionError:
+                continue
+        raise RuntimeError("the local AI model (Ollama) isn't running and I couldn't start it - start Ollama "
+                           "and ask again") from None
+
+
 class Cancelled(Exception):
     """Raised by an on_token callback to abort a streaming generation (voice barge-in)."""
 
@@ -75,13 +99,13 @@ def chat(messages, role="planner", system=STYLE, tools=None, temperature=0.3, ma
         args["tools"] = tools
     elif on_token:
         text = ""
-        for chunk in _client.chat.completions.create(**args, stream=True):
+        for chunk in _create(**args, stream=True):
             delta = chunk.choices[0].delta.content if chunk.choices else None
             if delta:
                 text += delta
                 on_token(delta)
         return SimpleNamespace(content=clean(text, context), tool_calls=None)
-    msg = _client.chat.completions.create(**args).choices[0].message
+    msg = _create(**args).choices[0].message
     msg.content = clean(msg.content, context)
     return msg
 

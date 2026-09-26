@@ -5,6 +5,12 @@
   "route": "commands about ISHTI itself: audio on or off, who am I, what do you know about me, what can you do, diagnostics",
   "priority": 5,
   "laya": false,
-  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
-  "status": "working"
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "status": "working",
+  "tier": "T1"
 }

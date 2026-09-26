@@ -4,6 +4,14 @@
   "description": "Opens desktop apps from a fixed alias list or PATH (never through a shell), or focuses an open window. Wraps desktop/computer_use.",
   "route": "opening, launching or switching to a desktop application",
   "priority": 30,
-  "needs": {"python": ["psutil"], "models": [], "mcp": [], "apis": []},
-  "status": "working"
+  "needs": {
+    "python": [
+      "psutil"
+    ],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "status": "working",
+  "tier": "T1"
 }

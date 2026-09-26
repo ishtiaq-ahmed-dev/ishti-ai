@@ -88,7 +88,32 @@ def main():
     finally:
         d.get_conversation_manager().delete_session(sid)
     check_remote_auth()
-    print("[check] core loop OK - routing, memory, live skill, local LLM, remote auth")
+    check_situation()
+    print("[check] core loop OK - routing, memory, live skill, local LLM, remote auth, situation layer")
+
+
+def check_situation():
+    """Section 0: the universal T2 gate (yes runs, no cancels), the repeat guard, the T3 block."""
+    from types import SimpleNamespace
+    from ishti.skills import ask_first
+    sent, sid = [], "check_sit_" + os.urandom(3).hex()
+    t2 = SimpleNamespace(name="zap_send", manifest={"tier": "T2", "priority": 0, "route": "x"}, status="working", problem="",
+                         matches=lambda t: t.startswith("zap send"),
+                         run=lambda t, s: ask_first(s, "zap_send", f"Send '{t}' to Ali", lambda: sent.append(t) or "Sent."))
+    t3 = SimpleNamespace(name="zap_unlock", manifest={"tier": "T3", "priority": 0, "route": "x"}, status="working", problem="",
+                         matches=lambda t: t.startswith("zap unlock"), run=lambda t, s: {"reply": "UNLOCKED"})
+    d.SKILLS.update(zap_send=t2, zap_unlock=t3)
+    try:
+        assert d.handle("zap send hello", sid)["final_answer"].endswith("(yes/no)") and not sent
+        assert "Cancelled" in d.handle("no", sid)["final_answer"] and not sent
+        d.handle("zap send hello", sid)
+        assert d.handle("yes", sid)["final_answer"] == "Sent." and sent == ["zap send hello"]
+        assert "a moment ago" in d.handle("zap send hello", sid)["final_answer"]  # double trigger
+        assert "blocked" in d.handle("zap unlock the door", sid)["final_answer"]
+    finally:
+        for n in ("zap_send", "zap_unlock"):
+            d.SKILLS.pop(n, None)
+        d.get_conversation_manager().delete_session(sid)
 
 
 def check_remote_auth():

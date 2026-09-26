@@ -21,5 +21,6 @@
     ]
   },
   "status": "working",
-  "laya": false
+  "laya": false,
+  "tier": "T0"
 }
