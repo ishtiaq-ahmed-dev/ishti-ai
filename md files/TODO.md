@@ -42,8 +42,8 @@ Worked top to bottom. Each item is checked only after it has been verified by us
 - [x] Safety fix found while testing: a click sent as a bare element ref (`target: e30`) skipped the consequential-action gate; the gate now reads what that element is on the live page
 
 ## G. Carry-overs (NEEDS.md)
-- [ ] Skill builder: create new skills when nothing fits (NEEDS #10)
-- [ ] Video editing like an editor: analyse, auto-edit, open in CapCut (NEEDS #11)
+- [x] Skill builder: create new skills when nothing fits (NEEDS #10)
+- [x] Video editing like an editor: analyse, auto-edit, open in CapCut (NEEDS #11)
 
 ## I. Owner's real chats, 26 Sep (fix first)
 - [x] "i study in imsciences" was web-searched → personal statements ("I study/work at…", "I'm a…", "my birthday is…") are saved as owner facts
@@ -64,18 +64,18 @@ Worked top to bottom. Each item is checked only after it has been verified by us
 
 ## K. Owner requests + chat failures, 26 Sep (afternoon)
 Fixes from the chats:
-- [ ] "the new era" as the answer to "Which video?" went to web search → names match without filler words; "top/first video" picks it
-- [ ] "i am in th semester" wasn't saved; "add in memory …" crashed the apps skill (TypeError) → "I am in…" is a fact; "add/save it in memory" uses the conversation; apps crash fixed at the root
-- [ ] "you didn't even open CapCut…" re-listed videos → complaints about the last answer are follow-ups (redo it the right way)
-- [ ] Bitcoin answer mixed $96k and $84k from different pages → live prices come from market APIs, not page text
+- [x] "the new era" as the answer to "Which video?" went to web search → names match without filler words; "top/first video" picks it
+- [x] "i am in th semester" wasn't saved; "add in memory …" crashed the apps skill (TypeError) → "I am in…" is a fact; "add/save it in memory" uses the conversation; apps crash fixed at the root
+- [x] "you didn't even open CapCut…" re-listed videos → complaints about the last answer are follow-ups (redo it the right way)
+- [x] Bitcoin answer mixed $96k and $84k from different pages → live prices come from market APIs, not page text
 New:
-- [ ] "About you" section: see and edit everything ISHTI knows about the owner, plus custom instructions sent with every message, and a preview of exactly what is sent
-- [ ] Reply in the owner's language (Urdu, Roman Urdu, English)
-- [ ] Markets: stocks, crypto, gold, currency with a real analyzer (trend, RSI, moving averages, volatility, fundamentals) and a Markets section; research open-source stock terminals (OpenBB etc.)
-- [ ] Edited videos/images play and download inside the chat
-- [ ] "send this video to qasim ims" → WhatsApp: find the contact (fuzzy for spelling/voice errors), exact match sends, otherwise ask which one; attach the file
-- [ ] Video editing like an editor: professional ad-style edit (intro title card, captions, music bed, transitions, grading, loudness), open in CapCut (install it with winget after a yes if missing), and verify the result frame by frame with a local vision model
-- [ ] More skills: prayer times, currency, news, translate, dictionary, document summary, unit conversion
+- [x] "About you" section: see and edit everything ISHTI knows about the owner, plus custom instructions sent with every message, and a preview of exactly what is sent
+- [x] Reply in the owner's language (Urdu, Roman Urdu, English)
+- [x] Markets: stocks, crypto, gold, currency with a real analyzer (trend, RSI, moving averages, volatility, fundamentals) and a Markets section; research open-source stock terminals (OpenBB etc.)
+- [x] Edited videos/images play and download inside the chat
+- [x] "send this video to qasim ims" → WhatsApp: find the contact (fuzzy for spelling/voice errors), exact match sends, otherwise ask which one; attach the file
+- [x] Video editing like an editor: professional ad-style edit (intro title card, captions, music bed, transitions, grading, loudness), open in CapCut (install it with winget after a yes if missing), and verify the result frame by frame with a local vision model
+- [x] More skills: prayer times, currency, news, translate, dictionary, document summary, unit conversion
 - [x] Install skills from GitHub repos (show the code, install only after a yes, run isolated)
 
 ## L. Finish from K (in progress)
@@ -83,7 +83,7 @@ New:
 - [x] Same edit written as a real CapCut project (pyCapCut; CapCut 8.9 drafts are plain JSON) and CapCut opened
 - [x] Verify the output: ffprobe checks, black frames, loudness, and key frames read by Gemma 3 (vision) for text visibility/spelling
 - [x] More skills (prayer times, translate, dictionary, unit convert, document summary, news)
-- [ ] Install skills from GitHub repos (show code, yes to install, isolated)
+- [x] Install skills from GitHub repos (show code, yes to install, isolated)
 
 ## M. Verified search + real-time voice (owner feature set, build in this order)
 - [x] 1. Self-verifying search: each page checked "does it answer the question?" before use; off-target pages dropped; ambiguous queries get one clarifying question; max 2-3 reformulations then "no confident match"
