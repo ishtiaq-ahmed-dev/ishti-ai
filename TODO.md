@@ -31,7 +31,8 @@ Worked top to bottom. Each item is checked only after it has been verified by us
 - [x] Recent chats in the sidebar (clean list, newest first); click to reopen a chat with its messages (and each answer's thinking + graph, saved with it); new chat button; delete on hover
 
 ## E. Shopping: best price from verified stores
-- [ ] "Find me a <product>" → search official and verified stores (the manufacturer, and big retailers for PK and international), pull prices and links, and return a comparison table sorted by price, with the cheapest highlighted
+- [x] "Find me a <product>" → search official and verified stores (the manufacturer, and big retailers for PK and international), pull prices and links, and return a comparison table sorted by price, with the cheapest highlighted
+- Done as the `shopping` skill: prices read from the store pages (schema.org data, else the page text), only the brand's exact domain counts as official, retailers from an allow-list, price-guide sites shown separately, S25 never priced from an S25 Ultra page. Daraz renders prices with JavaScript, so it is usually missing (ceiling: read it through the browser).
 
 ## F. Use the owner's own Chrome profiles
 - [x] Profile 10 (`C:\Users\PC\AppData\Local\Google\Chrome\User Data\Profile 10`): searching and anything that needs a Google login

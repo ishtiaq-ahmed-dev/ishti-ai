@@ -40,6 +40,8 @@ LABELLED = [
     ("what are the largest files on my desktop", "folders"),
     ("open a browser and search for RTX 5070 Ti drivers", "browser"), ("search google for the weather in dubai", "browser"),
     ("open chrome and go to github", "browser"), ("open youtube", "browser"), ("open the task manager", "apps"),
+    ("find me the cheapest samsung galaxy s25", "shopping"), ("i want to buy an iphone 16, compare prices", "shopping"),
+    ("where can I buy a ps5 slim", "shopping"),
 ]
 
 

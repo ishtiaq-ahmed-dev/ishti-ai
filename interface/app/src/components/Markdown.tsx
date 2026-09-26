@@ -29,13 +29,30 @@ export function Markdown({ text }: { text: string }) {
     if (prose?.trim()) {
       const lines = prose.trim().split("\n");
       let list: string[] = [];
+      let rows: string[][] = [];
       const flush = () => {
         if (list.length) blocks.push(<ul key={`l${i}-${blocks.length}`} className="my-1 list-disc space-y-0.5 pl-5">{list.map((l, j) => <li key={j}>{inline(l)}</li>)}</ul>);
         list = [];
+        if (rows.length) {
+          const [head, ...body] = rows;
+          blocks.push(
+            <div key={`t${i}-${blocks.length}`} className="my-2 overflow-x-auto rounded-xl border border-border">
+              <table className="w-full text-left text-[13px]">
+                <thead className="bg-muted/60 text-muted-foreground"><tr>{head.map((c, k) => <th key={k} className="px-3 py-1.5 font-medium">{inline(c)}</th>)}</tr></thead>
+                <tbody>{body.map((r, n) => <tr key={n} className={`border-t border-border ${n === 0 ? "bg-accent-soft/40" : ""}`}>{r.map((c, k) => <td key={k} className="px-3 py-1.5 tabular-nums">{inline(c)}</td>)}</tr>)}</tbody>
+              </table>
+            </div>);
+        }
+        rows = [];
       };
       lines.forEach((line, j) => {
+        if (/^\s*\|.*\|\s*$/.test(line)) {
+          if (list.length) flush();
+          if (!/^\s*\|[\s:|-]+\|\s*$/.test(line)) rows.push(line.trim().slice(1, -1).split("|").map((c) => c.trim()));
+          return;
+        }
         const bullet = line.match(/^\s*(?:[-*•]|\d+\.)\s+(.*)/);
-        if (bullet) { list.push(bullet[1]); return; }
+        if (bullet) { if (rows.length) flush(); list.push(bullet[1]); return; }
         flush();
         const heading = line.match(/^#{1,4}\s+(.*)/);
         if (heading) blocks.push(<p key={`h${i}-${j}`} className="mt-2 font-semibold">{inline(heading[1])}</p>);

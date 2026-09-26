@@ -5,7 +5,8 @@ from orchestrator.intent_detector import IntentDetector
 
 
 MINE = re.compile(r"\b(?:my|this|the)\s+(?:pc|computer|laptop|system|machine)(?:'s)?\s+(?:specs?|specifications|status|usage)\b|"
-                  r"\b(?:specs?|specifications|usage|status)\s+of\s+(?:my|this)\s+(?:pc|computer|laptop|system|machine)\b", re.I)
+                  r"\b(?:specs?|specifications|usage|status)\s+of\s+(?:my|this)\s+(?:pc|computer|laptop|system|machine)\b|"
+                  r"\b(?:how\s+full|free\s+space|space\s+left)\b.*\b(?:disk|drive|ssd|hdd|storage)\b", re.I)
 
 
 def match(text):
