@@ -160,9 +160,9 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   const isInitialLoad = useRef(true);
   const running = msgs.filter((m) => m.live).length;
   const busy = running > 0;
-  // Up to 3 messages run at once (the server runs independent ones side by side; a follow-up waits for the
+  // Up to 10 messages run at once (the server runs independent ones side by side; a follow-up waits for the
   // answer it is about). More wait here in order. A new chat's first message runs alone so all share its session.
-  const canStart = running < 3 && (!!sessionId || running === 0);
+  const canStart = running < 10 && (!!sessionId || running === 0);
   const [queue, setQueue] = useState<string[]>([]);
 
   const toggleHistory = useCallback(() => {

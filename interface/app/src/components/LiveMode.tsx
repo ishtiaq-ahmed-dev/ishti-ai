@@ -33,6 +33,7 @@ export function LiveMode({ sessionId, onTurn, onClose }: {
   const [step, setStep] = useState("");
   const [reply, setReply] = useState("");
   const [error, setError] = useState("");
+  const [background, setBackground] = useState<string[]>([]);  // requests still running while the talk goes on
   const turn = useRef(onTurn);
   turn.current = onTurn;
 
@@ -60,6 +61,8 @@ export function LiveMode({ sessionId, onTurn, onClose }: {
               : data.label ?? (data.type === "step" ? data.skill : null);
             if (s) setStep(String(s));
           }
+          else if (type === "task_background") setBackground((b) => [...b, data.request].filter(Boolean));
+          else if (type === "task_done") setBackground((b) => b.filter((r) => r !== data.request));
           else if (type === "reply") { setReply(data.reply); setStep(""); turn.current(data.user, data.reply, data.session_id); }
         };
       } catch (err) {
@@ -95,6 +98,15 @@ export function LiveMode({ sessionId, onTurn, onClose }: {
         </AnimatePresence>
         {reply && <p className="max-h-[30vh] overflow-y-auto text-base leading-relaxed">{reply}</p>}
       </div>
+      {background.length > 0 && (
+        <ul aria-label="Working in the background" className="flex max-w-xl flex-wrap justify-center gap-2">
+          {background.map((r, i) => (
+            <li key={`${i}-${r}`} className="flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-3 py-1 text-xs text-muted-foreground">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" /> {r}
+            </li>
+          ))}
+        </ul>
+      )}
       <button type="button" onClick={onClose} autoFocus
         className="flex items-center gap-2 rounded-full bg-danger px-6 py-3 text-sm font-semibold text-white shadow-lg transition-transform active:scale-95 cursor-pointer">
         <PhoneOff className="h-4 w-4" /> End Live

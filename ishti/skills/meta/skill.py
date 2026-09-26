@@ -18,6 +18,9 @@ OPS = [
     ("health", re.compile(r"\b(?:skill\s+health|check\s+(?:your|all|the)\s+skills|are\s+(?:all\s+)?(?:your|the)\s+skills\s+(?:ok|working)|self[-\s]?test|diagnose\s+(?:your|the)\s+skills)\b", I)),
     ("needs", re.compile(r"\b(?:what\s+(?:have\s+you|did\s+you)\s+(?:flag|log)(?:ged)?|what(?:'s| is)\s+missing|needs\.md|capability\s+gaps?|what\s+can'?t\s+you\s+do)\b", I)),
     ("audit", re.compile(r"\b(?:what\s+have\s+you\s+(?:accessed|done|touched)|permission\s+audit|activity\s+log|what\s+did\s+you\s+do\s+(?:today|recently))\b", I)),
+    ("tasks", re.compile(r"\b(?:status\s+of\s+(?:my|the|all|your)\s+(?:tasks?|requests?|jobs?)|(?:tasks?|jobs?)\s+status|"
+                         r"what\s+are\s+you\s+(?:still\s+)?(?:working\s+on|doing)|how\s+are\s+my\s+(?:tasks?|requests?)|"
+                         r"(?:are|is)\s+(?:my|the)\s+(?:tasks?|requests?)\s+(?:done|finished|ready))\b", I)),
     ("usage", re.compile(r"\b(?:which|what)\s+skills?\s+(?:do\s+i|did\s+i)\s+use\s+(?:the\s+)?most\b|\bskill\s+usage\b", I)),
 ]
 
@@ -58,6 +61,19 @@ def op_health(text, session):
     lines = [f"- {'✓' if good else '✗'} {n} ({secs:.0f} s)" + (f": {why}" if why else "") for n, good, why, secs in results]
     lines += [f"- ✗ {n} didn't load: {p}" for n, p in broken.items()]
     return f"Skill health: {ok}/{len(results)} self-checks pass, {len(SKILLS) - len(broken)}/{len(SKILLS)} skills loaded.\n" + "\n".join(lines)
+
+
+def op_tasks(text, session):
+    """This chat's task tracker (kept by the dispatcher): what is running, what finished, with short results."""
+    now = time.time()
+    tasks = [t for t in session.get("tasks") or [] if not dict(OPS)["tasks"].search(t["topic"])]  # not these questions
+    if not tasks:
+        return "Nothing running - no other tasks in this chat."
+    icon = {"running": "…", "done": "✓", "failed": "✗", "cancelled": "–"}
+    lines = [f"- {icon[t['status']]} {t['topic']} - " + (f"running for {now - t['started']:.0f} s" if t["status"] == "running"
+             else f"{t['status']}: {' '.join(t['result'].split())[:120]}") for t in tasks]
+    busy = sum(t["status"] == "running" for t in tasks)
+    return f"{busy} running, {len(tasks) - busy} finished:\n" + "\n".join(lines)
 
 
 def op_needs(text, session):
@@ -105,7 +121,14 @@ def op_usage(text, session):
 
 if __name__ == "__main__":
     for t, want in {"check your skills": "health", "what have you flagged as missing": "needs", "what have you accessed recently": "audit",
-                    "which skills do I use the most": "usage"}.items():
+                    "which skills do I use the most": "usage", "what's the status of my tasks": "tasks",
+                    "what are you working on": "tasks"}.items():
         assert next((n for n, rx in OPS if rx.search(t)), None) == want, t
     assert not match("check the weather")
-    print("[self-check] meta OK - routing")
+    now = time.time()
+    tracked = {"tasks": [{"topic": "compare laptops", "status": "running", "started": now - 12, "result": ""},
+                         {"topic": "weather tomorrow", "status": "done", "started": now - 30, "result": "33°C,\n clear"},
+                         {"topic": "status of my tasks", "status": "running", "started": now, "result": ""}]}
+    out = op_tasks("status of my tasks", tracked)
+    assert out.startswith("1 running, 1 finished") and "compare laptops - running for 12 s" in out and "33°C, clear" in out, out
+    print("[self-check] meta OK - routing, task tracker")

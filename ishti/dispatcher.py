@@ -337,10 +337,19 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
             cond.wait_for(lambda: not shared.get("running"), timeout=600)
             s["trace"](type="tool", name="wait", label="earlier request finished", status="done")
         shared["running"] = shared.get("running", 0) + 1
+        # task tracker: what this chat has on the go ("what's the status of my tasks"); the last 10 are kept
+        task = {"topic": text[:80], "status": "running", "started": time.time(), "result": ""}
+        shared["tasks"] = (shared.get("tasks", []) + [task])[-10:]
     _inflight(sid, text)
     try:
-        return _handle(text, sid, conv, s, events, t0, channel)
+        res = _handle(text, sid, conv, s, events, t0, channel)
+        task.update(status="done", result=res["final_answer"][:200])
+        return res
+    except BaseException as exc:
+        task.update(status="cancelled" if type(exc).__name__ == "Cancelled" else "failed", result=str(exc)[:200])
+        raise
     finally:
+        task["ended"] = time.time()
         _inflight(sid)
         with cond:
             shared["running"] -= 1

@@ -50,7 +50,7 @@ LABELLED = [
     ("prayer times today", "utilities"), ("convert 500 usd to pkr", "utilities"), ("5 km to miles", "utilities"),
     ("latest news about pakistan", "utilities"), ("generate a strong password", "utilities"),
     ("I spent 500 on groceries", "ledger"), ("show my portfolio", "ledger"), ("how much did I spend this month", "ledger"),
-    ("I drank 3 glasses of water", "lifelog"), ("screen time today", "lifelog"), ("check your skills", "meta"),
+    ("I drank 3 glasses of water", "lifelog"), ("screen time today", "lifelog"), ("check your skills", "meta"), ("what's the status of my tasks", "meta"),
     ("give me my brief", "digest"), ("every morning at 8 give me my brief", "reminders"),
     ("remind me every day at 8pm to take my medicine", "reminders"),
     ("check my email", "email"), ("send an email to ali@example.com about the meeting", "email"),
