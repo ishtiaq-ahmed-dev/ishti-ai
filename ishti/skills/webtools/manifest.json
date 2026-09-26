@@ -1,0 +1,11 @@
+{
+  "name": "webtools",
+  "version": "1.0.0",
+  "description": "Web extras: download a file from a link (programs and huge files ask first), watch a page and announce when it changes, open several links at once, pull the tables off a page (saved as CSV), search Chrome bookmarks (Profile 10).",
+  "route": "download a file from a URL, watch a web page for changes, open several links, extract tables from a web page, find a bookmark",
+  "needs": {"python": ["requests", "pandas", "lxml"], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T1",
+  "laya": false
+}

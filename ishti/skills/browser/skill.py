@@ -36,6 +36,8 @@ MAX_STEPS = 10
 # Profile 10, whatsapp = Profile 9, or the isolated fallback). Fine for one request at a time; the
 # upgrade path is passing the server through _loop/_call if requests ever run concurrently.
 SERVER = "browser"
+CAPTCHA = re.compile(r"recaptcha|hcaptcha|captcha|verify you are (?:a )?human|are you a robot|cf-challenge|"
+                     r"press and hold|i'm not a robot", re.I)
 # One page per Chrome profile: parallel tasks take turns in the browser (re-entrant for WhatsApp -> browser).
 LOCK = threading.RLock()
 
@@ -192,6 +194,14 @@ def _loop(session, msgs, log, steps_left):
             url = re.search(r"Page URL: (\S+)", out)
             trace(session, name, label, status="error" if out.startswith("ERROR") else "done",
                   url=url.group(1) if url else None)
+            if CAPTCHA.search(out[:8000]):
+                # never solved automatically: hand it to the owner and resume from this page afterwards
+                msgs.append({"role": "tool", "tool_call_id": cid, "content": out[:8000]})
+                session["pending"] = {"skill": "browser", "msgs": msgs, "log": log, "call": None,
+                                      "steps": steps_left - step - 1, "server": SERVER}
+                trace(session, "captcha", "a CAPTCHA appeared - handed to you", status="waiting")
+                return {"reply": "This page is showing a CAPTCHA. I don't solve those - please solve it in the browser "
+                                 "window, then say \"done\" and I'll carry on from there.", "sources": []}
         log.append(f"{name.removeprefix('browser_')} {raw}" + (" -> ERROR" if out.startswith("ERROR") else ""))
         msgs.append({"role": "tool", "tool_call_id": cid, "content": out[:8000]})
     return {"reply": "Stopped after too many browser steps. " + _summary(msgs, log), "sources": []}
@@ -212,6 +222,10 @@ def _run_locked(text, session, server, start_url, hint, start_snapshot):
             if answer is None:
                 return None  # moved on to something else: route the new message normally
             return {"reply": "Cancelled. Nothing was clicked.", "sources": []}
+        if p.get("call") is None:  # back from a CAPTCHA handoff: look at the page again and carry on
+            out = _call("browser_snapshot", {})
+            p["msgs"].append({"role": "user", "content": "The owner solved the CAPTCHA. The page now:\n" + out[:8000]})
+            return _loop(session, p["msgs"], p["log"], max(3, p["steps"]))
         cid, name, args = p["call"]
         out = _call(name, args)
         p["log"].append(f"{name.removeprefix('browser_')} {json.dumps(args)} (owner confirmed)")

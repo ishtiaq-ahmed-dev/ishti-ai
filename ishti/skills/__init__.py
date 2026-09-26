@@ -55,7 +55,8 @@ def trace(session, name, label, status="done", **detail):
         fn(type="tool", name=name, label=label, status=status, **detail)
 
 
-YES = {"yes", "y", "yeah", "yep", "go ahead", "do it", "ok", "okay", "confirm", "sure", "proceed"}
+YES = {"yes", "y", "yeah", "yep", "go ahead", "do it", "ok", "okay", "confirm", "sure", "proceed",
+       "done", "continue", "solved", "solved it", "ok done", "carry on"}  # the last ones: after a handoff
 NO = {"no", "n", "nope", "cancel", "stop", "don't", "dont", "abort", "never mind", "nevermind"}
 
 
