@@ -44,3 +44,14 @@ Worked top to bottom. Each item is checked only after it has been verified by us
 ## G. Carry-overs (NEEDS.md)
 - [ ] Skill builder: create new skills when nothing fits (NEEDS #10)
 - [ ] Video editing like an editor: analyse, auto-edit, open in CapCut (NEEDS #11)
+
+## I. Owner's real chats, 26 Sep (fix first)
+- [x] "i study in imsciences" was web-searched → personal statements ("I study/work at…", "I'm a…", "my birthday is…") are saved as owner facts
+- [x] "where i stid ?" (typo) was web-searched for "STid" → questions about the owner answer from saved facts (typo tolerant); if not saved, say so. Never the web
+- [x] "check my whatsap…" missed the WhatsApp skill (typo) and got generic web advice → typo-tolerant trigger; unread chats are read straight from the page (5 s instead of 85 s)
+- [x] The saved Chrome tokens didn't work: the extension shows `PLAYWRIGHT_MCP_EXTENSION_TOKEN=…` and that whole line was pasted → the prefix is stripped on save and load
+- [x] "why your response is late…", "you do not perform parallel tasks… fix yourself" went to browser → web → deep research → questions about ISHTI itself are answered honestly from its own skills and limits, never escalated to the web
+- [ ] Queued messages: the owner can keep typing and sending while ISHTI works; messages run in order
+- [ ] "check the weather today and also … videos in download edit that" did only the weather → "and also" requests run every part
+- [ ] "videos in download edit that" / "the latest video in the download" → list the recent videos and ask which one; "latest"/"first" picks it; a bare path asks what edit to make
+- [x] Web answers ended with "KNOWN FACTS override this…" → the shared style prompt no longer mentions KNOWN FACTS (only the chat skill, which actually has them)

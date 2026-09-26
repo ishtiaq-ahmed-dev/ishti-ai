@@ -427,9 +427,9 @@ async def chrome_profiles_get():
 async def chrome_profiles_set(req: Request):
     """Save a Playwright Extension token for one profile (local data/mcp_tokens.json, git-ignored)."""
     from ishti import CONFIG
-    from ishti.mcp_client import TOKENS_PATH, get_hub, load_tokens
+    from ishti.mcp_client import TOKENS_PATH, get_hub, load_tokens, strip_token
     body = await req.json()
-    key, token = str(body.get("key", "")), str(body.get("token", "")).strip()
+    key, token = str(body.get("key", "")), strip_token(str(body.get("token", "")))
     keys = {c["token_key"]: n for n, c in CONFIG.get("mcp_servers", {}).items() if c.get("token_key")}
     if key not in keys or len(token) > 400 or not re.fullmatch(r"[\w\-.=+/:]*", token):
         return JSONResponse({"error": "unknown profile or malformed token"}, status_code=400)

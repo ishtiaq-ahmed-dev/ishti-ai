@@ -15,13 +15,19 @@ from ishti import CONFIG
 TOKENS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "mcp_tokens.json")
 
 
+def strip_token(token: str) -> str:
+    """The extension shows its token as a ready-to-paste env line, so owners paste NAME=value (or quoted)."""
+    token = token.strip().strip("'\"")
+    return token.split("=", 1)[1].strip().strip("'\"") if token.startswith("PLAYWRIGHT_MCP_EXTENSION_TOKEN=") else token
+
+
 def load_tokens() -> dict:
     """Playwright Extension tokens per profile, pasted by the owner in Settings. Local file, never committed."""
     import json
     try:
         with open(TOKENS_PATH, encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
+            return {k: strip_token(v) for k, v in json.load(f).items()}
+    except (OSError, ValueError, AttributeError):
         return {}
 
 

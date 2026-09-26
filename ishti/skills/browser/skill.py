@@ -188,7 +188,7 @@ def _loop(session, msgs, log, steps_left):
     return {"reply": "Stopped after too many browser steps. " + _summary(msgs, log), "sources": []}
 
 
-def run(text, session, server="browser", start_url=None, hint=""):
+def run(text, session, server="browser", start_url=None, hint="", start_snapshot=None):
     p = session.get("pending")
     use_server(p["server"] if p and p.get("skill") == "browser" and p.get("server") else server, session)
     if p and p.get("skill") == "browser":
@@ -204,7 +204,11 @@ def run(text, session, server="browser", start_url=None, hint=""):
         p["msgs"].append({"role": "tool", "tool_call_id": cid, "content": out[:8000]})
         return _loop(session, p["msgs"], p["log"], p["steps"] - 1)
     msgs, log = [{"role": "user", "content": f"{hint}\n\n{text}" if hint else text}], []
-    if url := start_url or search_url(text):
+    if start_snapshot:  # the caller already has the page open and loaded (WhatsApp Web takes seconds to load)
+        msgs += [{"role": "assistant", "content": "", "tool_calls": [{"id": "snap0", "type": "function",
+                  "function": {"name": "browser_snapshot", "arguments": "{}"}}]},
+                 {"role": "tool", "tool_call_id": "snap0", "content": start_snapshot[:8000]}]
+    elif url := start_url or search_url(text):
         # Programmatic first: open the results page directly instead of letting the model find and
         # fill a search box (Google's page alone cost 4-5 slow steps). The model starts from the results.
         trace(session, "browser_navigate", f"open results for your search", status="start")

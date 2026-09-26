@@ -1,5 +1,12 @@
-"""Owner commands: audio on/off, who am I, what do you know about me, what can you do, run diagnostics."""
+"""Owner commands: audio on/off, who am I, what do you know about me, what can you do, run diagnostics.
+Also: personal facts the owner states ("I study at IMSciences") are saved, questions about the owner
+("where do I study?") are answered from those facts, and questions about ISHTI itself ("why are you slow?")
+are answered from its own skills and limits. None of these ever go to the web."""
+import difflib
+import json
+import os
 import re
+import time
 
 from ishti.facts import get_facts
 
@@ -10,15 +17,97 @@ WHO = re.compile(r"^(?:who am i|do you know who i am|who is your owner)\W*$", I)
 KNOW = re.compile(r"^(?:what do you (?:know|remember) about me|show (?:me )?my (?:profile|memory|facts)|what have you saved)\W*$", I)
 CAN = re.compile(r"^(?:what can you do|what are your (?:skills|capabilities)|show (?:your )?(?:skills|capabilities)|help)\W*$", I)
 DOCTOR = re.compile(r"^(?:run (?:the )?diagnostics|(?:ishti )?doctor|system check|health check)\W*$", I)
+ATTRS = (r"university|uni|college|school|major|degree|job|company|employer|profession|birthday|age|email|phone|"
+         r"semester|department|field|full\s+name")
+TELL = re.compile(r"^(?:(?:and|also|btw|by\s+the\s+way|fyi)[,\s]+)?(?:i\s+(?:study|am\s+studying|work|am\s+working|teach|"
+                  r"was\s+born|graduated|did\s+my)\b|i(?:'m|\s+am)\s+(?:a|an|in\s+(?:my|the)|doing|pursuing|from)\b|"
+                  rf"my\s+(?:{ATTRS})\s+(?:is|are)\b)[^?]*$", I)
+ABOUT_ME = re.compile(rf"\bmy\s+(?:{ATTRS}|name|city|country)\b", I)
+VERBS = ("study", "work", "live", "born", "teach", "graduated")
+SELF = re.compile(r"\bwhy\s+(?:are|is|do|did|does|can'?t|cant|won'?t|don'?t|dont|odnt|didn'?t|didnot)\s+(?:you|your|ishti)\b|"
+                  r"\bfix\s+yourself\b|\b(?:can|do|could)\s+you\s+(?:do|perform|handle|run)\s+(?:multiple|parallel|many|several)\b|"
+                  r"\byou\s+(?:do\s+not|don'?t|dont|can'?t|cant|never|didn'?t|didnot)\s+(?:perform|do|have|remember|understand|"
+                  r"work|answer|reply|respond|support)\b|\byour\s+(?:responses?|answers?|speed|skills?|limits?|limitations?)\b", I)
+FEEDBACK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "data", "feedback.md")
+ISHTI_FACTS = (
+    "ISHTI runs fully on the owner's PC: one 14B model on one GPU (Ollama). Simple answers take 1-5 s, web searches "
+    "5-25 s, browser tasks 10-40 s because every page step needs the model. Messages sent while it is busy wait in a "
+    "queue and run in order. A request with several parts ('do X and also Y') is split into steps that run one after "
+    "another; truly parallel work is limited because the one GPU runs one model call at a time. Complaints and feature "
+    "requests are written to data/feedback.md and fixed in the next build.")
+
+
+def asks_about_me(t):
+    """A question about the owner themselves: "where do I study?", "where i stid ?" (typo), "what's my major"."""
+    words = re.findall(r"[a-z']+", t.lower())
+    if not words or not (t.rstrip().endswith("?") or words[0] in ("where", "what", "which", "when", "whats", "what's")):
+        return False
+    if ABOUT_ME.search(t) or ("i" in words and re.search(rf"\b(?:{ATTRS})\b", t, I)):  # "what semester am i in?"
+        return True
+    # ponytail: short questions only, "i <verb>" fuzzy-matched to a few personal verbs; "how do i live stream" is the known miss
+    after_i = [words[i + 1] for i, w in enumerate(words[:-1]) if w == "i"]
+    return len(words) <= 8 and any(difflib.get_close_matches(v, VERBS, n=1, cutoff=0.6) for v in after_i)
 
 
 def match(text):
     t = text.strip()
-    return any(rx.match(t) for rx in (AUDIO_OFF, AUDIO_ON, WHO, KNOW, CAN, DOCTOR))
+    return (any(rx.match(t) for rx in (AUDIO_OFF, AUDIO_ON, WHO, KNOW, CAN, DOCTOR))
+            or bool(TELL.match(t) or SELF.search(t)) or asks_about_me(t))
+
+
+def tell(t, session):
+    from ishti import llm
+    from ishti.skills import trace
+    raw = llm.ask(f"The owner said this about themselves:\n{t}\n\nExtract the lasting personal or professional facts as "
+                  'one JSON object of short snake_case attribute -> short value, e.g. {"university": "IMSciences"} or '
+                  '{"job": "data analyst", "company": "Systems Ltd"}. Fix obvious typos and write names with proper capitals (IMSciences, BS AI). If it states no '
+                  "lasting fact about them, output {}. Output only the JSON.", system=None, temperature=0, max_tokens=80)
+    try:
+        found = json.loads(re.search(r"\{.*\}", raw, re.S)[0])
+    except (TypeError, ValueError):
+        found = {}
+    found = {re.sub(r"\W+", "_", str(k)).strip("_").lower(): str(v).strip()
+             for k, v in (found.items() if isinstance(found, dict) else []) if str(v).strip()}
+    if not found:  # "I'm a bit tired today": talk, never a web search
+        from ishti.skills.chat import skill as chat
+        return chat.run(t, session)
+    for k, v in found.items():
+        get_facts().set("owner", k, v)
+    trace(session, "memory", "saved: " + ", ".join(f"{k} = {v}" for k, v in found.items()))
+    return {"reply": "Saved: " + ", ".join(f"{k.replace('_', ' ')} = {v}" for k, v in found.items()) + ".", "sources": []}
+
+
+def about_me(t):
+    from ishti import llm
+    facts = "\n".join(f"- {a}: {v}" for a, v in get_facts().get("owner").items() if a != "entity") or "(nothing saved)"
+    out = llm.ask(f"Saved facts about the owner:\n{facts}\n\nThe owner asks (may have typos): {t}\n\nAnswer in one short "
+                  "sentence using only these facts, speaking to the owner as 'you'. If the facts don't contain it, say "
+                  "you don't have that saved yet and ask them to tell you once.", system=None, temperature=0, max_tokens=80)
+    return {"reply": out, "sources": []}
+
+
+def about_ishti(t):
+    from ishti import llm
+    from ishti.dispatcher import SKILLS
+    os.makedirs(os.path.dirname(FEEDBACK), exist_ok=True)
+    with open(FEEDBACK, "a", encoding="utf-8") as f:  # read at the start of every build loop
+        f.write(f"- {time.strftime('%Y-%m-%d %H:%M')} {t.strip()}\n")
+    skills = "\n".join(f"- {n} ({s.status}): {s.manifest['route']}" for n, s in SKILLS.items())
+    out = llm.ask(f"About you (ISHTI):\n{ISHTI_FACTS}\n\nYour skills:\n{skills}\n\nThe owner says: {t}\n\nAnswer honestly "
+                  "in 1-3 short sentences as ISHTI, from the facts above only. Don't claim abilities you don't have. If "
+                  "it's a complaint, acknowledge it and say it has been logged for the next build.",
+                  temperature=0.2, max_tokens=160)
+    return {"reply": out, "sources": []}
 
 
 def run(text, session):
     t = text.strip()
+    if TELL.match(t):
+        return tell(t, session)
+    if SELF.search(t):
+        return about_ishti(t)
+    if asks_about_me(t) and not any(rx.match(t) for rx in (WHO, KNOW, CAN)):
+        return about_me(t)
     if AUDIO_OFF.match(t) or AUDIO_ON.match(t):
         from orchestrator.memory.user_profile import get_user_memory
         on = bool(AUDIO_ON.match(t))

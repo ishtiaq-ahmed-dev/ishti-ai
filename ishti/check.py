@@ -42,6 +42,8 @@ LABELLED = [
     ("open chrome and go to github", "browser"), ("open youtube", "browser"), ("open the task manager", "apps"),
     ("find me the cheapest samsung galaxy s25", "shopping"), ("i want to buy an iphone 16, compare prices", "shopping"),
     ("where can I buy a ps5 slim", "shopping"),
+    ("i study in imsciences", "owner"), ("where i stid ?", "owner"), ("what semester am i in?", "owner"),
+    ("why your response is late", "owner"), ("check my whatsap and let me know which chat is unread", "whatsapp"),
 ]
 
 

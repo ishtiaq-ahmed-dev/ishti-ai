@@ -44,7 +44,8 @@ def run(text, session):
     trace(session, "model", f"thinking with {llm.model_for(role)}", status="start")
     # memory goes in the system prompt, not the owner's turn: in the user turn the model echoed the
     # "KNOWN FACTS" header back into its answer
-    system = llm.STYLE + (f"\n\nContext you may use (never mention these headings):\n{ctx}" if ctx else "")
+    system = llm.STYLE + (f"\n\nContext you may use (never mention these headings; the known facts are exact "
+                           f"and override anything else you recall):\n{ctx}" if ctx else "")
     msgs = session.get("history", [])[-12:] + [{"role": "user", "content": text}]
     out = (llm.chat(msgs, role=role, system=system, max_tokens=2048 if role == "coder" else 1024,
                     on_token=session.get("on_token")).content or "").strip()

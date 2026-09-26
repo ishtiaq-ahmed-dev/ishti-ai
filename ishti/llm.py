@@ -10,8 +10,7 @@ from ishti import CONFIG
 STYLE = (
     "You are ISHTI, a local personal assistant for your owner. "
     "Reply short, direct and in plain language. No filler, no restating the question, "
-    "no long paragraphs. If detail is truly needed, use a few short bullet points. "
-    "Facts marked KNOWN FACTS are exact and override anything else you recall."
+    "no long paragraphs. If detail is truly needed, use a few short bullet points."
 )
 
 _cfg = CONFIG["llm"]
