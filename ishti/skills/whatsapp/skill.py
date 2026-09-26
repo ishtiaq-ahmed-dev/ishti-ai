@@ -54,7 +54,7 @@ def unread(snap):
 
 
 # "send this video to qasim ims" names no app: WhatsApp is ISHTI's messenger.
-SEND_TO = re.compile(r"^\s*(?:please\s+)?(?:now\s+)?send\s+.{1,300}?\bto\s+\S+", re.I)
+SEND_TO = re.compile(r"^(?!.*(?:\be-?mails?\b|\bgmail\b|@))\s*(?:please\s+)?(?:now\s+)?send\s+.{1,300}?\bto\s+\S+", re.I)  # email is the email skill's
 MEDIA_PATH = re.compile(r"[A-Za-z]:\\[^\n\"'<>|?*`]+?\.(?:mp4|webm|mov|mkv|png|jpe?g|gif|webp|mp3|wav|m4a|pdf|docx?|xlsx?|pptx?|zip)\b", re.I)
 
 

@@ -21,13 +21,19 @@ OPS = [
 
 
 def match(text):
-    return any(rx.search(text) for _, rx in OPS)
+    for name, rx in OPS:
+        if rx.search(text):
+            # "draft an email to my professor" is writing help (chat); sending needs "send" or an address
+            return name != "send" or bool(EMAIL.search(text) or re.search(r"\bsend\b", text, I))
+    return False
 
 
 def run(text, session):
     p = session.get("pending")
     for name, rx in OPS:
         if m := rx.search(text):
+            if name == "send" and not EMAIL.search(text) and not re.search(r"\bsend\b", text, I):
+                return None  # "draft an email to my professor": writing help, the chat skill does that
             with browser.LOCK:
                 try:
                     browser.use_server("browser", session)  # Profile 10 (signed in to Google); falls back if not connected
