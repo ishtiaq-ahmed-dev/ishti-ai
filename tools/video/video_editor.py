@@ -62,7 +62,9 @@ class VideoEditor:
             if proc.returncode == 0:
                 return True, "Success"
             else:
-                err_snippet = proc.stderr[-400:] if proc.stderr else "Unknown ffmpeg error"
+                lines = [l for l in (proc.stderr or "").splitlines() if l.strip()]
+                bad = [l for l in lines if any(k in l.lower() for k in ("error", "invalid", "cannot", "no such", "not found"))]
+                err_snippet = " | ".join((bad or lines)[-3:])[:400] or "Unknown ffmpeg error"
                 print(f"[VideoEditor] FFmpeg error: {err_snippet}")
                 return False, err_snippet
         except subprocess.TimeoutExpired:
@@ -531,7 +533,14 @@ class VideoEditor:
         coord_expr = pos_coords.get(position, pos_coords["bottom"])
 
         clean_text = text.replace(":", "\\:").replace("'", "").replace('"', "")
-        drawtext = f"drawtext=text='{clean_text}':fontsize={font_size}:fontcolor={font_color}:box=1:boxcolor=black@0.6:boxborderw=8:{coord_expr}"
+        # Windows FFmpeg builds have no fontconfig ("Cannot load default config file"): name a font file.
+        font = next((f for f in (r"C:\Windows\Fonts\segoeuib.ttf", r"C:\Windows\Fonts\arialbd.ttf",
+                                 r"C:\Windows\Fonts\arial.ttf") if os.path.exists(f)), None)
+        fontfile = f":fontfile='{font.replace(chr(92), '/').replace(':', chr(92) + ':')}'" if font else ""
+        # size follows the frame, soft shadow, 0.6 s fade-in: reads as a title, not a debug label
+        drawtext = (f"drawtext=text='{clean_text}'{fontfile}:fontsize=h/12:fontcolor={font_color}:"
+                    f"shadowcolor=black@0.55:shadowx=2:shadowy=2:box=1:boxcolor=black@0.35:boxborderw=14:"
+                    f"alpha='if(lt(t,0.6),t/0.6,1)':{coord_expr}")
 
         encoder = "h264_nvenc" if self.has_nvenc else "libx264"
         args = [

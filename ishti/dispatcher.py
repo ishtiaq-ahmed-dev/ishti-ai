@@ -66,6 +66,36 @@ def _remember(text, reply, skill):
         print(f"[dispatcher] semantic memory write skipped: {exc}")
 
 
+FOLLOW_UP = re.compile(
+    r"^\s*(?:why\s+(?:did|didn'?t|did\s*not|didnot|don'?t|won'?t)\s+you|(?:no[,.!]?\s+)?i\s+(?:asked|meant|said|wanted)|"
+    r"(?:search|look|check|try|do)\s+(?:it\s+|that\s+|this\s+)?(?:now|again|instead|properly|online)|"
+    r"(?:and\s+)?(?:now|then|also)\s+(?:do|search|check|try|make|use)|what\s+about|same\s+(?:for|with)|"
+    r"(?:not|no)\s+(?:that|this|my)\b)"
+    r"|\b(?:do\s+it|redo|again|instead|like\s+(?:that|before)|the\s+(?:first|second|third|last|previous)\s+one|"
+    r"you\s+(?:added|moved|put|did|made|said|gave))\b", re.I)
+
+
+def contextualize(text, s) -> str:
+    """Follow-ups ("search now", "why didn't you search?", "do it using the names instead") only make
+    sense with the conversation. Rewrite them into one standalone request before routing, so the right
+    skill gets the full intent (the standard condense-question-with-history step)."""
+    if not s["history"] or not FOLLOW_UP.search(text):
+        return text
+    from ishti import llm
+    turns = "\n".join(f"{'Owner' if m['role'] == 'user' else 'ISHTI'}: {m['content'][:400]}" for m in s["history"][-6:])
+    s["trace"](type="tool", name="understand", label="read the conversation to understand the follow-up", status="start")
+    out = llm.ask(
+        f"Conversation so far:\n{turns}\n\nOwner's new message: {text}\n\n"
+        "Rewrite the owner's new message as ONE complete, standalone request that an assistant could act on "
+        "without the conversation. If the owner is complaining that the last answer was wrong or did the wrong "
+        "thing, rewrite it as their original request done the right way (for example 'search the internet for "
+        "...'). Keep their wording, file names and paths exactly. Output only the rewritten request.",
+        system=None, temperature=0, max_tokens=120).strip().strip('"')
+    rewritten = out if 3 <= len(out.split()) <= 80 else text
+    s["trace"](type="tool", name="understand", label=f"understood as: {rewritten[:120]}", status="done", rewritten=rewritten)
+    return rewritten
+
+
 def fell_short(question, reply, skill, s) -> bool:
     """Did the answer hand the problem back? Phrase check first; for information skills also ask the
     local model whether the reply states what was actually asked (a number, name, date...) - one word,
@@ -76,9 +106,12 @@ def fell_short(question, reply, skill, s) -> bool:
         return False
     from ishti import llm
     s["trace"](type="tool", name="verify", label="check the answer really answers the question", status="start")
-    verdict = llm.ask(f"Question: {question}\nAnswer: {reply[:1200]}\n\nDoes the answer state the specific "
-                      "information the question asks for (for example the actual number, version, name or date), "
-                      "rather than only saying where to find it or giving something related? Reply yes or no.",
+    # Wording picked on a labelled set (7/8; stricter phrasings rejected correct 2026 answers because the
+    # model's own knowledge ends earlier - hence today's date and "live web sources").
+    verdict = llm.ask(f"Today is {time.strftime('%A %d %B %Y')}. The answer comes from live web sources.\n"
+                      f"Question: {question}\nAnswer: {reply[:1200]}\n\nDoes the answer actually give the information "
+                      "the question asks for (a concrete value, name, number or fact), even partly? Answer no only if "
+                      "it gives none of it, says it could not find it, or only points to where to look. Reply yes or no.",
                       system=None, temperature=0, max_tokens=3).lower()
     ok = verdict.startswith("yes")
     s["trace"](type="tool", name="verify", status="done" if ok else "error",
@@ -150,13 +183,17 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
     if fix and wanted in SKILLS and s.get("last_request"):
         text = s["last_request"]
         dec = {"skill": wanted, "confidence": 1.0, "source": "correction", "was": s.get("last_skill")}
-    elif pending:
+    elif pending and not (FOLLOW_UP.search(text) and len(text.split()) > 3):
         dec = {"skill": pending["skill"], "confidence": 1.0, "source": "pending"}
-    elif (planner.candidate(text) and not (SKILLS.get("browser") and SKILLS["browser"].matches(text))
-          and (steps := planner.plan(text, SKILLS))):  # a browser task already covers "…and tell me what's there"
-        dec = {"skill": "plan", "confidence": 1.0, "source": "planner", "steps": steps}
     else:
-        dec = route(text, SKILLS)
+        if pending:  # a real follow-up, not an answer to the skill's question: drop the question
+            s["pending"] = None
+        text = contextualize(text, s)
+        if (planner.candidate(text) and not (SKILLS.get("browser") and SKILLS["browser"].matches(text))
+                and (steps := planner.plan(text, SKILLS))):  # a browser task already covers "…and tell me what's there"
+            dec = {"skill": "plan", "confidence": 1.0, "source": "planner", "steps": steps}
+        else:
+            dec = route(text, SKILLS)
     s["trace"](type="route", skill=dec["skill"], source=dec.get("source"), confidence=dec.get("confidence"),
                why=why(dec), scores=dec.get("scores", []), steps=dec.get("steps", []))
     if dec["skill"] == "plan":

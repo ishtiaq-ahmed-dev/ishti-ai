@@ -4,8 +4,14 @@ import re
 from orchestrator.intent_detector import IntentDetector
 
 
+MINE = re.compile(r"\b(?:my|this|the)\s+(?:pc|computer|laptop|system|machine)(?:'s)?\s+(?:specs?|specifications|status|usage)\b|"
+                  r"\b(?:specs?|specifications|usage|status)\s+of\s+(?:my|this)\s+(?:pc|computer|laptop|system|machine)\b", re.I)
+
+
 def match(text):
-    return IntentDetector.classify(re.sub(r"\b(?:the|a|an|my)\s+", "", text, flags=re.I))["mode"] == "PC_TELEMETRY"
+    # only this PC's own state; "price and specs of an RTX 5070 Ti" is a web question (web_search)
+    return bool(MINE.search(text)) or \
+        IntentDetector.classify(re.sub(r"\b(?:the|a|an|my)\s+", "", text, flags=re.I))["mode"] == "PC_TELEMETRY"
 
 
 def run(text, session):

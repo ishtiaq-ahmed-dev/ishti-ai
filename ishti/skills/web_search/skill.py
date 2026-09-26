@@ -5,8 +5,16 @@ from orchestrator.intent_detector import IntentDetector
 _engine = None
 
 
+import re
+
+# Facts about products, prices and releases live on the web, not in the model's memory.
+PRODUCT = re.compile(r"\b(?:price|prices|cost|costs|how\s+much\s+is|specs?|specifications|review|reviews|"
+                     r"benchmark|benchmarks|release\s+date|launch\s+date|vs\.?|versus|compare)\b", re.I)
+MINE = re.compile(r"\b(?:my|this)\s+(?:pc|computer|laptop|system|machine)\b", re.I)
+
+
 def match(text):
-    return IntentDetector.classify(text)["mode"] == "QUICK_SEARCH"
+    return IntentDetector.classify(text)["mode"] == "QUICK_SEARCH" or (bool(PRODUCT.search(text)) and not MINE.search(text))
 
 
 def run(text, session):

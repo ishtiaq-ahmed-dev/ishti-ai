@@ -42,10 +42,13 @@ def run(text, session):
     ctx = build_context(text)
     trace(session, "context", f"{ctx.count(chr(10) + '- ')} saved facts / memories in context" if ctx else "no saved context needed")
     trace(session, "model", f"thinking with {llm.model_for(role)}", status="start")
-    msgs = session.get("history", [])[-12:] + [
-        {"role": "user", "content": f"{ctx}\n\nOwner: {text}" if ctx else text}]
-    out = (llm.chat(msgs, role=role, max_tokens=2048 if role == "coder" else 1024,
+    # memory goes in the system prompt, not the owner's turn: in the user turn the model echoed the
+    # "KNOWN FACTS" header back into its answer
+    system = llm.STYLE + (f"\n\nContext you may use (never mention these headings):\n{ctx}" if ctx else "")
+    msgs = session.get("history", [])[-12:] + [{"role": "user", "content": text}]
+    out = (llm.chat(msgs, role=role, system=system, max_tokens=2048 if role == "coder" else 1024,
                     on_token=session.get("on_token")).content or "").strip()
     if not inspect(out)[0]:  # refusal / contamination -> one clean retry
-        out = (llm.chat(msgs[-1:], role=role, temperature=0).content or "").strip()
+        out = (llm.chat(msgs[-1:], role=role, system=system, temperature=0).content or "").strip()
+    out = re.sub(r"\s*(?:KNOWN FACTS|Possibly relevant past context)\b.*$", "", out, flags=re.S | re.I).strip()
     return {"reply": out or "No answer from the local model.", "sources": []}
