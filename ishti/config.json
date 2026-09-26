@@ -27,7 +27,8 @@
   "mcp_servers": {
     "browser": {
       "command": "npx",
-      "args": ["-y", "@playwright/mcp@latest", "--user-data-dir", "D:\\ISHTI\\data\\mcp_browser_profile"]
+      "args": ["-y", "@playwright/mcp@0.0.82", "--user-data-dir", "D:\\ISHTI\\data\\mcp_browser_profile",
+               "--output-dir", "D:\\ISHTI\\data\\mcp_output"]
     }
   },
   "voice": {

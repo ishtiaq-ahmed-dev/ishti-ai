@@ -12,3 +12,4 @@ models/
 orchestrator/memory/*.json
 orchestrator/memory/**/*.json
 orchestrator/memory/reflections.md
+.playwright-mcp/

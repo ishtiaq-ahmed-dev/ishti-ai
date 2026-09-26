@@ -1,5 +1,7 @@
 """Single entry point to the local LLM (Ollama's OpenAI-compatible /v1 endpoint).
 Model names come from config.json, so models swap without code changes."""
+import re
+
 from openai import OpenAI
 
 from ishti import CONFIG
@@ -14,6 +16,17 @@ STYLE = (
 _cfg = CONFIG["llm"]
 _client = OpenAI(base_url=_cfg["base_url"], api_key="ollama", timeout=_cfg["timeout_s"])
 _installed = None
+# qwen2.5:14b (Q4_K_M) sometimes opens a tool-calling reply with a Thai/Chinese junk line
+# ("คณะกรรม... (委员会)"); the tool calls themselves still parse. Drop those lines unless the
+# conversation itself uses that script.
+_JUNK = {"thai": re.compile(r"[฀-๿]"), "cjk": re.compile(r"[一-鿿]")}
+
+
+def clean(text: str, context: str = "") -> str:
+    for rx in _JUNK.values():
+        if rx.search(text or "") and not rx.search(context):
+            text = "\n".join(line for line in text.splitlines() if not rx.search(line))
+    return (text or "").strip()
 
 
 def model_for(role: str) -> str:
@@ -30,13 +43,16 @@ def model_for(role: str) -> str:
     return name
 
 
-def chat(messages, role="planner", system=STYLE, tools=None, temperature=0.3, **kw):
-    """Returns the OpenAI message object (has .content and .tool_calls)."""
+def chat(messages, role="planner", system=STYLE, tools=None, temperature=0.3, max_tokens=1024, **kw):
+    """Returns the OpenAI message object (has .content and .tool_calls).
+    max_tokens is always set: with tools the model can keep generating after its tool call."""
     msgs = ([{"role": "system", "content": system}] if system else []) + list(messages)
-    args = dict(model=model_for(role), messages=msgs, temperature=temperature, **kw)
+    args = dict(model=model_for(role), messages=msgs, temperature=temperature, max_tokens=max_tokens, **kw)
     if tools:
         args["tools"] = tools
-    return _client.chat.completions.create(**args).choices[0].message
+    msg = _client.chat.completions.create(**args).choices[0].message
+    msg.content = clean(msg.content, " ".join(str(m.get("content", "")) for m in messages if m.get("role") == "user"))
+    return msg
 
 
 def ask(prompt: str, role="planner", system=STYLE, **kw) -> str:
@@ -44,6 +60,8 @@ def ask(prompt: str, role="planner", system=STYLE, **kw) -> str:
 
 
 if __name__ == "__main__":
+    assert clean("คณะ (委员会)\nThe heading is Example Domain.") == "The heading is Example Domain."
+    assert clean("你好", context="说中文") == "你好"  # kept when the owner writes that script
     out = ask("Reply with exactly the word: pong", temperature=0)
     assert "pong" in out.lower(), out
     print(f"[self-check] llm OK via {model_for('planner')}: {out}")

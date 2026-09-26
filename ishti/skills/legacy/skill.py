@@ -2,7 +2,7 @@
 from orchestrator.intent_detector import IntentDetector
 
 MODES = {"VIDEO_EDIT", "PC_SEARCH", "PC_TELEMETRY", "APP_CONTROL", "DEEP_RESEARCH",
-         "WEB_FETCH", "BROWSER_FORM", "BROWSER_VISIBLE"}
+         "WEB_FETCH"}
 _engine = None
 
 
