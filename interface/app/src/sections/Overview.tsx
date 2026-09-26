@@ -5,6 +5,7 @@ import { getJSON } from "@/lib/api";
 import { AnimatedCounter } from "@/components/rare/animated-counter";
 import { Page } from "@/sections/Pages";
 import { AgentOrb } from "@/components/AgentOrb";
+import { IshtiBrand } from "@/components/IshtiBrand";
 import type { OrbState } from "@/lib/agent-state";
 
 type Overview = {
@@ -55,7 +56,7 @@ export function Overview({ onToggleNav }: { onToggleNav?: () => void }) {
   const src = (k: string) => o.by_source[k] ?? 0;
   const max = Math.max(1, ...o.skills.map((s) => s.uses));
   const stages = [
-    { icon: <MessageSquareText className="h-4 w-4" />, orbState: "listening" as OrbState, title: "Input", lines: ["Text in this app", `Voice · whisper ${o.voice.whisper_model}`, `Hands-free · "${o.voice.wake_model.replace("_", " ")}"`], count: o.requests, label: "requests" },
+    { icon: <MessageSquareText className="h-4 w-4" />, orbState: "listening" as OrbState, title: "Input", lines: ["Text in this app", `Voice · whisper ${o.voice.whisper_model}`, `Hands-free · "hey ishti"`], count: o.requests, label: "requests" },
     { icon: <Sparkles className="h-4 w-4" />, orbState: "solving" as OrbState, title: "Understand", lines: ["Follow-ups rewritten with the chat", "\"this year\" → real dates"], count: undefined },
     { icon: <Route className="h-4 w-4" />, orbState: "working" as OrbState, title: "Route", lines: ["Skill patterns first", `Laya ${o.laya.model} ${o.laya.loaded ? "· loaded" : ""}`], count: src("rule") + src("laya"), label: `${src("rule")} rule · ${src("laya")} Laya` },
     { icon: <GitBranch className="h-4 w-4" />, orbState: "weaving" as OrbState, title: "Plan", lines: ["Several tasks → steps", "Answers carried between steps"], count: src("plan"), label: "plan steps" },
@@ -65,8 +66,62 @@ export function Overview({ onToggleNav }: { onToggleNav?: () => void }) {
     { icon: <AudioLines className="h-4 w-4" />, orbState: "composing" as OrbState, title: "Answer", lines: ["Streamed with its reasoning", `Voice ${o.prefs.audio_output ? "on" : "off"} · ${o.voice.piper_voice}`] },
   ];
 
+  const handleOpenNewChat = () => {
+    try {
+      localStorage.setItem("ishti-page", "chat");
+      window.location.hash = "#chat";
+      window.dispatchEvent(new CustomEvent("ishti-start-new-chat"));
+    } catch {}
+  };
+
   return (
-    <Page title="Overview" subtitle="How ISHTI works, what it can do, and what it knows about you - live." onToggleNav={onToggleNav}>
+    <Page
+      title="Overview"
+      subtitle="How ISHTI works, what it can do, and what it knows about you - live."
+      onToggleNav={onToggleNav}
+      action={
+        <button
+          type="button"
+          onClick={handleOpenNewChat}
+          className="flex items-center gap-2 rounded-xl border border-border bg-card px-3.5 py-1.5 text-xs font-semibold text-foreground hover:border-accent hover:text-accent transition-all cursor-pointer shadow-xs"
+        >
+          <IshtiBrand variant="icon" size={18} />
+          <span>New Chat</span>
+        </button>
+      }
+    >
+      {/* Brand Overview Banner - Clicking logo opens Chat and starts a new chat */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-card/60 p-4 shadow-xs">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={handleOpenNewChat}
+          title="Click to open Chat and start a new conversation"
+          className="flex items-center gap-3 cursor-pointer group select-none"
+        >
+          <IshtiBrand
+            variant="lockup"
+            className="group-hover:opacity-90 active:scale-95 transition-all"
+          />
+          <div className="hidden sm:block border-l border-border/80 pl-3">
+            <div className="text-xs font-semibold text-foreground group-hover:text-accent transition-colors">
+              Personal AI Assistant Neural Core
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              Click anywhere on this logo to open dashboard & start a new chat
+            </div>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleOpenNewChat}
+          className="flex items-center gap-1.5 rounded-xl bg-accent px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:opacity-90 transition-all cursor-pointer"
+        >
+          <span>Open Main Chat</span>
+          <span className="font-mono text-[11px] opacity-80">→</span>
+        </button>
+      </div>
+
       <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pipeline</div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
         {stages.map((s, i) => (
@@ -105,11 +160,11 @@ export function Overview({ onToggleNav }: { onToggleNav?: () => void }) {
           <div>
             <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">You</div>
             <div className="rounded-2xl border border-border bg-card/40 p-4 text-sm shadow-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2.5">
                 {o.owner.map((f) => (
-                  <div key={f.attr} className="flex items-baseline gap-2">
-                    <span className="w-16 shrink-0 capitalize text-xs text-muted-foreground">{f.attr}</span>
-                    <span className="font-medium text-foreground truncate">{f.value}</span>
+                  <div key={f.attr} className="flex flex-col gap-0.5 min-w-0 overflow-hidden">
+                    <span className="capitalize text-[11px] font-medium text-muted-foreground truncate" title={f.attr.replace(/_/g, " ")}>{f.attr.replace(/_/g, " ")}</span>
+                    <span className="font-semibold text-sm text-foreground truncate" title={f.value}>{f.value}</span>
                   </div>
                 ))}
               </div>

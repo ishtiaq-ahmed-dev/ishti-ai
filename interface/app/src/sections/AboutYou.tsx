@@ -82,7 +82,7 @@ function AddRow({ prefix = "", placeholder, onAdd }: { prefix?: string; placehol
   );
 }
 
-/** Everything ISHTI knows about the owner and sends with their messages - visible and editable, like Claude's profile. */
+/** Everything ISHTI knows about the owner and sends with their messages - visible and editable personal profile. */
 export function AboutYou({ onToggleNav }: { onToggleNav?: () => void }) {
   const [about, setAbout] = useState<About | null>(null);
   const [instructions, setInstructions] = useState("");
@@ -110,53 +110,134 @@ export function AboutYou({ onToggleNav }: { onToggleNav?: () => void }) {
   );
 
   return (
-    <Page title="About you" subtitle="What ISHTI knows about you and how it should work for you. Edit anything; it applies to your next message."
-      className="max-w-3xl" onToggleNav={onToggleNav}>
-      {!about ? <p className="text-sm text-muted-foreground">Loading…</p> : (
-        <div className="space-y-4">
-          <Section title="Custom instructions" hint="Sent with every message, like Claude's personal preferences. Example: answer in short bullet points, reply in Roman Urdu when I write in it, always show prices as a table.">
-            <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={5} maxLength={4000}
-              aria-label="Custom instructions" placeholder="How should ISHTI answer and work for you?"
-              className="scroll-thin w-full resize-y rounded-xl border border-border bg-background p-3 text-sm leading-relaxed outline-none focus:border-accent" />
-            <div className="mt-2 flex items-center justify-end gap-3">
-              <AnimatePresence>{saved && <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="text-xs text-accent">Saved</motion.span>}</AnimatePresence>
-              <button type="button" onClick={saveInstructions} disabled={instructions === about.instructions}
-                className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40 cursor-pointer">Save instructions</button>
-            </div>
-          </Section>
+    <Page
+      title="About you"
+      subtitle="What ISHTI knows about you and how it should work for you. Edit anything; it applies to your next message."
+      className="max-w-6xl"
+      onToggleNav={onToggleNav}
+    >
+      {!about ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          {/* Left Column: Custom Instructions & Live Prompt Context */}
+          <div className="lg:col-span-7 space-y-4">
+            <Section
+              title="Custom instructions"
+              hint="Sent with every message to personalize ISHTI's responses. Example: answer in short bullet points, reply in Roman Urdu when I write in it, always show prices as a table."
+            >
+              <textarea
+                value={instructions}
+                onChange={(e) => setInstructions(e.target.value)}
+                rows={7}
+                maxLength={4000}
+                aria-label="Custom instructions"
+                placeholder="How should ISHTI answer and work for you?"
+                className="scroll-thin w-full resize-y rounded-xl border border-border bg-background p-3 text-sm leading-relaxed outline-none focus:border-accent"
+              />
+              <div className="mt-2.5 flex items-center justify-between">
+                <span className="text-[11px] text-muted-foreground font-mono">
+                  {instructions.length} / 4000 chars
+                </span>
+                <div className="flex items-center gap-3">
+                  <AnimatePresence>
+                    {saved && (
+                      <motion.span
+                        initial={{ opacity: 0, y: 2 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0 }}
+                        className="text-xs font-medium text-accent"
+                      >
+                        ✓ Saved instructions
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                  <button
+                    type="button"
+                    onClick={saveInstructions}
+                    disabled={instructions === about.instructions}
+                    className="rounded-lg bg-accent px-3.5 py-1.5 text-xs font-medium text-white disabled:opacity-40 hover:opacity-90 transition-opacity cursor-pointer shadow-xs"
+                  >
+                    Save instructions
+                  </button>
+                </div>
+              </div>
+            </Section>
 
-          <Section title="About you" hint="Personal and professional details. ISHTI adds these when you tell it (for example 'I'm in 7th semester') and updates them in place.">
-            {rows(about.facts)}
-            <AddRow placeholder="e.g. semester" onAdd={save} />
-          </Section>
+            {/* Prompt Transparency Dropdown */}
+            <section className="rounded-2xl border border-border bg-background shadow-xs">
+              <button
+                type="button"
+                onClick={() => setShowSent((v) => !v)}
+                aria-expanded={showSent}
+                className="flex w-full items-center justify-between px-4 py-3.5 text-left text-sm font-semibold cursor-pointer sm:px-5 hover:bg-muted/30 rounded-2xl transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <span>What is sent with every message</span>
+                  <span className="rounded-md bg-muted px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
+                    System prompt
+                  </span>
+                </div>
+                <ChevronDown
+                  className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${
+                    showSent ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+              <AnimatePresence initial={false}>
+                {showSent && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="space-y-3 border-t border-border/60 px-4 py-4 sm:px-5">
+                      <p className="text-xs text-muted-foreground">
+                        Exact text the local neural core receives. Chat answers also get the facts below; other skills get only the style.
+                      </p>
+                      <pre className="scroll-thin max-h-72 overflow-auto whitespace-pre-wrap rounded-xl bg-muted/60 p-3 font-mono text-[11.5px] leading-relaxed select-text">
+                        {about.sent.style}
+                      </pre>
+                      {about.sent.context && (
+                        <pre className="scroll-thin max-h-72 overflow-auto whitespace-pre-wrap rounded-xl bg-muted/60 p-3 font-mono text-[11.5px] leading-relaxed select-text">
+                          {about.sent.context}
+                        </pre>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </section>
+          </div>
 
-          <Section title="Preferences learned from your chats" hint="Standing preferences ISHTI picked up from how you talk to it. Fix or remove any that are wrong.">
-            {Object.keys(about.prefs).length ? rows(about.prefs) : <p className="px-3 text-sm text-muted-foreground">None yet.</p>}
-            <AddRow prefix="prefers_" placeholder="e.g. answer length" onAdd={save} />
-          </Section>
+          {/* Right Column: Profile Facts & Learned Preferences */}
+          <div className="lg:col-span-5 space-y-4">
+            <Section
+              title="Personal Details"
+              hint="Personal and professional details ISHTI uses to assist you."
+            >
+              {rows(about.facts)}
+              <AddRow placeholder="e.g. role or city" onAdd={save} />
+            </Section>
 
-          <section className="rounded-2xl border border-border bg-background">
-            <button type="button" onClick={() => setShowSent((v) => !v)} aria-expanded={showSent}
-              className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold cursor-pointer sm:px-5">
-              What is sent with every message
-              <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${showSent ? "rotate-180" : ""}`} />
-            </button>
-            <AnimatePresence initial={false}>
-              {showSent && (
-                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-                  className="overflow-hidden">
-                  <div className="space-y-3 px-4 pb-4 sm:px-5">
-                    <p className="text-xs text-muted-foreground">Exact text the local model receives. Chat answers also get the facts below; other skills get only the style.</p>
-                    <pre className="scroll-thin max-h-72 overflow-auto whitespace-pre-wrap rounded-xl bg-muted/60 p-3 font-mono text-[12px] leading-relaxed">{about.sent.style}</pre>
-                    {about.sent.context && <pre className="scroll-thin max-h-72 overflow-auto whitespace-pre-wrap rounded-xl bg-muted/60 p-3 font-mono text-[12px] leading-relaxed">{about.sent.context}</pre>}
-                  </div>
-                </motion.div>
+            <Section
+              title="Preferences learned from your chats"
+              hint="Standing preferences ISHTI picked up from how you talk to it. Fix or remove any that are wrong."
+            >
+              {Object.keys(about.prefs).length ? (
+                rows(about.prefs)
+              ) : (
+                <p className="px-3 py-2 text-xs text-muted-foreground italic">
+                  No custom preferences saved yet.
+                </p>
               )}
-            </AnimatePresence>
-          </section>
+              <AddRow prefix="prefers_" placeholder="e.g. answer length" onAdd={save} />
+            </Section>
+          </div>
         </div>
       )}
     </Page>
   );
 }
+

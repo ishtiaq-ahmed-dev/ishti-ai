@@ -14,3 +14,13 @@ orchestrator/memory/**/*.json
 orchestrator/memory/reflections.md
 .playwright-mcp/
 interface/app/node_modules/
+
+# logs & temporary screenshots
+*.log
+screenshot_*.png
+scratch/
+
+# claude code & assistants
+.claude/
+.claude
+claudecode/

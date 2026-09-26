@@ -69,7 +69,7 @@ Fixes from the chats:
 - [ ] "you didn't even open CapCut…" re-listed videos → complaints about the last answer are follow-ups (redo it the right way)
 - [ ] Bitcoin answer mixed $96k and $84k from different pages → live prices come from market APIs, not page text
 New:
-- [ ] "About you" section: see and edit everything ISHTI knows about the owner, plus custom instructions sent with every message (like Claude's), and a preview of exactly what is sent
+- [ ] "About you" section: see and edit everything ISHTI knows about the owner, plus custom instructions sent with every message, and a preview of exactly what is sent
 - [ ] Reply in the owner's language (Urdu, Roman Urdu, English)
 - [ ] Markets: stocks, crypto, gold, currency with a real analyzer (trend, RSI, moving averages, volatility, fundamentals) and a Markets section; research open-source stock terminals (OpenBB etc.)
 - [ ] Edited videos/images play and download inside the chat

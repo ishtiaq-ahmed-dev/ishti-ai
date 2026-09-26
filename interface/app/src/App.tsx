@@ -127,6 +127,13 @@ export default function App() {
     return () => ws.close();
   }, [busy]);
 
+  const handleLogoClick = useCallback(() => {
+    setPage("chat");
+    try {
+      window.dispatchEvent(new CustomEvent("ishti-start-new-chat"));
+    } catch {}
+  }, [setPage]);
+
   return (
     <div className="flex h-full p-3 bg-canvas text-foreground transition-colors duration-200">
       <div className="relative flex min-h-0 flex-1 overflow-hidden rounded-3xl border border-border bg-background shadow-[0_8px_40px_rgba(0,0,0,0.06)] dark:shadow-[0_8px_40px_rgba(0,0,0,0.8)]">
@@ -142,7 +149,12 @@ export default function App() {
               <div className="flex h-full w-[240px] flex-col min-h-0 px-3 py-4">
                 {/* Official Brand Header */}
                 <div className="mb-4 flex items-center justify-between px-1 pt-0.5">
-                  <IshtiBrand variant="lockup" className="cursor-pointer" onClick={() => setPage("chat")} title="ISHTI - Personal AI Assistant" />
+                  <IshtiBrand
+                    variant="lockup"
+                    className="cursor-pointer hover:opacity-90 active:scale-[0.98] transition-all"
+                    onClick={handleLogoClick}
+                    title="ISHTI - Start New Chat"
+                  />
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
@@ -201,8 +213,6 @@ export default function App() {
                 <div className="mt-3 shrink-0 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 p-3 text-white">
                   <div className="flex items-center gap-1.5 text-sm font-semibold"><Bell className="h-3.5 w-3.5" /> Local-first</div>
                   <p className="mt-1 text-[11px] leading-snug text-white/85">Models, memory and voice run on this PC. Nothing leaves it.</p>
-                  <a href="https://rareui.com" target="_blank" rel="noreferrer" className="mt-2 inline-block text-[10px] text-white/70 underline-offset-2 hover:underline">
-                    UI components: Rare UI</a>
                 </div>
               </div>
             </motion.aside>

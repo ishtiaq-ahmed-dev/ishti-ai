@@ -27,12 +27,13 @@ export function FolderScan({ scan, plan }: { scan: TraceEvent; plan?: TraceEvent
           style={{
             width: 209,
             height: 176,
-            transform: "scale(0.40)",
+            transform: "scale(0.42)",
             transformOrigin: "center center",
+            willChange: "transform",
           }}
           className="flex items-center justify-center shrink-0 select-none"
         >
-          <Folder color="blue" size="sm" allowOpen={false} />
+          <Folder color="blue" size="sm" allowOpen={true} />
         </div>
       </div>
 

@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUp, Maximize2, Mic, Minimize2, Network, PanelLeft, PanelLeftClose, Plus, Square, X } from "lucide-react";
+import { ArrowUp, Maximize2, MessageSquare, Mic, Minimize2, Network, PanelLeft, PanelLeftClose, Plus, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { del, getJSON, postJSON, streamChat, type Result, type Source, type TraceEvent } from "@/lib/api";
 import { ActivityGraph, ConversationGraph, type Turn } from "@/components/ActivityGraph";
@@ -120,10 +120,12 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
 
+    let currentW = historyWidth;
     const onPointerMove = (ev: PointerEvent) => {
       const delta = ev.clientX - startX;
       const maxWidth = Math.max(350, Math.min(550, window.innerWidth * 0.45));
       const nextWidth = Math.max(180, Math.min(Math.round(startWidth + delta), maxWidth));
+      currentW = nextWidth;
       setHistoryWidth(nextWidth);
       try {
         localStorage.setItem("ishti-recent-chats-width", String(nextWidth));
@@ -136,6 +138,9 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
       document.body.style.userSelect = "";
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
+      try {
+        window.dispatchEvent(new CustomEvent("ishti-side-chats-width-changed", { detail: currentW }));
+      } catch {}
     };
 
     window.addEventListener("pointermove", onPointerMove);
@@ -238,6 +243,16 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     setGraphFor(null);
     loadSessions();
   }, [loadSessions]);
+
+  useEffect(() => {
+    const handleStartNewChat = () => {
+      newChat();
+    };
+    window.addEventListener("ishti-start-new-chat", handleStartNewChat);
+    return () => {
+      window.removeEventListener("ishti-start-new-chat", handleStartNewChat);
+    };
+  }, [newChat]);
 
   useEffect(() => {
     let targetSession: string | null = null;
@@ -381,7 +396,10 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                       type="button"
                       onClick={() => {
                         setHistoryWidth(240);
-                        try { localStorage.setItem("ishti-recent-chats-width", "240"); } catch {}
+                        try {
+                          localStorage.setItem("ishti-recent-chats-width", "240");
+                          window.dispatchEvent(new CustomEvent("ishti-side-chats-width-changed", { detail: 240 }));
+                        } catch {}
                       }}
                       title="Reset width to default (240px)"
                       className="rounded-md bg-muted/60 hover:bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
@@ -398,38 +416,75 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                   <Plus className="h-3.5 w-3.5" /> New
                 </button>
               </div>
-              <div className="scroll-thin flex-1 min-h-0 space-y-0.5 overflow-y-auto p-2">
+              <div className="scroll-thin flex-1 min-h-0 space-y-1.5 overflow-y-auto p-2.5">
                 {sessions.length ? (
-                  sessions.map((x) => (
-                    <div
-                      key={x.session_id}
-                      onClick={() => selectSession(x.session_id)}
-                      className={cn(
-                        "group relative flex cursor-pointer items-center justify-between gap-1.5 rounded-xl px-2.5 py-1 text-xs transition-colors",
-                        sessionId === x.session_id
-                          ? "bg-accent-soft text-accent font-medium shadow-xs"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                      )}
-                    >
-                      <span className="min-w-0 flex-1 truncate">{x.title}</span>
-                      <span
+                  sessions.map((x) => {
+                    const isSelected = sessionId === x.session_id;
+                    return (
+                      <div
+                        key={x.session_id}
+                        onClick={() => selectSession(x.session_id)}
                         className={cn(
-                          "text-[10px] shrink-0 group-hover:hidden group-has-[[data-state=open]]:hidden",
-                          sessionId === x.session_id ? "text-accent" : "opacity-60",
+                          "group relative flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm transition-all duration-200 select-none",
+                          isSelected
+                            ? "border-accent/70 bg-gradient-to-r from-accent/15 via-accent/8 to-transparent text-foreground font-semibold shadow-[0_2px_12px_rgba(110,86,207,0.12)] dark:shadow-[0_2px_12px_rgba(139,117,255,0.18)]"
+                            : "border-border/60 dark:border-white/10 bg-card/40 dark:bg-card/20 text-muted-foreground hover:border-accent/40 hover:bg-card/80 dark:hover:bg-card/45 hover:text-foreground hover:shadow-xs",
                         )}
                       >
-                        {ago(x.updated_at)}
-                      </span>
-                      <div className="hidden shrink-0 group-hover:flex group-has-[[data-state=open]]:flex items-center">
-                        <DeleteButton
-                          size="sm"
-                          onConfirm={() => deleteSession(x.session_id)}
+                        {/* Active vertical indicator bar on the left */}
+                        {isSelected && (
+                          <div className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-accent shadow-[0_0_10px_var(--color-accent)]" />
+                        )}
+
+                        {/* Chat Icon */}
+                        <MessageSquare
+                          className={cn(
+                            "h-4 w-4 shrink-0 transition-colors",
+                            isSelected
+                              ? "text-accent"
+                              : "text-muted-foreground/60 group-hover:text-muted-foreground"
+                          )}
                         />
+
+                        {/* Topic Title */}
+                        <span
+                          className={cn(
+                            "min-w-0 flex-1 truncate text-[13.5px] leading-snug",
+                            isSelected
+                              ? "text-foreground font-semibold"
+                              : "text-foreground/80 group-hover:text-foreground font-medium"
+                          )}
+                        >
+                          {x.title}
+                        </span>
+
+                        {/* Trailing Timestamp & Action */}
+                        <div className="shrink-0 flex items-center ml-1">
+                          <span
+                            className={cn(
+                              "text-[10.5px] tabular-nums transition-opacity",
+                              "group-hover:hidden group-has-[[data-state=open]]:hidden",
+                              isSelected
+                                ? "rounded-md bg-accent/20 px-1.5 py-0.5 text-accent font-semibold text-[10px]"
+                                : "text-muted-foreground/60"
+                            )}
+                          >
+                            {ago(x.updated_at)}
+                          </span>
+                          <div className="hidden group-hover:flex group-has-[[data-state=open]]:flex items-center">
+                            <DeleteButton
+                              size="sm"
+                              onConfirm={() => deleteSession(x.session_id)}
+                            />
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
-                  <div className="px-3 py-6 text-center text-xs text-muted-foreground">Your chats appear here.</div>
+                  <div className="rounded-xl border border-dashed border-border/70 p-6 text-center text-xs text-muted-foreground">
+                    Your chats appear here.
+                  </div>
                 )}
               </div>
             </div>
@@ -442,7 +497,10 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               onPointerDown={startResizing}
               onDoubleClick={() => {
                 setHistoryWidth(240);
-                try { localStorage.setItem("ishti-recent-chats-width", "240"); } catch {}
+                try {
+                  localStorage.setItem("ishti-recent-chats-width", "240");
+                  window.dispatchEvent(new CustomEvent("ishti-side-chats-width-changed", { detail: 240 }));
+                } catch {}
               }}
               className={cn(
                 "absolute -right-2 top-0 bottom-0 z-30 w-4 cursor-col-resize select-none",
@@ -488,11 +546,17 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               events={msgs.find((m) => m.live)?.events}
               live={busy}
               recording={recording}
-              size={32}
+              size={42}
               className="shrink-0"
             />
             <div>
-              <IshtiBrand variant="wordmark" height={26} className="translate-y-0.5" />
+              <IshtiBrand
+                variant="wordmark"
+                height={26}
+                className="translate-y-0.5 cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={newChat}
+                title="ISHTI - Start New Chat"
+              />
               <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 min-w-0">
                 {recording ? (
                   <span className="text-amber-500 font-medium">Listening to voice…</span>
@@ -523,10 +587,16 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
             <div className="flex h-full flex-col items-center justify-center gap-6 px-6">
               <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.4 }} className="relative flex items-center justify-center">
                 <div className="absolute inset-0 -m-8 rounded-full bg-accent/10 blur-3xl pointer-events-none" />
-                <AgentOrb size={72} state="breathing" />
+                <AgentOrb size={80} state="breathing" />
               </motion.div>
               <div className="text-center flex flex-col items-center">
-                <IshtiBrand variant="full" width={220} className="mb-4 drop-shadow-sm" />
+                <IshtiBrand
+                  variant="full"
+                  width={220}
+                  className="mb-4 drop-shadow-sm cursor-pointer hover:opacity-90 active:scale-95 transition-all"
+                  onClick={newChat}
+                  title="ISHTI - Start New Chat"
+                />
                 <h1 className="text-2xl font-semibold tracking-tight">{greeting}, {owner}</h1>
                 <p className="mt-1 text-sm text-muted-foreground">Ask anything, or tell me what to do on this PC.</p>
               </div>

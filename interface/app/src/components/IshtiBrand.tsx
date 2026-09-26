@@ -3,9 +3,11 @@ import { cn } from "@/lib/utils";
 
 type BrandVariant = "full" | "wordmark" | "icon" | "favicon" | "lockup";
 
-export type IshtiBrandProps = ComponentProps<"svg"> & {
+export type IshtiBrandProps = Omit<ComponentProps<"svg">, "width" | "height"> & {
   variant?: BrandVariant;
   size?: number | string;
+  width?: number | string;
+  height?: number | string;
   themeAdaptive?: boolean;
   title?: string;
 };
@@ -41,28 +43,76 @@ const APP_ICON_SPARKLE_PATH =
 export function IshtiBrand({
   variant = "full",
   size,
+  width,
+  height,
   themeAdaptive = true,
   title,
   className,
   style,
   ...props
 }: IshtiBrandProps) {
-  // Theme adaptive fill: solid navy on light mode, crisp clean silver/white on dark mode
-  const textFill = themeAdaptive
-    ? "fill-[#13243e] dark:fill-[#F4F4F9]"
-    : "fill-[#13243e]";
+  // Theme adaptive fill: solid navy on light mode, pure crisp white on dark mode via CSS variables
+  const textFill = themeAdaptive ? "var(--brand-text, #13243e)" : NAVY_COLOR;
+  const taglineFill = themeAdaptive ? "var(--brand-text, #13243e)" : NAVY_COLOR;
 
-  const taglineFill = themeAdaptive
-    ? "fill-[#13243e]/85 dark:fill-[#F4F4F9]/85"
-    : "fill-[#13243e]/85";
+  // Dimensions resolution
+  let resolvedWidth: number | string | undefined = width;
+  let resolvedHeight: number | string | undefined = height;
+
+  if (variant === "icon" || variant === "favicon") {
+    const s = size ?? width ?? height ?? (variant === "icon" ? 36 : 24);
+    resolvedWidth = s;
+    resolvedHeight = s;
+  } else if (variant === "wordmark") {
+    // 228 x 88 (aspect ratio 228 / 88 ≈ 2.5909)
+    if (resolvedHeight !== undefined && resolvedWidth === undefined) {
+      resolvedWidth = typeof resolvedHeight === "number" ? Math.round(resolvedHeight * (228 / 88)) : "auto";
+    } else if (resolvedWidth !== undefined && resolvedHeight === undefined) {
+      resolvedHeight = typeof resolvedWidth === "number" ? Math.round(resolvedWidth * (88 / 228)) : "auto";
+    } else if (size !== undefined && resolvedWidth === undefined && resolvedHeight === undefined) {
+      if (typeof size === "number") {
+        resolvedHeight = size;
+        resolvedWidth = Math.round(size * (228 / 88));
+      } else {
+        resolvedHeight = size;
+        resolvedWidth = "auto";
+      }
+    } else if (resolvedWidth === undefined && resolvedHeight === undefined) {
+      resolvedHeight = 28;
+      resolvedWidth = Math.round(28 * (228 / 88)); // 73px
+    }
+  } else if (variant === "full") {
+    // 228 x 112 (aspect ratio 228 / 112 ≈ 2.0357)
+    if (resolvedHeight !== undefined && resolvedWidth === undefined) {
+      resolvedWidth = typeof resolvedHeight === "number" ? Math.round(resolvedHeight * (228 / 112)) : "auto";
+    } else if (resolvedWidth !== undefined && resolvedHeight === undefined) {
+      resolvedHeight = typeof resolvedWidth === "number" ? Math.round(resolvedWidth * (112 / 228)) : "auto";
+    } else if (size !== undefined && resolvedWidth === undefined && resolvedHeight === undefined) {
+      if (typeof size === "number") {
+        if (size >= 80) {
+          resolvedWidth = size;
+          resolvedHeight = Math.round(size * (112 / 228));
+        } else {
+          resolvedHeight = size;
+          resolvedWidth = Math.round(size * (228 / 112));
+        }
+      } else {
+        resolvedHeight = size;
+        resolvedWidth = "auto";
+      }
+    } else if (resolvedWidth === undefined && resolvedHeight === undefined) {
+      resolvedWidth = 140;
+      resolvedHeight = Math.round(140 * (112 / 228)); // 69px
+    }
+  }
 
   // 1. STANDALONE APP ICON (Circle + Centered Warm Amber Sparkle)
   if (variant === "icon") {
     return (
       <svg
         viewBox="0 0 512 512"
-        width={size ?? 36}
-        height={size ?? 36}
+        width={resolvedWidth}
+        height={resolvedHeight}
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
         className={cn("shrink-0 select-none", className)}
@@ -81,8 +131,8 @@ export function IshtiBrand({
     return (
       <svg
         viewBox="0 0 32 32"
-        width={size ?? 24}
-        height={size ?? 24}
+        width={resolvedWidth}
+        height={resolvedHeight}
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
         className={cn("shrink-0 select-none", className)}
@@ -103,8 +153,8 @@ export function IshtiBrand({
     return (
       <svg
         viewBox="0 0 228 88"
-        width={size ?? "auto"}
-        height={typeof size === "number" ? size : 36}
+        width={resolvedWidth}
+        height={resolvedHeight}
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
         className={cn("select-none shrink-0", className)}
@@ -115,27 +165,40 @@ export function IshtiBrand({
         {/* Floating Sparkle Star nudged up-right of second 'I' */}
         <path d={FLOATING_SPARKLE_PATH} fill={GOLD_COLOR} />
         {/* Mathematically kerned ISHTI letters */}
-        <path d={ISHTI_VECTOR_PATH} className={cn("transition-colors", textFill)} />
+        <path d={ISHTI_VECTOR_PATH} fill={textFill} className="transition-colors" />
       </svg>
     );
   }
 
-  // 4. SIDEBAR HORIZONTAL LOCKUP (Icon 32px + Wordmark & Subtitle)
+  // 4. SIDEBAR HORIZONTAL LOCKUP (Icon 36px + Wordmark & Subtitle)
   if (variant === "lockup") {
     return (
-      <div className={cn("flex items-center gap-2.5 select-none shrink-0", className)} style={style as React.CSSProperties}>
-        <svg viewBox="0 0 512 512" width={32} height={32} fill="none" className="shrink-0">
+      <div
+        role="button"
+        tabIndex={0}
+        title={title}
+        className={cn("flex items-center gap-2.5 select-none shrink-0 transition-opacity hover:opacity-85 active:scale-[0.98]", className)}
+        style={style as React.CSSProperties}
+        {...(props as any)}
+      >
+        <svg viewBox="0 0 512 512" width={34} height={34} fill="none" className="shrink-0 drop-shadow-xs">
           <circle cx="256" cy="256" r="236" fill={NAVY_COLOR} />
           <path d={APP_ICON_SPARKLE_PATH} fill={GOLD_COLOR} />
         </svg>
         <div className="flex flex-col leading-none">
           <div className="flex items-center">
-            <span className="font-extrabold text-base tracking-[0.05em] text-[#13243e] dark:text-[#F4F4F9]">
+            <span
+              className="font-extrabold text-[17px] tracking-[0.05em] transition-colors"
+              style={{ color: textFill }}
+            >
               ISHTI
             </span>
-            <span className="ml-0.5 -mt-1 text-sm font-bold text-[#ce8418]">✦</span>
+            <span className="ml-1 -mt-1 text-sm font-bold text-[#ce8418]">✦</span>
           </div>
-          <span className="text-[9px] font-medium tracking-[0.25em] text-[#13243e]/70 dark:text-[#F4F4F9]/70 mt-0.5">
+          <span
+            className="text-[9.5px] font-semibold tracking-[0.24em] transition-colors mt-1 opacity-80"
+            style={{ color: taglineFill }}
+          >
             PERSONAL AI
           </span>
         </div>
@@ -147,8 +210,8 @@ export function IshtiBrand({
   return (
     <svg
       viewBox="0 0 228 112"
-      width={size ?? "auto"}
-      height={typeof size === "number" ? size : 44}
+      width={resolvedWidth}
+      height={resolvedHeight}
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={cn("select-none shrink-0", className)}
@@ -159,15 +222,17 @@ export function IshtiBrand({
       {/* Floating Sparkle Star nudged up-right of second 'I' */}
       <path d={FLOATING_SPARKLE_PATH} fill={GOLD_COLOR} />
       {/* Mathematically kerned ISHTI letters */}
-      <path d={ISHTI_VECTOR_PATH} className={cn("transition-colors", textFill)} />
-      {/* Refined Tagline: Lighter weight & architectural tracking */}
+      <path d={ISHTI_VECTOR_PATH} fill={textFill} className="transition-colors" />
+      {/* Refined Tagline: Clearly readable & architectural tracking */}
       <text
         x="16"
         y="102"
-        className={cn("font-sans font-medium transition-colors", taglineFill)}
+        fill={taglineFill}
+        className="font-sans font-bold transition-colors select-none"
         style={{
-          fontSize: 10,
-          letterSpacing: "0.38em",
+          fontSize: 12.5,
+          letterSpacing: "0.22em",
+          fontWeight: 700,
           fontFamily: "system-ui, -apple-system, 'Segoe UI', Inter, sans-serif",
         }}
       >

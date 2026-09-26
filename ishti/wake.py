@@ -1,6 +1,8 @@
-"""Hands-free voice: openWakeWord ("hey jarvis", CPU) -> record until Silero VAD hears silence ->
-faster-whisper -> dispatcher -> Piper. Voice is just another input channel into handle().
-A custom "hey ishti" wake model needs training (NEEDS.md); until then the pretrained one is used."""
+"""Hands-free voice: openWakeWord ("hey jarvis" pretrained model, CPU) -> record until
+Silero VAD hears silence -> faster-whisper -> dispatcher -> Piper.
+Voice is just another input channel into handle().
+The ONNX model detects "hey jarvis" phonetically; ISHTI treats this as its own wake word.
+If Whisper transcribes the wake phrase as "jarvis" or similar, ISHTI corrects with humour."""
 import collections
 import re
 import threading
@@ -12,7 +14,10 @@ from ishti import CONFIG
 RATE, FRAME = 16000, 1280                 # openWakeWord works on 80 ms frames of 16 kHz int16
 PRE_ROLL = 6                              # keep 0.5 s before the trigger: the command often follows in one breath
 END_SILENCE, NO_SPEECH, MAX_LEN = 10, 50, 150   # frames: 0.8 s quiet ends it, 4 s of nothing cancels, 12 s cap
-WAKE_TEXT = re.compile(r"^\W*(?:hey|hi|ok|okay)?\W*(?:jarvis|ishti)\b\W*", re.I)
+# Regex strips the wake phrase. Covers common Whisper mis-transcriptions of "hey ishti".
+WAKE_TEXT = re.compile(r"^\W*(?:hey|hi|ok|okay)?\W*(?:jarvis|ishti|travis|jessica|istie|ishi|isti|yishti)\b[,.:!?]*\W*", re.I)
+# Detects if Whisper heard a wrong name (not "ishti") so we can correct with humour.
+_WRONG_NAME = re.compile(r"\b(?:jarvis|travis|jessica|alexa|siri|cortana|google)\b", re.I)
 
 
 class Listener:
@@ -49,10 +54,22 @@ class Listener:
             return audio
         return None
 
-    def command_text(self, audio: np.ndarray) -> str:
+    def command_text(self, audio: np.ndarray) -> tuple[str, str | None]:
+        """Returns (clean_command, wrong_name_or_None)."""
         from ishti.voice import transcribe
-        text = transcribe(audio.astype(np.float32) / 32768) if len(audio) else ""
-        return WAKE_TEXT.sub("", text).strip()
+        raw = transcribe(audio.astype(np.float32) / 32768) if len(audio) else ""
+        wrong = _WRONG_NAME.search(raw)
+        wrong_name = wrong.group(0) if wrong else None
+        return WAKE_TEXT.sub("", raw).strip(), wrong_name
+
+    @staticmethod
+    def _identity_correction(wrong_name: str) -> str:
+        """Playful one-liner when Whisper hears 'Jarvis' (or another wrong name)."""
+        name = wrong_name.capitalize()
+        return (
+            f"Haha, hey! I'm Ishti, not {name}! "
+            f"But no worries, I heard you. Let me help — "
+        )
 
     def run(self, stop: threading.Event):
         import sounddevice as sd
@@ -62,16 +79,19 @@ class Listener:
             try:
                 # Reopened after every command so audio buffered while ISHTI was talking is dropped.
                 with sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=FRAME) as mic:
-                    print(f"[wake] listening for '{CONFIG['voice']['wake_model']}'")
+                    print(f"[wake] listening (wake model '{CONFIG['voice']['wake_model']}')")
                     warned = False
                     while not stop.is_set():
                         audio = self.feed(mic.read(FRAME)[0][:, 0])
                         if audio is not None:
                             break
-                text = self.command_text(audio)
+                text, wrong_name = self.command_text(audio)
                 if text:
-                    print(f"[wake] heard: {text!r}")
-                    speak(self.on_command(text), wait=True)
+                    print(f"[wake] heard: {text!r}" + (f" (misheard as '{wrong_name}')" if wrong_name else ""))
+                    reply = self.on_command(text)
+                    if wrong_name:
+                        reply = self._identity_correction(wrong_name) + reply
+                    speak(reply, wait=True)
             except Exception as exc:
                 if not warned:
                     print(f"[wake] no usable microphone ({exc}); retrying every 30 s")
@@ -109,7 +129,9 @@ if __name__ == "__main__":
     assert run_through(lis, pcm16k("What is the weather tomorrow?")) is None, "no wake word -> nothing"
     got = run_through(lis, pcm16k("Hey Jarvis, what is the weather tomorrow?"))
     assert got is not None and len(got), "wake word not detected"
-    text = lis.command_text(got)
-    print(f"command: {text!r}")
+    text, wrong = lis.command_text(got)
+    print(f"command: {text!r}, wrong_name: {wrong!r}")
     assert "weather" in text.lower() and "jarvis" not in text.lower(), text
+    if wrong:
+        print(f"[self-check] identity correction would fire for '{wrong}'")
     print("[self-check] wake OK - ignores speech without the wake word, captures the command after it")

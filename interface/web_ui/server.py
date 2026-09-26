@@ -12,7 +12,7 @@ import asyncio
 import secrets
 from typing import Dict, Any, List
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
@@ -140,6 +140,37 @@ ISHTI_HOOKS.update(emit=sync_event_callback)
 APP_DIST = os.path.join(ROOT_DIR, "interface", "app", "dist")  # the React app (cd interface/app && npm run build)
 if os.path.isdir(os.path.join(APP_DIST, "assets")):
     app.mount("/assets", StaticFiles(directory=os.path.join(APP_DIST, "assets")), name="app-assets")
+
+
+@app.get("/favicon.ico")
+@app.get("/favicon.svg")
+@app.get("/favicon.png")
+@app.get("/ishti-icon.svg")
+@app.get("/ishti-icon.png")
+@app.get("/ishti-logo.svg")
+@app.get("/ishti-logo.png")
+async def get_favicons_and_brand_assets(request: Request):
+    """Serve favicons and brand logos with correct media types."""
+    filename = request.url.path.lstrip("/")
+    search_dirs = [
+        APP_DIST,
+        os.path.join(ROOT_DIR, "interface", "app", "public"),
+        STATIC_DIR,
+        os.path.join(ROOT_DIR, "assets"),
+    ]
+    for d in search_dirs:
+        candidate = os.path.join(d, filename)
+        if os.path.isfile(candidate):
+            media = "image/svg+xml" if filename.endswith(".svg") else "image/png" if filename.endswith(".png") else "image/x-icon"
+            return FileResponse(candidate, media_type=media)
+    # Fallback if specific file missing
+    for fallback in ["ishti-icon.svg", "favicon.svg", "favicon.png", "ishti-logo.png"]:
+        for d in search_dirs:
+            candidate = os.path.join(d, fallback)
+            if os.path.isfile(candidate):
+                media = "image/svg+xml" if fallback.endswith(".svg") else "image/png"
+                return FileResponse(candidate, media_type=media)
+    return JSONResponse({"error": "not found"}, status_code=404)
 
 
 @app.get("/", response_class=HTMLResponse)

@@ -53,7 +53,7 @@ export function Thinking({ events, live }: { events: TraceEvent[]; live: boolean
         className="flex items-center gap-2 rounded-md py-0.5 text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
       >
         {live ? (
-          <AgentOrb events={events} live={live} size={20} className="shrink-0 -my-0.5" />
+          <AgentOrb events={events} live={live} size={24} className="shrink-0 -my-0.5" />
         ) : (
           <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
         )}
@@ -98,9 +98,9 @@ export function Thinking({ events, live }: { events: TraceEvent[]; live: boolean
                   {list.map((r) => (
                     <motion.li key={r.key} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.18 }} className={`flex items-start gap-2 ${r.indent ? "pl-4" : ""}`}>
-                      <span className="mt-0.5 shrink-0 flex items-center justify-center w-4 h-4">
+                      <span className="mt-0.5 shrink-0 flex items-center justify-center w-5 h-5">
                         {r.status === "start" ? (
-                          <AgentOrb state={resolveToolState(r.text)} size={20} className="shrink-0 -my-0.5" />
+                          <AgentOrb state={resolveToolState(r.text)} size={22} className="shrink-0 -my-0.5" />
                         ) : (
                           ICON[r.status]
                         )}

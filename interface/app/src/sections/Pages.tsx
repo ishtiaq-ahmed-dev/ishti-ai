@@ -1,19 +1,30 @@
 import { AnimatePresence, motion } from "motion/react";
 import {
   Check,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Cpu,
   Database,
   FolderKanban,
   History,
   Lock,
+  Mic,
+  Monitor,
+  Moon,
   PanelLeft,
   Pencil,
   Play,
   Plus,
   RefreshCw,
   Search,
+  Sliders,
   Sparkles,
+  Sun,
   Trash2,
+  Type,
   User,
+  Volume2,
   X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -124,6 +135,11 @@ export function Memory({ onToggleNav }: { onToggleNav?: () => void }) {
   const [newValue, setNewValue] = useState("");
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  // Track expanded entities and individual expanded facts
+  const [expandedEntities, setExpandedEntities] = useState<Record<string, boolean>>({});
+  const [expandedFacts, setExpandedFacts] = useState<Record<string, boolean>>({});
 
   const load = (showSpinner = false) => {
     if (showSpinner) setIsLoading(true);
@@ -137,6 +153,34 @@ export function Memory({ onToggleNav }: { onToggleNav?: () => void }) {
   useEffect(() => {
     load();
   }, []);
+
+  const handleCopy = (key: string, val: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      navigator.clipboard.writeText(val);
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 1600);
+    } catch {}
+  };
+
+  const toggleFact = (key: string) => {
+    setExpandedFacts((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const toggleEntity = (entity: string) => {
+    setExpandedEntities((prev) => ({
+      ...prev,
+      [entity]: prev[entity] === undefined ? false : !prev[entity],
+    }));
+  };
+
+  const toggleAllFacts = (expand: boolean) => {
+    const next: Record<string, boolean> = {};
+    facts.forEach((f) => {
+      next[`${f.entity}:${f.attr}`] = expand;
+    });
+    setExpandedFacts(next);
+  };
 
   const handleSaveEdit = async () => {
     if (!editing || !editing.attr.trim() || !editing.value.trim()) return;
@@ -173,7 +217,8 @@ export function Memory({ onToggleNav }: { onToggleNav?: () => void }) {
     }
   };
 
-  const handleDeleteAttr = async (entity: string, attr: string) => {
+  const handleDeleteAttr = async (entity: string, attr: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     const key = `${entity}:${attr}`;
     setDeletingKey(key);
     try {
@@ -218,11 +263,13 @@ export function Memory({ onToggleNav }: { onToggleNav?: () => void }) {
 
   const totalFacts = facts.length;
   const totalEntities = new Set(facts.map((f) => f.entity)).size;
+  const anyFactExpanded = Object.values(expandedFacts).some(Boolean);
 
   return (
     <Page
       title="Memory"
       subtitle="Exact facts ISHTI looks up before anything else. Fully editable, updated in place, never duplicated."
+      className="max-w-6xl"
       onToggleNav={onToggleNav}
       action={
         <button
@@ -236,7 +283,7 @@ export function Memory({ onToggleNav }: { onToggleNav?: () => void }) {
     >
       <div className="space-y-4">
         {/* Filter and stats toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card/40 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card/50 p-3 shadow-xs">
           <div className="relative flex-1 min-w-[220px] max-w-md">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <input
@@ -244,7 +291,7 @@ export function Memory({ onToggleNav }: { onToggleNav?: () => void }) {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search facts, attributes, or values..."
-              className="w-full rounded-xl border border-border/80 bg-background/80 pl-9 pr-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent"
+              className="w-full rounded-xl border border-border bg-background pl-9 pr-8 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent"
             />
             {search && (
               <button
@@ -257,26 +304,45 @@ export function Memory({ onToggleNav }: { onToggleNav?: () => void }) {
             )}
           </div>
 
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="inline-flex items-center gap-1 rounded-lg bg-muted/60 px-2.5 py-1 font-medium">
-              <Database className="h-3 w-3 text-accent" />
-              <span>{totalFacts} facts</span>
+          <div className="flex items-center gap-2 text-xs">
+            <button
+              type="button"
+              onClick={() => toggleAllFacts(!anyFactExpanded)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
+            >
+              {anyFactExpanded ? (
+                <>
+                  <ChevronUp className="h-3.5 w-3.5 text-accent" />
+                  <span>Collapse All Facts</span>
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="h-3.5 w-3.5 text-accent" />
+                  <span>Expand All Facts</span>
+                </>
+              )}
+            </button>
+
+            <span className="inline-flex items-center gap-1.5 rounded-xl bg-muted/60 px-3 py-1.5 font-medium text-muted-foreground">
+              <Database className="h-3.5 w-3.5 text-accent" />
+              <span className="text-foreground font-semibold">{totalFacts}</span> facts
               <span>·</span>
-              <span>{totalEntities} entities</span>
+              <span className="text-foreground font-semibold">{totalEntities}</span> entities
             </span>
+
             <button
               type="button"
               onClick={() => load(true)}
               disabled={isLoading}
               title="Refresh facts"
-              className="rounded-lg border border-border/80 p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+              className="rounded-xl border border-border p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
             >
               <RefreshCw className={cn("h-3.5 w-3.5", isLoading && "animate-spin")} />
             </button>
           </div>
         </div>
 
-        {/* Facts Cards Grid */}
+        {/* Facts List - Responsive, balanced & line-by-line expandable */}
         {Object.keys(groups).length === 0 ? (
           <Card className="py-12 text-center">
             <Database className="mx-auto h-8 w-8 text-muted-foreground/50" />
@@ -288,253 +354,384 @@ export function Memory({ onToggleNav }: { onToggleNav?: () => void }) {
             </p>
           </Card>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
+          <div className="space-y-4">
             {Object.entries(groups).map(([entity, rows], i) => {
               const isOwner = entity.toLowerCase() === "owner";
               const isProject = entity.toLowerCase().includes("project") || entity.includes(":\\") || entity.includes("/");
+              const isEntityExpanded = expandedEntities[entity] !== false; // default true
+
               return (
                 <motion.div
                   key={entity}
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.03 }}
+                  transition={{ delay: i * 0.04 }}
+                  className="rounded-2xl border border-border bg-card/40 shadow-xs overflow-hidden transition-all"
                 >
-                  <Card className="flex flex-col h-full border-border/70 bg-card/60 shadow-xs">
-                    {/* Entity Header */}
-                    <div className="mb-3.5 flex items-center justify-between border-b border-border/50 pb-2.5">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div
-                          className={cn(
-                            "grid h-7 w-7 shrink-0 place-items-center rounded-lg text-xs",
-                            isOwner
-                              ? "bg-violet-500/15 text-violet-500"
-                              : isProject
-                              ? "bg-amber-500/15 text-amber-500"
-                              : "bg-sky-500/15 text-sky-500"
-                          )}
-                        >
-                          {isOwner ? (
-                            <User className="h-3.5 w-3.5" />
-                          ) : isProject ? (
-                            <FolderKanban className="h-3.5 w-3.5" />
-                          ) : (
-                            <Database className="h-3.5 w-3.5" />
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <h3 className="truncate font-semibold text-foreground text-sm capitalize">
+                  {/* Entity Header Bar */}
+                  <div
+                    className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-muted/20 border-b border-border/60 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+                    onClick={() => toggleEntity(entity)}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div
+                        className={cn(
+                          "grid h-8 w-8 shrink-0 place-items-center rounded-xl text-xs font-semibold shadow-xs",
+                          isOwner
+                            ? "bg-violet-500/15 text-violet-500"
+                            : isProject
+                            ? "bg-amber-500/15 text-amber-500"
+                            : "bg-sky-500/15 text-sky-500"
+                        )}
+                      >
+                        {isOwner ? (
+                          <User className="h-4 w-4" />
+                        ) : isProject ? (
+                          <FolderKanban className="h-4 w-4" />
+                        ) : (
+                          <Database className="h-4 w-4" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold text-foreground text-sm capitalize truncate">
                             {entity}
                           </h3>
-                          <span className="text-[11px] text-muted-foreground">
+                          <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-mono text-muted-foreground shrink-0">
                             {rows.length} {rows.length === 1 ? "fact" : "facts"}
                           </span>
                         </div>
                       </div>
-
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => setAddingAttr({ entity, attr: "", value: "" })}
-                          title={`Add attribute to ${entity}`}
-                          className="flex items-center gap-1 rounded-lg border border-border/70 px-2 py-1 text-[11px] font-medium text-muted-foreground hover:border-accent hover:text-accent hover:bg-accent/5 transition-colors cursor-pointer"
-                        >
-                          <Plus className="h-3 w-3" /> Add
-                        </button>
-                        {isOwner ? (
-                          <span
-                            title="Owner profile is permanent"
-                            className="grid h-7 w-7 place-items-center text-muted-foreground/60"
-                          >
-                            <Lock className="h-3.5 w-3.5" />
-                          </span>
-                        ) : (
-                          <DeleteButton
-                            onConfirm={() =>
-                              del(`/api/facts/${encodeURIComponent(entity)}`).then(load)
-                            }
-                          />
-                        )}
-                      </div>
                     </div>
 
-                    {/* Fact rows */}
-                    <div className="flex-1 space-y-2.5">
-                      {rows.map((f) => {
-                        const isThisEditing =
-                          editing?.entity === f.entity && editing?.originalAttr === f.attr;
-                        const isThisSaving = savingKey === `${f.entity}:${f.attr}`;
-                        const isThisDeleting = deletingKey === `${f.entity}:${f.attr}`;
+                    <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => setAddingAttr({ entity, attr: "", value: "" })}
+                        title={`Add attribute to ${entity}`}
+                        className="flex items-center gap-1 rounded-lg border border-border/80 bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground hover:border-accent hover:text-accent hover:bg-accent/5 transition-colors cursor-pointer"
+                      >
+                        <Plus className="h-3 w-3" /> Add
+                      </button>
+                      {isOwner ? (
+                        <span
+                          title="Owner profile is permanent"
+                          className="grid h-7 w-7 place-items-center text-muted-foreground/60"
+                        >
+                          <Lock className="h-3.5 w-3.5" />
+                        </span>
+                      ) : (
+                        <DeleteButton
+                          onConfirm={() =>
+                            del(`/api/facts/${encodeURIComponent(entity)}`).then(load)
+                          }
+                        />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => toggleEntity(entity)}
+                        className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors cursor-pointer"
+                        title={isEntityExpanded ? "Collapse section" : "Expand section"}
+                      >
+                        <ChevronDown
+                          className={cn("h-4 w-4 transition-transform duration-200", !isEntityExpanded && "-rotate-90")}
+                        />
+                      </button>
+                    </div>
+                  </div>
 
-                        if (isThisEditing) {
+                  {/* Fact rows - Line by Line Expandable */}
+                  <AnimatePresence initial={false}>
+                    {isEntityExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="p-3 space-y-2"
+                      >
+                        {rows.map((f) => {
+                          const factKey = `${f.entity}:${f.attr}`;
+                          const isThisEditing =
+                            editing?.entity === f.entity && editing?.originalAttr === f.attr;
+                          const isThisSaving = savingKey === factKey;
+                          const isThisDeleting = deletingKey === factKey;
+                          const isFactExpanded = !!expandedFacts[factKey];
+                          const isCopied = copiedKey === factKey;
+
+                          if (isThisEditing) {
+                            return (
+                              <div
+                                key={f.attr}
+                                className="rounded-xl border border-accent/80 bg-background p-3.5 shadow-xs space-y-2.5"
+                              >
+                                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                                  <div className="sm:col-span-1">
+                                    <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                      Attribute Key
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={editing.attr}
+                                      onChange={(e) =>
+                                        setEditing({ ...editing, attr: e.target.value })
+                                      }
+                                      className="mt-1 w-full rounded-lg border border-border bg-card/60 px-2.5 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
+                                    />
+                                  </div>
+                                  <div className="sm:col-span-3">
+                                    <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                      Value
+                                    </label>
+                                    <textarea
+                                      rows={3}
+                                      value={editing.value}
+                                      onChange={(e) =>
+                                        setEditing({ ...editing, value: e.target.value })
+                                      }
+                                      className="mt-1 w-full rounded-lg border border-border bg-card/60 px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-accent resize-y leading-relaxed"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="flex items-center justify-end gap-2 pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditing(null)}
+                                    className="flex items-center gap-1 rounded-lg border border-border px-3 py-1 text-xs text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
+                                  >
+                                    <X className="h-3 w-3" /> Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={handleSaveEdit}
+                                    disabled={
+                                      isThisSaving ||
+                                      !editing.attr.trim() ||
+                                      !editing.value.trim()
+                                    }
+                                    className="flex items-center gap-1 rounded-lg bg-accent px-3.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition-opacity cursor-pointer shadow-xs"
+                                  >
+                                    <Check className="h-3.5 w-3.5" />
+                                    {isThisSaving ? "Saving..." : "Save"}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          }
+
                           return (
                             <div
                               key={f.attr}
-                              className="rounded-xl border border-accent/80 bg-background p-3 shadow-xs space-y-2"
+                              onClick={() => toggleFact(factKey)}
+                              className={cn(
+                                "group rounded-xl border border-border/70 bg-background/80 hover:border-accent/50 hover:bg-background transition-all cursor-pointer shadow-2xs",
+                                isFactExpanded && "border-accent/40 bg-background shadow-xs",
+                                isThisDeleting && "opacity-40 pointer-events-none"
+                              )}
                             >
-                              <div>
-                                <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                                  Attribute Key
-                                </label>
-                                <input
-                                  type="text"
-                                  value={editing.attr}
-                                  onChange={(e) =>
-                                    setEditing({ ...editing, attr: e.target.value })
-                                  }
-                                  className="mt-0.5 w-full rounded-lg border border-border bg-card/60 px-2 py-1 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-                                />
-                              </div>
-                              <div>
-                                <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                                  Value
-                                </label>
-                                <textarea
-                                  rows={2}
-                                  value={editing.value}
-                                  onChange={(e) =>
-                                    setEditing({ ...editing, value: e.target.value })
-                                  }
-                                  className="mt-0.5 w-full rounded-lg border border-border bg-card/60 px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-accent resize-none"
-                                />
-                              </div>
-                              <div className="flex items-center justify-end gap-1.5 pt-1">
-                                <button
-                                  type="button"
-                                  onClick={() => setEditing(null)}
-                                  className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
+                              {/* Single-line Row Header */}
+                              <div className="flex items-center justify-between gap-3 px-3 py-2.5 min-w-0">
+                                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                  {/* Attribute Pill */}
+                                  <span
+                                    title={f.attr}
+                                    className="shrink-0 rounded-md bg-accent/10 px-2 py-0.5 text-[11px] font-mono font-medium text-accent border border-accent/15 select-all"
+                                  >
+                                    {f.attr}
+                                  </span>
+
+                                  {/* Value Preview (1-line truncated if collapsed) */}
+                                  <div className="min-w-0 flex-1">
+                                    {!isFactExpanded ? (
+                                      <p className="text-xs text-foreground/90 truncate leading-snug">
+                                        {f.value}
+                                      </p>
+                                    ) : (
+                                      <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">
+                                        Expanded
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Right Side Actions */}
+                                <div
+                                  className="flex items-center gap-1 shrink-0"
+                                  onClick={(e) => e.stopPropagation()}
                                 >
-                                  <X className="h-3 w-3" /> Cancel
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={handleSaveEdit}
-                                  disabled={
-                                    isThisSaving ||
-                                    !editing.attr.trim() ||
-                                    !editing.value.trim()
-                                  }
-                                  className="flex items-center gap-1 rounded-lg bg-accent px-3 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50 transition-opacity cursor-pointer"
-                                >
-                                  <Check className="h-3 w-3" />
-                                  {isThisSaving ? "Saving..." : "Save"}
-                                </button>
+                                  {/* Copy Button */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleCopy(factKey, f.value, e)}
+                                    title={isCopied ? "Copied to clipboard!" : "Copy value"}
+                                    className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+                                  >
+                                    {isCopied ? (
+                                      <Check className="h-3.5 w-3.5 text-success" />
+                                    ) : (
+                                      <Copy className="h-3.5 w-3.5" />
+                                    )}
+                                  </button>
+
+                                  {/* Edit Button */}
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setEditing({
+                                        entity: f.entity,
+                                        originalAttr: f.attr,
+                                        attr: f.attr,
+                                        value: f.value,
+                                      })
+                                    }
+                                    title="Edit attribute"
+                                    className="rounded-md p-1.5 text-muted-foreground hover:bg-accent/10 hover:text-accent transition-colors cursor-pointer"
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </button>
+
+                                  {/* Delete Button */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleDeleteAttr(f.entity, f.attr, e)}
+                                    title="Delete this attribute"
+                                    className="rounded-md p-1.5 text-muted-foreground hover:bg-danger/10 hover:text-danger transition-colors cursor-pointer"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+
+                                  {/* Expand/Collapse Chevron */}
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleFact(factKey)}
+                                    title={isFactExpanded ? "Collapse" : "Expand full value"}
+                                    className="rounded-md p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                                  >
+                                    <ChevronDown
+                                      className={cn(
+                                        "h-3.5 w-3.5 transition-transform duration-200",
+                                        isFactExpanded && "rotate-180 text-accent"
+                                      )}
+                                    />
+                                  </button>
+                                </div>
                               </div>
+
+                              {/* Expanded Full Multi-line Content */}
+                              <AnimatePresence initial={false}>
+                                {isFactExpanded && (
+                                  <motion.div
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: "auto", opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    transition={{ duration: 0.18 }}
+                                    className="overflow-hidden border-t border-border/50 px-3.5 py-3 bg-muted/15"
+                                  >
+                                    <div className="text-xs text-foreground font-normal whitespace-pre-wrap break-words leading-relaxed select-text font-mono bg-background/70 p-3 rounded-lg border border-border/60">
+                                      {f.value}
+                                    </div>
+
+                                    {/* History / Previous Value */}
+                                    {f.previous && (
+                                      <div className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground">
+                                        <History className="h-3 w-3 shrink-0 text-accent" />
+                                        <span>
+                                          Previous value: <span className="line-through">{f.previous}</span>
+                                        </span>
+                                      </div>
+                                    )}
+
+                                    <div className="mt-2.5 flex items-center justify-between text-[11px] text-muted-foreground pt-1">
+                                      <span className="font-mono text-[10px]">
+                                        Key: {f.entity}.{f.attr}
+                                      </span>
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => handleCopy(factKey, f.value, e)}
+                                          className="text-accent hover:underline cursor-pointer"
+                                        >
+                                          {isCopied ? "Copied!" : "Copy"}
+                                        </button>
+                                        <span>·</span>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setEditing({
+                                              entity: f.entity,
+                                              originalAttr: f.attr,
+                                              attr: f.attr,
+                                              value: f.value,
+                                            })
+                                          }
+                                          className="text-accent hover:underline cursor-pointer"
+                                        >
+                                          Edit
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
                             </div>
                           );
-                        }
+                        })}
 
-                        return (
-                          <div
-                            key={f.attr}
-                            className={cn(
-                              "group relative rounded-xl border border-border/50 bg-background/60 p-2.5 hover:border-accent/40 hover:bg-background/90 transition-all",
-                              isThisDeleting && "opacity-40 pointer-events-none"
-                            )}
-                          >
-                            {/* Key and Actions Row */}
-                            <div className="flex items-start justify-between gap-2">
-                              <span
-                                title={f.attr}
-                                className="inline-block max-w-[200px] truncate rounded-md bg-accent/10 px-2 py-0.5 text-[11px] font-mono font-medium text-accent border border-accent/15 select-all"
-                              >
-                                {f.attr}
-                              </span>
-                              <div className="flex items-center gap-1 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setEditing({
-                                      entity: f.entity,
-                                      originalAttr: f.attr,
-                                      attr: f.attr,
-                                      value: f.value,
-                                    })
+                        {/* Inline Add Attribute Form */}
+                        {addingAttr?.entity === entity && (
+                          <div className="rounded-xl border border-dashed border-accent/70 bg-accent/5 p-3.5 space-y-2.5 mt-2">
+                            <div className="text-xs font-semibold text-accent flex items-center gap-1.5">
+                              <Plus className="h-3.5 w-3.5" />
+                              <span>New attribute for {entity}</span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                              <div className="sm:col-span-1">
+                                <input
+                                  type="text"
+                                  value={addingAttr.attr}
+                                  onChange={(e) =>
+                                    setAddingAttr({ ...addingAttr, attr: e.target.value })
                                   }
-                                  title="Edit attribute"
-                                  className="rounded-md p-1 text-muted-foreground hover:bg-accent/10 hover:text-accent transition-colors cursor-pointer"
-                                >
-                                  <Pencil className="h-3 w-3" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteAttr(f.entity, f.attr)}
-                                  title="Delete this attribute"
-                                  className="rounded-md p-1 text-muted-foreground hover:bg-danger/10 hover:text-danger transition-colors cursor-pointer"
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </button>
+                                  placeholder="Attribute key (e.g. phone, role)"
+                                  className="w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
+                                />
+                              </div>
+                              <div className="sm:col-span-2">
+                                <textarea
+                                  rows={2}
+                                  value={addingAttr.value}
+                                  onChange={(e) =>
+                                    setAddingAttr({ ...addingAttr, value: e.target.value })
+                                  }
+                                  placeholder="Value..."
+                                  className="w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-accent resize-none"
+                                />
                               </div>
                             </div>
-
-                            {/* Value Row */}
-                            <div className="mt-1.5 text-xs font-normal text-foreground break-words select-text leading-relaxed">
-                              {f.value}
+                            <div className="flex items-center justify-end gap-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => setAddingAttr(null)}
+                                className="rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleAddAttr}
+                                disabled={
+                                  !addingAttr.attr.trim() || !addingAttr.value.trim()
+                                }
+                                className="rounded-lg bg-accent px-3 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 cursor-pointer shadow-xs"
+                              >
+                                Add Attribute
+                              </button>
                             </div>
-
-                            {/* Historical / Previous Row */}
-                            {f.previous && (
-                              <div className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground/75">
-                                <History className="h-2.5 w-2.5 shrink-0" />
-                                <span className="truncate">
-                                  was: <span className="line-through">{f.previous}</span>
-                                </span>
-                              </div>
-                            )}
                           </div>
-                        );
-                      })}
-
-                      {/* Inline Add Attribute Form */}
-                      {addingAttr?.entity === entity && (
-                        <div className="rounded-xl border border-dashed border-accent/70 bg-accent/5 p-3 space-y-2">
-                          <div className="text-xs font-semibold text-accent">
-                            New attribute for {entity}
-                          </div>
-                          <div>
-                            <input
-                              type="text"
-                              value={addingAttr.attr}
-                              onChange={(e) =>
-                                setAddingAttr({ ...addingAttr, attr: e.target.value })
-                              }
-                              placeholder="Attribute key (e.g. phone, bio)"
-                              className="w-full rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-                            />
-                          </div>
-                          <div>
-                            <textarea
-                              rows={2}
-                              value={addingAttr.value}
-                              onChange={(e) =>
-                                setAddingAttr({ ...addingAttr, value: e.target.value })
-                              }
-                              placeholder="Value..."
-                              className="w-full rounded-lg border border-border bg-background px-2.5 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-accent resize-none"
-                            />
-                          </div>
-                          <div className="flex items-center justify-end gap-1.5 pt-1">
-                            <button
-                              type="button"
-                              onClick={() => setAddingAttr(null)}
-                              className="rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted cursor-pointer"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleAddAttr}
-                              disabled={
-                                !addingAttr.attr.trim() || !addingAttr.value.trim()
-                              }
-                              className="rounded-lg bg-accent px-3 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50 cursor-pointer"
-                            >
-                              Add Attribute
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </Card>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </motion.div>
               );
             })}
@@ -582,7 +779,7 @@ export function Memory({ onToggleNav }: { onToggleNav?: () => void }) {
                     type="text"
                     value={newEntity}
                     onChange={(e) => setNewEntity(e.target.value)}
-                    placeholder="e.g. Owner, Work, Project X, Laptop"
+                    placeholder="e.g. Owner, Work, The Ishti Project"
                     className="mt-1 w-full rounded-xl border border-border bg-card/60 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
                   />
                 </div>
@@ -594,17 +791,17 @@ export function Memory({ onToggleNav }: { onToggleNav?: () => void }) {
                     type="text"
                     value={newAttr}
                     onChange={(e) => setNewAttr(e.target.value)}
-                    placeholder="e.g. email, gpu_model, location"
+                    placeholder="e.g. email, location, preferences"
                     className="mt-1 w-full rounded-xl border border-border bg-card/60 px-3 py-2 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
                   />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-muted-foreground">Value</label>
                   <textarea
-                    rows={2}
+                    rows={3}
                     value={newValue}
                     onChange={(e) => setNewValue(e.target.value)}
-                    placeholder="e.g. RTX 5070 Ti, ishtiaq@example.com"
+                    placeholder="e.g. D:\ISHTI, Peshawar, etc."
                     className="mt-1 w-full rounded-xl border border-border bg-card/60 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent resize-none"
                   />
                 </div>
@@ -741,130 +938,785 @@ export function System({ onToggleNav }: { onToggleNav?: () => void }) {
 type Profile = { key: string; profile: string; purpose: string; connected: boolean };
 
 /** The owner's own Chrome profiles ISHTI may drive (via the Playwright Extension). Tokens stay on this PC. */
-function ChromeProfiles() {
+function ChromeProfiles({
+  isOpen,
+  onToggle,
+}: {
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [draft, setDraft] = useState<Record<string, string>>({});
-  useEffect(() => { getJSON<{ profiles: Profile[] }>("/api/chrome_profiles").then((d) => setProfiles(d.profiles)); }, []);
-  const save = (key: string, token: string) =>
-    postJSON<{ profiles: Profile[] }>("/api/chrome_profiles", { key, token }).then((d) => { setProfiles(d.profiles); setDraft({}); });
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    getJSON<{ profiles: Profile[] }>("/api/chrome_profiles").then((d) =>
+      setProfiles(d.profiles)
+    );
+  }, []);
+
+  const save = async (key: string, token: string) => {
+    setSavingKey(key);
+    try {
+      const d = await postJSON<{ profiles: Profile[] }>("/api/chrome_profiles", {
+        key,
+        token,
+      });
+      setProfiles(d.profiles);
+      setDraft((prev) => ({ ...prev, [key]: "" }));
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const connectedCount = profiles.filter((p) => p.connected).length;
+
   return (
-    <Card>
-      <div className="font-medium">Chrome profiles</div>
-      <div className="mb-3 text-xs text-muted-foreground">
-        ISHTI only ever uses these two profiles of your Chrome. In each one, install the{" "}
-        <a className="text-accent" href="https://chromewebstore.google.com/detail/playwright-extension/mmlmfjhmonkocbjadbfplnigmagldckm"
-          target="_blank" rel="noreferrer">Playwright Extension</a>, open it, copy its token and paste it here.
-        Until then ISHTI uses its own separate browser (no logins). Sending messages or submitting forms always asks you first.
-      </div>
-      <div className="space-y-2">
-        {profiles.map((p) => (
-          <div key={p.key} className="flex flex-wrap items-center gap-2 rounded-xl border border-border p-2.5">
-            <span className={`h-2 w-2 rounded-full ${p.connected ? "bg-success" : "bg-muted-foreground/40"}`} />
-            <div className="min-w-[160px] flex-1">
-              <div className="text-sm font-medium">{p.profile} · {p.key === "whatsapp" ? "WhatsApp" : "Search & logins"}</div>
-              <div className="text-[11px] text-muted-foreground">{p.connected ? "Connected" : "Not connected"}</div>
-            </div>
-            <input type="password" placeholder={p.connected ? "Replace token…" : "Paste token…"} value={draft[p.key] ?? ""}
-              onChange={(e) => setDraft({ ...draft, [p.key]: e.target.value })}
-              className="w-56 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs outline-none focus:border-accent" />
-            <button disabled={!draft[p.key]} onClick={() => save(p.key, draft[p.key])}
-              className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40">Save</button>
-            {p.connected && (
-              <button onClick={() => save(p.key, "")} className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted">
-                Disconnect</button>
-            )}
+    <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
+      {/* Card Header */}
+      <div
+        className="flex items-center justify-between gap-3 p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+        onClick={onToggle}
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-sky-500/15 text-sky-500">
+            <Monitor className="h-4 w-4" />
           </div>
-        ))}
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-foreground text-sm">Chrome Profiles</span>
+              <span
+                className={cn(
+                  "rounded-md px-2 py-0.5 text-[10px] font-semibold font-mono",
+                  connectedCount > 0
+                    ? "bg-success/15 text-success"
+                    : "bg-muted text-muted-foreground"
+                )}
+              >
+                {connectedCount} / {profiles.length || 2} Connected
+              </span>
+            </div>
+            <div className="text-xs text-muted-foreground truncate">
+              Isolated Playwright sessions with human-in-the-loop approval.
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle();
+          }}
+          className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
+        >
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 transition-transform duration-200",
+              isOpen ? "rotate-180 text-accent" : ""
+            )}
+          />
+        </button>
       </div>
+
+      {/* Expandable Body */}
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden border-t border-border/60 p-4 space-y-3 bg-background/50"
+          >
+            <div className="text-xs text-muted-foreground leading-relaxed">
+              ISHTI only ever uses these two dedicated profiles of your Chrome. In each one, install the{" "}
+              <a
+                className="text-accent underline hover:opacity-80"
+                href="https://chromewebstore.google.com/detail/playwright-extension/mmlmfjhmonkocbjadbfplnigmagldckm"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Playwright Extension
+              </a>
+              , open it, copy its token and paste it below. Actions like sending messages or submitting forms always ask you first.
+            </div>
+
+            <div className="space-y-2.5 pt-1">
+              {profiles.map((pr) => (
+                <div
+                  key={pr.key}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-border/80 bg-background/80 p-3 shadow-2xs"
+                >
+                  <div className="flex items-center gap-2.5 min-w-[180px]">
+                    <span
+                      className={cn(
+                        "h-2.5 w-2.5 rounded-full shrink-0",
+                        pr.connected ? "bg-success" : "bg-muted-foreground/30"
+                      )}
+                    />
+                    <div>
+                      <div className="text-xs font-semibold text-foreground">
+                        {pr.profile} · {pr.key === "whatsapp" ? "WhatsApp" : "Search & Logins"}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {pr.connected ? "Connected & Ready" : "Disconnected"}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-1 sm:justify-end">
+                    <input
+                      type="password"
+                      placeholder={pr.connected ? "Replace token…" : "Paste token…"}
+                      value={draft[pr.key] ?? ""}
+                      onChange={(e) =>
+                        setDraft({ ...draft, [pr.key]: e.target.value })
+                      }
+                      className="w-full sm:w-48 rounded-lg border border-border bg-card/60 px-2.5 py-1.5 text-xs outline-none focus:border-accent"
+                    />
+                    <button
+                      type="button"
+                      disabled={!draft[pr.key] || savingKey === pr.key}
+                      onClick={() => save(pr.key, draft[pr.key])}
+                      className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40 hover:opacity-90 transition-opacity cursor-pointer shrink-0"
+                    >
+                      {savingKey === pr.key ? "Saving..." : "Save"}
+                    </button>
+                    {pr.connected && (
+                      <button
+                        type="button"
+                        onClick={() => save(pr.key, "")}
+                        className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer shrink-0"
+                      >
+                        Disconnect
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </Card>
   );
 }
 
 export function Settings({ onToggleNav }: { onToggleNav?: () => void }) {
-  const [p, setP] = useState<{ audio_output: boolean; wake_enabled: boolean; wake_model: string; models: Record<string, string> }>();
+  const [p, setP] = useState<{
+    audio_output: boolean;
+    wake_enabled: boolean;
+    wake_model: string;
+    models: Record<string, string>;
+  }>();
   const [chatSize, setChatSize] = useState<ChatFontSize>(getChatFontSize);
+  const [sideChatsWidth, setSideChatsWidth] = useState(() => {
+    try {
+      const saved = localStorage.getItem("ishti-recent-chats-width");
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (parsed >= 180 && parsed <= 550) return parsed;
+      }
+    } catch {}
+    return 240;
+  });
 
-  useEffect(() => { getJSON<typeof p>("/api/prefs").then(setP); }, []);
+  // Track expanded cards
+  const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({
+    appearance: true,
+    chatSize: true,
+    sideChats: true,
+    voice: true,
+    chrome: true,
+    models: true,
+  });
+
+  const toggleCard = (key: string) => {
+    setExpandedCards((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const toggleAll = (expand: boolean) => {
+    setExpandedCards({
+      appearance: expand,
+      chatSize: expand,
+      sideChats: expand,
+      voice: expand,
+      chrome: expand,
+      models: expand,
+    });
+  };
+
+  const anyExpanded = Object.values(expandedCards).some(Boolean);
+
+  useEffect(() => {
+    getJSON<typeof p>("/api/prefs").then(setP);
+  }, []);
+
+  useEffect(() => {
+    const handleWidthChange = (e: Event) => {
+      const detail = (e as CustomEvent<number>).detail;
+      if (typeof detail === "number" && detail >= 180 && detail <= 550) {
+        setSideChatsWidth(detail);
+      }
+    };
+    window.addEventListener("ishti-side-chats-width-changed", handleWidthChange);
+    return () =>
+      window.removeEventListener("ishti-side-chats-width-changed", handleWidthChange);
+  }, []);
 
   const handleSizeChange = (newSize: ChatFontSize) => {
     setChatSize(newSize);
     setChatFontSize(newSize);
   };
 
+  const handleSideChatsWidthChange = (w: number) => {
+    const clamped = Math.max(180, Math.min(550, Math.round(w)));
+    setSideChatsWidth(clamped);
+    try {
+      localStorage.setItem("ishti-recent-chats-width", String(clamped));
+      window.dispatchEvent(
+        new CustomEvent("ishti-side-chats-width-changed", { detail: clamped })
+      );
+    } catch {}
+  };
+
   if (!p) return null;
+
   return (
-    <Page title="Settings" subtitle="Everything runs on this PC. Models are set in ishti/config.json." className="max-w-4xl" onToggleNav={onToggleNav}>
-      <div className="space-y-3">
-        <Card className="flex items-center justify-between">
-          <div><div className="font-medium">Appearance</div><div className="text-xs text-muted-foreground">Switch between pure white light mode and pure black dark mode.</div></div>
-          <ThemeSwitch />
-        </Card>
+    <Page
+      title="Settings"
+      subtitle="Everything runs on this PC. Local models and parameters configured in ishti/config.json."
+      className="max-w-6xl"
+      onToggleNav={onToggleNav}
+      action={
+        <button
+          type="button"
+          onClick={() => toggleAll(!anyExpanded)}
+          className="flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground hover:border-accent transition-colors cursor-pointer shadow-xs"
+        >
+          {anyExpanded ? (
+            <>
+              <ChevronUp className="h-3.5 w-3.5 text-accent" />
+              <span>Collapse All</span>
+            </>
+          ) : (
+            <>
+              <ChevronDown className="h-3.5 w-3.5 text-accent" />
+              <span>Expand All</span>
+            </>
+          )}
+        </button>
+      }
+    >
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        {/* ========================================================
+             COLUMN 1: Appearance, Chat Text Size, Sidebar Width
+             ======================================================== */}
+        <div className="space-y-4">
+          {/* 1. Appearance Card */}
+          <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
+            <div
+              className="flex items-center justify-between gap-3 p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+              onClick={() => toggleCard("appearance")}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-500">
+                  <Sun className="h-4 w-4 dark:hidden" />
+                  <Moon className="h-4 w-4 hidden dark:block" />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-semibold text-foreground text-sm">Appearance</div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    Switch between pure white light mode and dark mode.
+                  </div>
+                </div>
+              </div>
 
-        {/* Chat text size */}
-        <Card>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <div className="font-medium">Chat text size</div>
-              <div className="text-xs text-muted-foreground">Adjust text size across messages, inputs, and code in conversations.</div>
-            </div>
-            <div className="flex items-center rounded-xl bg-muted p-1 gap-1 shrink-0">
-              {CHAT_FONT_SIZES.map((fs) => (
+              <div
+                className="flex items-center gap-2 shrink-0"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <ThemeSwitch />
                 <button
-                  key={fs.key}
                   type="button"
-                  onClick={() => handleSizeChange(fs.key)}
-                  className={cn(
-                    "rounded-lg px-3 py-1.5 text-xs transition-all cursor-pointer",
-                    chatSize === fs.key
-                      ? "bg-background text-foreground shadow-xs font-semibold"
-                      : "text-muted-foreground hover:text-foreground font-medium"
-                  )}
+                  onClick={() => toggleCard("appearance")}
+                  className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                 >
-                  {fs.label}
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 transition-transform duration-200",
+                      expandedCards.appearance ? "rotate-180 text-accent" : ""
+                    )}
+                  />
                 </button>
-              ))}
-            </div>
-          </div>
-          {/* Live Preview */}
-          <div className="mt-3.5 rounded-xl border border-border/60 bg-muted/20 p-3.5">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Live Preview</div>
-            <div className="space-y-2">
-              <div className="flex justify-end">
-                <div
-                  className="rounded-2xl rounded-br-md bg-accent px-4 py-2 text-white max-w-md shadow-xs"
-                  style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-leading)" }}
-                >
-                  Can you check the latest file updates on my PC?
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <div
-                  className="rounded-2xl bg-card border border-border px-4 py-2 text-foreground max-w-md shadow-xs"
-                  style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-leading)" }}
-                >
-                  Found 3 updated folders. Local and ready to execute anytime.
-                </div>
               </div>
             </div>
-          </div>
-        </Card>
 
-        <Card className="flex items-center justify-between">
-          <div><div className="font-medium">Read answers aloud</div><div className="text-xs text-muted-foreground">Piper voice, local. Same as saying “mute” / “read that”.</div></div>
-          <button onClick={() => postJSON<typeof p>("/api/prefs", { audio_output: !p.audio_output }).then(setP)}
-            className={`relative h-6 w-11 rounded-full transition-colors ${p.audio_output ? "bg-accent" : "bg-muted"}`} aria-pressed={p.audio_output}>
-            <motion.span layout transition={{ type: "spring", stiffness: 600, damping: 32 }}
-              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow ${p.audio_output ? "right-0.5" : "left-0.5"}`} />
-          </button>
-        </Card>
-        <ChromeProfiles />
-        <Card><div className="font-medium">Hands-free</div>
-          <div className="text-xs text-muted-foreground">Wake word “{p.wake_model.replace("_", " ")}” is {p.wake_enabled ? "on" : "off"} (needs a microphone).</div></Card>
-        <Card><div className="mb-1 font-medium">Models</div>
-          {Object.entries(p.models).map(([role, m]) => <div key={role} className="text-sm"><span className="inline-block w-20 text-muted-foreground">{role}</span>{m}</div>)}</Card>
-        <Card><div className="font-medium">Credits</div>
-          <div className="text-xs text-muted-foreground">Animated components from <a className="text-accent" href="https://rareui.com" target="_blank" rel="noreferrer">Rare UI</a>. See THIRD_PARTY_NOTICES.md.</div></Card>
+            <AnimatePresence initial={false}>
+              {expandedCards.appearance && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden border-t border-border/60 p-4 bg-background/50"
+                >
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        try {
+                          localStorage.setItem("ishti-theme", "light");
+                          document.documentElement.classList.remove("dark");
+                        } catch {}
+                      }}
+                      className="flex flex-col items-center justify-center gap-2 rounded-xl border border-border p-3.5 hover:border-accent hover:bg-muted/30 transition-all cursor-pointer"
+                    >
+                      <Sun className="h-5 w-5 text-amber-500" />
+                      <span className="text-xs font-semibold">Light Mode</span>
+                      <span className="text-[10px] text-muted-foreground">Pure Crisp White</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        try {
+                          localStorage.setItem("ishti-theme", "dark");
+                          document.documentElement.classList.add("dark");
+                        } catch {}
+                      }}
+                      className="flex flex-col items-center justify-center gap-2 rounded-xl border border-border p-3.5 hover:border-accent hover:bg-muted/30 transition-all cursor-pointer"
+                    >
+                      <Moon className="h-5 w-5 text-sky-400" />
+                      <span className="text-xs font-semibold">Dark Mode</span>
+                      <span className="text-[10px] text-muted-foreground">Deep Pure Black</span>
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </Card>
+
+          {/* 2. Chat Text Size Card */}
+          <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
+            <div
+              className="flex items-center justify-between gap-3 p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+              onClick={() => toggleCard("chatSize")}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-emerald-500/15 text-emerald-500">
+                  <Type className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-foreground text-sm">Chat Text Size</span>
+                    <span className="rounded-md bg-muted px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
+                      {chatSize.charAt(0).toUpperCase() + chatSize.slice(1)}
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    Text size across messages, inputs, and code in conversations.
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleCard("chatSize");
+                }}
+                className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
+              >
+                <ChevronDown
+                  className={cn(
+                    "h-4 w-4 transition-transform duration-200",
+                    expandedCards.chatSize ? "rotate-180 text-accent" : ""
+                  )}
+                />
+              </button>
+            </div>
+
+            <AnimatePresence initial={false}>
+              {expandedCards.chatSize && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden border-t border-border/60 p-4 space-y-3.5 bg-background/50"
+                >
+                  <div className="flex flex-wrap items-center rounded-xl bg-muted/60 p-1 gap-1">
+                    {CHAT_FONT_SIZES.map((fs) => (
+                      <button
+                        key={fs.key}
+                        type="button"
+                        onClick={() => handleSizeChange(fs.key)}
+                        className={cn(
+                          "flex-1 min-w-[70px] rounded-lg px-3 py-1.5 text-xs text-center transition-all cursor-pointer",
+                          chatSize === fs.key
+                            ? "bg-background text-foreground shadow-xs font-semibold"
+                            : "text-muted-foreground hover:text-foreground font-medium"
+                        )}
+                      >
+                        {fs.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Live Preview */}
+                  <div className="rounded-xl border border-border/70 bg-card/60 p-3.5 space-y-2">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Live Chat Preview
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-end">
+                        <div
+                          className="rounded-2xl rounded-br-md bg-accent px-3.5 py-1.5 text-white max-w-sm shadow-xs"
+                          style={{
+                            fontSize: "var(--chat-font-size)",
+                            lineHeight: "var(--chat-leading)",
+                          }}
+                        >
+                          Can you check the latest file updates on my PC?
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <div
+                          className="rounded-2xl bg-background border border-border px-3.5 py-1.5 text-foreground max-w-sm shadow-xs"
+                          style={{
+                            fontSize: "var(--chat-font-size)",
+                            lineHeight: "var(--chat-leading)",
+                          }}
+                        >
+                          Found 3 updated folders. Local and ready to execute anytime.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </Card>
+
+          {/* 3. Side Chats Width Card */}
+          <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
+            <div
+              className="flex items-center justify-between gap-3 p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+              onClick={() => toggleCard("sideChats")}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-amber-500/15 text-amber-500">
+                  <Sliders className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-foreground text-sm">
+                      Side Chats Panel Width
+                    </span>
+                    <span className="rounded-md bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent font-mono">
+                      {sideChatsWidth}px
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    Set width for the recent conversations sidebar in Chat.
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleCard("sideChats");
+                }}
+                className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
+              >
+                <ChevronDown
+                  className={cn(
+                    "h-4 w-4 transition-transform duration-200",
+                    expandedCards.sideChats ? "rotate-180 text-accent" : ""
+                  )}
+                />
+              </button>
+            </div>
+
+            <AnimatePresence initial={false}>
+              {expandedCards.sideChats && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden border-t border-border/60 p-4 space-y-3.5 bg-background/50"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center rounded-xl bg-muted/60 p-1 gap-1 flex-1">
+                      {[
+                        { label: "Compact", value: 200 },
+                        { label: "Default", value: 240 },
+                        { label: "Medium", value: 280 },
+                        { label: "Wide", value: 340 },
+                      ].map((preset) => (
+                        <button
+                          key={preset.value}
+                          type="button"
+                          onClick={() => handleSideChatsWidthChange(preset.value)}
+                          className={cn(
+                            "flex-1 rounded-lg px-2.5 py-1 text-xs text-center transition-all cursor-pointer",
+                            sideChatsWidth === preset.value
+                              ? "bg-background text-foreground shadow-xs font-semibold"
+                              : "text-muted-foreground hover:text-foreground font-medium"
+                          )}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                    {sideChatsWidth !== 240 && (
+                      <button
+                        type="button"
+                        onClick={() => handleSideChatsWidthChange(240)}
+                        className="text-xs text-muted-foreground hover:text-accent underline transition-colors cursor-pointer shrink-0 px-2"
+                      >
+                        Reset 240px
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Smooth Range Slider */}
+                  <div className="flex items-center gap-3 pt-1">
+                    <span className="text-[11px] font-mono text-muted-foreground shrink-0">
+                      180px
+                    </span>
+                    <input
+                      type="range"
+                      min="180"
+                      max="500"
+                      step="10"
+                      value={sideChatsWidth}
+                      onChange={(e) =>
+                        handleSideChatsWidthChange(Number(e.target.value))
+                      }
+                      className="h-1.5 flex-1 cursor-pointer appearance-none rounded-lg bg-muted accent-accent"
+                    />
+                    <span className="text-[11px] font-mono text-muted-foreground shrink-0">
+                      500px
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Tip: You can also drag the divider handle directly inside the Chat interface.
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </Card>
+        </div>
+
+        {/* ========================================================
+             COLUMN 2: Voice & Speech, Chrome Profiles, Models
+             ======================================================== */}
+        <div className="space-y-4">
+          {/* 4. Voice & Speech Card */}
+          <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
+            <div
+              className="flex items-center justify-between gap-3 p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+              onClick={() => toggleCard("voice")}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-purple-500/15 text-purple-500">
+                  <Volume2 className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-foreground text-sm">Voice & Speech</span>
+                    <span
+                      className={cn(
+                        "rounded-md px-2 py-0.5 text-[10px] font-semibold font-mono",
+                        p.audio_output ? "bg-accent-soft text-accent" : "bg-muted text-muted-foreground"
+                      )}
+                    >
+                      {p.audio_output ? "TTS Active" : "Muted"}
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    Local Piper TTS audio readout & hands-free wake word.
+                  </div>
+                </div>
+              </div>
+
+              <div
+                className="flex items-center gap-2 shrink-0"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    postJSON<typeof p>("/api/prefs", {
+                      audio_output: !p.audio_output,
+                    }).then(setP)
+                  }
+                  className={cn(
+                    "relative h-6 w-11 rounded-full transition-colors cursor-pointer",
+                    p.audio_output ? "bg-accent" : "bg-muted"
+                  )}
+                  aria-pressed={p.audio_output}
+                >
+                  <motion.span
+                    layout
+                    transition={{ type: "spring", stiffness: 600, damping: 32 }}
+                    className={cn(
+                      "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-xs",
+                      p.audio_output ? "right-0.5" : "left-0.5"
+                    )}
+                  />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleCard("voice")}
+                  className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                >
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 transition-transform duration-200",
+                      expandedCards.voice ? "rotate-180 text-accent" : ""
+                    )}
+                  />
+                </button>
+              </div>
+            </div>
+
+            <AnimatePresence initial={false}>
+              {expandedCards.voice && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden border-t border-border/60 p-4 space-y-3 bg-background/50"
+                >
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/60 p-3">
+                    <div>
+                      <div className="text-xs font-semibold text-foreground">
+                        Read answers aloud (Piper TTS)
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        Zero external API calls. Same as saying “mute” or “read that” in chat.
+                      </div>
+                    </div>
+                    <span className="text-xs font-mono font-medium text-accent">
+                      {p.audio_output ? "Enabled" : "Disabled"}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/60 p-3">
+                    <div className="flex items-center gap-2.5">
+                      <Mic className="h-4 w-4 text-accent" />
+                      <div>
+                        <div className="text-xs font-semibold text-foreground">
+                          Hands-Free Wake Word (“hey ishti”)
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {p.wake_enabled ? "Continuous listening active via microphone" : "Disabled"}
+                        </div>
+                      </div>
+                    </div>
+                    <span
+                      className={cn(
+                        "rounded-md px-2 py-0.5 text-[10px] font-mono font-semibold",
+                        p.wake_enabled
+                          ? "bg-success/15 text-success"
+                          : "bg-muted text-muted-foreground"
+                      )}
+                    >
+                      {p.wake_enabled ? "ACTIVE" : "OFF"}
+                    </span>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </Card>
+
+          {/* 5. Chrome Profiles Card */}
+          <ChromeProfiles
+            isOpen={expandedCards.chrome}
+            onToggle={() => toggleCard("chrome")}
+          />
+
+          {/* 6. AI Models Card */}
+          <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
+            <div
+              className="flex items-center justify-between gap-3 p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+              onClick={() => toggleCard("models")}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-orange-500/15 text-orange-500">
+                  <Cpu className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-foreground text-sm">Local AI Models</span>
+                    <span className="rounded-md bg-muted px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
+                      {Object.keys(p.models || {}).length} Roles
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    Neural routing matrix and local Ollama weights.
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleCard("models");
+                }}
+                className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
+              >
+                <ChevronDown
+                  className={cn(
+                    "h-4 w-4 transition-transform duration-200",
+                    expandedCards.models ? "rotate-180 text-accent" : ""
+                  )}
+                />
+              </button>
+            </div>
+
+            <AnimatePresence initial={false}>
+              {expandedCards.models && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden border-t border-border/60 p-4 space-y-2 bg-background/50"
+                >
+                  <div className="space-y-1.5">
+                    {Object.entries(p.models).map(([role, m]) => (
+                      <div
+                        key={role}
+                        className="flex items-center justify-between gap-2 rounded-lg bg-card/60 px-3 py-2 border border-border/50 text-xs"
+                      >
+                        <span className="font-mono font-medium text-accent capitalize">
+                          {role}
+                        </span>
+                        <span className="font-mono text-foreground font-semibold truncate">
+                          {m}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground pt-1">
+                    To change weights, edit <span className="font-mono text-foreground">ishti/config.json</span> or run rebenchmark.
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </Card>
+        </div>
       </div>
     </Page>
   );
 }
+
