@@ -103,6 +103,8 @@ async def _capture_loop():
     start_reminders(announce)
     from ishti.skills.webtools.skill import _start as start_page_watch
     start_page_watch()  # pages the owner asked to watch keep being checked after a restart
+    from ishti.skills.lifelog.skill import start_sampler
+    start_sampler()  # screen time: the foreground app once a minute, local only
     if CONFIG["voice"].get("wake_enabled"):
         from ishti import wake
 
@@ -312,8 +314,14 @@ async def execute_stream(req: Request):
                 yield json.dumps(await asyncio.wait_for(queue.get(), 0.1), ensure_ascii=False, default=str) + "\n"
             except asyncio.TimeoutError:
                 continue
-        result = job.result()
-        await broadcast_event("task_completed_full", result)
+        try:
+            result = job.result()
+        except Exception as exc:
+            result = {"error": str(exc), "final_answer": f"Execution failed: {str(exc)}", "sources": []}
+        try:
+            await broadcast_event("task_completed_full", result)
+        except Exception:
+            pass
         yield json.dumps({"done": True, "result": result}, ensure_ascii=False) + "\n"
 
     return StreamingResponse(lines(), media_type="application/x-ndjson")

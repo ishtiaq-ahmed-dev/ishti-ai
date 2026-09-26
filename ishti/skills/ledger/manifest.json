@@ -1,0 +1,11 @@
+{
+  "name": "ledger",
+  "version": "1.0.0",
+  "description": "Personal money tracking: log expenses in plain words (auto-categorised), spending reports by period and category, monthly budgets, and a stock/crypto portfolio valued live with profit and loss. Local SQLite only.",
+  "route": "log an expense, how much I spent, set a budget, record a stock purchase or sale, my portfolio value",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 15,
+  "status": "working",
+  "tier": "T1",
+  "laya": false
+}
