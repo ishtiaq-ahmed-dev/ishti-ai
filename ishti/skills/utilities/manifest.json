@@ -1,0 +1,11 @@
+{
+  "name": "utilities",
+  "version": "1.0.0",
+  "description": "Everyday utilities: prayer times (Karachi method, Hanafi Asr) with the next prayer, translate, define a word, unit conversion (incl. marla/kanal/tola/maund), currency amounts, time in another city, news headlines, a strong locally generated password (never stored), a Jitsi meeting link.",
+  "route": "prayer times, translate a phrase, meaning of a word, convert units or an amount of money, time in a city, news headlines, generate a password, meeting link",
+  "needs": {"python": ["requests", "feedparser"], "models": [], "mcp": [], "apis": ["api.aladhan.com", "api.dictionaryapi.dev", "news.google.com"]},
+  "priority": 13,
+  "status": "working",
+  "tier": "T0",
+  "laya": false
+}

@@ -437,13 +437,16 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
         RECOVER.clear()
     s["trace"](type="done", skill=name, ms=round((time.perf_counter() - t0) * 1000))
     s["last_request"], s["last_skill"] = text, name
+    # secrets (a generated password) are shown once: not kept in history, the saved chat or memory
+    secret = s.pop("no_history", False)
+    kept = "(a secret was shown here and not saved)" if secret else reply
     s["history"] = (s["history"] + [{"role": "user", "content": text},
-                                    {"role": "assistant", "content": reply}])[-20:]
+                                    {"role": "assistant", "content": kept}])[-20:]
     if not out.get("persisted"):  # legacy skill writes its own session history
         conv.add_message(sid, "user", text)
-        if is_safe_for_history(reply):
-            conv.add_message(sid, "ishti", reply, sources=out.get("sources"), metadata={"events": events[-150:]})
-    if name not in ("memory",) and is_safe_for_history(reply):  # exact facts already live in SQLite
+        if is_safe_for_history(kept):
+            conv.add_message(sid, "ishti", kept, sources=out.get("sources"), metadata={"events": events[-150:]})
+    if not secret and name not in ("memory",) and is_safe_for_history(reply):  # exact facts already live in SQLite
         threading.Thread(target=_remember, args=(text, reply, name), daemon=True).start()
     threading.Thread(target=_learn, args=(text,), daemon=True).start()  # the owner's lasting facts and preferences
     return {**{k: v for k, v in out.items() if k not in ("reply", "persisted")},
