@@ -390,6 +390,30 @@ async def save_fact_endpoint(req: Request):
     return {"status": "ok", "entity": entity, "attr": attr, "value": value, "previous": prev}
 
 
+MEDIA_EXT = {".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime", ".mkv": "video/x-matroska",
+             ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp",
+             ".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4"}
+
+
+def media_roots():
+    from ishti.skills.folders.skill import known_folders
+    return [os.path.join(ROOT, "data")] + [p for k, p in known_folders().items() if k in ("downloads", "videos", "pictures", "desktop", "music")]
+
+
+@api.get("/api/media")
+async def media(path: str, download: int = 0):
+    """Play/download a media file shown in the chat. Only media types, only under ISHTI's data folder or the
+    owner's media folders, so a crafted path can't read anything else."""
+    from fastapi.responses import FileResponse
+    real = os.path.realpath(path)
+    ext = os.path.splitext(real)[1].lower()
+    inside = any(os.path.commonpath([real, os.path.realpath(r)]) == os.path.realpath(r) for r in media_roots()
+                 if os.path.splitdrive(real)[0].lower() == os.path.splitdrive(os.path.realpath(r))[0].lower())
+    if ext not in MEDIA_EXT or not inside or not os.path.isfile(real):
+        return JSONResponse({"error": "not an allowed media file"}, status_code=404)
+    return FileResponse(real, media_type=MEDIA_EXT[ext], filename=os.path.basename(real) if download else None)
+
+
 @api.get("/api/markets/watchlist")
 async def markets_watch():
     import asyncio

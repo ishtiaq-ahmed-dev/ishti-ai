@@ -12,6 +12,7 @@ import VoiceBeam from "voice-glow";
 import DeleteButton from "@/components/rare/delete-button";
 import { IshtiBrand } from "@/components/IshtiBrand";
 import { Markdown } from "@/components/Markdown";
+import { MediaPreview } from "@/components/MediaPreview";
 import { cn } from "@/lib/utils";
 
 type Msg = {
@@ -85,6 +86,61 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     } catch {}
     return true;
   });
+  const [historyWidth, setHistoryWidth] = useState(() => {
+    try {
+      const saved = localStorage.getItem("ishti-recent-chats-width");
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (parsed >= 180 && parsed <= 550) return parsed;
+      }
+    } catch {}
+    return 240;
+  });
+  const [isResizing, setIsResizing] = useState(false);
+
+  useEffect(() => {
+    const handleWidthChange = (e: Event) => {
+      const detail = (e as CustomEvent<number>).detail;
+      if (typeof detail === "number" && detail >= 180 && detail <= 550) {
+        setHistoryWidth(detail);
+      }
+    };
+    window.addEventListener("ishti-side-chats-width-changed", handleWidthChange);
+    return () => {
+      window.removeEventListener("ishti-side-chats-width-changed", handleWidthChange);
+    };
+  }, []);
+
+  const startResizing = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizing(true);
+    const startX = e.clientX;
+    const startWidth = historyWidth;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const delta = ev.clientX - startX;
+      const maxWidth = Math.max(350, Math.min(550, window.innerWidth * 0.45));
+      const nextWidth = Math.max(180, Math.min(Math.round(startWidth + delta), maxWidth));
+      setHistoryWidth(nextWidth);
+      try {
+        localStorage.setItem("ishti-recent-chats-width", String(nextWidth));
+      } catch {}
+    };
+
+    const onPointerUp = () => {
+      setIsResizing(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+  }, [historyWidth]);
   const [graphFor, setGraphFor] = useState<number | null>(null);
   const [recording, setRecording] = useState(false);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
@@ -310,14 +366,30 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
         {showHistory && (
           <motion.aside
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 240, opacity: 1 }}
+            animate={{ width: historyWidth, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-            className="flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-card/40"
+            transition={isResizing ? { duration: 0 } : { duration: 0.2, ease: "easeOut" }}
+            className="relative flex h-full shrink-0 flex-col border-r border-border bg-card/40"
+            style={{ width: historyWidth }}
           >
-            <div className="flex h-full w-[240px] flex-col min-h-0">
+            <div className="flex h-full w-full flex-col min-h-0 overflow-hidden" style={{ width: historyWidth }}>
               <div className="flex items-center justify-between border-b border-border px-3.5 py-3 shrink-0">
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Recent</span>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground truncate">Recent</span>
+                  {historyWidth !== 240 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHistoryWidth(240);
+                        try { localStorage.setItem("ishti-recent-chats-width", "240"); } catch {}
+                      }}
+                      title="Reset width to default (240px)"
+                      className="rounded-md bg-muted/60 hover:bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                    >
+                      {historyWidth}px
+                    </button>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={newChat}
@@ -361,6 +433,31 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                 )}
               </div>
             </div>
+
+            {/* Draggable resize handle */}
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              title="Drag to resize side chats (double click to reset)"
+              onPointerDown={startResizing}
+              onDoubleClick={() => {
+                setHistoryWidth(240);
+                try { localStorage.setItem("ishti-recent-chats-width", "240"); } catch {}
+              }}
+              className={cn(
+                "absolute -right-2 top-0 bottom-0 z-30 w-4 cursor-col-resize select-none",
+                "flex items-center justify-center transition-colors group",
+                isResizing ? "cursor-col-resize" : ""
+              )}
+            >
+              <div
+                className={cn(
+                  "h-8 w-1 rounded-full bg-border/80 transition-all",
+                  "group-hover:h-14 group-hover:bg-accent group-hover:w-1.5",
+                  isResizing && "h-20 bg-accent w-1.5 shadow-[0_0_8px_var(--color-accent)]"
+                )}
+              />
+            </div>
           </motion.aside>
         )}
       </AnimatePresence>
@@ -395,7 +492,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               className="shrink-0"
             />
             <div>
-              <IshtiBrand variant="wordmark" size={24} className="translate-y-0.5" />
+              <IshtiBrand variant="wordmark" height={26} className="translate-y-0.5" />
               <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 min-w-0">
                 {recording ? (
                   <span className="text-amber-500 font-medium">Listening to voice…</span>
@@ -423,14 +520,14 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
 
         <div ref={scrollContainer} className="scroll-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
           {msgs.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center gap-5 px-6">
+            <div className="flex h-full flex-col items-center justify-center gap-6 px-6">
               <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.4 }} className="relative flex items-center justify-center">
                 <div className="absolute inset-0 -m-8 rounded-full bg-accent/10 blur-3xl pointer-events-none" />
-                <AgentOrb size={64} state="breathing" />
+                <AgentOrb size={72} state="breathing" />
               </motion.div>
               <div className="text-center flex flex-col items-center">
-                <IshtiBrand variant="full" size={64} className="mb-3" />
-                <h1 className="text-xl font-semibold">{greeting}, {owner}</h1>
+                <IshtiBrand variant="full" width={220} className="mb-4 drop-shadow-sm" />
+                <h1 className="text-2xl font-semibold tracking-tight">{greeting}, {owner}</h1>
                 <p className="mt-1 text-sm text-muted-foreground">Ask anything, or tell me what to do on this PC.</p>
               </div>
             </div>
@@ -450,7 +547,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                       </div>
                     ) : (
                       <>
-                        <IshtiBrand variant="icon" size={28} className="mt-1 shrink-0 shadow-sm" />
+                        <IshtiBrand variant="icon" size={32} className="mt-0.5 shrink-0 shadow-xs" />
                         <div
                           className="min-w-0 flex-1 max-w-full overflow-hidden"
                           style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-leading)" }}
@@ -463,6 +560,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                           })()}
                           {m.text ? <Markdown text={m.text} />
                                   : m.live && <span className="inline-block h-4 w-2 animate-pulse rounded-sm bg-accent/60" />}
+                          {!m.live && <MediaPreview text={m.text} onSend={(p) => { setInput(`send "${p}" on whatsapp to `); box.current?.focus(); }} />}
                           <Sources sources={m.sources} />
                           {!m.live && m.id === msgs.at(-1)?.id && /\(yes\/no\)\s*$/i.test(m.text) && (
                             <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
