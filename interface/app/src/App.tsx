@@ -6,6 +6,7 @@ import { Chat } from "@/sections/Chat";
 import { Memory, Settings, Skills, System, Tasks } from "@/sections/Pages";
 import { Overview } from "@/sections/Overview";
 import { AboutYou } from "@/sections/AboutYou";
+import { LiveNarration, type Live } from "@/components/LiveNarration";
 import { Markets } from "@/sections/Markets";
 import { NotificationBell } from "@/components/rare/notification-bell";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -49,6 +50,7 @@ export default function App() {
   const [owner, setOwner] = useState("there");
   const [projects, setProjects] = useState<Fact[]>([]);
   const [alerts, setAlerts] = useState<string[]>([]);
+  const [live, setLive] = useState<Live>(null);
   const [busy, setBusy] = useState(false);
   const [showNav, setShowNav] = useState(() => {
     try {
@@ -118,6 +120,15 @@ export default function App() {
     const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
     ws.onmessage = (m) => {
       const msg = JSON.parse(m.data);
+      if (msg.type === "trace" && msg.data?.channel === "voice") {  // live steps of a spoken request
+        const e = msg.data;
+        if (e.type === "received") setLive({ text: String(e.text ?? ""), step: "Listening done, thinking…", done: false });
+        else if (e.type === "done") { setLive((l) => (l ? { ...l, step: "Done", done: true } : l)); setTimeout(() => setLive(null), 2500); }
+        else {
+          const step = e.type === "route" ? `Using ${e.skill}` : e.type === "escalate" ? `Trying ${e.to} instead` : e.label ?? (e.type === "step" ? e.skill : null);
+          if (step) setLive((l) => ({ text: l?.text ?? "", step: String(step), done: false }));
+        }
+      }
       if (msg.type === "assistant_message" && String(msg.data?.reply ?? "").startsWith("⏰")) {
         setAlerts((a) => [msg.data.reply, ...a].slice(0, 20));
         if (Notification?.permission === "granted") new Notification("ISHTI", { body: msg.data.reply });
@@ -236,6 +247,7 @@ export default function App() {
           </AnimatePresence>
         </main>
       </div>
+      <LiveNarration live={live} />
     </div>
   );
 }

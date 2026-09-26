@@ -99,6 +99,24 @@ def _remember(text, reply, skill):
         print(f"[dispatcher] semantic memory write skipped: {exc}")
 
 
+# Spoken progress for voice requests: the steps an owner would want to hear while waiting, one at a time.
+NARRATE = re.compile(r"^(?:Searching the internet|Trying a different search|Found \d+ sources|Reading through|"
+                     r"\d+ sources? answer|writing|rendering|cutting a|transcribing|checking the video|open WhatsApp)", re.I)
+_narrated = {"at": 0.0}
+
+
+def narrate(ev):
+    label = str(ev.get("label") or ev.get("detail") or "")
+    if ev.get("type") != "tool" or not NARRATE.search(label) or time.time() - _narrated["at"] < 3:
+        return
+    _narrated["at"] = time.time()
+    try:
+        from ishti.voice import speak
+        speak(re.split(r"[:(]", label)[0].strip().rstrip(".") + ".")  # "Searching the internet." not the whole query
+    except Exception:
+        pass
+
+
 def _learn(text):
     try:
         from ishti.skills.owner.skill import learn
@@ -225,6 +243,11 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
         events.append({k: v for k, v in ev.items() if k not in ("sample", "results")})
         if on_event:
             on_event(ev)
+        if HOOKS["emit"]:  # every step also goes to the dashboard's live stream (voice/wake requests have no chat tab)
+            HOOKS["emit"]("trace", {**{k: v for k, v in ev.items() if k not in ("sample", "results")},
+                                    "session": sid, "channel": channel})
+        if channel == "voice":
+            narrate(ev)
     s = View(shared, trace=trace, on_token=on_token)
     s["trace"](type="received", text=text, channel=channel)
 
@@ -344,7 +367,8 @@ async def chat_endpoint(req: Request):
     text = (body.get("text") or body.get("prompt") or "").strip()
     if not text:
         return JSONResponse({"error": "empty text"}, status_code=400)
-    return await asyncio.get_running_loop().run_in_executor(None, handle, text, body.get("session_id"))
+    channel = "voice" if body.get("channel") == "voice" else "text"  # voice = narrated aloud, as the wake word does
+    return await asyncio.get_running_loop().run_in_executor(None, handle, text, body.get("session_id"), channel)
 
 
 @api.get("/api/skills")
