@@ -1,0 +1,11 @@
+{
+  "name": "security",
+  "version": "1.0.0",
+  "description": "Password strength (zxcvbn) and breach check (Have I Been Pwned range API - only 5 characters of a hash leave the PC), file/folder encryption to AES-256 7z and decryption, and a credential vault in Windows Credential Manager. Secrets typed here are masked in history, the saved chat and memory.",
+  "route": "password strength, has a password been leaked in a breach, encrypt or decrypt a file with a password, save or read a login from the credential vault",
+  "priority": 14,
+  "laya": false,
+  "needs": {"python": ["zxcvbn", "keyring", "py7zr"], "models": [], "mcp": [], "apis": ["api.pwnedpasswords.com"]},
+  "status": "working",
+  "tier": "T2"
+}

@@ -51,7 +51,7 @@
   },
   "browser_profiles": {
     "note": "Which Chrome profile (mcp_servers entry) each skill browses with; skills not listed use default",
-    "default": "main", "whatsapp": "main", "gemini": "main", "online_fallback": "main", "email": "login"
+    "default": "main", "whatsapp": "main", "gemini": "main", "online_fallback": "main", "email": "login", "login": "login"
   },
   "voice": {
     "whisper_model": "large-v3",

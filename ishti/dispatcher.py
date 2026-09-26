@@ -300,7 +300,7 @@ def _run(text, s, dec):
     if out is None:
         log_need("gap", "none", text, "no skill could handle this request")
         name, out = None, {"reply": "I can't do that yet - no skill handles it. I've logged it in NEEDS.md as a skill to add."}
-    get_facts().log_route(text, name, dec.get("confidence", 0), dec.get("source", ""), json.dumps(dec))
+    get_facts().log_route(mask(text, s.get("redact")), name, dec.get("confidence", 0), dec.get("source", ""), json.dumps(dec))
     return name, out, dec
 
 
@@ -454,6 +454,14 @@ def _handle(text, sid, conv, s, events, t0, channel):
     return _finish(text, sid, conv, s, events, t0, channel, name, out, dec)
 
 
+def mask(value, secrets):
+    """value with every secret in secrets (a string or a list) replaced by dots."""
+    for secret in ([secrets] if isinstance(secrets, str) else secrets or []):
+        if secret and value:
+            value = value.replace(secret, "\u2022" * 8)
+    return value
+
+
 def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
     """Close a request: trace, history, persistence, background memory, and the response dict."""
     reply = out["reply"]
@@ -467,6 +475,12 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
     # secrets (a generated password) are shown once: not kept in history, the saved chat or memory
     secret = s.pop("no_history", False)
     kept = "(a secret was shown here and not saved)" if secret else reply
+    # a secret the owner typed ("how strong is Xy7...", "encrypt it with password ...") is masked everywhere it's kept
+    hidden = s.pop("redact", None)
+    if hidden:
+        text, kept = mask(text, hidden), mask(kept, hidden)
+        events[:] = json.loads(mask(json.dumps(events, ensure_ascii=False), hidden))
+        secret = True  # and nothing from this exchange goes to long-term memory
     s["history"] = (s["history"] + [{"role": "user", "content": text},
                                     {"role": "assistant", "content": kept}])[-20:]
     if not out.get("persisted"):  # legacy skill writes its own session history
@@ -475,7 +489,8 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
             conv.add_message(sid, "ishti", kept, sources=out.get("sources"), metadata={"events": events[-150:]})
     if not secret and name not in ("memory",) and is_safe_for_history(reply):  # exact facts already live in SQLite
         threading.Thread(target=_remember, args=(text, reply, name), daemon=True).start()
-    threading.Thread(target=_learn, args=(text,), daemon=True).start()  # the owner's lasting facts and preferences
+    if not hidden:
+        threading.Thread(target=_learn, args=(text,), daemon=True).start()  # the owner's lasting facts and preferences
     return {**{k: v for k, v in out.items() if k not in ("reply", "persisted")},
             "request": text, "final_answer": reply, "mode": out.get("mode") or (name or "none").upper(), "skill": name,
             "sources": out.get("sources", []), "session_id": sid, "channel": channel, "route": dec,
