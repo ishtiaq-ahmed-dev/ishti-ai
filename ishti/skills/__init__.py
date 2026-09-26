@@ -46,3 +46,21 @@ class Skill:
 def load_skills() -> dict:
     return {s.name: s for s in (Skill(d) for d in sorted(os.listdir(HERE))
                                 if os.path.isfile(os.path.join(HERE, d, "manifest.json")))}
+
+
+def trace(session, name, label, status="done", **detail):
+    """Report a tool-level action to the live Thinking panel / graph. No-op outside a traced request."""
+    fn = session.get("trace") if isinstance(session, dict) else None
+    if fn:
+        fn(type="tool", name=name, label=label, status=status, **detail)
+
+
+YES = {"yes", "y", "yeah", "yep", "go ahead", "do it", "ok", "okay", "confirm", "sure", "proceed"}
+NO = {"no", "n", "nope", "cancel", "stop", "don't", "dont", "abort", "never mind", "nevermind"}
+
+
+def answer_of(text):
+    """'yes' / 'no' / None for a reply to a skill's yes/no question. None = the owner moved on to
+    something else: the skill drops its question and the message is routed normally."""
+    t = text.strip().lower().strip(" .!")
+    return "yes" if t in YES else "no" if t in NO else None

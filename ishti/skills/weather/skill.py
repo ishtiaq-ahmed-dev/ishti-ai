@@ -2,6 +2,7 @@
 import re
 
 from ishti.facts import get_facts
+from ishti.skills import trace
 from tools.web.weather import extract_city, get_weather, which_day
 
 # "rain"/"snow" alone are left to Laya: they also show up in poems and stories.
@@ -18,7 +19,9 @@ def run(text, session):
     city = extract_city(text) or get_facts().get("owner").get("city")
     if not city:
         return {"reply": "Which city? (Tell me 'I live in <city>' once and I'll remember it.)", "sources": []}
+    trace(session, "fetch", f"Open-Meteo forecast for {city}", status="start")
     w = get_weather(city, which_day(text))
+    trace(session, "fetch", f"forecast for {w.get('city', city)} {w.get('date', '')}", status="done" if w["ok"] else "error")
     if not w["ok"]:
         return {"reply": f"Couldn't get the weather for {city}: {w['error']}", "sources": []}
     return {"reply": w["answer"], "verified": True, "sources": [{"id": 1, "title": "Open-Meteo forecast", "url": w["source"],

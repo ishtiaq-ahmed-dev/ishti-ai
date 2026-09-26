@@ -55,12 +55,33 @@ def _remember(text, reply, skill):
         print(f"[dispatcher] semantic memory write skipped: {exc}")
 
 
+def why(dec) -> str:
+    """One human sentence on why this skill was chosen (shown in the Thinking panel)."""
+    src, skill = dec.get("source"), dec.get("skill")
+    if src == "rule":
+        return f"The request matches the {skill} skill's pattern."
+    if src == "laya":
+        runner = [n for n, _ in dec.get("scores", [])[1:2]]
+        return (f"Laya (typed-decision model, {dec.get('ms', 0):.0f} ms) picked {skill} at {dec['confidence']:.0%}"
+                + (f", ahead of {runner[0]}." if runner else "."))
+    if src == "pending":
+        return f"This answers the question {skill} asked you."
+    if src == "correction":
+        return f"You corrected the route: re-running your last request with {skill}."
+    if src == "planner":
+        return f"Several tasks in one request, so I planned {len(dec.get('steps', []))} steps."
+    if src == "plan":
+        return f"Plan step {dec.get('step')}: {skill}."
+    return "No skill claimed it with confidence, so the local model answers directly."
+
+
 def _run(text, s, dec):
     """Run the decided skill; if it declines ("not mine"), fall through to the next best one."""
     tried, out, name = set(), None, None
     while dec["skill"]:
         name = dec["skill"]
         s["route"] = dec
+        s["trace"](type="step", skill=name, status="start", why=why(dec), text=text)
         try:
             out = SKILLS[name].run(text, s)
         except Exception as exc:
@@ -68,7 +89,9 @@ def _run(text, s, dec):
                                   context="dispatcher.handle")
             out = {"reply": f"The {name} skill failed: {type(exc).__name__}: {str(exc)[:160]}"}
         if out is not None:
+            s["trace"](type="step", skill=name, status="done", summary=out["reply"][:160])
             break
+        s["trace"](type="step", skill=name, status="skip", summary=f"{name} passed it on")
         tried.add(name)
         dec = route(text, SKILLS, exclude=tried)
     if out is None:
@@ -77,13 +100,17 @@ def _run(text, s, dec):
     return name, out, dec
 
 
-def handle(text: str, session_id: str = None, channel: str = "text", on_token=None) -> dict:
-    """on_token(str): optional live stream of the reply for skills that generate it token by token."""
+def handle(text: str, session_id: str = None, channel: str = "text", on_token=None, on_event=None) -> dict:
+    """on_token(str): live stream of the reply for skills that generate it token by token.
+    on_event(dict): live trace (route, plan, steps, tool calls) for the UI's Thinking panel and graph.
+    Skills add their own tool events with session["trace"](type="tool", ...)."""
     t0 = time.perf_counter()
     conv = get_conversation_manager()
     sid = session_id or conv.active_session_id or conv.new_chat("New Session")
     s = SESSIONS.setdefault(sid, {"id": sid, "history": [], "pending": None, "last_entity": None})
     s["on_token"] = on_token
+    s["trace"] = lambda **ev: on_event and on_event({"t": round((time.perf_counter() - t0) * 1000), **ev})
+    s["trace"](type="received", text=text, channel=channel)
 
     pending, fix = s.get("pending"), CORRECTION.match(text.strip())
     wanted = fix and ALIASES.get(fix["skill"].lower(), fix["skill"].lower().replace(" ", "_"))
@@ -97,12 +124,15 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
         dec = {"skill": "plan", "confidence": 1.0, "source": "planner", "steps": steps}
     else:
         dec = route(text, SKILLS)
+    s["trace"](type="route", skill=dec["skill"], source=dec.get("source"), confidence=dec.get("confidence"),
+               why=why(dec), scores=dec.get("scores", []), steps=dec.get("steps", []))
     if dec["skill"] == "plan":
         name, out = "plan", planner.run(steps, s, lambda t, d: _run(t, s, d)[1])
     else:
         name, out, dec = _run(text, s, dec)
 
     reply = out["reply"]
+    s["trace"](type="done", skill=name, ms=round((time.perf_counter() - t0) * 1000))
     s["last_request"], s["last_skill"] = text, name
     s["history"] = (s["history"] + [{"role": "user", "content": text},
                                     {"role": "assistant", "content": reply}])[-20:]
@@ -192,3 +222,57 @@ async def voice_endpoint(audio: UploadFile, session_id: str = Form(None)):
     res = await loop.run_in_executor(None, handle, text, session_id, "voice")
     wav = await loop.run_in_executor(None, synthesize, res["final_answer"])
     return {**res, "transcript": text, "audio_wav_b64": base64.b64encode(wav).decode()}
+
+
+# ---- data for the app's sections (Tasks, Settings, System, activity heatmap) ----
+@api.get("/api/reminders")
+async def reminders_endpoint():
+    from ishti.skills.reminders.skill import _db, _pending
+    return {"reminders": [{"id": i, "due": d, "text": t} for i, d, t in _pending(_db())]}
+
+
+@api.post("/api/reminders/{rid}/done")
+async def reminder_done_endpoint(rid: int):
+    from ishti.skills.reminders.skill import _db
+    f = _db()
+    with f.lock, f.db:
+        n = f.db.execute("UPDATE reminders SET done=1 WHERE id=?", (rid,)).rowcount
+    return {"updated": n}
+
+
+@api.get("/api/prefs")
+async def prefs_get():
+    from orchestrator.memory.user_profile import get_user_memory
+    p = get_user_memory().get_preferences()
+    from ishti import CONFIG
+    return {"audio_output": p.audio_output, "wake_enabled": CONFIG["voice"]["wake_enabled"],
+            "wake_model": CONFIG["voice"]["wake_model"], "models": CONFIG["llm"]["models"]}
+
+
+@api.post("/api/prefs")
+async def prefs_set(req: Request):
+    from orchestrator.memory.user_profile import get_user_memory
+    body = await req.json()
+    if "audio_output" in body:
+        get_user_memory().update_preferences(audio_output=bool(body["audio_output"]))
+    return await prefs_get()
+
+
+@api.get("/api/activity")
+async def activity_endpoint(days: int = 365):
+    f = get_facts()
+    since = time.time() - days * 86400
+    with f.lock:
+        per_day = f.db.execute("SELECT date(ts, 'unixepoch', 'localtime') d, COUNT(*) FROM route_log WHERE ts>=? "
+                               "GROUP BY d ORDER BY d", (since,)).fetchall()
+        per_skill = f.db.execute("SELECT skill, COUNT(*) c FROM route_log WHERE ts>=? GROUP BY skill ORDER BY c DESC",
+                                 (since,)).fetchall()
+    return {"days": [{"date": d, "count": c} for d, c in per_day],
+            "skills": [{"skill": s or "none", "count": c} for s, c in per_skill]}
+
+
+@api.get("/api/system")
+async def system_endpoint():
+    import asyncio
+    from desktop.computer_use import get_computer_use_agent
+    return await asyncio.get_running_loop().run_in_executor(None, get_computer_use_agent().get_system_telemetry)

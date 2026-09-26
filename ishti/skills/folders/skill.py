@@ -15,6 +15,7 @@ import shutil
 import time
 
 from ishti import ROOT
+from ishti.skills import answer_of, trace
 
 I = re.I
 TYPES = {"PDFs": {"pdf"}, "Documents": {"doc", "docx", "txt", "md", "rtf", "odt"},
@@ -162,15 +163,26 @@ def run(text, session):
     p = session.get("pending")
     if p and p.get("skill") == "folders":
         session["pending"] = None
-        if t.lower().strip(" .!") not in ("yes", "y", "go ahead", "do it", "ok", "okay", "confirm", "sure"):
+        answer = answer_of(t)
+        if answer is None:
+            return None if not match(t) else run(t, session)  # moved on: handle the new message normally
+        if answer == "no":
             return {"reply": "OK, nothing moved.", "sources": []}
+        trace(session, "move", f"moving {len(p['moves'])} files", status="start")
         done, failed, _ = do_moves(p["moves"])
+        trace(session, "move", f"moved {len(done)} files", status="done", failed=failed)
         return {"reply": f"Moved {len(done)} files in {p['name']} into type folders"
                          + (f"; {failed} skipped (in use)" if failed else "") + ". Say 'undo that' to put them back.",
                 "sources": []}
     if UNDO.match(t):
         return {"reply": undo_last(), "sources": []}
     name, path = folder_in(t)
+    all_files = top_files(path)
+    kinds = {}
+    for e in all_files:
+        kinds[kind_of(e.name)] = kinds.get(kind_of(e.name), 0) + 1
+    trace(session, "scan", f"open {name} ({len(all_files)} files)", folder=path, count=len(all_files),
+          kinds=kinds, sample=[e.name for e in all_files[:12]])
     if ORGANIZE.search(t):
         moves = plan_moves(path)
         if not moves:
@@ -181,6 +193,7 @@ def run(text, session):
             counts[k] = counts.get(k, 0) + 1
         summary = ", ".join(f"{k} {v}" for k, v in sorted(counts.items(), key=lambda kv: -kv[1]))
         session["pending"] = {"skill": "folders", "moves": moves, "name": name}
+        trace(session, "plan", f"plan {len(moves)} moves into {len(counts)} folders", status="waiting", groups=counts)
         return {"reply": f"Plan for {name} ({path}): move {len(moves)} files into subfolders - {summary}. "
                          "Nothing is deleted or overwritten, and it can be undone. Go ahead? (yes/no)", "sources": []}
     files, kind = top_files(path), kind_in(t)
@@ -220,6 +233,8 @@ if __name__ == "__main__":
     r = run(f"organize the folder {root}", s)["reply"]
     assert "move 6 files" in r and s["pending"], r                 # .crdownload and desktop.ini untouched
     assert run("no", s)["reply"] == "OK, nothing moved." and os.path.exists(os.path.join(root, "a.pdf"))
+    run(f"organize the folder {root}", s)
+    assert run("tell me a joke", s) is None and not s["pending"], "an unrelated reply must not be swallowed"
     run(f"organize the folder {root}", s)
     assert "Moved 6 files" in run("yes", s)["reply"]
     assert open(os.path.join(root, "PDFs", "a.pdf")).read() == "existing"          # not overwritten

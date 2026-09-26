@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Drives a real (visible, isolated-profile) browser through the Playwright MCP server: the local LLM plans tool calls over page accessibility snapshots. Clicks that buy, send, submit, post or delete wait for the owner's yes.",
   "route": "controlling a web browser to visit a website, log in, click buttons or fill forms on web pages",
-  "priority": 25,
+  "priority": 18,
   "needs": {
     "python": [
       "mcp"

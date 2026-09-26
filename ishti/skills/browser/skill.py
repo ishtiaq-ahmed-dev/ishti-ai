@@ -7,6 +7,7 @@ import uuid
 
 from ishti import llm
 from ishti.mcp_client import get_hub
+from ishti.skills import answer_of, trace
 from orchestrator.intent_detector import IntentDetector
 
 ALLOWED = {"browser_navigate", "browser_navigate_back", "browser_snapshot", "browser_click", "browser_type",
@@ -18,8 +19,12 @@ RISKY = re.compile(r"\b(buy|purchase|pay|checkout|check out|place order|order no
                    r"tweet|delete|remove|confirm|transfer|subscribe|sign up|register|book|reserve|donate|"
                    r"apply|password|log ?in|sign ?in)\b", re.I)
 URL = r"(?:https?://\S+|www\.\S+|[\w-]+\.(?:com|org|net|io|dev|ai|pk|co|edu|gov|app)\b\S*)"
-TRIGGER = re.compile(rf"^(?:please\s+)?(?:go\s+to|navigate\s+to|visit|browse\s+to|open)\s+{URL}|"
-                     r"\b(?:in|on|using|with)\s+(?:the\s+|a\s+)?browser\b", re.I)
+SITES = r"(?:youtube|google|gmail|github|facebook|twitter|linkedin|reddit|wikipedia|amazon|netflix|instagram|daraz|chatgpt)"
+TRIGGER = re.compile(rf"^(?:please\s+)?(?:go\s+to|navigate\s+to|visit|browse\s+to|open)\s+(?:{URL}|{SITES}\b)|"
+                     r"\b(?:in|on|using|with)\s+(?:the\s+|a\s+|my\s+)?(?:web\s+)?browser\b|"
+                     r"\b(?:open|launch|start|use)\s+(?:a\s+|the\s+|my\s+)?(?:web\s+)?browser\b|"
+                     rf"^(?:please\s+)?(?:search|look\s+up|find)\s+(?:on\s+)?{SITES}\b|"
+                     r"\b(?:open|launch|start)\s+(?:google\s+)?chrome\s+and\b", re.I)
 SYSTEM = llm.STYLE + (
     " You control a real web browser through tools, one action at a time. Target elements only by "
     "the ref values shown in the latest page snapshot; never guess selectors or XPath. Never invent "
@@ -48,6 +53,17 @@ def _risky(name, args):
         return None
     what = json.dumps(args, ensure_ascii=False)
     return RISKY.search(what) and (args.get("element") or what[:120])
+
+
+def human(name, args):
+    """Short label for the Thinking panel: never raw JSON or page snapshots."""
+    what = args.get("element") or args.get("url") or args.get("key") or args.get("text") or ""
+    verb = {"browser_navigate": "open", "browser_snapshot": "read the page", "browser_click": "click",
+            "browser_type": "type into", "browser_fill_form": f"fill {len(args.get('fields', []))} fields",
+            "browser_press_key": "press", "browser_select_option": "choose", "browser_wait_for": "wait for",
+            "browser_navigate_back": "go back", "browser_find": "find", "browser_tabs": "switch tab",
+            "browser_hover": "hover", "browser_close": "close the browser"}.get(name, name.removeprefix("browser_"))
+    return f"{verb} {what}".strip()[:90]
 
 
 def _call(name, args):
@@ -113,16 +129,22 @@ def _loop(session, msgs, log, steps_left):
         msgs.append({"role": "assistant", "content": "", "tool_calls": [
             {"id": cid, "type": "function", "function": {"name": name, "arguments": raw}}]})
         print(f"[browser] step {step}: {name} {raw}")
+        label = human(name, args)
         if name not in ALLOWED:
             out = f"ERROR: tool {name} is not allowed"
         elif what := _risky(name, args):
             # Park the plan; resume from exactly here only on an explicit yes.
             session["pending"] = {"skill": "browser", "msgs": msgs, "log": log, "call": (cid, name, args),
                                   "steps": steps_left - step}
+            trace(session, name, f"waiting for your yes: {label}", status="waiting")
             return {"reply": f"About to {name.removeprefix('browser_').replace('_', ' ')}: {what}. "
                              "Go ahead? (yes/no)", "sources": []}
         else:
+            trace(session, name, label, status="start")
             out = _call(name, args)
+            url = re.search(r"Page URL: (\S+)", out)
+            trace(session, name, label, status="error" if out.startswith("ERROR") else "done",
+                  url=url.group(1) if url else None)
         log.append(f"{name.removeprefix('browser_')} {raw}" + (" -> ERROR" if out.startswith("ERROR") else ""))
         msgs.append({"role": "tool", "tool_call_id": cid, "content": out[:8000]})
     return {"reply": "Stopped after too many browser steps. " + _summary(msgs, log), "sources": []}
@@ -132,7 +154,10 @@ def run(text, session):
     p = session.get("pending")
     if p and p.get("skill") == "browser":
         session["pending"] = None
-        if text.strip().lower().strip(" .!") not in ("yes", "y", "go ahead", "do it", "ok", "okay", "confirm"):
+        answer = answer_of(text)
+        if answer != "yes":
+            if answer is None:
+                return None  # moved on to something else: route the new message normally
             return {"reply": "Cancelled. Nothing was clicked.", "sources": []}
         cid, name, args = p["call"]
         out = _call(name, args)

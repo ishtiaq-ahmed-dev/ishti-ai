@@ -1,6 +1,7 @@
 """Files skill: PC file search (user folders + D:\ISHTI), short answer with paths."""
 import re
 
+from ishti.skills import trace
 from orchestrator.intent_detector import IntentDetector
 
 
@@ -20,7 +21,9 @@ def run(text, session):
     exts = [f".{e.lower()}" for e in re.findall(r"\.([a-z0-9]{2,5})\b", text, flags=re.I)] or None
     m = re.search(r"\bcontaining\s+['\"]?(.+?)['\"]?\s*$", text, flags=re.I)
     q = m.group(1) if m else query_of(text)
+    trace(session, "search", f"search your folders for '{q}'", status="start")
     hits = get_computer_use_agent().search_pc(q, extensions=exts, max_results=8, search_content=bool(m))
+    trace(session, "search", f"{len(hits)} file(s) for '{q}'", results=[h["path"] for h in hits])
     if not hits:
         return {"reply": f"No files matching '{q}' in your user folders.", "sources": []}
     lines = [f"{i}. {h['path']} ({h['size']}, {h['modified']})" for i, h in enumerate(hits, 1)]

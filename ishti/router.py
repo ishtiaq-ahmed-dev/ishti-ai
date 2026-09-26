@@ -62,7 +62,8 @@ def route(text, skills, exclude=()):
             score = {n: probs[n] + a[f"is_{n}"]["noul"] for n in candidates}
             skill = max(score, key=score.get)
             conf = score[skill] / 2
-            extra = {"domain": a["domain"]["choice"], "needs_tools": a["needs_tools"]["noul"],
+            extra = {"scores": [(n, round(v / 2, 3)) for n, v in sorted(score.items(), key=lambda kv: -kv[1])[:3]],
+                     "domain": a["domain"]["choice"], "needs_tools": a["needs_tools"]["noul"],
                      "sensitive": a["is_sensitive"]["noul"], "laya_choice": skill}
             if conf >= _cfg["min_confidence"]:
                 return done(skill, conf, "laya", **extra)

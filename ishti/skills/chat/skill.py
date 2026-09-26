@@ -4,6 +4,7 @@ import re
 
 from ishti import llm
 from ishti.facts import get_facts
+from ishti.skills import trace
 from orchestrator.response_guard import inspect
 
 
@@ -39,6 +40,8 @@ def build_context(text):
 def run(text, session):
     role = "coder" if session.get("route", {}).get("domain") == "code" else "planner"
     ctx = build_context(text)
+    trace(session, "context", f"{ctx.count(chr(10) + '- ')} saved facts / memories in context" if ctx else "no saved context needed")
+    trace(session, "model", f"thinking with {llm.model_for(role)}", status="start")
     msgs = session.get("history", [])[-12:] + [
         {"role": "user", "content": f"{ctx}\n\nOwner: {text}" if ctx else text}]
     out = (llm.chat(msgs, role=role, max_tokens=2048 if role == "coder" else 1024,

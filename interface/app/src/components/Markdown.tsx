@@ -1,0 +1,52 @@
+import { Fragment, type ReactNode } from "react";
+import { CodeBlock } from "@/components/rare/code-block";
+
+// Small, safe markdown for ISHTI's short answers: builds React elements, never injects HTML.
+function inline(text: string): ReactNode[] {
+  const out: ReactNode[] = [];
+  const rx = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^)\s]+\))/g;
+  let last = 0;
+  for (const m of text.matchAll(rx)) {
+    out.push(text.slice(last, m.index));
+    const t = m[0];
+    if (t.startsWith("**")) out.push(<b key={m.index}>{t.slice(2, -2)}</b>);
+    else if (t.startsWith("`")) out.push(<code key={m.index} className="rounded bg-muted px-1 py-0.5 font-mono text-[12px]">{t.slice(1, -1)}</code>);
+    else {
+      const [, label, url] = t.match(/\[([^\]]+)\]\(([^)]+)\)/)!;
+      out.push(<a key={m.index} href={url} target="_blank" rel="noreferrer" className="text-accent underline-offset-2 hover:underline">{label}</a>);
+    }
+    last = (m.index ?? 0) + t.length;
+  }
+  out.push(text.slice(last));
+  return out;
+}
+
+export function Markdown({ text }: { text: string }) {
+  const parts = text.split(/```(\w*)\n?([\s\S]*?)(?:```|$)/g);
+  const blocks: ReactNode[] = [];
+  for (let i = 0; i < parts.length; i += 3) {
+    const prose = parts[i];
+    if (prose?.trim()) {
+      const lines = prose.trim().split("\n");
+      let list: string[] = [];
+      const flush = () => {
+        if (list.length) blocks.push(<ul key={`l${i}-${blocks.length}`} className="my-1 list-disc space-y-0.5 pl-5">{list.map((l, j) => <li key={j}>{inline(l)}</li>)}</ul>);
+        list = [];
+      };
+      lines.forEach((line, j) => {
+        const bullet = line.match(/^\s*(?:[-*•]|\d+\.)\s+(.*)/);
+        if (bullet) { list.push(bullet[1]); return; }
+        flush();
+        const heading = line.match(/^#{1,4}\s+(.*)/);
+        if (heading) blocks.push(<p key={`h${i}-${j}`} className="mt-2 font-semibold">{inline(heading[1])}</p>);
+        else if (line.trim()) blocks.push(<p key={`p${i}-${j}`} className="my-1">{inline(line)}</p>);
+      });
+      flush();
+    }
+    if (parts[i + 2] !== undefined && parts[i + 2].trim()) {
+      blocks.push(<CodeBlock key={`c${i}`} code={parts[i + 2].trimEnd()} language={parts[i + 1] || "text"}
+        accent="#6e56cf" className="my-2" />);
+    }
+  }
+  return <div className="text-sm leading-relaxed">{blocks.map((b, i) => <Fragment key={i}>{b}</Fragment>)}</div>;
+}

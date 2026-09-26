@@ -137,13 +137,22 @@ def sync_event_callback(event_type: str, data: Dict[str, Any]):
 ISHTI_HOOKS.update(emit=sync_event_callback)
 
 
+APP_DIST = os.path.join(ROOT_DIR, "interface", "app", "dist")  # the React app (cd interface/app && npm run build)
+if os.path.isdir(os.path.join(APP_DIST, "assets")):
+    app.mount("/assets", StaticFiles(directory=os.path.join(APP_DIST, "assets")), name="app-assets")
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    html_file = os.path.join(TEMPLATES_DIR, "index.html")
-    if os.path.exists(html_file):
-        with open(html_file, "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
-    return HTMLResponse("<h1>ISHTI Interface Loading...</h1>")
+    """The new app when it's built; the old HUD otherwise (still reachable at /hud)."""
+    built = os.path.join(APP_DIST, "index.html")
+    return await hud() if not os.path.exists(built) else HTMLResponse(open(built, encoding="utf-8").read())
+
+
+@app.get("/hud", response_class=HTMLResponse)
+async def hud():
+    with open(os.path.join(TEMPLATES_DIR, "index.html"), "r", encoding="utf-8") as f:
+        return HTMLResponse(f.read())
 
 
 @app.get("/api/status")
@@ -223,11 +232,11 @@ async def execute_task(req: Request):
     return JSONResponse(result)
 
 
-def _execute(prompt, session_id, on_token=None) -> dict:
+def _execute(prompt, session_id, on_token=None, on_event=None) -> dict:
     """Dispatcher call shared by /api/execute and /api/execute_stream (runs in a worker thread)."""
     global last_execution_state, last_research_state
     try:
-        res = ishti_handle(prompt, session_id=session_id, on_token=on_token)
+        res = ishti_handle(prompt, session_id=session_id, on_token=on_token, on_event=on_event)
         # Speak the whole answer, not just its first line, when audio output is enabled.
         answer = res.get("final_answer", "")
         if answer and get_user_memory().get_preferences().audio_output:
@@ -245,21 +254,23 @@ def _execute(prompt, session_id, on_token=None) -> dict:
 
 @app.post("/api/execute_stream")
 async def execute_stream(req: Request):
-    """NDJSON: {"token": "..."} lines while the reply is generated, then {"done": true, "result": {...}}."""
+    """NDJSON: {"event": {...}} trace lines and {"token": "..."} reply chunks as they happen,
+    then {"done": true, "result": {...}}."""
     body = await req.json()
     prompt = body.get("prompt", "").strip()
     session_id = body.get("session_id", "").strip() or None
     if not prompt:
         return JSONResponse({"error": "Empty prompt"}, status_code=400)
     loop = asyncio.get_running_loop()
-    tokens: asyncio.Queue = asyncio.Queue()
+    queue: asyncio.Queue = asyncio.Queue()  # {"token": str} or {"event": dict}, in arrival order
     job = loop.run_in_executor(None, _execute, prompt, session_id,
-                               lambda t: loop.call_soon_threadsafe(tokens.put_nowait, t))
+                               lambda t: loop.call_soon_threadsafe(queue.put_nowait, {"token": t}),
+                               lambda ev: loop.call_soon_threadsafe(queue.put_nowait, {"event": ev}))
 
     async def lines():
-        while not (job.done() and tokens.empty()):
+        while not (job.done() and queue.empty()):
             try:
-                yield json.dumps({"token": await asyncio.wait_for(tokens.get(), 0.1)}) + "\n"
+                yield json.dumps(await asyncio.wait_for(queue.get(), 0.1), ensure_ascii=False, default=str) + "\n"
             except asyncio.TimeoutError:
                 continue
         result = job.result()

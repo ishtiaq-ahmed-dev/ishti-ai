@@ -38,6 +38,8 @@ LABELLED = [
     ("list my reminders", "reminders"),
     ("how many pdfs are in my dwonload folder", "folders"), ("arrange the complete downloads folder", "folders"),
     ("what are the largest files on my desktop", "folders"),
+    ("open a browser and search for RTX 5070 Ti drivers", "browser"), ("search google for the weather in dubai", "browser"),
+    ("open chrome and go to github", "browser"), ("open youtube", "browser"), ("open the task manager", "apps"),
 ]
 
 

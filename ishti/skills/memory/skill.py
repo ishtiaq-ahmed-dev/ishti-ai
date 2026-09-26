@@ -15,6 +15,7 @@ from collections import deque
 
 from ishti import CONFIG, llm
 from ishti.facts import get_facts, norm
+from ishti.skills import trace
 
 I = re.I
 STATUS = {"finished": "finished", "completed": "finished", "complete": "finished", "done": "finished",
@@ -145,6 +146,7 @@ def _resolve(e, session):
 
 def _store(entity, attr, value, session):
     prev = get_facts().set(entity, attr, value)
+    trace(session, "save", f"{'update' if prev else 'save'} {entity} {attr}")
     shown = get_facts().get(entity).get("entity", entity)
     session["last_entity"] = shown
     fact = {"location": f"{shown} is at {value}", "status": f"{shown} is {value}"}.get(attr, f"{shown} {attr}: {value}")
@@ -159,6 +161,7 @@ def _store(entity, attr, value, session):
 def _where(e, text, session):
     facts = get_facts().get(e)
     loc, note = facts.get("location"), ""
+    trace(session, "lookup", f"look up '{e}' in saved facts", found=bool(loc))
     if loc:
         session["last_entity"] = facts["entity"]
         if os.path.exists(loc):
@@ -166,7 +169,9 @@ def _where(e, text, session):
         note = f"Saved path {loc} no longer exists. "
     elif not PERSONAL.search(text):
         return None  # general question ("where is Paris?") - not the owner's files
+    trace(session, "search", f"search D:, Desktop, Downloads for '{e}'", status="start")
     found = locate(e)
+    trace(session, "search", f"found {len(found)} match(es) for '{e}'", results=found)
     if not found:
         return R(note + f"{e} not found on D:, Desktop or Downloads. Tell me the path and I'll save it.")
     session["pending"] = {"skill": "memory", "entity": facts.get("entity", e), "candidates": found}
