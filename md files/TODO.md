@@ -76,13 +76,13 @@ New:
 - [ ] "send this video to qasim ims" → WhatsApp: find the contact (fuzzy for spelling/voice errors), exact match sends, otherwise ask which one; attach the file
 - [ ] Video editing like an editor: professional ad-style edit (intro title card, captions, music bed, transitions, grading, loudness), open in CapCut (install it with winget after a yes if missing), and verify the result frame by frame with a local vision model
 - [ ] More skills: prayer times, currency, news, translate, dictionary, document summary, unit conversion
-- [ ] Install skills from GitHub repos (show the code, install only after a yes, run isolated)
+- [x] Install skills from GitHub repos (show the code, install only after a yes, run isolated)
 
 ## L. Finish from K (in progress)
 - [x] Professional ad-style edit: intro title card, graded main clip, lower-third, burned captions (whisper), outro CTA, transitions, loudness -14 LUFS, aspect presets
 - [x] Same edit written as a real CapCut project (pyCapCut; CapCut 8.9 drafts are plain JSON) and CapCut opened
 - [x] Verify the output: ffprobe checks, black frames, loudness, and key frames read by Gemma 3 (vision) for text visibility/spelling
-- [ ] More skills (prayer times, translate, dictionary, unit convert, document summary, news)
+- [x] More skills (prayer times, translate, dictionary, unit convert, document summary, news)
 - [ ] Install skills from GitHub repos (show code, yes to install, isolated)
 
 ## M. Verified search + real-time voice (owner feature set, build in this order)
@@ -101,6 +101,6 @@ New:
 - [x] 3. Browser extras: downloads, page-change monitor, scrape, captcha handoff
 - [x] 10. Development: run code (sandbox), git, tests, lint, explain codebase
 - [x] 5-9. Media/docs/office (logged gaps: AI image generation needs ComfyUI running; background removal/upscaling need large model downloads; PDF image recompression needs Ghostscript): video/audio/image/PDF/Office wrappers
-- [ ] 11-21. Finance ledger, automation, learning, security, travel, health, analytics, meta-skills (demand-driven as the catalog says)
+- [x] 11-21. Finance ledger + portfolio, repeating schedules + daily brief, planners (study/quiz/flashcards/lectures/itinerary/workout/meal/post drafts), security (password generator), calendar, Gmail, lifelog + screen time, meta (skill health, audit, usage), price-drop tracking, skillsmith. Needs accounts/tools this PC lacks: see NEEDS.md #12
 
 ## O. After M and N: go through the owner's chat history again and fix what failed
