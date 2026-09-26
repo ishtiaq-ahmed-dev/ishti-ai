@@ -175,15 +175,22 @@ class ComputerUseAgent:
             if found:
                 exe = found
             else:
-                exe = key  # Try running as command or URI scheme
+                # Never hand request text to a shell (AUDIT.md B4).
+                return {"status": "error", "app": app_name, "error": f"Unknown app '{app_name}'"}
 
         try:
             # Check for Windows URI scheme (e.g. ms-settings:)
             if exe.endswith(":"):
-                os.system(f"start {exe}")
+                os.startfile(exe)
                 return {"status": "success", "app": app_name, "details": f"Launched URI scheme: {exe}"}
 
-            args = [exe]
+            resolved = exe if os.path.isabs(exe) else shutil.which(exe)
+            if not resolved:
+                # Trusted alias not on PATH (e.g. CapCut.exe): ShellExecute resolves it via App Paths,
+                # without a shell parsing the string.
+                os.startfile(exe, arguments=f'"{os.path.abspath(target_file)}"' if target_file else "")
+                return {"status": "success", "app": app_name, "details": f"Launched via App Paths: {exe}"}
+            args = [resolved]
             if target_file:
                 args.append(os.path.abspath(target_file))
 
@@ -192,11 +199,7 @@ class ComputerUseAgent:
             if sys.platform == "win32":
                 creation_flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
 
-            proc = subprocess.Popen(
-                args,
-                shell=(sys.platform == "win32" and not os.path.isabs(exe)),
-                creationflags=creation_flags if os.path.isabs(exe) else 0,
-            )
+            proc = subprocess.Popen(args, creationflags=creation_flags)
             print(f"[ComputerUse] Successfully launched '{app_name}' (PID: {proc.pid})")
             return {
                 "status": "success",
@@ -205,13 +208,8 @@ class ComputerUseAgent:
                 "command": " ".join(args),
             }
         except Exception as e:
-            # Fallback using Windows shell start
-            try:
-                os.system(f'start "" "{exe}"' if not target_file else f'start "" "{exe}" "{target_file}"')
-                return {"status": "success", "app": app_name, "fallback": "shell_start"}
-            except Exception as e2:
-                print(f"[ComputerUse] Failed to launch '{app_name}': {e} / {e2}")
-                return {"status": "error", "app": app_name, "error": str(e)}
+            print(f"[ComputerUse] Failed to launch '{app_name}': {e}")
+            return {"status": "error", "app": app_name, "error": str(e)}
 
     def open_file_or_folder(self, target_path: str) -> Dict[str, Any]:
         """Opens any file or directory with its default Windows application."""

@@ -51,6 +51,13 @@ pending_confirmations: Dict[str, asyncio.Event] = {}
 confirmation_decisions: Dict[str, bool] = {}
 last_execution_state: Dict[str, Any] = {}
 last_research_state: Dict[str, Any] = {}
+MAIN_LOOP: asyncio.AbstractEventLoop = None  # set at startup; worker threads have no loop of their own
+
+
+@app.on_event("startup")
+async def _capture_loop():
+    global MAIN_LOOP
+    MAIN_LOOP = asyncio.get_running_loop()
 
 
 async def broadcast_event(event_type: str, data: Dict[str, Any]):
@@ -68,12 +75,8 @@ async def broadcast_event(event_type: str, data: Dict[str, Any]):
 
 def sync_event_callback(event_type: str, data: Dict[str, Any]):
     """Called from executor worker threads to broadcast to Web UI."""
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.run_coroutine_threadsafe(broadcast_event(event_type, data), loop)
-    except Exception:
-        pass
+    if MAIN_LOOP and MAIN_LOOP.is_running():
+        asyncio.run_coroutine_threadsafe(broadcast_event(event_type, data), MAIN_LOOP)
 
 
 def confirmation_gate_ui(task: Dict[str, Any]) -> bool:
@@ -92,13 +95,12 @@ def confirmation_gate_ui(task: Dict[str, Any]) -> bool:
     # Speak alert
     speak("Confirmation required for consequential action. Please review the draft on your screen.", wait=False)
 
+    # No answer, timeout or error = deny. A consequential action must never self-approve.
     try:
-        loop = asyncio.get_event_loop()
-        future = asyncio.run_coroutine_threadsafe(event.wait(), loop)
-        future.result(timeout=60)
+        asyncio.run_coroutine_threadsafe(event.wait(), MAIN_LOOP).result(timeout=60)
         approved = confirmation_decisions.get(task_id, False)
     except Exception:
-        approved = True
+        approved = False
 
     pending_confirmations.pop(task_id, None)
     confirmation_decisions.pop(task_id, None)

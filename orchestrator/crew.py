@@ -11,6 +11,7 @@ import time
 import json
 import re
 import concurrent.futures
+import subprocess
 from typing import Dict, Any, List, Optional, Callable
 import requests
 
@@ -625,8 +626,8 @@ class ExecutionEngine:
         self.emit("task_started", {"task_id": task_id, "name": name, "type": action_type})
         model = self.model_router.get_model("primary")
 
-        # Consequential action gate check
-        if task.get("is_consequential"):
+        # Consequential action gate check. Shell commands are always gated, whatever the planner said.
+        if task.get("is_consequential") or action_type == "system_command":
             self.emit("consequential_check", {
                 "task_id": task_id,
                 "name": name,
@@ -777,12 +778,12 @@ class ExecutionEngine:
         print("=" * 60)
         try:
             if not sys.stdin.isatty():
-                print("  [Non-interactive detected: Auto-approving for verification]")
-                return True
+                print("  [Non-interactive: no one to confirm, denying]")
+                return False
             ans = input("  Proceed with this consequential action? (y/N): ").strip().lower()
             return ans in ["y", "yes"]
         except Exception:
-            return True
+            return False
 
     def execute_plan(self, plan: TaskPlan) -> Dict[str, Any]:
         """Executes all DAG stages of the plan concurrently where independent."""
