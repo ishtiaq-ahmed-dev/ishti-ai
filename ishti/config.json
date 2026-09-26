@@ -26,20 +26,21 @@
     "default_skill": "chat"
   },
   "mcp_servers": {
-    "browser": {
-      "note": "Owner's Chrome 'Profile 10' (search + Google logins) via the Playwright Extension; token in data/mcp_tokens.json",
+    "login": {
+      "note": "Owner's Chrome 'Profile 10' - for logins only (Google sign-in, Gmail) - via the Playwright Extension; token in data/mcp_tokens.json",
       "command": "npx",
       "args": ["-y", "@playwright/mcp@0.0.82", "--extension", "--profile-dir-name", "Profile 10",
                "--output-dir", "D:\\ISHTI\\data\\mcp_output"],
       "token_key": "browser",
       "fallback": "browser_isolated"
     },
-    "whatsapp": {
-      "note": "Owner's Chrome 'Profile 9' (WhatsApp Web) via the Playwright Extension",
+    "main": {
+      "note": "Owner's MAIN Chrome 'Profile 9' - WhatsApp Web, Gemini, general browsing - via the Playwright Extension",
       "command": "npx",
       "args": ["-y", "@playwright/mcp@0.0.82", "--extension", "--profile-dir-name", "Profile 9",
                "--output-dir", "D:\\ISHTI\\data\\mcp_output"],
-      "token_key": "whatsapp"
+      "token_key": "whatsapp",
+      "fallback": "browser_isolated"
     },
     "browser_isolated": {
       "note": "Fallback until the extension is set up: ISHTI's own separate profile, no logins",
@@ -47,6 +48,10 @@
       "args": ["-y", "@playwright/mcp@0.0.82", "--user-data-dir", "D:\\ISHTI\\data\\mcp_browser_profile",
                "--output-dir", "D:\\ISHTI\\data\\mcp_output"]
     }
+  },
+  "browser_profiles": {
+    "note": "Which Chrome profile (mcp_servers entry) each skill browses with; skills not listed use default",
+    "default": "main", "whatsapp": "main", "gemini": "main", "online_fallback": "main", "email": "login"
   },
   "voice": {
     "whisper_model": "large-v3",

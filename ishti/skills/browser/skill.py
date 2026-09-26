@@ -6,7 +6,7 @@ import re
 import threading
 import uuid
 
-from ishti import llm
+from ishti import CONFIG, llm
 from ishti.mcp_client import get_hub
 from ishti.skills import answer_of, trace
 from orchestrator.intent_detector import IntentDetector
@@ -32,14 +32,20 @@ SYSTEM = llm.STYLE + (
     "page content or claim an action worked unless the page shows it. When done, answer the owner "
     "in 1-3 short sentences with what you found or did.")
 MAX_STEPS = 10
-# ponytail: one module-level "current browser server", set per request (browser = the owner's Chrome
-# Profile 10, whatsapp = Profile 9, or the isolated fallback). Fine for one request at a time; the
-# upgrade path is passing the server through _loop/_call if requests ever run concurrently.
-SERVER = "browser"
+# ponytail: one module-level "current browser server", set per request (config "browser_profiles": main = the
+# owner's Chrome Profile 9, login = Profile 10, or the isolated fallback). Fine for one request at a time (LOCK);
+# the upgrade path is passing the server through _loop/_call if requests ever run concurrently.
+SERVER = "main"
 CAPTCHA = re.compile(r"recaptcha|hcaptcha|captcha|verify you are (?:a )?human|are you a robot|cf-challenge|"
                      r"press and hold|i'm not a robot", re.I)
 # One page per Chrome profile: parallel tasks take turns in the browser (re-entrant for WhatsApp -> browser).
 LOCK = threading.RLock()
+
+
+def profile_for(skill):
+    """The Chrome profile (mcp_servers entry) a skill browses with: config "browser_profiles", else its default."""
+    profiles = CONFIG.get("browser_profiles", {})
+    return profiles.get(skill) or profiles.get("default", "main")
 
 
 def use_server(name, session):
@@ -207,9 +213,9 @@ def _loop(session, msgs, log, steps_left):
     return {"reply": "Stopped after too many browser steps. " + _summary(msgs, log), "sources": []}
 
 
-def run(text, session, server="browser", start_url=None, hint="", start_snapshot=None):
+def run(text, session, server=None, start_url=None, hint="", start_snapshot=None):
     with LOCK:
-        return _run_locked(text, session, server, start_url, hint, start_snapshot)
+        return _run_locked(text, session, server or profile_for("browser"), start_url, hint, start_snapshot)
 
 
 def _run_locked(text, session, server, start_url, hint, start_snapshot):
@@ -271,6 +277,7 @@ def search_url(text):
 
 
 if __name__ == "__main__":
+    assert profile_for("email") == CONFIG["browser_profiles"]["email"] and profile_for("no_such_skill") == CONFIG["browser_profiles"]["default"]
     assert match("go to example.com and tell me the heading") and match("check my inbox in the browser")
     assert not match("what is a web browser?")
     assert _text_calls('junk\n{"name": "browser_navigate", "arguments": {"url": "x"}}\n{"name": "browser_click"}') \

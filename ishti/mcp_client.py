@@ -3,6 +3,7 @@ stdio session on a background event loop, so state such as an open browser page 
 between calls. Skills use the sync API: tools(server) and call(server, tool, args)."""
 import asyncio
 import os
+import shutil
 import concurrent.futures
 import threading
 
@@ -47,7 +48,8 @@ class MCPHub:
         if cfg.get("token_key"):  # extension mode: the profile's token lets it connect without a popup
             token = load_tokens().get(cfg["token_key"])
             env = {**os.environ, **({"PLAYWRIGHT_MCP_EXTENSION_TOKEN": token} if token else {})}
-        params = StdioServerParameters(command=cfg["command"], args=cfg.get("args", []), env=env)
+        cmd = shutil.which(cfg["command"]) or cfg["command"]
+        params = StdioServerParameters(command=cmd, args=cfg.get("args", []), env=env)
         try:
             async with stdio_client(params) as (r, w), ClientSession(r, w) as session:
                 await session.initialize()
@@ -132,13 +134,14 @@ def get_hub() -> MCPHub:
 if __name__ == "__main__":
     import time
     hub = get_hub()
+    main = CONFIG.get("browser_profiles", {}).get("default", "main")
     t0 = time.time()
-    names = [t.name for t in hub.tools("browser")]
+    names = [t.name for t in hub.tools(main)]
     print(f"browser MCP up in {time.time() - t0:.1f}s, {len(names)} tools: {', '.join(names)}")
     assert "browser_navigate" in names and "browser_snapshot" in names
-    out = hub.call("browser", "browser_navigate", {"url": "https://example.com"})
+    out = hub.call(main, "browser_navigate", {"url": "https://example.com"})
     assert "Example Domain" in out, out[:500]
-    snap = hub.call("browser", "browser_snapshot")
+    snap = hub.call(main, "browser_snapshot")
     assert "Example Domain" in snap and "ref=" in snap, snap[:500]  # state persisted between calls
-    hub.call("browser", "browser_close")
+    hub.call(main, "browser_close")
     print("[self-check] mcp_client OK - persistent session, navigate, snapshot")

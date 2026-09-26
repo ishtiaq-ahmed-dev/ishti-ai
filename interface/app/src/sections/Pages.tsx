@@ -935,7 +935,7 @@ export function System({ onToggleNav }: { onToggleNav?: () => void }) {
 }
 
 // ---------------------------------------------------------------- Settings
-type Profile = { key: string; profile: string; purpose: string; connected: boolean };
+type Profile = { key: string; server: string; profile: string; purpose: string; connected: boolean };
 
 /** The owner's own Chrome profiles ISHTI may drive (via the Playwright Extension). Tokens stay on this PC. */
 function ChromeProfiles({
@@ -1057,7 +1057,7 @@ function ChromeProfiles({
                     />
                     <div>
                       <div className="text-xs font-semibold text-foreground">
-                        {pr.profile} · {pr.key === "whatsapp" ? "WhatsApp" : "Search & Logins"}
+                        {pr.profile} · {pr.server === "main" ? "Main: WhatsApp, Gemini, browsing" : pr.server === "login" ? "Logins only (Gmail)" : pr.server}
                       </div>
                       <div className="text-[11px] text-muted-foreground">
                         {pr.connected ? "Connected & Ready" : "Disconnected"}

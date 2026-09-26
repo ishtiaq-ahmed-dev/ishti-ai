@@ -26,7 +26,7 @@ def match(text):
 
 def open_whatsapp(session, wait_s=40):
     """Open WhatsApp Web and wait for the chat list (a fresh tab shows a progress bar for a few seconds)."""
-    browser.use_server("whatsapp", session)
+    browser.use_server(browser.profile_for("whatsapp"), session)
     trace(session, "browser_navigate", "open WhatsApp Web (Chrome Profile 9)", status="start")
     snap, t0 = browser._call("browser_navigate", {"url": URL}), time.time()
     while "Chat list" not in snap and time.time() - t0 < wait_s:
@@ -228,7 +228,7 @@ def _run(text, session):
         more = f"\n{total - len(rows)} more further down the list." if total > len(rows) else ""
         return {"reply": f"{total} unread chat{'s' if total != 1 else ''} on WhatsApp:\n" + "\n".join(lines) + more,
                 "sources": []}
-    return browser.run(text, session, server="whatsapp", hint=HINT, start_snapshot=snap)
+    return browser.run(text, session, server=browser.profile_for("whatsapp"), hint=HINT, start_snapshot=snap)
 
 
 if __name__ == "__main__":

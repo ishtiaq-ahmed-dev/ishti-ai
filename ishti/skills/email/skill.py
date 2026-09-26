@@ -36,7 +36,7 @@ def run(text, session):
                 return None  # "draft an email to my professor": writing help, the chat skill does that
             with browser.LOCK:
                 try:
-                    browser.use_server("browser", session)  # Profile 10 (signed in to Google); falls back if not connected
+                    browser.use_server(browser.profile_for("email"), session)  # the login profile (signed in to Google)
                 except RuntimeError as exc:
                     return {"reply": str(exc), "sources": []}
                 trace(session, "gmail", name)
@@ -126,7 +126,7 @@ def op_send(m, text, session):
 
     def send():
         with browser.LOCK:
-            browser.use_server("browser", session)
+            browser.use_server(browser.profile_for("email"), session)
             url = f"https://mail.google.com/mail/?view=cm&fs=1&to={quote(to.group(0))}&su={quote(subj)}&body={quote(body)}"
             snap = _open(url, wait_for="Send")
             btn = re.findall(r'button "Send[^"]*" \[ref=([^\]]+)\]', snap)
