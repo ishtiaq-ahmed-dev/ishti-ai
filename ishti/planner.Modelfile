@@ -1,5 +1,5 @@
-# ollama create ishti-qwen2.5:14b -f ishti/planner.Modelfile
+# ollama create ishti-qwen2.5:14b -f ishti/planner.Modelfile  (8k context: 12k spilled VRAM next to whisper+Laya)
 # Same weights as qwen2.5:14b; the OpenAI-compatible /v1 API cannot set num_ctx per request,
 # and 4096 (the default) is too small for browser page snapshots.
 FROM qwen2.5:14b
-PARAMETER num_ctx 12288
+PARAMETER num_ctx 8192

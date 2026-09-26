@@ -6,6 +6,6 @@ import { defineConfig } from "vite";
 // Built into dist/ and served by the FastAPI server at "/". `npm run dev` proxies the API to it.
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  resolve: { alias: { "@": path.resolve(__dirname, "src") } },
+  resolve: { alias: { "@": path.resolve(import.meta.dirname, "src") } },
   server: { port: 5173, proxy: { "/api": "http://127.0.0.1:8899", "/ws": { target: "ws://127.0.0.1:8899", ws: true } } },
 });

@@ -1,5 +1,5 @@
 """Web search skill: wraps the existing, live-verified quick_search pipeline."""
-from ishti.skills import trace
+from ishti.skills import ground_dates, trace
 from orchestrator.intent_detector import IntentDetector
 
 _engine = None
@@ -18,5 +18,8 @@ def run(text, session):
     # the engine's own status events become Thinking-panel steps for this request
     _engine.event_callback = lambda kind, data: trace(session, kind, (data or {}).get("detail") or kind.replace("_", " "),
                                                     **{k: v for k, v in (data or {}).items() if k in ("queries", "state")})
-    res = _engine.quick_search(text, depth=IntentDetector.classify(text).get("depth", "SIMPLE"))
+    query = ground_dates(text)
+    if query != text:
+        trace(session, "dates", f"search for: {query}")
+    res = _engine.quick_search(query, depth=IntentDetector.classify(text).get("depth", "SIMPLE"))
     return {"reply": res.get("answer", ""), "sources": res.get("sources", []), "verified": res.get("verified", False)}

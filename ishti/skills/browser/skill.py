@@ -90,7 +90,9 @@ def _text_calls(content):
 
 
 CHECK = ("Before answering, compare with the owner's request. If any part is not done yet, do the next "
-         "action now. If everything is done, reply only: DONE")
+         "action now. If the information asked for is not on this page, open the most relevant link "
+         "(click it by its ref) and read that page - never stop at a list of results or tell the owner to "
+         "visit a site themselves. If everything is done, reply only: DONE")
 
 
 def _summary(msgs, log):
@@ -105,7 +107,7 @@ def _summary(msgs, log):
 
 
 def _loop(session, msgs, log, steps_left):
-    tools, checked = _tools(), False
+    tools, checks = _tools(), 0
     for step in range(steps_left):
         for m in msgs[:-3]:  # keep only the latest page states in context
             if m["role"] == "tool" and len(m["content"]) > 300:
@@ -116,9 +118,9 @@ def _loop(session, msgs, log, steps_left):
         calls = ([(tc.id, tc.function.name, tc.function.arguments) for tc in msg.tool_calls or []]
                  or _text_calls(msg.content))[:1]
         if not calls:
-            if checked:
+            if checks >= 2:
                 return {"reply": _summary(msgs, log), "sources": []}
-            checked = True  # the model thinks it's finished: make it re-check the request once
+            checks += 1  # it thinks it's finished (or stuck): make it re-check the request, twice at most
             msgs += [{"role": "assistant", "content": msg.content or ""}, {"role": "user", "content": CHECK}]
             continue
         cid, name, raw = calls[0]
@@ -164,7 +166,39 @@ def run(text, session):
         p["log"].append(f"{name.removeprefix('browser_')} {json.dumps(args)} (owner confirmed)")
         p["msgs"].append({"role": "tool", "tool_call_id": cid, "content": out[:8000]})
         return _loop(session, p["msgs"], p["log"], p["steps"] - 1)
-    return _loop(session, [{"role": "user", "content": text}], [], MAX_STEPS)
+    msgs, log = [{"role": "user", "content": text}], []
+    if url := search_url(text):
+        # Programmatic first: open the results page directly instead of letting the model find and
+        # fill a search box (Google's page alone cost 4-5 slow steps). The model starts from the results.
+        trace(session, "browser_navigate", f"open results for your search", status="start")
+        out = _call("browser_navigate", {"url": url})
+        trace(session, "browser_navigate", f"results page: {url.split('?')[0]}", status="done", url=url)
+        msgs += [{"role": "assistant", "content": "", "tool_calls": [{"id": "search0", "type": "function",
+                  "function": {"name": "browser_navigate", "arguments": json.dumps({"url": url})}}]},
+                 {"role": "tool", "tool_call_id": "search0", "content": out[:8000]}]
+        log.append(f"navigate {url}")
+    return _loop(session, msgs, log, MAX_STEPS)
+
+
+SEARCH = re.compile(r"\bsearch\s+(?:(?:on|in)\s+)?(?:(?P<site>google|youtube|github|amazon|wikipedia|bing|reddit)\s+)?"
+                    r"(?:for\s+)?(?P<q>.+?)(?:\s*(?:,|\band\b|\bthen\b).*)?$", re.I)
+SEARCH_URLS = {"google": "https://www.google.com/search?q={}", "youtube": "https://www.youtube.com/results?search_query={}",
+               "github": "https://github.com/search?q={}", "amazon": "https://www.amazon.com/s?k={}",
+               "wikipedia": "https://en.wikipedia.org/w/index.php?search={}", "bing": "https://www.bing.com/search?q={}",
+               "reddit": "https://www.reddit.com/search/?q={}"}
+
+
+def search_url(text):
+    """Results-page URL when the request is a search; local SearXNG unless the owner names a site."""
+    m = SEARCH.search(text)
+    if not m or not m["q"].strip():
+        return None
+    from urllib.parse import quote_plus
+    named = re.search(r"\b(google|youtube|github|amazon|wikipedia|bing|reddit)\b", text, re.I)  # "go to youtube and search…"
+    site = (m["site"] or (named.group(1) if named else "")).lower()
+    template = SEARCH_URLS.get(site, "http://127.0.0.1:8890/search?q={}")
+    from ishti.skills import ground_dates
+    return template.format(quote_plus(ground_dates(m["q"].strip(" .?!"))))
 
 
 if __name__ == "__main__":

@@ -64,3 +64,17 @@ def answer_of(text):
     something else: the skill drops its question and the message is routed normally."""
     t = text.strip().lower().strip(" .!")
     return "yes" if t in YES else "no" if t in NO else None
+
+
+def ground_dates(text, today=None):
+    """Relative dates -> real ones before searching ("this year" -> 2026). Search engines match the
+    literal words, so "final this year" otherwise returns whichever year's final ranks highest."""
+    import datetime as dt
+    import re
+    d = today or dt.date.today()
+    rules = [(r"\bthis year\b", str(d.year)), (r"\blast year\b", str(d.year - 1)), (r"\bnext year\b", str(d.year + 1)),
+             (r"\bthis month\b", d.strftime("%B %Y")), (r"\blast month\b", (d.replace(day=1) - dt.timedelta(days=1)).strftime("%B %Y")),
+             (r"\byesterday\b", (d - dt.timedelta(days=1)).strftime("%d %B %Y")), (r"\btoday\b", d.strftime("%d %B %Y"))]
+    for rx, value in rules:
+        text = re.sub(rx, value, text, flags=re.I)
+    return text

@@ -20,6 +20,17 @@ from orchestrator.response_guard import is_safe_for_history
 
 SKILLS = load_skills()
 SESSIONS = {}
+# Replies that hand the problem back to the owner. When an information-seeking skill gives one, the
+# dispatcher tries the next capable skill once instead of stopping (memory/folders/reminders asking for a
+# path or a time are legitimate questions, so they never escalate).
+FELL_SHORT = re.compile(r"\b(?:couldn'?t|could not|can'?t|cannot|unable to|not able to|didn'?t (?:find|open|get|reach)|"
+                        r"no (?:\w+ )?(?:results?|matching|information)|not found|doesn'?t (?:provide|show|contain|have)|"
+                        r"(?:please )?visit\s+(?:https?://|www\.|the\s+\w+\s+(?:site|website|page))|"
+                        r"i don'?t (?:know|have (?:access|information|real-time))|"
+                        r"(?:isn'?t|is not|wasn'?t|are not|aren'?t|not) (?:listed|mentioned|specified|stated|available|provided|given)"
+                        r"(?: in| on| by)?)", re.I)
+# Next skill to try when one falls short (followed up to twice): browser -> web_search -> deep_research.
+ESCALATE = {"browser": "web_search", "chat": "web_search", "web_fetch": "browser", "web_search": "deep_research"}
 # "that should have been web search" / "use the browser for that" -> re-run the last request with
 # that skill and log it as a labelled example for fine-tuning Laya (NEEDS.md #1).
 CORRECTION = re.compile(
@@ -55,6 +66,26 @@ def _remember(text, reply, skill):
         print(f"[dispatcher] semantic memory write skipped: {exc}")
 
 
+def fell_short(question, reply, skill, s) -> bool:
+    """Did the answer hand the problem back? Phrase check first; for information skills also ask the
+    local model whether the reply states what was actually asked (a number, name, date...) - one word,
+    ~0.4 s on the already-loaded planner model."""
+    if FELL_SHORT.search(reply):
+        return True
+    if skill not in ("web_search", "browser", "web_fetch"):
+        return False
+    from ishti import llm
+    s["trace"](type="tool", name="verify", label="check the answer really answers the question", status="start")
+    verdict = llm.ask(f"Question: {question}\nAnswer: {reply[:1200]}\n\nDoes the answer state the specific "
+                      "information the question asks for (for example the actual number, version, name or date), "
+                      "rather than only saying where to find it or giving something related? Reply yes or no.",
+                      system=None, temperature=0, max_tokens=3).lower()
+    ok = verdict.startswith("yes")
+    s["trace"](type="tool", name="verify", status="done" if ok else "error",
+               label="the answer is specific" if ok else "the answer misses what was asked")
+    return not ok
+
+
 def why(dec) -> str:
     """One human sentence on why this skill was chosen (shown in the Thinking panel)."""
     src, skill = dec.get("source"), dec.get("skill")
@@ -72,6 +103,8 @@ def why(dec) -> str:
         return f"Several tasks in one request, so I planned {len(dec.get('steps', []))} steps."
     if src == "plan":
         return f"Plan step {dec.get('step')}: {skill}."
+    if src == "escalation":
+        return f"{dec.get('was')} couldn't finish it, so {skill} takes over."
     return "No skill claimed it with confidence, so the local model answers directly."
 
 
@@ -130,6 +163,21 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
         name, out = "plan", planner.run(steps, s, lambda t, d: _run(t, s, d)[1])
     else:
         name, out, dec = _run(text, s, dec)
+        tried, current = {name}, name
+        for _hop in range(2):
+            nxt = ESCALATE.get(current)
+            if (nxt not in SKILLS or nxt in tried or s.get("pending")
+                    or dec.get("source") in ("pending", "correction") or not fell_short(text, out["reply"], current, s)):
+                break
+            # Don't hand the owner a "couldn't / visit this site yourself": try the next capable skill.
+            s["trace"](type="escalate", frm=current, to=nxt, why=f"{current} fell short, so I'm trying {nxt}.")
+            n2, out2, _ = _run(text, s, {"skill": nxt, "confidence": 1.0, "source": "escalation", "was": current})
+            tried.add(nxt)
+            current = nxt
+            # only a better answer replaces the first one; a fallback that also misses is discarded
+            if out2 and not fell_short(text, out2["reply"], nxt, s):
+                name, out = n2, {**out2, "sources": out.get("sources", []) + out2.get("sources", [])}
+                break
 
     reply = out["reply"]
     s["trace"](type="done", skill=name, ms=round((time.perf_counter() - t0) * 1000))
@@ -187,13 +235,14 @@ async def forget_endpoint(name: str):
 
 
 def warm_up():
-    """Load Laya and whisper now so the first real request doesn't pay their load time."""
+    """Load Laya now so the first real request doesn't pay ~4 s. Whisper is NOT preloaded: it would sit
+    on ~1.6 GB of VRAM next to the 14B model and push it into slow shared memory; it loads on first use."""
     route("hello", SKILLS)
     try:
-        from ishti.voice import stt_model
-        stt_model()
-    except Exception as exc:
-        print(f"[dispatcher] whisper preload skipped: {exc}")
+        import torch
+        torch.cuda.empty_cache()
+    except Exception:
+        pass
 
 
 seed_owner()

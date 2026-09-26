@@ -311,8 +311,11 @@ class DeepResearchEngine:
 
     def _synthesize_quick_answer(self, prompt: str, context: List[str], sources: List[Dict[str, Any]],
                                  depth: str = "SIMPLE") -> str:
+        today = time.strftime("%A %d %B %Y")
         answer = self.model_router.generate(
-            f"Live sources fetched seconds ago:\n" + "\n\n".join(context) + f"\n\nOwner's question: {prompt}",
+            f"Today is {today}. Live sources fetched seconds ago:\n" + "\n\n".join(context)
+            + f"\n\nOwner's question: {prompt}\n\nUse the most recent information in the sources; if a source is "
+              "about an earlier year than the question asks for, say so instead of presenting it as current.",
             depth=depth, tools_used=["web_search", "web_fetch"], evidence_is_live=True,
             memory_query=prompt, timeout=45,
         )

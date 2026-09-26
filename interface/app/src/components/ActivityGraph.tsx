@@ -52,7 +52,7 @@ export function ActivityGraph({ events, request, live }: { events: TraceEvent[];
   cols.forEach((col, d) => col.forEach((n, i) => pos.set(n.id, { x: X[d], y: H / 2 + (i - (col.length - 1) / 2) * rowGap })));
 
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-graph"
+    <div className="relative overflow-hidden rounded-2xl border border-border bg-graph"
          style={{ backgroundImage: "radial-gradient(circle at 12% 50%, rgba(139,117,255,0.18), transparent 55%)" }}>
       <svg viewBox={`0 0 560 ${H}`} className="block w-full" role="img" aria-label="Live activity graph">
         {nodes.filter((n) => n.parent).map((n) => {
@@ -82,9 +82,9 @@ export function ActivityGraph({ events, request, live }: { events: TraceEvent[];
                 <circle cx={p.x} cy={p.y} r={big ? 14 : 6} fill={big ? "#8b75ff" : COLOR[n.status]}
                   style={{ filter: `drop-shadow(0 0 ${big ? 10 : 5}px ${big ? "#8b75ff" : COLOR[n.status]})` }} />
                 <text x={p.x + (big ? 0 : 12)} y={big ? p.y + 30 : p.y - 2} textAnchor={big ? "middle" : "start"}
-                  className="fill-white text-[12px] font-medium">{n.label.length > 26 ? n.label.slice(0, 25) + "…" : n.label}</text>
+                  className="fill-foreground text-[12px] font-medium">{n.label.length > 26 ? n.label.slice(0, 25) + "…" : n.label}</text>
                 {n.sub && !big && (
-                  <text x={p.x + 12} y={p.y + 12} className="fill-slate-400 text-[10px]">
+                  <text x={p.x + 12} y={p.y + 12} className="fill-muted-foreground text-[10px]">
                     {n.sub.length > 30 ? n.sub.slice(0, 29) + "…" : n.sub}</text>
                 )}
               </motion.g>
@@ -92,7 +92,7 @@ export function ActivityGraph({ events, request, live }: { events: TraceEvent[];
           })}
         </AnimatePresence>
       </svg>
-      <div className="absolute left-3 top-2 flex items-center gap-2 text-[10px] uppercase tracking-wider text-slate-400">
+      <div className="absolute left-3 top-2 flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground">
         <span className={`h-1.5 w-1.5 rounded-full ${live ? "animate-pulse bg-violet-400" : "bg-emerald-400"}`} />
         {live ? "Live activity" : "Completed"}
       </div>

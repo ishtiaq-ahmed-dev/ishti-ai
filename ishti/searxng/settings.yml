@@ -7,5 +7,29 @@ server:
   image_proxy: false
 search:
   formats: [html, json]
+  # Upstream engines throttle heavy use ("Suspended: too many requests"). Retry them after minutes, not the
+  # default hour, and keep several engines on so one suspended engine never empties the results.
+  suspended_times:
+    SearxEngineAccessDenied: 600
+    SearxEngineCaptcha: 600
+    SearxEngineTooManyRequests: 300
+    cf_SearxEngineCaptcha: 600
+    cf_SearxEngineAccessDenied: 600
+    recaptcha_SearxEngineCaptcha: 600
 outgoing:
   request_timeout: 2.0     # answer from the engines that respond in 2 s; a slow one is dropped
+engines:
+  - name: startpage
+    disabled: false
+  - name: mojeek
+    disabled: false
+  - name: yahoo
+    disabled: false
+  - name: bing
+    disabled: false
+  - name: qwant
+    disabled: false
+  - name: wikipedia
+    disabled: false
+  - name: wikinews
+    disabled: false

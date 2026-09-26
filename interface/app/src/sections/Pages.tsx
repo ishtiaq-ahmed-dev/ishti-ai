@@ -5,6 +5,7 @@ import { del, getJSON, postJSON } from "@/lib/api";
 import { TaskList, type Task } from "@/components/rare/task-list";
 import { DeleteButton } from "@/components/rare/delete-button";
 import { AnimatedCounter } from "@/components/rare/animated-counter";
+import { ThemeSwitch } from "@/components/ThemeToggle";
 
 export function Page({ title, subtitle, action, children }: { title: string; subtitle?: string; action?: ReactNode; children: ReactNode }) {
   return (
@@ -116,6 +117,19 @@ type Telemetry = { cpu_percent: number; ram_percent: number; ram_used_gb: number
                    gpu?: { name?: string; used_vram_mb?: number; total_vram_mb?: number; temp_c?: number } | string;
                    disks?: Record<string, { free_gb: number; total_gb: number }> };
 type Check = { test: string; status: string; details: string };
+
+function Stat({ label, value, unit, sub }: { label: string; value: number; unit: string; sub?: string }) {
+  return (
+    <Card>
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 text-2xl font-semibold tabular-nums">
+        <AnimatedCounter value={Math.round(value)} />{unit}
+      </div>
+      {sub && <div className="text-[11px] text-muted-foreground">{sub}</div>}
+    </Card>
+  );
+}
+
 export function System() {
   const [t, setT] = useState<Telemetry | null>(null);
   const [activity, setActivity] = useState<{ days: { date: string; count: number }[]; skills: { skill: string; count: number }[] }>();
@@ -128,11 +142,6 @@ export function System() {
     return () => clearInterval(id);
   }, []);
   const gpu = typeof t?.gpu === "object" ? t.gpu : undefined;
-  const Stat = ({ label, value, unit, sub }: { label: string; value: number; unit: string; sub?: string }) => (
-    <Card><div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums"><AnimatedCounter value={Math.round(value)} />{unit}</div>
-      {sub && <div className="text-[11px] text-muted-foreground">{sub}</div>}</Card>
-  );
   const max = Math.max(1, ...(activity?.skills.map((s) => s.count) ?? [1]));
   return (
     <Page title="System" subtitle="This PC, live, and what ISHTI has been doing."
@@ -185,6 +194,10 @@ export function Settings() {
   return (
     <Page title="Settings" subtitle="Everything runs on this PC. Models are set in ishti/config.json.">
       <div className="space-y-3">
+        <Card className="flex items-center justify-between">
+          <div><div className="font-medium">Appearance</div><div className="text-xs text-muted-foreground">Switch between pure white light mode and pure black dark mode.</div></div>
+          <ThemeSwitch />
+        </Card>
         <Card className="flex items-center justify-between">
           <div><div className="font-medium">Read answers aloud</div><div className="text-xs text-muted-foreground">Piper voice, local. Same as saying “mute” / “read that”.</div></div>
           <button onClick={() => postJSON<typeof p>("/api/prefs", { audio_output: !p.audio_output }).then(setP)}

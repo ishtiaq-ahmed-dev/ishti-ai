@@ -2,7 +2,7 @@
 
 export type TraceEvent = {
   t: number;
-  type: "received" | "route" | "step" | "tool" | "done";
+  type: "received" | "route" | "step" | "tool" | "escalate" | "done";
   skill?: string;
   status?: "start" | "done" | "error" | "skip" | "waiting";
   label?: string;

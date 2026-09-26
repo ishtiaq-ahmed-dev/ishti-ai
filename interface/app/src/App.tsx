@@ -5,6 +5,7 @@ import { getJSON } from "@/lib/api";
 import { Chat } from "@/sections/Chat";
 import { Memory, Settings, Skills, System, Tasks } from "@/sections/Pages";
 import { NotificationBell } from "@/components/rare/notification-bell";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const NAV = [
   { key: "chat", label: "Chat", icon: MessageSquare },
@@ -45,9 +46,9 @@ export default function App() {
   }, [busy]);
 
   return (
-    <div className="flex h-full p-3">
-      <div className="flex min-h-0 flex-1 overflow-hidden rounded-3xl border border-border bg-background shadow-[0_8px_40px_rgba(29,27,46,0.08)]">
-        <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-card/60 px-3 py-4">
+    <div className="flex h-full p-3 bg-canvas text-foreground transition-colors duration-200">
+      <div className="flex min-h-0 flex-1 overflow-hidden rounded-3xl border border-border bg-background shadow-[0_8px_40px_rgba(0,0,0,0.06)] dark:shadow-[0_8px_40px_rgba(0,0,0,0.8)]">
+        <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-card/75 px-3 py-4">
           <div className="mb-5 flex items-center justify-between px-2">
             <div className="flex items-center gap-2.5">
               <div className="grid h-8 w-8 place-items-center rounded-full bg-gradient-to-br from-violet-400 to-indigo-600 text-sm font-bold text-white">
@@ -57,9 +58,16 @@ export default function App() {
                   <span className={`h-1.5 w-1.5 rounded-full ${busy ? "animate-pulse bg-accent" : "bg-emerald-500"}`} />
                   {busy ? "ISHTI is working" : "Online"}</div></div>
             </div>
-            <button onClick={() => { setPage("tasks"); setAlerts([]); }} title="Reminders">
-              <NotificationBell count={alerts.length} size={18} color="violet" />
-            </button>
+            <div className="flex items-center gap-1.5">
+              <ThemeToggle size={34} />
+              <NotificationBell
+                count={alerts.length}
+                size={34}
+                color="violet"
+                onClick={() => { setPage("tasks"); setAlerts([]); }}
+                title={alerts.length > 0 ? `${alerts.length} reminder${alerts.length > 1 ? "s" : ""}` : "Reminders"}
+              />
+            </div>
           </div>
 
           <nav className="space-y-0.5">

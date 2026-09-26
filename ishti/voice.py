@@ -3,6 +3,7 @@ Voice is only another input channel: the transcript goes through dispatcher.hand
 import io
 import os
 import threading
+import time
 import wave
 
 from ishti import CONFIG
@@ -31,10 +32,29 @@ def stt_model():
     return _stt
 
 
+_last_use = 0.0
+IDLE_UNLOAD_S = 600  # large-v3 holds ~1.6 GB of VRAM; next to the 14B LLM that spills memory and slows everything
+
+
 def transcribe(audio) -> str:
     """audio: path or file-like in any format PyAV decodes (browser webm/opus, wav, mp3)."""
+    global _last_use
+    _last_use = time.time()
     segments, _ = stt_model().transcribe(audio, beam_size=1, vad_filter=True)
+    _last_use = time.time()
+    _schedule_unload()
     return " ".join(s.text.strip() for s in segments).strip()
+
+
+def _schedule_unload():
+    def unload():
+        global _stt
+        time.sleep(IDLE_UNLOAD_S + 1)
+        with _load_lock:
+            if _stt is not None and time.time() - _last_use >= IDLE_UNLOAD_S:
+                _stt = None  # CTranslate2 frees its VRAM when the model object goes away
+                print("[voice] whisper unloaded after idle")
+    threading.Thread(target=unload, daemon=True).start()
 
 
 def tts_voice():

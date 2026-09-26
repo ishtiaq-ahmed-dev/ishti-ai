@@ -2,6 +2,7 @@
 stdio session on a background event loop, so state such as an open browser page survives
 between calls. Skills use the sync API: tools(server) and call(server, tool, args)."""
 import asyncio
+import os
 import concurrent.futures
 import threading
 
@@ -42,11 +43,30 @@ class MCPHub:
         finally:
             self.live.pop(name, None)
 
+    def _reap_orphans(self, name):
+        """A server killed without a clean shutdown leaves its MCP child (and that child's Chrome) running,
+        still holding the persistent browser profile, so the next launch hangs. Kill only processes whose
+        command line carries this server's own profile path - never anything else."""
+        import psutil
+        args = self.cfg[name].get("args", [])
+        marker = next((args[i + 1] for i, a in enumerate(args[:-1]) if a == "--user-data-dir"), None)
+        if not marker:
+            return
+        for p in psutil.process_iter(["pid", "cmdline"]):
+            try:
+                if p.pid != os.getpid() and marker in " ".join(p.info["cmdline"] or []):
+                    for child in p.children(recursive=True):
+                        child.kill()
+                    p.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
     def _ensure(self, name, timeout=120):
         with self.lock:
             if name not in self.live:
                 if name not in self.cfg:
                     raise KeyError(f"no MCP server '{name}' in config.json")
+                self._reap_orphans(name)
                 ready = concurrent.futures.Future()
                 asyncio.run_coroutine_threadsafe(self._serve(name, ready), self.loop)
                 ready.result(timeout)

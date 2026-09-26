@@ -21,6 +21,8 @@ function rows(events: TraceEvent[]): Row[] {
       const i = [...out].reverse().findIndex((r) => !r.indent && r.text.startsWith(`Using ${e.skill}`));
       if (e.status === "start") out.push({ key: `s${out.length}`, status: "start", text: `Using ${e.skill}`, indent: false });
       else if (i >= 0) out[out.length - 1 - i].status = (e.status as Row["status"]) ?? "done";
+    } else if (e.type === "escalate") {
+      out.push({ key: `e${out.length}`, status: "skip", text: String(e.why ?? "Trying another way"), indent: false });
     } else if (e.type === "tool") {
       const open = [...out].reverse().find((r) => r.indent && r.status === "start" && r.key.includes(`:${e.name}:`));
       if (open) { open.status = (e.status as Row["status"]) ?? "done"; open.text = e.label ?? open.text; }

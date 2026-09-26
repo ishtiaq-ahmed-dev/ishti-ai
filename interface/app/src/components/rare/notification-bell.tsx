@@ -19,8 +19,8 @@ import {
 } from "motion/react";
 import { cn } from "@/lib/utils";
 
-const SURFACE = "bg-[#F4F4F9] dark:bg-[#262626]";
-const GLYPH = "text-[#868593] dark:text-[#9B9AA7]";
+const SURFACE = "bg-[#F4F4F9] dark:bg-[#17171d]";
+const GLYPH = "text-[#6b6a80] dark:text-[#9ca3af]";
 
 const COLORS = {
   red: "bg-[#FF3B30] dark:bg-[#FF453A]",
@@ -341,7 +341,7 @@ export function NotificationBell({
       type="button"
       data-slot="notification-bell"
       className={cn(
-        "relative grid place-items-center rounded-full outline-none transition-transform active:scale-90 focus-visible:ring-2 focus-visible:ring-ring motion-reduce:active:scale-100",
+        "relative grid place-items-center rounded-full outline-none transition-transform active:scale-90 focus-visible:ring-2 focus-visible:ring-ring motion-reduce:active:scale-100 cursor-pointer",
         SURFACE,
         GLYPH,
         className,
