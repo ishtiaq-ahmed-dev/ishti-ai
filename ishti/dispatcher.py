@@ -303,7 +303,7 @@ def _handle(text, sid, conv, s, events, t0, channel):
         tried, current = {name}, name
         for _hop in range(2):
             nxt = ESCALATE.get(current)
-            if (nxt not in SKILLS or nxt in tried or s.get("pending")
+            if (nxt not in SKILLS or nxt in tried or s.get("pending") or out.get("no_escalate")
                     or dec.get("source") in ("pending", "correction") or not fell_short(text, out["reply"], current, s)):
                 break
             # Don't hand the owner a "couldn't / visit this site yourself": try the next capable skill.

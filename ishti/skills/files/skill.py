@@ -5,8 +5,14 @@ from ishti.skills import trace
 from orchestrator.intent_detector import IntentDetector
 
 
+# the legacy classifier calls every "search for X" a PC search; only the owner's own files are this skill's
+LOCAL = re.compile(r"\b(?:on\s+(?:my\s+|the\s+)?(?:pc|computer|laptop|drive|disk)|files?|folders?|pdfs?|docs?|documents?|"
+                   r"downloads|desktop|pictures|photos|videos|music)\b|\.[a-z0-9]{2,4}\b|[A-Za-z]:\\", re.I)
+
+
 def match(text):
-    return IntentDetector.classify(re.sub(r"\b(?:the|a|an|my)\s+", "", text, flags=re.I))["mode"] == "PC_SEARCH"
+    return (IntentDetector.classify(re.sub(r"\b(?:the|a|an|my)\s+", "", text, flags=re.I))["mode"] == "PC_SEARCH"
+            and bool(LOCAL.search(text)))
 
 
 def query_of(text):

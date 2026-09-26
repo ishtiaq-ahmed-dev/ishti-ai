@@ -62,8 +62,14 @@ def use_server(name, session):
     return chosen
 
 
+# the legacy classifier also calls plain "look up X" a browser task; a real browser job names one of these
+BROWSER_CUE = re.compile(r"\b(?:browser|chrome|website|site|web\s*page|page|tab|click|log\s*in|login|sign\s*in|form|fill|"
+                         r"submit|url|link|portal|account|download\s+from)\b|https?://|www\.", re.I)
+
+
 def match(text):
-    return bool(TRIGGER.search(text)) or IntentDetector.classify(text)["mode"] in ("BROWSER_FORM", "BROWSER_VISIBLE")
+    return bool(TRIGGER.search(text)) or (IntentDetector.classify(text)["mode"] in ("BROWSER_FORM", "BROWSER_VISIBLE")
+                                          and bool(BROWSER_CUE.search(text)))
 
 
 def _tools():
