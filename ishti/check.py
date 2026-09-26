@@ -51,6 +51,8 @@ LABELLED = [
     ("latest news about pakistan", "utilities"), ("generate a strong password", "utilities"),
     ("I spent 500 on groceries", "ledger"), ("show my portfolio", "ledger"), ("how much did I spend this month", "ledger"),
     ("I drank 3 glasses of water", "lifelog"), ("screen time today", "lifelog"), ("check your skills", "meta"),
+    ("give me my brief", "digest"), ("every morning at 8 give me my brief", "reminders"),
+    ("remind me every day at 8pm to take my medicine", "reminders"),
     ("git status of the ishti project", "dev"), ("run the tests", "dev"), ("lint the ishti project", "dev"),
     ("download https://example.com/report.pdf", "webtools"), ("watch https://example.com/jobs for changes", "webtools"),
     ("find duplicate files in downloads", "fileops"), ("rename the photos in downloads to trip", "fileops"),

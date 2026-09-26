@@ -100,7 +100,8 @@ async def _capture_loop():
             from ishti.voice import speak as piper_speak
             piper_speak(msg)
 
-    start_reminders(announce)
+    # scheduled tasks ("every morning at 8 give me my brief") run through the dispatcher; the answer is announced
+    start_reminders(announce, run_task=lambda t: ishti_handle(t, session_id="scheduled", channel="scheduled")["final_answer"])
     from ishti.skills.webtools.skill import _start as start_page_watch
     start_page_watch()  # pages the owner asked to watch keep being checked after a restart
     from ishti.skills.lifelog.skill import start_sampler
