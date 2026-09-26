@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 
 from ishti import ROOT
 from ishti.facts import get_facts
-from ishti import router as router_mod
+from ishti import planner, router as router_mod
 from ishti.router import route
 from ishti.skills import load_skills
 from orchestrator.memory.conversation import get_conversation_manager
@@ -55,6 +55,28 @@ def _remember(text, reply, skill):
         print(f"[dispatcher] semantic memory write skipped: {exc}")
 
 
+def _run(text, s, dec):
+    """Run the decided skill; if it declines ("not mine"), fall through to the next best one."""
+    tried, out, name = set(), None, None
+    while dec["skill"]:
+        name = dec["skill"]
+        s["route"] = dec
+        try:
+            out = SKILLS[name].run(text, s)
+        except Exception as exc:
+            ErrorLogger.log_error(subsystem=f"SKILL_{name.upper()}", error=exc, user_prompt=text,
+                                  context="dispatcher.handle")
+            out = {"reply": f"The {name} skill failed: {type(exc).__name__}: {str(exc)[:160]}"}
+        if out is not None:
+            break
+        tried.add(name)
+        dec = route(text, SKILLS, exclude=tried)
+    if out is None:
+        name, out = None, {"reply": "I couldn't handle that - no skill accepted it."}
+    get_facts().log_route(text, name, dec.get("confidence", 0), dec.get("source", ""), json.dumps(dec))
+    return name, out, dec
+
+
 def handle(text: str, session_id: str = None, channel: str = "text", on_token=None) -> dict:
     """on_token(str): optional live stream of the reply for skills that generate it token by token."""
     t0 = time.perf_counter()
@@ -70,28 +92,18 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
         dec = {"skill": wanted, "confidence": 1.0, "source": "correction", "was": s.get("last_skill")}
     elif pending:
         dec = {"skill": pending["skill"], "confidence": 1.0, "source": "pending"}
+    elif (planner.candidate(text) and not (SKILLS.get("browser") and SKILLS["browser"].matches(text))
+          and (steps := planner.plan(text, SKILLS))):  # a browser task already covers "…and tell me what's there"
+        dec = {"skill": "plan", "confidence": 1.0, "source": "planner", "steps": steps}
     else:
         dec = route(text, SKILLS)
-    tried, out = set(), None
-    while dec["skill"]:
-        name = dec["skill"]
-        s["route"] = dec
-        try:
-            out = SKILLS[name].run(text, s)
-        except Exception as exc:
-            ErrorLogger.log_error(subsystem=f"SKILL_{name.upper()}", error=exc, user_prompt=text,
-                                  context="dispatcher.handle")
-            out = {"reply": f"The {name} skill failed: {type(exc).__name__}: {str(exc)[:160]}"}
-        if out is not None:
-            break
-        tried.add(name)  # skill declined ("not mine") -> next best choice
-        dec = route(text, SKILLS, exclude=tried)
-    if out is None:
-        name, out = None, {"reply": "I couldn't handle that - no skill accepted it."}
+    if dec["skill"] == "plan":
+        name, out = "plan", planner.run(steps, s, lambda t, d: _run(t, s, d)[1])
+    else:
+        name, out, dec = _run(text, s, dec)
 
     reply = out["reply"]
     s["last_request"], s["last_skill"] = text, name
-    get_facts().log_route(text, name, dec.get("confidence", 0), dec.get("source", ""), json.dumps(dec))
     s["history"] = (s["history"] + [{"role": "user", "content": text},
                                     {"role": "assistant", "content": reply}])[-20:]
     if not out.get("persisted"):  # legacy skill writes its own session history

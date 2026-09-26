@@ -8,6 +8,7 @@ request (text or voice)
    ▼
 dispatcher (FastAPI, ishti/dispatcher.py)
    ├─ pending confirmation?  → back to the skill that asked
+   ├─ several tasks? ("…and then…") → LLM plan → skills in order ({prev} carries answers)
    ├─ skill triggers (regex)  ─┐
    ├─ Laya typed decisions    ─┼→ skill  →  reply (+ Piper audio)
    └─ default: chat           ─┘
@@ -46,6 +47,7 @@ The Python packages are in `venv` (`torch` cu128, `laya`, `chromadb`, `mcp`, `fa
 |---|---|
 | `ishti/config.json` | Models per role (planner/coder/fast), memory paths, search roots, router, MCP servers, voice. **Swap models here, no code changes.** |
 | `ishti/dispatcher.py` | `handle(text, session_id, channel)`, plus `/api/chat`, `/api/voice`, `/api/stt`, `/api/skills`, `/api/facts` |
+| `ishti/planner.py` | Multi-skill plans: connector+verb gate → LLM splits into `(skill, request)` steps → run in order; stops at any pending confirmation |
 | `ishti/router.py` | Skill triggers → Laya `typed-decisions` (fp16, ~35 ms): skill choice + per-skill yes/no + `router_questions()` → default |
 | `ishti/llm.py` | The only LLM client (Ollama OpenAI-compatible `/v1`) |
 | `ishti/facts.py` | Exact fact store: one row per (entity, attribute), updated in place, previous value kept; routing log |

@@ -62,6 +62,7 @@ def main():
         ("ISHTI is now working", "memory", "is working"),
         ("what's the weather tomorrow?", "weather", "open-meteo"),
         ("what is 17 times 23? reply with just the number", "chat", "391"),
+        ("how much ram am I using and then tell me the weather tomorrow", "plan", "open-meteo"),
     ]
     try:
         for text, skill, expect in loop:

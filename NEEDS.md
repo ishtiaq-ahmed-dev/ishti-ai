@@ -20,7 +20,7 @@ Each entry lists what's needed, why it's blocked, and what would have to change.
 - **Now:** every request goes through dispatcher skills. The `legacy` skill is gone, replaced by `files`, `apps`, `system`, `video`, `deep_research` and `web_fetch`. `orchestrator/crew.py` (1100 LOC), `planner.py`, `self_heal.py`, `model_router.py` and `memory/capability_registry.py` + `capability_escalation.py` are no longer on the request path.
 - **Still uses them:** `orchestrator/test_e2e.py`, `test_capabilities.py` and `doctor.py`, which test through `ExecutionEngine`. `server.py` still builds one at import (for `/api/status` and `/api/rebenchmark`).
 - **To change:** port those tests and doctor checks to `ishti.dispatcher.handle`, then delete the modules. `intent_detector.py` stays: skills use it as their trigger library.
-- **Missing feature this leaves:** multi-skill plans ("find my resume and summarize it"). The old DAG planner only knew its own action types. A new planner would ask the LLM for a list of `(skill, request)` steps over the skill manifests and run them in order through `handle`.
+- Multi-skill plans are done (`ishti/planner.py`), so nothing depends on the old DAG planner any more.
 
 ## 6. Custom "hey ishti" wake word
 - **Now:** hands-free listening works (`ishti/wake.py`) with openWakeWord's pretrained **"hey jarvis"** model. Replies are spoken, and each exchange shows up in the HUD. No microphone is connected at the moment; the listener retries every 30 s.
