@@ -28,6 +28,7 @@ OPS = [
     ("tag_add", re.compile(r"\btag\s+(?P<path>.+?)\s+(?:as|with)\s+(?P<tag>[\w -]{1,30})$", I)),
     ("tag_find", re.compile(r"\b(?:files|documents)\s+tagged\s+(?:as\s+|with\s+)?(?P<tag>[\w -]{1,30})$|\bshow\s+(?:my\s+)?tags\b", I)),
     ("grep", re.compile(r"\b(?:search|look|find)\s+(?:inside|in\s+the\s+contents?\s+of|within)\s+(?:the\s+|my\s+)?files?\b|\bfiles?\s+(?:that\s+)?(?:contain|containing|mention)\b", I)),
+    ("backup", re.compile(r"\b(?P<act>back\s*up|backup|sync|mirror)\s+(?:my\s+|the\s+)?[\"']?(?P<src>[a-z]:[\\/][^\"']+?)[\"']?\s+(?:to|into|with|onto)\s+[\"']?(?P<dst>[a-z]:[\\/]?[^\"']*?)[\"']?\s*$", I)),
     ("empty_bin", re.compile(r"\bempty\s+(?:the\s+|my\s+)?(?:recycle\s+bin|trash)\b", I)),
     ("delete", re.compile(r"^\s*(?:please\s+)?(?:delete|remove|trash)\s+(?:the\s+file\s+)?(?P<path>[A-Za-z]:\\.+?)\s*$", I)),
 ]
@@ -283,9 +284,12 @@ def op_tag_find(m, text, session):
 def op_grep(m, text, session):
     needle = re.search(r"[\"']([^\"']{2,80})[\"']|\b(?:contain(?:s|ing)?|mention(?:s|ing)?|for)\s+(?P<w>[\w .@-]{2,60}?)(?:\s+in\s+|$)", text, I)
     word = needle and (needle.group(1) or needle.group("w"))
-    folder = _folder(text) or os.path.expanduser("~\\Documents")
     if not word:
         return "What text should I look for? Put it in quotes."
+    roots = _scope(text)
+    if roots:
+        return _rg(word, roots, session)
+    folder = _folder(text) or os.path.expanduser("~\\Documents")
     trace(session, "grep", f"searching text files in {folder} for '{word}'", status="start")
     hits, low = [], word.lower()
     for root, dirs, names in os.walk(folder):
@@ -310,6 +314,100 @@ def op_grep(m, text, session):
     return (f"Files in {folder} containing '{word}':\n" + "\n".join(hits)) if hits else f"No text file in {folder} contains '{word}'."
 
 
+RG = os.path.join(ROOT, "data", "bin", "rg.exe")
+SKIP = ["node_modules", ".git", "venv", "__pycache__", "AppData", "Windows", "Program Files", "Program Files (x86)",
+        "$Recycle.Bin", "ProgramData", "System Volume Information", "site-packages", ".cache", ".ollama", "huggingface",
+        "Docker", "WindowsApps", ".vscode", ".gradle", ".m2", ".nuget", "dist", "build"]
+
+
+def _scope(text):
+    """Drives to search when the owner says so: "whole drive / all drives / everywhere / on my PC", "D drive"."""
+    if re.search(r"\b(?:all\s+(?:my\s+)?drives|whole\s+(?:pc|computer)|entire\s+(?:pc|computer)|everywhere|anywhere)\b", text, I):
+        import psutil
+        return [p.mountpoint for p in psutil.disk_partitions() if "fixed" in p.opts or p.fstype in ("NTFS", "exFAT")]
+    m = re.search(r"\b(?:(?:the\s+|my\s+)?(?P<d>[a-z])\s*(?::|drive\b)|(?:whole|entire)\s+(?:the\s+)?drive\s+(?P<d2>[a-z])\b)", text, I)
+    if m and re.search(r"\bdrive\b|[a-z]:\s*$|[a-z]:\s", text, I):
+        d = (m["d"] or m["d2"]).upper() + ":\\"
+        return [d] if os.path.isdir(d) else []
+    return []
+
+
+def _rg(word, roots, session, limit=25):
+    """Whole-drive content search: ripgrep (data/bin/rg.exe) when present - seconds instead of minutes."""
+    trace(session, "grep", f"searching {', '.join(roots)} for '{word}' - a whole drive takes a few minutes", status="start")
+    if os.path.isfile(RG):
+        cmd = [RG, "--files-with-matches", "--ignore-case", "--fixed-strings", "--max-filesize", "5M", "--no-messages",
+               "--hidden", "--no-ignore"] + [a for d in SKIP for a in ("-g", f"!{d}")] + [word] + roots
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        hits = []
+        for line in p.stdout:
+            hits.append(line.strip())
+            if len(hits) >= limit:
+                p.kill()
+                break
+        p.wait()
+    else:  # ponytail: plain walk of text files; install data/bin/rg.exe for speed
+        hits = []
+        for root in roots:
+            for r, dirs, names in os.walk(root):
+                dirs[:] = [d for d in dirs if d not in SKIP]
+                hits += [os.path.join(r, n) for n in names if os.path.splitext(n)[1].lower() in TEXT_EXT
+                         and _contains(os.path.join(r, n), word)]
+                if len(hits) >= limit:
+                    break
+    trace(session, "grep", f"{len(hits)} files", status="done")
+    if not hits:
+        return f"No file on {', '.join(roots)} contains '{word}'."
+    return f"Files on {', '.join(roots)} containing '{word}'" + (f" (first {limit})" if len(hits) >= limit else "") + ":\n" + \
+        "\n".join(f"- {h}" for h in hits[:limit])
+
+
+def _contains(path, word):
+    try:
+        if os.path.getsize(path) > 5 << 20:
+            return False
+        with open(path, encoding="utf-8", errors="ignore") as f:
+            return word.lower() in f.read().lower()
+    except OSError:
+        return False
+
+
+# ---------------------------------------------------------------- backup / sync
+def robocopy(src, dst, mirror=False):
+    """(ok, summary). robocopy exit codes below 8 mean success (1 = files copied, 0 = nothing new)."""
+    args = ["robocopy", src, dst, "/MIR" if mirror else "/E", "/XO", "/R:1", "/W:1", "/NP", "/NFL", "/NDL", "/MT:8"]
+    p = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    stats = re.search(r"Files\s*:\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)", p.stdout)
+    total, copied, _, _, failed, extra = map(int, stats.groups()) if stats else (0, 0, 0, 0, 0, 0)
+    ok = p.returncode < 8
+    return ok, (f"{copied} copied, {total - copied - failed} already up to date" + (f", {failed} failed" if failed else "")
+                + (f", {extra} removed from the copy" if mirror and extra else ""))
+
+
+def op_backup(m, text, session):
+    src, dst, act = m["src"].strip().rstrip("\\/"), m["dst"].strip(), m["act"].lower()
+    if not os.path.isdir(src):
+        return f"{src} isn't a folder."
+    mirror = act in ("sync", "mirror")
+    if not mirror:  # a backup keeps its own folder inside the destination: E:\Backups\Projects
+        dst = os.path.join(dst, os.path.basename(src))
+    if os.path.abspath(dst).lower().startswith(os.path.abspath(src).lower()):
+        return "The destination can't be inside the folder itself."
+    size = sum(os.path.getsize(os.path.join(r, n)) for r, _, ns in os.walk(src) for n in ns
+               if os.path.isfile(os.path.join(r, n))) / 1e9
+    question = (f"Mirror {src} to {dst} ({size:.1f} GB) - files in {dst} that aren't in {src} will be DELETED"
+                if mirror else f"Back up {src} ({size:.1f} GB) to {dst} (new and changed files; nothing is deleted)")
+
+    def go():
+        trace(session, "robocopy", f"{'mirroring' if mirror else 'backing up'} {src}", status="start")
+        ok, summary = robocopy(src, dst, mirror)
+        trace(session, "robocopy", summary, status="done" if ok else "error")
+        return f"{'Synced' if mirror else 'Backed up'} {src} -> {dst}: {summary}." if ok else f"Robocopy failed: {summary}."
+    return ask_first(session, "fileops", question, go)
+
+
 # ---------------------------------------------------------------- delete
 def op_delete(m, text, session):
     path = m.group("path").strip().strip("\"'")
@@ -329,6 +427,19 @@ def op_empty_bin(m, text, session):
 
 
 if __name__ == "__main__":
+    for t, want in {"back up D:/Projects to E:/Backups": "backup", "sync D:\\Notes with E:\\Notes": "backup",
+                    "search the whole drive D for files containing 'invoice'": "grep"}.items():
+        assert next((n for n, rx in OPS if rx.search(t)), None) == want, t
+    assert _scope("find files containing 'x' on the D drive") == ["D:\\"] and _scope("files containing x in my notes") == []
+    import tempfile
+    a, b = tempfile.mkdtemp(), tempfile.mkdtemp()
+    os.makedirs(os.path.join(a, "sub"))
+    for n, body in {"one.txt": "alpha", os.path.join("sub", "two.md"): "needle here"}.items():
+        open(os.path.join(a, n), "w").write(body)
+    assert robocopy(a, b) == (True, "2 copied, 0 already up to date") and robocopy(a, b)[1].startswith("0 copied")
+    open(os.path.join(b, "extra.txt"), "w").write("x")
+    assert robocopy(a, b, mirror=True)[1].endswith("1 removed from the copy") and not os.path.exists(os.path.join(b, "extra.txt"))
+    assert any(h.endswith("two.md") for h in _rg("NEEDLE", [a], {}).splitlines())
     import shutil
     import tempfile
     cases = {"rename the photos in downloads to trip": "rename", r"zip D:\x\folder": "zip", r"unzip D:\x\a.zip": "unzip",
