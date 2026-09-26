@@ -45,7 +45,8 @@ def match(text):
 def product_of(text):
     from ishti import llm
     name = llm.ask("Which product does the owner want to buy? Reply with only its name (brand, model, variant), "
-                   "nothing else.\n\n" + text, max_tokens=24, temperature=0).strip(" .\"'")
+                   "nothing else. Keep every model and variant word the owner used (\"ps5 slim\" -> \"PlayStation 5 "
+                   "Slim\"); never swap in a different edition.\n\n" + text, max_tokens=24, temperature=0).strip(" .\"'")
     return name if 0 < len(name) < 80 else text
 
 

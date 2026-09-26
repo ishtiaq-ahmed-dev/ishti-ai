@@ -88,8 +88,11 @@ export function Chat({ owner, onBusy }: Props) {
   const recorder = useRef<MediaRecorder | null>(null);
   const box = useRef<HTMLTextAreaElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
-  const busy = msgs.some((m) => m.live);
-  // Messages sent while ISHTI is working wait here and run in order (one GPU, one model call at a time).
+  const running = msgs.filter((m) => m.live).length;
+  const busy = running > 0;
+  // Up to 3 messages run at once (the server runs independent ones side by side; a follow-up waits for the
+  // answer it is about). More wait here in order. A new chat's first message runs alone so all share its session.
+  const canStart = running < 3 && (!!sessionId || running === 0);
   const [queue, setQueue] = useState<string[]>([]);
 
   const toggleHistory = useCallback(() => {
@@ -204,7 +207,7 @@ export function Chat({ owner, onBusy }: Props) {
     text = text.trim();
     if (!text) return;
     setInput("");
-    if (busy) { setQueue((q) => [...q, text]); return; }
+    if (!canStart) { setQueue((q) => [...q, text]); return; }
     const reply: Msg = { id: nextId++, role: "ishti", text: "", events: [], live: true, sources: [], request: text };
     setMsgs((all) => [...all, { id: nextId++, role: "user", text, events: [], live: false, sources: [] }, reply]);
     setGraphFor(reply.id);
@@ -228,11 +231,11 @@ export function Chat({ owner, onBusy }: Props) {
   }
 
   useEffect(() => {
-    if (busy || !queue.length) return;
+    if (!canStart || !queue.length) return;
     const [next, ...rest] = queue;
     setQueue(rest);
     send(next);
-  }, [busy, queue]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [canStart, queue]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function toggleMic() {
     if (recording && recorder.current) { recorder.current.stop(); return; }
@@ -339,9 +342,9 @@ export function Chat({ owner, onBusy }: Props) {
             <MatrixOrb state={recording ? "listening" : busy ? "thinking" : "idle"} size={34} color="#6e56cf"
               className="[&>span]:sr-only" />
             <div>
-              <IshtiBrand variant="wordmark" size={20} className="translate-y-0.5" />
+              <IshtiBrand variant="wordmark" size={24} className="translate-y-0.5" />
               <div className="text-[11px] text-muted-foreground">
-                {recording ? "Listening…" : busy ? "Working on it" : "Local · private · ready"}</div>
+                {recording ? "Listening…" : busy ? (running > 1 ? `Working on ${running} tasks` : "Working on it") : "Local · private · ready"}</div>
             </div>
           </div>
           <div className="flex items-center gap-1">
@@ -363,7 +366,7 @@ export function Chat({ owner, onBusy }: Props) {
                 <FluidOrb size={120} color="#5b3fd6" />
               </motion.div>
               <div className="text-center flex flex-col items-center">
-                <IshtiBrand variant="full" size={48} className="mb-2" />
+                <IshtiBrand variant="full" size={64} className="mb-3" />
                 <h1 className="text-xl font-semibold">{greeting}, {owner}</h1>
                 <p className="mt-1 text-sm text-muted-foreground">Ask anything, or tell me what to do on this PC.</p>
               </div>
@@ -445,7 +448,7 @@ export function Chat({ owner, onBusy }: Props) {
               className={`grid h-9 w-9 place-items-center rounded-xl transition-colors cursor-pointer ${recording ? "bg-danger text-white" : "text-muted-foreground hover:bg-muted"}`}>
               {recording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
             </button>
-            <button type="submit" disabled={!input.trim()} title={busy ? "Queue: runs when ISHTI is free" : "Send"}
+            <button type="submit" disabled={!input.trim()} title={canStart ? "Send" : "Queue: runs when a slot is free"}
               className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-white transition-opacity disabled:opacity-40 cursor-pointer">
               <ArrowUp className="h-4 w-4" />
             </button>
