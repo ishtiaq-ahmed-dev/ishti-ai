@@ -8,21 +8,22 @@ Worked top to bottom. Each item is checked only after it has been verified by us
 - [x] The "KNOWN FACTS" header no longer leaks into answers
 - [x] A full video path + "edit … put the name on it" goes to the video skill (text overlay works; the FFmpeg font problem on Windows is fixed)
 - [x] Replay of the owner's failing conversation gives real answers on every turn
-- [ ] Research uses the *understood* request: 1-2 focused queries when it's a fallback, no tangent queries ("meaning of the phrase …")
+- [x] Research uses the *understood* request: 1-2 focused queries when it's a fallback, no tangent queries ("meaning of the phrase …")
 - [ ] Laya upgrade: more labelled examples from real traffic (every correction becomes one); fine-tune once there are enough (NEEDS #1)
 
 ## B. Graph and Thinking UI
-- [ ] Graph opens full-screen (expand button); pan and zoom instead of growing off-screen
-- [ ] Nested structure: each skill is a group that holds its own tool calls (collapsible), so long runs stay readable
-- [ ] A graph for every question (per message) - and one **conversation graph** for the whole chat: topics, skills used, what was done
-- [ ] Prompt box grows with the text (auto-resize up to a limit)
+- [x] Graph opens full-screen (expand button); pan and zoom instead of growing off-screen
+- [x] Nested structure: each skill is a group that holds its own tool calls (collapsible), so long runs stay readable
+- [x] A graph for every question (per message) - and one **conversation graph** for the whole chat: topics, skills used, what was done
+- [x] Prompt box grows with the text (auto-resize up to a limit)
 
 ## C. New "Overview" section
-- [ ] The full pipeline (input → understanding → router/Laya → planner → skills → tools → verification → answer), live counts
-- [ ] All skills with status, what they need and how often they are used
-- [ ] The owner's data: profile, saved facts and projects, preferences, reminders
+- [x] The full pipeline (input → understanding → router/Laya → planner → skills → tools → verification → answer), live counts
+- [x] All skills with status, what they need and how often they are used
+- [x] The owner's data: profile, saved facts and projects, preferences, reminders
 
 ## D. Files: organize by content, not only by extension
+- [x] Folder questions count subfolders too and skip Office lock files (after organizing, "how many pdfs" said 1)
 - [ ] Detect audio-only .mp4/.webm with ffprobe → Audio, not Videos (the owner's Videos folder got audio files)
 - [ ] Organize by name and content: read text from PDFs/docs (first page), group by topic (invoices, company mail, university …), preview → yes → move, with undo
 

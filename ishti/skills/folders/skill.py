@@ -89,9 +89,32 @@ def kind_of(name):
     return next((k for k, exts in TYPES.items() if ext in exts), "Other")
 
 
+def junk(name):
+    """Office lock files, thumbnails and desktop.ini are not the owner's files."""
+    n = name.lower()
+    return n.startswith("~$") or n in ("desktop.ini", "thumbs.db", ".ds_store")
+
+
 def top_files(path):
     with os.scandir(path) as it:
-        return [e for e in it if e.is_file(follow_symlinks=False)]
+        return [e for e in it if e.is_file(follow_symlinks=False) and not junk(e.name)]
+
+
+def all_files(path, depth=2):
+    """Files in the folder and its subfolders (two levels covers the type folders organizing creates)."""
+    out, stack = [], [(path, 0)]
+    while stack:
+        d, lvl = stack.pop()
+        try:
+            with os.scandir(d) as it:
+                for e in it:
+                    if e.is_dir(follow_symlinks=False) and lvl < depth:
+                        stack.append((e.path, lvl + 1))
+                    elif e.is_file(follow_symlinks=False) and not junk(e.name):
+                        out.append(e)
+        except OSError:
+            continue
+    return out
 
 
 def size(n):
@@ -177,12 +200,12 @@ def run(text, session):
     if UNDO.match(t):
         return {"reply": undo_last(), "sources": []}
     name, path = folder_in(t)
-    all_files = top_files(path)
+    scanned = top_files(path) if ORGANIZE.search(t) else all_files(path)
     kinds = {}
-    for e in all_files:
+    for e in scanned:
         kinds[kind_of(e.name)] = kinds.get(kind_of(e.name), 0) + 1
-    trace(session, "scan", f"open {name} ({len(all_files)} files)", folder=path, count=len(all_files),
-          kinds=kinds, sample=[e.name for e in all_files[:12]])
+    trace(session, "scan", f"open {name} ({len(scanned)} files)", folder=path, count=len(scanned),
+          kinds=kinds, sample=[e.name for e in scanned[:12]])
     if ORGANIZE.search(t):
         moves = plan_moves(path)
         if not moves:
@@ -196,7 +219,7 @@ def run(text, session):
         trace(session, "plan", f"plan {len(moves)} moves into {len(counts)} folders", status="waiting", groups=counts)
         return {"reply": f"Plan for {name} ({path}): move {len(moves)} files into subfolders - {summary}. "
                          "Nothing is deleted or overwritten, and it can be undone. Go ahead? (yes/no)", "sources": []}
-    files, kind = top_files(path), kind_in(t)
+    files, kind = all_files(path), kind_in(t)  # questions count subfolders too; organizing stays top-level
     if kind:
         files = [e for e in files if kind_of(e.name) == kind]
     label = kind or "files"
@@ -229,7 +252,7 @@ if __name__ == "__main__":
     assert kind_in("how many pdfs are in my downloads") == "PDFs" and kind_in("list photos in desktop") == "Images"
     assert kind_in("what's in my pictures folder") is None
     s = {}
-    assert run(f"how many pdfs are in {root}", s)["reply"].startswith(f"{os.path.basename(root)}: 2 PDFs")
+    assert run(f"how many pdfs are in {root}", s)["reply"].startswith(f"{os.path.basename(root)}: 3 PDFs")  # 2 loose + 1 already in PDFs/ (subfolders count)
     r = run(f"organize the folder {root}", s)["reply"]
     assert "move 6 files" in r and s["pending"], r                 # .crdownload and desktop.ini untouched
     assert run("no", s)["reply"] == "OK, nothing moved." and os.path.exists(os.path.join(root, "a.pdf"))

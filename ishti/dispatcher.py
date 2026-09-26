@@ -362,3 +362,38 @@ async def system_endpoint():
     import asyncio
     from desktop.computer_use import get_computer_use_agent
     return await asyncio.get_running_loop().run_in_executor(None, get_computer_use_agent().get_system_telemetry)
+
+
+@api.get("/api/overview")
+async def overview_endpoint():
+    """Everything the Overview page shows: pipeline stage counts, skills, the owner's data."""
+    from ishti import CONFIG
+    from ishti import router as r
+    f = get_facts()
+    with f.lock:
+        by_source = dict(f.db.execute("SELECT source, COUNT(*) FROM route_log GROUP BY source").fetchall())
+        by_skill = dict(f.db.execute("SELECT skill, COUNT(*) FROM route_log GROUP BY skill").fetchall())
+        total = f.db.execute("SELECT COUNT(*) FROM route_log").fetchone()[0]
+        facts = f.db.execute("SELECT entity, attr, value FROM facts ORDER BY key, attr").fetchall()
+    try:
+        from ishti.skills.reminders.skill import _db, _pending
+        reminders = len(_pending(_db()))
+    except Exception:
+        reminders = 0
+    try:
+        from ishti.semantic import get_semantic
+        memories = get_semantic().col.count()
+    except Exception:
+        memories = 0
+    from orchestrator.memory.user_profile import get_user_memory
+    prefs = get_user_memory().get_preferences()
+    return {
+        "requests": total, "by_source": by_source, "by_skill": by_skill,
+        "laya": {"loaded": r._laya is not None, "error": r.laya_error, "model": CONFIG["router"]["laya_model"]},
+        "models": CONFIG["llm"]["models"], "voice": {k: CONFIG["voice"][k] for k in ("whisper_model", "piper_voice", "wake_model")},
+        "skills": [{**s.info(), "uses": by_skill.get(n, 0)} for n, s in SKILLS.items()],
+        "owner": [{"entity": e, "attr": a, "value": v} for e, a, v in facts if e == "owner"],
+        "facts": [{"entity": e, "attr": a, "value": v} for e, a, v in facts if e != "owner"],
+        "reminders": reminders, "memories": memories,
+        "prefs": {"audio_output": prefs.audio_output, "response_length": prefs.response_length},
+    }

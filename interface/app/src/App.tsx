@@ -1,14 +1,16 @@
 import { AnimatePresence, motion } from "motion/react";
-import { Bell, Bot, Brain, Cpu, ListChecks, MessageSquare, Settings as SettingsIcon, FolderKanban } from "lucide-react";
+import { Bell, Bot, Brain, Cpu, LayoutDashboard, ListChecks, MessageSquare, Settings as SettingsIcon, FolderKanban } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { getJSON } from "@/lib/api";
 import { Chat } from "@/sections/Chat";
 import { Memory, Settings, Skills, System, Tasks } from "@/sections/Pages";
+import { Overview } from "@/sections/Overview";
 import { NotificationBell } from "@/components/rare/notification-bell";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 const NAV = [
   { key: "chat", label: "Chat", icon: MessageSquare },
+  { key: "overview", label: "Overview", icon: LayoutDashboard },
   { key: "tasks", label: "Tasks", icon: ListChecks },
   { key: "memory", label: "Memory", icon: Brain },
   { key: "skills", label: "Skills", icon: Bot },
@@ -104,6 +106,7 @@ export default function App() {
             <motion.div key={page} className="h-full" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}>
               {page === "chat" && <Chat owner={owner} onBusy={onBusy} />}
+              {page === "overview" && <Overview />}
               {page === "tasks" && <Tasks />}
               {page === "memory" && <Memory />}
               {page === "skills" && <Skills />}

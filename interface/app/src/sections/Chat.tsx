@@ -1,8 +1,8 @@
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUp, Mic, Network, Plus, Square, X } from "lucide-react";
+import { ArrowUp, Maximize2, Mic, Minimize2, Network, Plus, Square, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { getJSON, postJSON, streamChat, type Result, type Source, type TraceEvent } from "@/lib/api";
-import { ActivityGraph } from "@/components/ActivityGraph";
+import { ActivityGraph, ConversationGraph, type Turn } from "@/components/ActivityGraph";
 import { Thinking } from "@/components/Thinking";
 import { FolderScan } from "@/components/FolderScan";
 import MatrixOrb from "@/components/rare/matrix-orb";
@@ -34,11 +34,18 @@ export function Chat({ owner, onBusy }: { owner: string; onBusy: (busy: boolean)
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [graphFor, setGraphFor] = useState<number | null>(null);
   const [recording, setRecording] = useState(false);
+  const [graphView, setGraphView] = useState<"answer" | "chat">("answer");
+  const [fullGraph, setFullGraph] = useState(false);
   const recorder = useRef<MediaRecorder | null>(null);
+  const box = useRef<HTMLTextAreaElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const busy = msgs.some((m) => m.live);
 
   useEffect(() => { onBusy(busy); }, [busy, onBusy]);
+  useEffect(() => {  // the prompt box grows with what you type, up to ~8 lines, then scrolls
+    const el = box.current;
+    if (el) { el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 220)}px`; }
+  }, [input]);
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs]);
   useEffect(() => {
     getJSON<{ active_session_id: string }>("/api/sessions").then((d) => setSessionId(d.active_session_id));
@@ -92,6 +99,11 @@ export function Chat({ owner, onBusy }: { owner: string; onBusy: (busy: boolean)
   }
 
   const graphMsg = msgs.find((m) => m.id === graphFor);
+  const turns: Turn[] = msgs.filter((m) => m.role === "ishti" && m.request).map((m) => ({
+    question: m.request!, skill: (m.events.findLast((e) => e.type === "done")?.skill as string | undefined)
+      ?? (m.events.find((e) => e.type === "route")?.skill as string | undefined) ?? null,
+    ms: m.events.findLast((e) => e.type === "done")?.ms,
+  }));
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
@@ -139,7 +151,7 @@ export function Chat({ owner, onBusy }: { owner: string; onBusy: (busy: boolean)
                     transition={{ duration: 0.22, ease: "easeOut" }}
                     className={m.role === "user" ? "flex justify-end" : "flex gap-3"}>
                     {m.role === "user" ? (
-                      <div className="max-w-[80%] rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-sm text-accent-foreground">
+                      <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-sm text-accent-foreground">
                         {m.text}</div>
                     ) : (
                       <>
@@ -181,10 +193,10 @@ export function Chat({ owner, onBusy }: { owner: string; onBusy: (busy: boolean)
 
         <form onSubmit={(e) => { e.preventDefault(); send(input); }} className="px-6 pb-5">
           <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border border-border bg-background p-2 shadow-[0_2px_12px_rgba(29,27,46,0.06)] transition-shadow focus-within:shadow-[0_2px_18px_rgba(110,86,207,0.18)]">
-            <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={1}
+            <textarea ref={box} value={input} onChange={(e) => setInput(e.target.value)} rows={1}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }}
               placeholder="Ask or tell ISHTI to do anything…"
-              className="max-h-40 min-h-[40px] flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-muted-foreground" />
+              className="scroll-thin max-h-[220px] min-h-[40px] flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 text-sm leading-relaxed outline-none placeholder:text-muted-foreground" />
             <button type="button" onClick={toggleMic} title="Speak (local whisper)"
               className={`grid h-9 w-9 place-items-center rounded-xl transition-colors ${recording ? "bg-danger text-white" : "text-muted-foreground hover:bg-muted"}`}>
               {recording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
@@ -203,18 +215,55 @@ export function Chat({ owner, onBusy }: { owner: string; onBusy: (busy: boolean)
             transition={{ duration: 0.28, ease: "easeOut" }}
             className="scroll-thin absolute inset-y-0 right-0 z-20 flex w-[min(480px,94%)] flex-col gap-3 overflow-y-auto border-l border-border bg-background p-4 shadow-[-12px_0_40px_rgba(29,27,46,0.12)] xl:static xl:z-auto xl:w-[480px] xl:shrink-0 xl:shadow-none">
             <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-semibold">Activity</div>
-                <div className="max-w-[380px] truncate text-[11px] text-muted-foreground">{graphMsg.request}</div>
+              <div className="flex rounded-xl bg-muted p-0.5 text-xs">
+                {(["answer", "chat"] as const).map((v) => (
+                  <button key={v} onClick={() => setGraphView(v)}
+                    className={`relative rounded-lg px-3 py-1 font-medium transition-colors ${graphView === v ? "text-foreground" : "text-muted-foreground"}`}>
+                    {graphView === v && <motion.span layoutId="graph-tab" className="absolute inset-0 rounded-lg bg-background shadow-sm"
+                      transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
+                    <span className="relative">{v === "answer" ? "This answer" : "This chat"}</span>
+                  </button>
+                ))}
               </div>
-              <button onClick={() => setGraphFor(null)} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted">
-                <X className="h-4 w-4" /></button>
+              <div className="flex gap-1">
+                <button onClick={() => setFullGraph(true)} title="Expand"
+                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted"><Maximize2 className="h-4 w-4" /></button>
+                <button onClick={() => setGraphFor(null)} title="Close" className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted">
+                  <X className="h-4 w-4" /></button>
+              </div>
             </div>
-            <ActivityGraph events={graphMsg.events} request={graphMsg.request ?? ""} live={graphMsg.live} />
+            <div className="truncate text-[11px] text-muted-foreground">
+              {graphView === "answer" ? graphMsg.request : `${turns.length} question${turns.length === 1 ? "" : "s"} in this chat`}</div>
+            {graphView === "answer"
+              ? <ActivityGraph events={graphMsg.events} request={graphMsg.request ?? ""} live={graphMsg.live} />
+              : <ConversationGraph turns={turns} />}
             <p className="text-[11px] leading-relaxed text-muted-foreground">
-              Every node is a real step: the router's choice, each skill, and every tool call it made.
-              Violet = running, green = done, amber = waiting for you, red = failed.</p>
+              {graphView === "answer"
+                ? "Every node is a real step. Skills are groups: click one to open or fold its tool calls. Violet = running, green = done, amber = waiting for you, red = failed."
+                : "Each question in this chat, linked to the skill that handled it."}</p>
           </motion.aside>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {fullGraph && graphMsg && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-50 flex flex-col gap-3 bg-background/95 p-6 backdrop-blur-sm"
+            onKeyDown={(e) => e.key === "Escape" && setFullGraph(false)}>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-base font-semibold">{graphView === "answer" ? "Activity" : "This chat"}</div>
+                <div className="text-xs text-muted-foreground">Scroll to zoom · drag to move · {graphView === "answer" ? graphMsg.request : `${turns.length} questions`}</div>
+              </div>
+              <button onClick={() => setFullGraph(false)} className="rounded-xl border border-border p-2 text-muted-foreground hover:bg-muted">
+                <Minimize2 className="h-4 w-4" /></button>
+            </div>
+            <div className="min-h-0 flex-1">
+              {graphView === "answer"
+                ? <ActivityGraph events={graphMsg.events} request={graphMsg.request ?? ""} live={graphMsg.live} full />
+                : <ConversationGraph turns={turns} full />}
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
