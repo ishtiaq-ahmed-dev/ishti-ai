@@ -1,0 +1,11 @@
+{
+  "name": "skillsmith",
+  "version": "1.0.0",
+  "description": "Grows ISHTI: installs a skill from a GitHub repo or has the coder model write a new one - validates the skill shape, scans the code for risky calls, shows everything, installs only after a yes, runs its self-check and loads it. Lists and removes added skills.",
+  "route": "install a skill from github, create or learn a new skill, list or remove added skills",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 9,
+  "status": "working",
+  "tier": "T2",
+  "laya": false
+}

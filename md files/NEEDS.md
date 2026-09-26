@@ -38,3 +38,14 @@ Each entry lists what's needed, why it's blocked, and what would have to change.
   4. It renders with NVENC.
   5. It opens the result in CapCut if installed. If CapCut isn't installed, `winget install ByteDance.CapCut`, after a yes.
 - **Blocked part:** actually *clicking around inside CapCut* needs screen understanding (see #2, local vision model). Until then the editing is done by the FFmpeg pipeline, and CapCut is where you review and tweak.
+
+- 2026-09-26 20:14 [gap] skillsmith: couldn't generate a working 'roman_numeral_converter' skill (self-check kept failing) - asked: "create a skill that converts roman numerals to numbers and back"
+## 12. Skills catalog items that need something this PC doesn't have (26 Sep)
+- **Status of #10 and #11:** #10 is now the `skillsmith` skill (install from GitHub or generate; scanned, shown, self-checked, yes to install). The 14B coder often can't make a generated skill pass its own test in 3 fixes - then it refuses and logs it. `qwen-27b` (Qwen 3.5) would write better code but crashes llama-server here (CUDA "shared object initialization failed"); retry after an Ollama/driver update. #11 is done: `video/pro.py` makes the ad-style edit, writes a real CapCut project and verifies the render with Gemma 3 vision.
+- **Smart home (catalog 12):** needs a Home Assistant server on the network. None found.
+- **Social publishing (14), Telegram/Discord/Slack (4):** need the owner's API tokens/bot accounts. Drafting works (`planners` post drafts); posting/sending is not built.
+- **AI image generation (7):** needs ComfyUI running (http://127.0.0.1:8188) - not running now. Background removal (rembg) and upscaling (Real-ESRGAN) need ~200 MB-1 GB model downloads; not installed yet.
+- **PDF image recompression / OCR of scanned PDFs (8):** Ghostscript / Tesseract not installed; `read the text from <image>` uses the local vision model instead.
+- **Flight/hotel search (18):** Skyscanner/Kayak block scraping; itineraries are web-grounded instead.
+- **Outlook calendar/email (4):** Outlook is installed but has no account; `calendar` is local (+ .ics export) and `email` uses Gmail in Chrome Profile 10.
+- **Microphone:** no input device opens (only the Bluetooth speaker's hands-free mic, MME error 1); check Windows privacy "Let desktop apps access your microphone".
