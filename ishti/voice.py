@@ -41,22 +41,42 @@ def transcribe(audio) -> str:
     """audio: path or file-like in any format PyAV decodes (browser webm/opus, wav, mp3)."""
     global _last_use
     _last_use = time.time()
-    if hasattr(audio, "seek"):
-        data = audio.read()
-        audio = lambda: io.BytesIO(data)  # a second pass (Urdu) needs to read it again
-    else:
-        audio = (lambda a: lambda: a)(audio)
-    prompt = vocabulary()
-    segments, info = stt_model().transcribe(audio(), beam_size=1, vad_filter=True, initial_prompt=prompt or None)
-    text = " ".join(s.text.strip() for s in segments).strip()
-    # Spoken Urdu and Hindi sound nearly the same; whisper often picks Hindi and writes Devanagari, which the owner
-    # (and the language layer) can't use. Prefer Urdu script.
-    if info.language == "hi" and _cfg.get("prefer_urdu", True):
-        segments, _ = stt_model().transcribe(audio(), beam_size=1, vad_filter=True, language="ur", initial_prompt=prompt or None)
-        text = " ".join(s.text.strip() for s in segments).strip()
+    import numpy as np
+    from faster_whisper import decode_audio
+    pcm = audio if isinstance(audio, np.ndarray) else decode_audio(audio, sampling_rate=16000)
+    model = stt_model()
+    lang = pick_language(model, pcm)
+    segments, _ = model.transcribe(pcm, beam_size=1, vad_filter=True, language=lang, initial_prompt=vocabulary() or None,
+                                   condition_on_previous_text=False)
+    # noise and very short sounds make whisper invent words ("Arabic", "Thank you."): keep only confident speech
+    kept = [s for s in segments if s.no_speech_prob < 0.6 and s.avg_logprob > -1.0]
+    text = " ".join(s.text.strip() for s in kept).strip()
+    LAST.update(language=lang, confidence=(sum(s.avg_logprob for s in kept) / len(kept)) if kept else -9.0,
+                seconds=len(pcm) / 16000)
     _last_use = time.time()
     _schedule_unload()
     return text
+
+
+LAST = {"language": None, "confidence": 0.0, "seconds": 0.0}  # of the latest transcript (the voice loop reads it)
+# The owner speaks only these. Whisper's own guess ranges over ~100 languages and picked Arabic for short/noisy audio;
+# the close neighbours are folded in (spoken Hindi = Urdu; Persian is what whisper mistakes Pashto for).
+LANGUAGES = ("en", "ur", "ps")
+FOLD = {"hi": "ur", "fa": "ps"}
+
+
+def pick_language(model, pcm):
+    allowed = tuple(_cfg.get("languages", LANGUAGES))
+    try:
+        _, _, probs = model.detect_language(pcm, vad_filter=True)
+    except Exception:
+        return allowed[0]
+    score = {code: 0.0 for code in allowed}
+    for code, p in probs:
+        code = FOLD.get(code, code)
+        if code in score:
+            score[code] += p
+    return max(score, key=score.get)
 
 
 def vocabulary():

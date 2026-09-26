@@ -31,6 +31,20 @@ BARGE = {"enabled": True, "vad_threshold": 0.6, "min_ms": 120, "check_ms": 700, 
 BARGE.update(CONFIG["voice"].get("barge_in", {}))
 
 
+# Real short commands; any other 1-2 word utterance ("Google.", "Stay on.", "at 4.") is a fragment of room noise or
+# half a sentence - acting on it started pointless web searches.
+SHORT_OK = re.compile(r"^\W*(?:yes|yeah|no|nope|stop|cancel|continue|go\s+on|pause|resume|louder|quieter|mute|unmute|"
+                      r"repeat|again|done|thanks|thank\s+you|haan|ji|nahi|bas|ruko)\W*$", re.I)
+
+
+def stray(text):
+    from ishti.voice import LAST
+    words = re.findall(r"\w+", text)
+    if len(words) <= 2 and not SHORT_OK.match(text):
+        return True
+    return len(words) <= 4 and LAST.get("confidence", 0) < -0.8  # barely-heard short phrase
+
+
 class Listener:
     def __init__(self, on_command, on_event=None):
         from openwakeword.model import Model
@@ -163,7 +177,8 @@ class Listener:
         try:
             self.state("thinking")
             text, wrong_name = self.command_text(audio)
-            if not text:
+            if not text or stray(text):
+                self.on_event("stt_final", {"text": text, "ignored": True})
                 return
             self.on_event("stt_final", {"text": text})
             print(f"[wake] heard: {text!r}" + (f" (misheard as '{wrong_name}')" if wrong_name else ""))

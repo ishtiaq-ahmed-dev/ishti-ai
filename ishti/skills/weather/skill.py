@@ -16,7 +16,11 @@ def match(text):
 
 
 def run(text, session):
-    city = extract_city(text) or get_facts().get("owner").get("city")
+    import difflib
+    home = get_facts().get("owner").get("city")
+    city = extract_city(text) or home
+    if city and home and city.lower() != home.lower() and difflib.SequenceMatcher(None, city.lower(), home.lower()).ratio() >= 0.8:
+        city = home  # "Peshwar" (a translation or speech slip) is the owner's own Peshawar
     if not city:
         return {"reply": "Which city? (Tell me 'I live in <city>' once and I'll remember it.)", "sources": []}
     trace(session, "fetch", f"Open-Meteo forecast for {city}", status="start")

@@ -128,6 +128,7 @@ def _learn(text):
 
 URDU = re.compile("[؀-ۿ]")  # Arabic-script letters (Urdu)
 DEVANAGARI = re.compile("[ऀ-ॿ]")  # Hindi script
+PASHTO = re.compile("[ټځڅډړږښګڼۍې]")  # Pashto-only letters
 FOLLOW_UP = re.compile(
     r"^\s*(?:why\s+(?:did|didn'?t|did\s*not|didnot|don'?t|won'?t)\s+you|(?:no[,.!]?\s+)?i\s+(?:asked|meant|said|wanted)|"
     r"(?:search|look|check|try|do)\s+(?:it\s+|that\s+|this\s+)?(?:now|again|instead|properly|online)|"
@@ -360,11 +361,21 @@ def roman_urdu(text):
     return len(words) >= 2 and sum(w in ROMAN_URDU for w in words) >= max(2, len(words) // 4)
 
 
+def already_in(reply, lang):
+    """Is the reply already written in the owner's language (so it needs no translation)?"""
+    if lang == "Pashto":
+        return bool(PASHTO.search(reply))
+    if lang == "Urdu":
+        return bool(URDU.search(reply)) and not PASHTO.search(reply)
+    return False  # Roman Urdu: skills answer in English, always rewritten
+
+
 def translate(text, to):
     from ishti import llm
     # Gemma 3 (config role "translator") writes far better Urdu than Qwen 2.5, which mixes in Chinese characters.
     hint = (" In Urdu/Hindi, کل / कल (kal) with a future verb (ہوگا، ہوگی، گا / होगा, होगी) means tomorrow, with a past "
-            "verb yesterday; it means 'all' only as کُل before a noun." if to == "English" else "")
+            "verb yesterday; it means 'all' only as کُل before a noun. In Pashto, سبا (saba) means tomorrow, نن (nan) today, "
+            "پرون (paroon) yesterday, and پېښور is Peshawar." if to == "English" else "")
     return llm.ask(f"Translate into {to}. Keep names, numbers, file paths, links and markdown exactly.{hint} Output only "
                    f"the translation.\n\n{text}", role="translator", system=None, temperature=0, max_tokens=1200).strip() or text
 
@@ -373,7 +384,8 @@ def _handle(text, sid, conv, s, events, t0, channel):
     # Urdu (script or Roman): skills and routing work in English, so understand it in English and answer back
     # in the owner's own form of Urdu. Gemma does both directions (Qwen 2.5 writes poor Urdu).
     # Devanagari is spoken Urdu that whisper wrote in Hindi script: understood the same way, answered in Urdu script
-    lang = ("Urdu" if URDU.search(text) or DEVANAGARI.search(text)
+    # only the owner's three languages: Pashto (its own letters ټ ډ ړ ښ ږ ځ څ ګ ڼ ې ۍ), Urdu, Roman Urdu; else English
+    lang = ("Pashto" if PASHTO.search(text) else "Urdu" if URDU.search(text) or DEVANAGARI.search(text)
             else "Roman Urdu (Urdu written in English letters)" if roman_urdu(text) else None)
     if lang:
         s["trace"](type="tool", name="understand", label=f"{lang.split(' (')[0]} message: reading it in English", status="start")
@@ -427,7 +439,7 @@ def _handle(text, sid, conv, s, events, t0, channel):
                 name, out = n2, {**out2, "sources": out.get("sources", []) + out2.get("sources", [])}
                 break
 
-    if lang and not (lang == "Urdu" and URDU.search(out["reply"])):
+    if lang and not already_in(out["reply"], lang):
         s["trace"](type="tool", name="translate", label=f"answer in {lang.split(' (')[0]}", status="done")
         out["reply"] = translate(out["reply"], lang)
     return _finish(text, sid, conv, s, events, t0, channel, name, out, dec)
