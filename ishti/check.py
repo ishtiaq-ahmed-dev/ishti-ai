@@ -50,7 +50,7 @@ LABELLED = [
     ("prayer times today", "utilities"), ("convert 500 usd to pkr", "utilities"), ("5 km to miles", "utilities"),
     ("latest news about pakistan", "utilities"), ("generate a strong password", "utilities"),
     ("I spent 500 on groceries", "ledger"), ("show my portfolio", "ledger"), ("how much did I spend this month", "ledger"),
-    ("I drank 3 glasses of water", "lifelog"), ("screen time today", "lifelog"), ("check your skills", "meta"), ("what's the status of my tasks", "meta"), ("generate an image of a cat on the moon", "gemini"),
+    ("I drank 3 glasses of water", "lifelog"), ("screen time today", "lifelog"), ("check your skills", "meta"), ("what's the status of my tasks", "meta"), ("use the deep male voice", "owner"), ("what voices do you have", "owner"), ("generate an image of a cat on the moon", "gemini"),
     ("create a video of waves at sunset with gemini", "gemini"), ("make a video from my clips", "video"),
     ("use an online tool to remove the background from D:/x.png", "online_fallback"),
     ("give me my brief", "digest"), ("every morning at 8 give me my brief", "reminders"),

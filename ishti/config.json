@@ -64,6 +64,14 @@
     "wake_threshold": 0.5,
     "barge_in": {"enabled": true, "vad_threshold": 0.6, "min_ms": 120, "check_ms": 700, "echo_overlap": 0.5, "cooldown_s": 1.0,
                  "note": "Tune on the real room: raise vad_threshold/min_ms if speaker echo interrupts; lower echo_overlap if your own words get ignored"},
+    "voices": [
+      {"name": "Male 1 - Deep/Calm", "piper_voice": "en_US-norman-medium", "length_scale": 1.08},
+      {"name": "Male 2 - Energetic", "piper_voice": "en_US-bryce-medium", "length_scale": 0.82},
+      {"name": "Male 3 - Clear", "piper_voice": "en_US-ryan-high", "length_scale": 1.0},
+      {"name": "Female 1 - Neutral", "piper_voice": "en_US-lessac-medium", "length_scale": 1.0}
+    ],
+    "default_voice": "Female 1 - Neutral",
+    "voices_note": "Piper voices from rhasspy/piper-voices (synthetic, trained on open datasets - no real person cloned). The owner switches with 'use the deep male voice'; the choice is the fact owner.voice. Fish Audio S2 slots in here later (engine + reference clip per voice).",
     "piper_voice": "en_US-lessac-medium",
     "piper_dir": "D:\\ISHTI\\data\\piper"
   }

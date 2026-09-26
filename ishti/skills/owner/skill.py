@@ -12,6 +12,9 @@ from ishti.facts import get_facts
 
 I = re.I
 AUDIO_OFF = re.compile(r"^(?:mute|stop (?:reading|talking)|be quiet|(?:turn )?(?:audio|voice|sound) off|turn off (?:the )?(?:audio|voice|sound))[.!]?$", I)
+VOICE_SET = re.compile(r"^(?:please\s+)?(?:(?:switch|change|set)\s+(?:your\s+|the\s+)?voice\b|(?:switch|change)\s+(?:your\s+voice\s+)?to\s+.*\bvoice\b|"
+                       r"(?:use|speak\s+(?:in|with))\s+(?:the\s+|a\s+|your\s+)?.*\bvoice\b|(?:switch|change)\s+to\s+(?:male|female)\b)", I)
+VOICE_LIST = re.compile(r"\b(?:what|which|list|show)\b.*\bvoices\b|\bwhat\s+voices?\s+(?:do|can)\b", I)
 AUDIO_ON = re.compile(r"^(?:unmute|read (?:that|it)(?: aloud| out loud)?|say it|speak up|(?:turn )?(?:audio|voice|sound) on|turn on (?:the )?(?:audio|voice|sound))[.!]?$", I)
 WHO = re.compile(r"^(?:who am i|do you know who i am|who is your owner)\W*$", I)
 KNOW = re.compile(r"^(?:what do you (?:know|remember) about me|show (?:me )?my (?:profile|memory|facts)|what have you saved)\W*$", I)
@@ -57,7 +60,7 @@ def asks_about_me(t):
 
 def match(text):
     t = text.strip()
-    return (any(rx.match(t) for rx in (AUDIO_OFF, AUDIO_ON, WHO, KNOW, CAN, DOCTOR))
+    return (any(rx.match(t) for rx in (AUDIO_OFF, AUDIO_ON, WHO, KNOW, CAN, DOCTOR, VOICE_SET)) or bool(VOICE_LIST.search(t))
             or bool(TELL.match(t) or SAVE_MEMORY.search(t) or SELF.search(t)) or asks_about_me(t))
 
 
@@ -192,6 +195,15 @@ def run(text, session):
         return about_ishti(t)
     if asks_about_me(t) and not any(rx.match(t) for rx in (WHO, KNOW, CAN)):
         return about_me(t)
+    if VOICE_SET.match(t) or VOICE_LIST.search(t):
+        from ishti.voice import current_voice, pick_voice, roster
+        names = ", ".join(v["name"] for v in roster())
+        chosen = pick_voice(t) if VOICE_SET.match(t) else None
+        if not chosen:
+            return {"reply": f"My voices: {names}. I'm using {current_voice()['name']}. Say e.g. \"use the deep male voice\".",
+                    "sources": []}
+        get_facts().set("owner", "voice", chosen["name"])  # remembered across restarts
+        return {"reply": f"Switched to {chosen['name']}.", "sources": []}
     if AUDIO_OFF.match(t) or AUDIO_ON.match(t):
         if re.match(r"^(?:read|say)\b", t, I):  # "read that aloud": speak the last answer once
             last = next((m["content"] for m in reversed(session.get("history", [])) if m["role"] == "assistant"), "")

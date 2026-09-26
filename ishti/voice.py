@@ -119,20 +119,70 @@ def _schedule_unload():
         _unload_timer.start()
 
 
-def tts_voice():
-    global _tts
+# ---- voices: a roster in config (voice.voices), the owner picks one ("switch to the deep male voice") ----
+_voices = {}                                           # piper model name -> loaded PiperVoice
+TAG = re.compile(r"\[([a-z][a-z ]{1,20})\]", re.I)     # inline style tags, e.g. "Sure [pause] here it is"
+PAUSES = {"pause": 0.35, "short pause": 0.2, "long pause": 0.8, "breath": 0.2}  # the rest are for expressive engines
+
+
+def roster():
+    """[{"name", "piper_voice", "length_scale", ...}]; the old single piper_voice if no roster is configured."""
+    return _cfg.get("voices") or [{"name": "Default", "piper_voice": _cfg["piper_voice"]}]
+
+
+def current_voice():
+    """The owner's chosen voice (fact owner.voice, so it survives restarts), else default_voice, else the first."""
+    from ishti.facts import get_facts
+    by_name = {v["name"].lower(): v for v in roster()}
+    chosen = (get_facts().get("owner").get("voice") or _cfg.get("default_voice") or "").lower()
+    return by_name.get(chosen) or roster()[0]
+
+
+def pick_voice(text):
+    """The roster voice a request names: its full name, "male 2", or its words ("deep", "energetic", "female")."""
+    t = text.lower()
+    for v in roster():
+        if v["name"].lower() in t:
+            return v
+    m = re.search(r"\b(male|female|voice)\s*(?:number\s*)?(\d)\b", t)
+    if m:
+        kind = [v for v in roster() if m.group(1) == "voice" or v["name"].lower().startswith(m.group(1) + " ")]
+        return kind[int(m.group(2)) - 1] if 0 < int(m.group(2)) <= len(kind) else None
+    words = set(re.findall(r"[a-z]+", t)) - {"voice", "the", "a", "to", "use", "your", "switch", "change", "male"}
+    for v in roster():  # a describing word: "deep", "calm", "energetic", "clear", "neutral", "female"
+        if words & set(re.findall(r"[a-z]+", v["name"].lower())):
+            return v
+    return next((v for v in roster() if v["name"].lower().startswith("male ")), None) if re.search(r"\bmale\b", t) else None
+
+
+def tts_voice(profile=None):
+    profile = profile or current_voice()
     with _load_lock:
-        if _tts is None:
+        if profile["piper_voice"] not in _voices:
             from piper import PiperVoice
-            _tts = PiperVoice.load(os.path.join(_cfg["piper_dir"], _cfg["piper_voice"] + ".onnx"))
-    return _tts
+            _voices[profile["piper_voice"]] = PiperVoice.load(os.path.join(_cfg["piper_dir"], profile["piper_voice"] + ".onnx"))
+    return _voices[profile["piper_voice"]]
 
 
-def synthesize(text: str) -> bytes:
-    """WAV bytes of the spoken reply (markdown, URLs and citations stripped)."""
+def synthesize(text: str, profile=None) -> bytes:
+    """WAV bytes of the spoken reply in the owner's voice (markdown, URLs and citations stripped; [pause] tags
+    become short silences, other style tags are dropped)."""
+    from piper import SynthesisConfig
+    profile = profile or current_voice()
+    pv = tts_voice(profile)
+    cfg = SynthesisConfig(length_scale=profile.get("length_scale"), noise_scale=profile.get("noise_scale"))
+    rate, pcm = pv.config.sample_rate, []
+    for i, part in enumerate(TAG.split(text)):
+        if i % 2:
+            pcm.append(b"\0\0" * int(rate * PAUSES.get(part.lower().strip(), 0)))
+        elif words := speakable(part):
+            pcm += [chunk.audio_int16_bytes for chunk in pv.synthesize(words, cfg)]
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wf:
-        tts_voice().synthesize_wav(speakable(text), wf)
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(rate)
+        wf.writeframes(b"".join(pcm))
     return buf.getvalue()
 
 
@@ -160,4 +210,48 @@ if __name__ == "__main__":
     heard = transcribe(io.BytesIO(wav)).lower()  # round trip: our own TTS through our own STT
     print(f"whisper: {heard!r} in {time.time() - t:.1f}s")
     assert "peshawar" in heard and "clear" in heard, heard
-    print("[self-check] voice OK - Piper TTS -> faster-whisper STT round trip")
+
+    # the roster: every voice understandable and audibly different (pitch or pace), the choice survives a restart
+    import numpy as np
+    import tempfile
+    import ishti.facts
+
+    def pitch_and_length(wav):
+        with wave.open(io.BytesIO(wav)) as wf:
+            x, r = np.frombuffer(wf.readframes(wf.getnframes()), np.int16).astype(float), wf.getframerate()
+        f0 = []
+        for i in range(0, len(x) - 1024, 512):  # autocorrelation pitch of the voiced frames
+            fr = x[i:i + 1024]
+            if np.abs(fr).mean() > 500:
+                ac = np.correlate(fr, fr, "full")[1023:]
+                k = r // 400 + int(np.argmax(ac[r // 400:r // 60]))
+                if ac[k] > 0.3 * ac[0]:
+                    f0.append(r / k)
+        return float(np.median(f0)), len(x) / r
+
+    line = "Hello, I am ISHTI. Tomorrow in Peshawar it will be sunny and warm."
+    measured = {}
+    for v in roster():
+        wav = synthesize(line, v)
+        measured[v["name"]] = pitch_and_length(wav)
+        heard = transcribe(io.BytesIO(wav)).lower()
+        assert "peshawar" in heard and "sunny" in heard, (v["name"], heard)
+    names = list(measured)
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            (pa, la), (pb, lb) = measured[a], measured[b]
+            assert max(pa, pb) / min(pa, pb) >= 1.08 or max(la, lb) / min(la, lb) >= 1.06, (a, b, measured)
+    assert pick_voice("use the deep male voice")["name"] == "Male 1 - Deep/Calm"
+    assert pick_voice("switch to male 2")["name"] == "Male 2 - Energetic"
+    assert pick_voice("change your voice to the female one")["name"] == "Female 1 - Neutral"
+    assert pick_voice("use a nice voice") is None
+    db = os.path.join(tempfile.mkdtemp(), "facts.db")
+    ishti.facts._facts = ishti.facts.Facts(db)
+    ishti.facts._facts.set("owner", "voice", "Male 2 - Energetic")
+    ishti.facts._facts = ishti.facts.Facts(db)  # a restart: a fresh store on the same file
+    assert current_voice()["name"] == "Male 2 - Energetic"
+    plain, paused = synthesize("Sure. Here it is.", current_voice()), synthesize("Sure. [pause] Here it is.", current_voice())
+    assert 0.25 < pitch_and_length(paused)[1] - pitch_and_length(plain)[1] < 0.5  # [pause] is a short silence, not words
+    print("[self-check] voice OK - Piper TTS -> faster-whisper STT round trip; "
+          + ", ".join(f"{n.split(' - ')[0]} {p:.0f} Hz" for n, (p, _) in measured.items())
+          + "; all distinct, understood, choice persists, [pause] works")
