@@ -49,3 +49,14 @@ Each entry lists what's needed, why it's blocked, and what would have to change.
 - **Flight/hotel search (18):** Skyscanner/Kayak block scraping; itineraries are web-grounded instead.
 - **Outlook calendar/email (4):** Outlook is installed but has no account; `calendar` is local (+ .ics export) and `email` uses Gmail in Chrome Profile 10.
 - **Microphone:** no input device opens (only the Bluetooth speaker's hands-free mic, MME error 1); check Windows privacy "Let desktop apps access your microphone".
+
+## 13. Fish Audio S2 voice, on demand (27 Sep) - needs the owner
+The voice roster is live on Piper (3 male + 1 female, `voice.voices`, switch by voice). S2 Pro plugs into the same
+roster (engine + a 10-30 s royalty-free reference clip per voice) but is blocked on this PC:
+- **CUDA Toolkit 12.8+ is not installed** (admin/UAC install - the owner's call): `winget install Nvidia.CUDA`.
+  Also `pip install cmake`. VS Build Tools 2026 is present; CUDA may need `-allow-unsupported-compiler` for it.
+- Then: build `rodrigomatta/s2.cpp` (`-DS2_CUDA=ON`), fetch the q4_k_m or q5_k_m GGUF (3.6-4.0 GB, Fish Audio
+  Research License - personal non-commercial use OK), run its HTTP server only while Live mode is open, stream its
+  PCM into `RemoteTalker`, fall back to Piper when free VRAM < ~4.5 GB.
+- VRAM reality: Qwen 14B (~10 GB) + Whisper large-v3 (~1.6 GB) leave ~4 GB of 16 GB, so S2 would mostly fall
+  back unless Whisper moves to large-v3-turbo or the planner model gets smaller.
