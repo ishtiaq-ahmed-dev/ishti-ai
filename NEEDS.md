@@ -24,3 +24,17 @@ Each entry lists what's needed, why it's blocked, and what would have to change.
 
 ## 9. Semantic-memory threshold
 - `ishti/semantic.py` keeps recalls with cosine distance ≤ 0.45, calibrated on a handful of samples. Re-tune it once real conversation history exists (log the distances, pick the knee).
+
+## 10. Learn new skills instead of saying "can't" (next iteration)
+- **Goal:** when no skill (and no escalation) can do an *action* request, ISHTI builds one.
+- **Plan:** a `builder` skill on top of an open-source code agent. HuggingFace **smolagents** CodeAgent is Apache-2.0 and works with Ollama; Open Interpreter is AGPL, so it was avoided. The coder model writes a Python script for the task. ISHTI shows the script and what it will touch, and waits for "yes" (it runs code on this PC). It runs the script in a subprocess with a timeout, in `data/sandbox` as the working directory, then checks the result. On success it saves the script as a new skill folder (`manifest.json` + `skill.py`, with the parameters lifted out), so the next similar request routes to it directly (Voyager-style skill library).
+- **Safety:** always confirmed; no deletes outside the sandbox without a second confirmation; every run logged.
+
+## 11. Video editing like an editor (next iteration)
+- **Flow:** "edit the video in my downloads"
+  1. `folders` lists the videos and asks which one.
+  2. ISHTI analyses it: whisper transcript, FFmpeg silence and scene detection, loudness.
+  3. It proposes an edit: cut silences and dead air, burned-in captions, loudness normalised, optional 9:16 reframe and music bed.
+  4. It renders with NVENC.
+  5. It opens the result in CapCut if installed. If CapCut isn't installed, `winget install ByteDance.CapCut`, after a yes.
+- **Blocked part:** actually *clicking around inside CapCut* needs screen understanding (see #2, local vision model). Until then the editing is done by the FFmpeg pipeline, and CapCut is where you review and tweak.
