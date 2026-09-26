@@ -403,13 +403,14 @@ LIVE = {"stop": None}  # one Live conversation at a time
 @app.websocket("/ws/live")
 async def live_ws(ws: WebSocket):
     """Mode C - Live agent: the browser streams its microphone (16 kHz mono int16, binary frames); the voice loop runs
-    in Live mode (no wake word, barge-in, replies spoken sentence by sentence on this PC) and every event (state,
+    in Live mode (no wake word, barge-in, replies spoken sentence by sentence - played by the browser, so it works
+    from a phone and the browser's echo cancellation hears past ISHTI's own voice) and every event (state,
     live transcript, steps, reply, stage timings) comes back on this socket. The talk is saved in the open chat."""
     import queue as queue_mod
     import threading
     import numpy as np
     from ishti import wake
-    from ishti.talk import talker
+    from ishti.talk import RemoteTalker
     if not authorized(ws):
         await ws.close(code=1008)
         return
@@ -417,6 +418,8 @@ async def live_ws(ws: WebSocket):
     session_id = ws.query_params.get("session") or None
     loop = asyncio.get_running_loop()
     frames, stop = queue_mod.Queue(), threading.Event()
+    from ishti.voice import stt_model
+    threading.Thread(target=stt_model, daemon=True).start()  # load Whisper while the owner starts talking (was ~2.3 s on turn 1)
     if LIVE["stop"]:
         LIVE["stop"].set()
     LIVE["stop"] = stop
@@ -425,13 +428,20 @@ async def live_ws(ws: WebSocket):
         if not stop.is_set():
             asyncio.run_coroutine_threadsafe(ws.send_text(json.dumps({"type": kind, "data": data}, default=str)), loop)
 
+    def send_audio(msg):  # the reply's voice plays in the browser: binary = 16-bit PCM, dict = format/stop
+        if stop.is_set():
+            return
+        coro = ws.send_bytes(msg) if isinstance(msg, bytes) else ws.send_text(json.dumps(msg))
+        asyncio.run_coroutine_threadsafe(coro, loop)
+    voice = RemoteTalker(send_audio)
+
     def on_command(text, on_token=None):
         res = ishti_handle(text, session_id=session_id, channel="voice", on_token=on_token,
                            on_event=lambda ev: send("trace", ev))
         send("reply", {"user": text, "reply": res["final_answer"], "session_id": res.get("session_id")})
         return res["final_answer"]
 
-    listener = wake.Listener(on_command, send, live=True)
+    listener = wake.Listener(on_command, send, live=True, talker=voice)
 
     def read_block():
         while not stop.is_set():
@@ -458,7 +468,7 @@ async def live_ws(ws: WebSocket):
         pass
     finally:
         stop.set()
-        talker().stop()
+        voice.close()
 
 
 @app.websocket("/ws")

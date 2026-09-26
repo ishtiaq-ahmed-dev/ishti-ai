@@ -23,6 +23,7 @@ class Talker:
         self.paused = False
         self.said = []                         # sentences fully played (for echo checks and "continue")
         self.pending = 0                       # sentences still being synthesised
+        self.first_audio = 0.0                 # set to None to time the next audio start (perf_counter)
         self.lock = threading.Lock()
         self.stream = None
         self.idle = threading.Event()
@@ -39,7 +40,7 @@ class Talker:
             self.pending += 1
             self.generation_texts.put((self.generation, text))
             self.idle.clear()
-            if self.worker is None:
+            if self.worker is None or not self.worker.is_alive():
                 self.worker = threading.Thread(target=self._synth_loop, daemon=True, name="talk-synth")
                 self.worker.start()
 
@@ -49,29 +50,43 @@ class Talker:
         import wave
         from ishti.voice import synthesize
         while True:
-            gen, text = self.generation_texts.get()
             try:
-                with wave.open(io.BytesIO(synthesize(text))) as wf:
-                    pcm, rate = np.frombuffer(wf.readframes(wf.getnframes()), np.int16), wf.getframerate()
-            except Exception as exc:
-                print(f"[talk] synthesis failed: {exc}")
-                pcm, rate = np.zeros(0, np.int16), 22050
-            with self.lock:
-                self.pending -= 1
-                if gen == self.generation:  # stop() since it was queued: drop it
-                    self.queue.append((text, pcm))
-                    self._ensure_stream(rate)
-            self._check_idle()
+                gen, text = self.generation_texts.get()
+                try:
+                    with wave.open(io.BytesIO(synthesize(text))) as wf:
+                        pcm, rate = np.frombuffer(wf.readframes(wf.getnframes()), np.int16), wf.getframerate()
+                except Exception as exc:
+                    print(f"[talk] synthesis failed: {exc}")
+                    pcm, rate = np.zeros(0, np.int16), 22050
+                with self.lock:
+                    self.pending -= 1
+                    if gen == self.generation:  # stop() since it was queued: drop it
+                        self.queue.append((text, pcm))
+                        if not self._ensure_stream(rate):  # no speaker: nothing will play it, don't wait for it
+                            self.queue.clear()
+                            self.said.append(text)
+                self._check_idle()
+            except Exception as loop_exc:
+                print(f"[talk] worker loop error: {loop_exc}")
+                self._check_idle()
 
     # ---- playing ----
     def _ensure_stream(self, rate):
         if self.stream is None or self.rate != rate:
             import sounddevice as sd
             if self.stream is not None:
-                self.stream.close()
+                try:
+                    self.stream.close()
+                except Exception:
+                    pass
             self.rate = rate
-            self.stream = sd.OutputStream(samplerate=rate, channels=1, dtype="int16", blocksize=BLOCK, callback=self._fill)
-            self.stream.start()
+            try:
+                self.stream = sd.OutputStream(samplerate=rate, channels=1, dtype="int16", blocksize=BLOCK, callback=self._fill)
+                self.stream.start()
+            except Exception as exc:
+                print(f"[talk] audio stream initialization failed ({exc})")
+                self.stream = None
+        return self.stream is not None
 
     def _fill(self, out, frames, _time, _status):
         out[:] = 0
@@ -85,6 +100,8 @@ class Talker:
                         break
                     self.text, self.current = self.queue.popleft()
                     self.pos = 0
+                    if self.first_audio is None:
+                        self.first_audio = time.perf_counter()  # latency probe: the reply is audible from here
                 take = min(frames - n, len(self.current) - self.pos)
                 out[n:n + take, 0] = self.current[self.pos:self.pos + take]
                 n, self.pos = n + take, self.pos + take
@@ -131,6 +148,49 @@ class Talker:
 
     def wait(self, timeout=None):
         return self.idle.wait(timeout)
+
+
+class RemoteTalker(Talker):
+    """A Talker whose speaker is a browser (Live mode): the same queue, pause, stop and echo bookkeeping, but the
+    audio goes out over the Live WebSocket in 40 ms chunks paced in real time, so pause/stop still act within a
+    chunk plus the browser's small jitter buffer. send(bytes | dict) must be thread-safe."""
+    STEP = 0.04
+
+    def __init__(self, send):
+        super().__init__()
+        self.send = send
+        self.closed = False
+
+    def _ensure_stream(self, rate):
+        if self.stream is None or self.rate != rate:
+            self.rate = rate
+            self.send({"type": "audio_format", "data": {"rate": rate}})
+            if self.stream is None:
+                self.stream = threading.Thread(target=self._pump, daemon=True, name="talk-remote")
+                self.stream.start()
+        return not self.closed
+
+    def _pump(self):
+        nxt = time.perf_counter()
+        while not self.closed:
+            n = int(self.rate * self.STEP)
+            if self.current is not None or self.queue:
+                out = np.zeros((n, 1), np.int16)
+                self._fill(out, n, None, None)
+                if not self.paused:
+                    self.send(out[:, 0].tobytes())
+            nxt += self.STEP
+            time.sleep(max(0.0, nxt - time.perf_counter()))
+            nxt = max(nxt, time.perf_counter() - self.STEP)  # after a stall, don't burst to catch up
+
+    def stop(self):
+        rest = super().stop()
+        self.send({"type": "audio_stop", "data": {}})  # drop what the browser has buffered, too
+        return rest
+
+    def close(self):
+        self.closed = True
+        super().stop()
 
 
 class Sentences:
@@ -204,4 +264,21 @@ if __name__ == "__main__":
     tk.pause(); time.sleep(0.3); tk.resume()
     rest = tk.stop() if time.time() - t0 > 0 else ""
     assert not tk.speaking
-    print(f"[self-check] talk OK - sentence split, echo filter, play/pause/stop (stopped with left: {rest!r})")
+
+    # Live mode: the browser is the speaker - audio streams in real time, stop tells it to drop its buffer
+    sent = []
+    rt = RemoteTalker(sent.append)
+    rt.say("Hello there. This is a test.")
+    assert rt.wait(15), "remote talker never finished"
+    secs = sum(len(m) for m in sent if isinstance(m, bytes)) / 2 / rt.rate
+    assert secs > 1.0 and {"type": "audio_format", "data": {"rate": rt.rate}} in sent, secs
+    rt.say("A long sentence that will be cut off in the middle by a barge in from the owner.")
+    time.sleep(1.2)
+    assert "barge" in rt.stop() and sent[-1] == {"type": "audio_stop", "data": {}} and not rt.speaking
+    rt.close()
+    mute = Talker()  # no speaker at all must not leave ISHTI "speaking" forever
+    mute._ensure_stream = lambda rate: False
+    mute.say("Nobody can hear this.")
+    assert mute.wait(15) and mute.said[-1] == "Nobody can hear this."
+    print(f"[self-check] talk OK - sentence split, echo filter, play/pause/stop (stopped with left: {rest!r}), "
+          f"browser voice streams and stops, no speaker never hangs")

@@ -21,8 +21,8 @@ const WORKLET = `class Pcm extends AudioWorkletProcessor {
 }
 registerProcessor("pcm", Pcm);`;
 
-/** Mode C - Live agent: continuous two-way voice. The only mode in which ISHTI speaks (on this PC's speakers);
- *  talk over it to interrupt. Each finished turn is handed to onTurn so it lands in the open chat. */
+/** Mode C - Live agent: continuous two-way voice. The only mode in which ISHTI speaks (in this browser, so it
+ *  works from a phone); talk over it to interrupt. Each finished turn is handed to onTurn so it lands in the open chat. */
 export function LiveMode({ sessionId, onTurn, onClose }: {
   sessionId: string | null;
   onTurn: (user: string, reply: string, sessionId?: string) => void;
@@ -37,23 +37,46 @@ export function LiveMode({ sessionId, onTurn, onClose }: {
   const turn = useRef(onTurn);
   turn.current = onTurn;
 
+  const session = useRef(sessionId);  // fixed for the call: a first turn creating the chat must not reconnect it
+
   useEffect(() => {
     let ws: WebSocket | null = null, ctx: AudioContext | null = null, stream: MediaStream | null = null, closed = false;
+    // ISHTI's voice plays here (not on the PC), chunk after chunk with a small jitter buffer; "audio_stop" = barge-in
+    const out = new AudioContext();
+    let rate = 22050, playAt = 0, playing: AudioBufferSourceNode[] = [];
+    const play = (buf: ArrayBuffer) => {
+      const pcm = new Int16Array(buf);
+      const ab = out.createBuffer(1, pcm.length, rate);
+      const ch = ab.getChannelData(0);
+      for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
+      const src = out.createBufferSource();
+      src.buffer = ab;
+      src.connect(out.destination);
+      if (playAt < out.currentTime + 0.02) playAt = out.currentTime + 0.1;
+      src.start(playAt);
+      playAt += ab.duration;
+      playing.push(src);
+      src.onended = () => { playing = playing.filter((p) => p !== src); };
+    };
     (async () => {
       try {
+        out.resume();
         stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } });
         ctx = new AudioContext({ sampleRate: 16000 });
         await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: "application/javascript" })));
         const node = new AudioWorkletNode(ctx, "pcm");
         ctx.createMediaStreamSource(stream).connect(node);
         const proto = location.protocol === "https:" ? "wss" : "ws";
-        ws = new WebSocket(`${proto}://${location.host}/ws/live${sessionId ? `?session=${encodeURIComponent(sessionId)}` : ""}`);
+        ws = new WebSocket(`${proto}://${location.host}/ws/live${session.current ? `?session=${encodeURIComponent(session.current)}` : ""}`);
         ws.binaryType = "arraybuffer";
         ws.onopen = () => { node.port.onmessage = (e) => ws?.readyState === WebSocket.OPEN && ws.send(e.data); };
         ws.onclose = () => { if (!closed) setError("Live connection closed."); };
         ws.onmessage = (e) => {
+          if (e.data instanceof ArrayBuffer) { play(e.data); return; }
           const { type, data } = JSON.parse(e.data);
-          if (type === "voice_state") setState(data.state);
+          if (type === "audio_format") rate = data.rate;
+          else if (type === "audio_stop") { playing.forEach((p) => { try { p.stop(); } catch {} }); playing = []; playAt = 0; }
+          else if (type === "voice_state") setState(data.state);
           else if (type === "stt_partial") setHeard(data.text);
           else if (type === "stt_final") { if (!data.ignored) { setHeard(data.text); setReply(""); setStep(""); } }
           else if (type === "trace") {
@@ -75,8 +98,9 @@ export function LiveMode({ sessionId, onTurn, onClose }: {
       ws?.close();
       stream?.getTracks().forEach((t) => t.stop());
       ctx?.close();
+      out.close();
     };
-  }, [sessionId]);
+  }, []);
 
   return (
     <motion.div role="dialog" aria-label="Live conversation" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}

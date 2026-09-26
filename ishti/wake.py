@@ -95,11 +95,12 @@ def stray(text):
 
 
 class Listener:
-    def __init__(self, on_command, on_event=None, live=False):
+    def __init__(self, on_command, on_event=None, live=False, talker=None):
         from openwakeword.model import Model
         from openwakeword.vad import VAD
         cfg = CONFIG["voice"]
         self.live = live                      # Live mode: no wake word, back to listening after every answer
+        self.talker = talker                  # who speaks: this PC's speakers (default) or a browser (Live)
         self.oww = Model(wakeword_models=[cfg["wake_model"]], inference_framework="onnx")
         self.burst, self.burst_quiet = [], 0  # speech burst being collected for wake-phrase spotting
         self.spot_vad = VAD()
@@ -289,9 +290,14 @@ class Listener:
         self.busy = True
         self.cancel = cancel = threading.Event()
         self.fg = task = {"background": False}
+        # latency probe (ms after the end of speech was detected; END_SILENCE of quiet came before that)
+        t0, lat = time.perf_counter(), {"end_silence": END_SILENCE * 80}
+        mark = lambda k: lat.setdefault(k, round((time.perf_counter() - t0) * 1000))
+        talker.first_audio = None
         try:
             self.state("thinking")
             text, wrong_name = self.command_text(audio)
+            mark("stt")
             if not text or stray(text):
                 self.on_event("stt_final", {"text": text, "ignored": True})
                 return
@@ -313,9 +319,12 @@ class Listener:
                     raise Cancelled
                 if task["background"]:  # the owner moved on: this answer is said whole when it is ready
                     return
+                mark("first_token")
                 if not speech.spoke:
                     self.state("speaking")
                 speech.feed(tok)
+                if speech.spoke:
+                    mark("first_sentence")
             try:
                 reply = self.on_command(text, on_token)
             except Cancelled:
@@ -325,10 +334,16 @@ class Listener:
             if task["background"]:
                 self._announce(text, reply, talker)
                 return
+            mark("reply")
             self.state("speaking")
             speech.flush(None if speech.spoke else reply)
+            mark("first_sentence")
             while talker.speaking and not cancel.is_set():
                 time.sleep(0.05)
+            if talker.first_audio:
+                lat["first_audio"] = round((talker.first_audio - t0) * 1000)
+            self.on_event("latency", lat)
+            print("[latency] " + " | ".join(f"{k} {v} ms" for k, v in lat.items()))
         finally:
             if self.fg is task:  # a background task finishing must not reset the command in front of it
                 self.busy = False
@@ -353,7 +368,7 @@ class Listener:
     def loop(self, read_block, stop: threading.Event):
         """The voice state machine over any audio source: read_block() -> 40 ms int16 block, or None when it ended."""
         from ishti.talk import talker
-        tk = talker()
+        tk = self.talker or talker()
         pair = []
         self.state("listening" if self.live else "idle")
         while not stop.is_set():
