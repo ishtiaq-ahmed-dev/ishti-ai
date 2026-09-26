@@ -43,6 +43,8 @@ LABELLED = [
     ("find me the cheapest samsung galaxy s25", "shopping"), ("i want to buy an iphone 16, compare prices", "shopping"),
     ("where can I buy a ps5 slim", "shopping"),
     ("analyze nvidia stock", "markets"), ("usd to pkr rate", "markets"), ("OGDC share price", "markets"),
+    (r"transcribe C:\Users\PC\Downloads\talk.mp3", "media"), ("record my screen for 2 minutes", "media"),
+    (r"resize C:\Users\PC\Pictures\photo.jpg to 800 px wide", "media"),
     ("git status of the ishti project", "dev"), ("run the tests", "dev"), ("lint the ishti project", "dev"),
     ("download https://example.com/report.pdf", "webtools"), ("watch https://example.com/jobs for changes", "webtools"),
     ("find duplicate files in downloads", "fileops"), ("rename the photos in downloads to trip", "fileops"),
