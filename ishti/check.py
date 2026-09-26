@@ -34,6 +34,8 @@ LABELLED = [
     ("trim the video holiday.mp4 to the first 30 seconds", "video"), ("how full is my disk", "system"),
     ("write a haiku about Peshawar rain", "chat"), ("write a poem about the weather", "chat"),
     ("is it going to snow in Murree this weekend", "weather"),
+    ("remind me in 20 minutes to call Ali", "reminders"), ("set a timer for 10 minutes", "reminders"),
+    ("list my reminders", "reminders"),
 ]
 
 

@@ -12,7 +12,7 @@ dispatcher (FastAPI, ishti/dispatcher.py)
    ├─ skill triggers (regex)  ─┐
    ├─ Laya typed decisions    ─┼→ skill  →  reply (+ Piper audio)
    └─ default: chat           ─┘
-          skills: memory · weather · web_search · deep_research · web_fetch · browser (MCP)
+          skills: memory · reminders · weather · web_search · deep_research · web_fetch · browser (MCP)
                   files · apps · system · video · chat
           memory: exact facts (SQLite)  >  semantic recall (ChromaDB)
 ```
@@ -92,6 +92,7 @@ Each skill is a folder with a manifest:
 | browser | open sites, read, click, fill forms | Playwright MCP + local LLM tool calls |
 | deep_research | explicitly requested research reports | multi-query search + parallel reading + relevance filter |
 | web_fetch | answer about a URL in the request | direct HTTP → local headless browser |
+| reminders | 'remind me in 20 min to…', 'at 5pm', 'tomorrow at 9', timers, list, cancel; fired by voice + HUD, missed ones announced at next start | SQLite + 1 s background loop |
 | owner | mute/unmute, who am I, what do you know about me, what can you do, run diagnostics | fact store + skill manifests + doctor |
 | chat | everything else; code questions use the coder model | Ollama |
 | files | find files on this PC by name/type/content | `desktop/computer_use.search_pc` |

@@ -493,6 +493,10 @@ function handleSystemEvent(type, data) {
   console.log('[EVENT]', type, data);
 
   switch (type) {
+    case 'assistant_message':  // exchanges that didn't start in this tab: voice commands, reminders
+      if (data.user) appendFeedMessage('user', (data.channel === 'voice' ? '🎤 ' : '') + data.user);
+      streamAnswerIntoFeed('ishti', data.reply || '', data.sources || [], data);
+      break;
     case 'view_navigate':
       if (data && (data.view || data.target_view)) {
         switchView(data.view || data.target_view);

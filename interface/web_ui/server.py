@@ -92,12 +92,22 @@ async def _capture_loop():
     global MAIN_LOOP
     MAIN_LOOP = asyncio.get_running_loop()
     from ishti import CONFIG
+    from ishti.skills.reminders.skill import start as start_reminders
+
+    def announce(msg):  # due reminders: HUD always, spoken unless the owner muted audio
+        sync_event_callback("assistant_message", {"reply": "⏰ " + msg})
+        if get_user_memory().get_preferences().audio_output:
+            from ishti.voice import speak as piper_speak
+            piper_speak(msg)
+
+    start_reminders(announce)
     if CONFIG["voice"].get("wake_enabled"):
         from ishti import wake
 
         def on_voice_command(text):
             res = ishti_handle(text, channel="voice")
-            sync_event_callback("task_completed_full", res)  # show the spoken exchange in the HUD
+            sync_event_callback("assistant_message", {"user": text, "reply": res["final_answer"],
+                                                      "sources": res.get("sources", []), "channel": "voice"})
             return res["final_answer"]
 
         wake.start(on_voice_command)

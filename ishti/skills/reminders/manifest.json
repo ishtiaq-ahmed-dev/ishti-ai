@@ -1,0 +1,9 @@
+{
+  "name": "reminders",
+  "version": "1.0.0",
+  "description": "Reminders and timers ('remind me in 20 minutes to...', 'at 5pm', 'tomorrow at 9', 'set a timer for 10 minutes', list, cancel). SQLite-backed; announced by voice and in the HUD; missed ones announced at next start.",
+  "route": "setting, listing or cancelling a reminder, timer or alarm",
+  "priority": 15,
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "status": "working"
+}
