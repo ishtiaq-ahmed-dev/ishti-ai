@@ -55,11 +55,13 @@ def _remember(text, reply, skill):
         print(f"[dispatcher] semantic memory write skipped: {exc}")
 
 
-def handle(text: str, session_id: str = None, channel: str = "text") -> dict:
+def handle(text: str, session_id: str = None, channel: str = "text", on_token=None) -> dict:
+    """on_token(str): optional live stream of the reply for skills that generate it token by token."""
     t0 = time.perf_counter()
     conv = get_conversation_manager()
     sid = session_id or conv.active_session_id or conv.new_chat("New Session")
     s = SESSIONS.setdefault(sid, {"id": sid, "history": [], "pending": None, "last_entity": None})
+    s["on_token"] = on_token
 
     pending, fix = s.get("pending"), CORRECTION.match(text.strip())
     wanted = fix and ALIASES.get(fix["skill"].lower(), fix["skill"].lower().replace(" ", "_"))

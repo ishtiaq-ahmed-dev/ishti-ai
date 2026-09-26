@@ -12,7 +12,7 @@ import asyncio
 import secrets
 from typing import Dict, Any, List
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
@@ -244,39 +244,62 @@ async def get_reflections():
 
 @app.post("/api/execute")
 async def execute_task(req: Request):
-    global last_execution_state, last_research_state
     body = await req.json()
     prompt = body.get("prompt", "").strip()
     session_id = body.get("session_id", "").strip() or None
     if not prompt:
         return JSONResponse({"error": "Empty prompt"}, status_code=400)
 
-    loop = asyncio.get_event_loop()
+    result = await asyncio.get_running_loop().run_in_executor(None, _execute, prompt, session_id)
+    # Broadcast stream_end with full payload for synchronized UI completion
+    await broadcast_event("task_completed_full", result)
+    return JSONResponse(result)
 
-    def run_sync():
-        res = ishti_handle(prompt, session_id=session_id)
+
+def _execute(prompt, session_id, on_token=None) -> dict:
+    """Dispatcher call shared by /api/execute and /api/execute_stream (runs in a worker thread)."""
+    global last_execution_state, last_research_state
+    try:
+        res = ishti_handle(prompt, session_id=session_id, on_token=on_token)
         # Speak the whole answer, not just its first line, when audio output is enabled.
         answer = res.get("final_answer", "")
         if answer and get_user_memory().get_preferences().audio_output:
             from ishti.voice import speak as piper_speak
             piper_speak(answer)
             res["spoken"] = True
-        return res
-
-    try:
-        result = await loop.run_in_executor(None, run_sync)
     except Exception as exc:
-        ErrorLogger.log_error(subsystem="SERVER", error=exc, user_prompt=prompt, context="execute_task endpoint")
-        result = {"error": str(exc), "final_answer": f"Server error: {str(exc)[:200]}"}
+        ErrorLogger.log_error(subsystem="SERVER", error=exc, user_prompt=prompt, context="execute endpoint")
+        res = {"error": str(exc), "final_answer": f"Server error: {str(exc)[:200]}"}
+    last_execution_state = res
+    if res.get("mode") == "DEEP_RESEARCH":
+        last_research_state = res
+    return res
 
-    last_execution_state = result
-    if result.get("mode") == "DEEP_RESEARCH":
-        last_research_state = result
 
-    # Broadcast stream_end with full payload for synchronized UI completion
-    await broadcast_event("task_completed_full", result)
+@app.post("/api/execute_stream")
+async def execute_stream(req: Request):
+    """NDJSON: {"token": "..."} lines while the reply is generated, then {"done": true, "result": {...}}."""
+    body = await req.json()
+    prompt = body.get("prompt", "").strip()
+    session_id = body.get("session_id", "").strip() or None
+    if not prompt:
+        return JSONResponse({"error": "Empty prompt"}, status_code=400)
+    loop = asyncio.get_running_loop()
+    tokens: asyncio.Queue = asyncio.Queue()
+    job = loop.run_in_executor(None, _execute, prompt, session_id,
+                               lambda t: loop.call_soon_threadsafe(tokens.put_nowait, t))
 
-    return JSONResponse(result)
+    async def lines():
+        while not (job.done() and tokens.empty()):
+            try:
+                yield json.dumps({"token": await asyncio.wait_for(tokens.get(), 0.1)}) + "\n"
+            except asyncio.TimeoutError:
+                continue
+        result = job.result()
+        await broadcast_event("task_completed_full", result)
+        yield json.dumps({"done": True, "result": result}, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(lines(), media_type="application/x-ndjson")
 
 
 # ========================================================

@@ -31,6 +31,8 @@ LABELLED = [
     ("research the best local LLMs for coding and write a report", "deep_research"),
     ("do an in-depth investigation into solid-state batteries", "deep_research"),
     ("summarize https://example.com for me", "web_fetch"),
+    ("write a haiku about Peshawar rain", "chat"), ("write a poem about the weather", "chat"),
+    ("is it going to snow in Murree this weekend", "weather"),
 ]
 
 

@@ -1,6 +1,7 @@
 """Single entry point to the local LLM (Ollama's OpenAI-compatible /v1 endpoint).
 Model names come from config.json, so models swap without code changes."""
 import re
+from types import SimpleNamespace
 
 from openai import OpenAI
 
@@ -43,15 +44,25 @@ def model_for(role: str) -> str:
     return name
 
 
-def chat(messages, role="planner", system=STYLE, tools=None, temperature=0.3, max_tokens=1024, **kw):
+def chat(messages, role="planner", system=STYLE, tools=None, temperature=0.3, max_tokens=1024, on_token=None, **kw):
     """Returns the OpenAI message object (has .content and .tool_calls).
-    max_tokens is always set: with tools the model can keep generating after its tool call."""
+    max_tokens is always set: with tools the model can keep generating after its tool call.
+    on_token(str) streams the reply as it is generated (plain replies only, not tool calls)."""
     msgs = ([{"role": "system", "content": system}] if system else []) + list(messages)
     args = dict(model=model_for(role), messages=msgs, temperature=temperature, max_tokens=max_tokens, **kw)
+    context = " ".join(str(m.get("content", "")) for m in messages if m.get("role") == "user")
     if tools:
         args["tools"] = tools
+    elif on_token:
+        text = ""
+        for chunk in _client.chat.completions.create(**args, stream=True):
+            delta = chunk.choices[0].delta.content if chunk.choices else None
+            if delta:
+                text += delta
+                on_token(delta)
+        return SimpleNamespace(content=clean(text, context), tool_calls=None)
     msg = _client.chat.completions.create(**args).choices[0].message
-    msg.content = clean(msg.content, " ".join(str(m.get("content", "")) for m in messages if m.get("role") == "user"))
+    msg.content = clean(msg.content, context)
     return msg
 
 

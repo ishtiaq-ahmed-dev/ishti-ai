@@ -10,8 +10,13 @@ from orchestrator.response_guard import inspect
 ARITHMETIC = re.compile(r"\d\s*(?:[-+*/x×^]|times|plus|minus|divided\s+by|multiplied\s+by|to\s+the\s+power\s+of)\s*\d", re.I)
 
 
+CREATIVE = re.compile(r"^\s*(?:please\s+)?(?:write|compose)\s+(?:me\s+)?(?:a|an|some)\s+(?:\w+\s+)?"
+                      r"(?:poem|haiku|story|song|joke|limerick|essay|letter|speech|toast|caption)s?\b", re.I)
+
+
 def match(text):
-    return bool(ARITHMETIC.search(text))
+    # arithmetic and creative writing: Laya zero-shot sends "a haiku about rain" to weather
+    return bool(ARITHMETIC.search(text) or CREATIVE.match(text))
 
 
 def build_context(text):
@@ -36,7 +41,8 @@ def run(text, session):
     ctx = build_context(text)
     msgs = session.get("history", [])[-12:] + [
         {"role": "user", "content": f"{ctx}\n\nOwner: {text}" if ctx else text}]
-    out = (llm.chat(msgs, role=role, max_tokens=2048 if role == "coder" else 1024).content or "").strip()
+    out = (llm.chat(msgs, role=role, max_tokens=2048 if role == "coder" else 1024,
+                    on_token=session.get("on_token")).content or "").strip()
     if not inspect(out)[0]:  # refusal / contamination -> one clean retry
         out = (llm.chat(msgs[-1:], role=role, temperature=0).content or "").strip()
     return {"reply": out or "No answer from the local model.", "sources": []}

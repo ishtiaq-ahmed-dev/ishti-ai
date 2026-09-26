@@ -383,12 +383,16 @@ def scratch_memory():
     USER_PROFILE_PATH, PREFERENCES_PATH, PROJECTS_PATH, CONTEXT_PATH = (os.path.join(tmp, os.path.basename(p)) for p in real)
     _user_memory_instance = None
     import orchestrator.deep_research as research  # research runs archive reports too
+    import orchestrator.memory.conversation as conversation  # ...and every request writes chat sessions
     real_research, research.RESEARCH_MEM_DIR = research.RESEARCH_MEM_DIR, tmp
+    real_conv = conversation._conversation_manager_instance
+    conversation._conversation_manager_instance = conversation.ConversationManager(os.path.join(tmp, "sessions"))
     try:
         yield tmp
     finally:
         USER_PROFILE_PATH, PREFERENCES_PATH, PROJECTS_PATH, CONTEXT_PATH = real
         research.RESEARCH_MEM_DIR = real_research
+        conversation._conversation_manager_instance = real_conv
         _user_memory_instance = None
         shutil.rmtree(tmp, ignore_errors=True)
 

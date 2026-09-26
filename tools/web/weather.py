@@ -43,13 +43,23 @@ def extract_city(prompt: str) -> Optional[str]:
     return candidate
 
 
-def which_day(prompt: str) -> int:
-    """0 = today, 1 = tomorrow. Anything else is out of scope and treated as today."""
+WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+
+def which_day(prompt: str, today: Optional[date] = None) -> int:
+    """Days from today: tomorrow, day after tomorrow, a weekday name, or the weekend (-> Saturday,
+    or today if it is already Sunday). Anything else = today. Open-Meteo covers 0-6."""
     p = prompt.lower()
+    if "day after tomorrow" in p:  # before "tomorrow", which it contains
+        return 2
     if "tomorrow" in p:
         return 1
-    if "day after tomorrow" in p:
-        return 2
+    dow = (today or date.today()).weekday()
+    if "weekend" in p:
+        return 0 if dow == 6 else (5 - dow) % 7
+    for i, name in enumerate(WEEKDAYS):
+        if name in p:
+            return (i - dow) % 7
     return 0
 
 
@@ -95,7 +105,7 @@ def get_weather(city: str, day_offset: int = 0, timeout: int = 10) -> Dict[str, 
         tmax = daily["temperature_2m_max"][day_offset]
         tmin = daily["temperature_2m_min"][day_offset]
         code = daily["weather_code"][day_offset]
-        when = {0: "Today", 1: "Tomorrow", 2: "The day after tomorrow"}.get(day_offset, "Soon")
+        when = {0: "Today", 1: "Tomorrow"}.get(day_offset) or "On " + date.fromisoformat(daily["time"][day_offset]).strftime("%A")
         condition = WMO.get(code, "mixed conditions")
 
         out.update({
@@ -118,6 +128,10 @@ def get_weather(city: str, day_offset: int = 0, timeout: int = 10) -> Dict[str, 
 if __name__ == "__main__":
     assert which_day("what's the weather tomorrow") == 1
     assert which_day("weather today") == 0
+    assert which_day("day after tomorrow") == 2, "must not be read as 'tomorrow'"
+    fri = date(2026, 9, 25)  # a Friday
+    assert which_day("rain this weekend?", fri) == 1 and which_day("weather on monday", fri) == 3
+    assert which_day("weekend weather", date(2026, 9, 27)) == 0  # already Sunday
     assert extract_city("weather in London tomorrow") == "London"
     assert extract_city("what's the weather tomorrow") is None, "must fall through to owner's city"
 

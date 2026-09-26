@@ -21,10 +21,6 @@ Each entry lists what's needed, why it's blocked, and what would have to change.
 - **Why deferred:** each route already works through the bridge. Splitting all six is a large rewrite with no user-visible gain today.
 - **Then delete:** `orchestrator/memory/capability_registry.py` + `capability_escalation.py` (800 LOC, replaced by skill manifests), `planner.py`, `intent_detector.py` (replaced by Laya).
 
-## 5. Streaming replies in the HUD
-- **Now:** new skills return the whole reply at once. The HUD's word-streaming animation is cosmetic.
-- **To change:** `llm.chat(stream=True)` plus a WebSocket event per chunk from the dispatcher (the HUD already listens on `/ws`).
-
 ## 6. Custom "hey ishti" wake word
 - **Now:** hands-free listening works (`ishti/wake.py`) with openWakeWord's pretrained **"hey jarvis"** model. Replies are spoken, and each exchange shows up in the HUD. No microphone is connected at the moment; the listener retries every 30 s.
 - **Need:** a "hey ishti" model.

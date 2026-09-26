@@ -4,12 +4,14 @@ import re
 from ishti.facts import get_facts
 from tools.web.weather import extract_city, get_weather, which_day
 
-TRIGGER = re.compile(r"\b(weather|forecast|temperature|rain(?:ing|y)?|snow(?:ing)?|humid(?:ity)?|"
-                     r"how\s+(?:hot|cold|warm))\b", re.I)
+# "rain"/"snow" alone are left to Laya: they also show up in poems and stories.
+TRIGGER = re.compile(r"\b(weather|forecast|temperature|how\s+(?:hot|cold|warm))\b|"
+                     r"\b(?:will|is|going\s+to|chance\s+of)\b.*\b(?:rain|snow|storm)", re.I)
+CREATIVE = re.compile(r"^\s*(?:please\s+)?(?:write|compose|draft|create|make|generate)\b", re.I)
 
 
 def match(text):
-    return bool(TRIGGER.search(text))
+    return bool(TRIGGER.search(text)) and not CREATIVE.match(text)
 
 
 def run(text, session):

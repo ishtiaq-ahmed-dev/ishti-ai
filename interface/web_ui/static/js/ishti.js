@@ -671,21 +671,45 @@ async function handleCommandSubmit(e) {
   updateAnswerStatus('THINKING / PLANNING', 'Classifying intent');
 
   try {
-    const res = await fetch('/api/execute', {
+    // NDJSON stream: {"token"} lines while the local model writes, then {"done", "result"}
+    const res = await fetch('/api/execute_stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: text, session_id: currentSessionId || '' })
     });
-    const data = await res.json();
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let pending = '', live = null, liveText = '', data = {};
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      pending += decoder.decode(value, { stream: true });
+      const lines = pending.split('\n');
+      pending = lines.pop();
+      for (const line of lines.filter(Boolean)) {
+        const msg = JSON.parse(line);
+        if (msg.token) {
+          if (!live) {
+            live = startAnswerBubble('ishti');
+            updateAnswerStatus('RESPONDING', 'Streaming from local model');
+          }
+          liveText += msg.token;
+          live.contentDiv.innerHTML = formatMarkdown(liveText);
+          document.getElementById('outputFeed').scrollTop = 1e9;
+        } else if (msg.done) {
+          data = msg.result;
+        }
+      }
+    }
 
     // Update session_id from backend response
     if (data.session_id) {
       currentSessionId = data.session_id;
     }
 
-    // Visual answer streaming
+    // Final answer: animate if nothing streamed, otherwise just settle the live bubble
     updateAnswerStatus('RESPONDING', 'Synthesizing output');
-    await streamAnswerIntoFeed('ishti', data.final_answer || 'Command executed.', data.sources || [], data);
+    await streamAnswerIntoFeed('ishti', data.final_answer || 'Command executed.', data.sources || [], data, live);
 
     // If deep research results returned, render them
     if (data.research) {
@@ -713,40 +737,44 @@ function appendFeedMessage(role, text) {
   feed.scrollTop = feed.scrollHeight;
 }
 
-// Smooth word/token streaming animation with cursor and expandable sources
-async function streamAnswerIntoFeed(role, fullText, sources = [], metadata = {}) {
+// Empty ISHTI answer bubble with a cursor; returns its parts so tokens can be written into it
+function startAnswerBubble(role) {
   const feed = document.getElementById('outputFeed');
-  if (!feed) return;
-
   const item = document.createElement('div');
   item.className = `feed-item ${role} msg-entrance`;
-  
   const header = document.createElement('strong');
   header.textContent = 'ISHTI:';
   item.appendChild(header);
-
   const contentDiv = document.createElement('div');
   contentDiv.className = 'msg-content streaming-answer';
   item.appendChild(contentDiv);
-
   const cursor = document.createElement('span');
   cursor.className = 'streaming-cursor';
   item.appendChild(cursor);
-
   feed.appendChild(item);
   feed.scrollTop = feed.scrollHeight;
+  return { item, contentDiv, cursor };
+}
 
-  // Stream text word-by-word with small smooth delay
-  const words = fullText.split(/(\s+)/);
-  let currentOutput = '';
-  
-  for (let i = 0; i < words.length; i++) {
-    currentOutput += words[i];
-    contentDiv.innerHTML = formatMarkdown(currentOutput);
-    feed.scrollTop = feed.scrollHeight;
-    // Fast, responsive 12ms delay per token/whitespace
-    if (i % 2 === 0) {
-      await new Promise(r => setTimeout(r, 14));
+// Smooth word/token streaming animation with cursor and expandable sources
+async function streamAnswerIntoFeed(role, fullText, sources = [], metadata = {}, live = null) {
+  const feed = document.getElementById('outputFeed');
+  if (!feed) return;
+  const { item, contentDiv, cursor } = live || startAnswerBubble(role);
+
+  if (live) {
+    contentDiv.innerHTML = formatMarkdown(fullText);  // already streamed live; show the final cleaned text
+  } else {
+    // Stream text word-by-word with small smooth delay
+    const words = fullText.split(/(\s+)/);
+    let currentOutput = '';
+    for (let i = 0; i < words.length; i++) {
+      currentOutput += words[i];
+      contentDiv.innerHTML = formatMarkdown(currentOutput);
+      feed.scrollTop = feed.scrollHeight;
+      if (i % 2 === 0) {
+        await new Promise(r => setTimeout(r, 14));
+      }
     }
   }
 
@@ -778,7 +806,7 @@ async function streamAnswerIntoFeed(role, fullText, sources = [], metadata = {})
       card.innerHTML = `
         <div class="source-card-header">
           <span class="source-card-domain">${escapeHtml(domain || 'WEB')}</span>
-          <span class="source-card-badge">VERIFIED</span>
+          ${src.verified ? '<span class="source-card-badge">VERIFIED</span>' : ''}
         </div>
         <div class="source-card-title">${escapeHtml(src.title || 'Source Title')}</div>
         <div class="source-card-snippet">${escapeHtml((src.snippet || src.content || '').slice(0, 140))}...</div>

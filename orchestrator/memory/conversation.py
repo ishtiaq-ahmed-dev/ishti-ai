@@ -33,7 +33,12 @@ class ConversationManager:
         return self.active_session_id
 
     def new_chat(self, title: str = "New Conversation") -> str:
-        """Creates a fresh chat session and makes it active."""
+        """Creates a fresh chat session and makes it active. An existing empty session is reused, so
+        page loads and repeated "new chat" clicks don't pile up empty sessions."""
+        latest = self.list_sessions()[:1]
+        if latest and not self.get_messages(latest[0]["session_id"]):
+            self.active_session_id = latest[0]["session_id"]
+            return self.active_session_id
         session_id = f"sess_{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
         session_data = {
             "session_id": session_id,
