@@ -279,10 +279,16 @@ class DeepResearchEngine:
         # The 3B fast model invents vague sub-queries ("AI"), which return front pages.
         model = self.model_router.get_model("primary")
 
+        # Every query must stay on the owner's actual subject. Unconstrained, the model produced tangents
+        # like "meaning of the phrase ..." and "user confusion when searching online".
         prompt = (
-            f"You are ISHTI's Research Planner. Break this topic into {count} distinct web search queries.\n"
-            f"Topic: '{topic}'\n"
-            f"Return ONLY {count} numbered queries (1. ... 2. ... 3. ...), no markdown."
+            f"Today is {time.strftime('%d %B %Y')}; if a query needs a year, use {time.strftime('%Y')}.\n"
+            f"Write {count} web search queries that find the facts needed to answer this request.\n"
+            f"Request: '{topic}'\n"
+            f"Rules: each query names the exact subject (product, event, person) from the request; cover "
+            f"different facts the answer needs (e.g. price, specs, date), not different topics; no queries about "
+            f"words, phrases, meanings or the request itself; short keyword-style queries.\n"
+            f"Return ONLY {count} numbered queries (1. ... 2. ...), no markdown."
         )
         queries = [topic]
         try:

@@ -20,7 +20,9 @@ def run(text, session):
     # the engine's own status events become Thinking-panel steps for this request
     _engine.event_callback = lambda kind, data: trace(session, kind, (data or {}).get("detail") or kind.replace("_", " "),
                                                     **{k: v for k, v in (data or {}).items() if k in ("queries", "state")})
-    res = _engine.run_deep_research(ground_dates(text))
+    fallback = session.get("route", {}).get("source") == "escalation"
+    # as a fallback for a plain question: 2 focused queries, not a 4-angle investigation
+    res = _engine.run_deep_research(ground_dates(text), max_queries=2 if fallback else 4)
     report = res.get("report", "")
     if session.get("route", {}).get("source") == "escalation":
         # used as a fallback for a plain question: the owner asked for an answer, not a report
