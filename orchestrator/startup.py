@@ -161,6 +161,11 @@ def main():
         print("\n[CRITICAL ERROR] Could not start Ollama. Please check installation.")
         sys.exit(1)
 
+    # Step 1b: local web search (SearXNG in Docker) - without it search falls back to poor providers
+    print("  [1b]  Checking local search (SearXNG)...", end="", flush=True)
+    from tools.web.search import ensure_searxng
+    print(" [ONLINE]" if ensure_searxng() else " [OFFLINE] -> web search will use fallback providers")
+
     # Step 2: Model
     active_model = check_model_responsiveness(router)
 

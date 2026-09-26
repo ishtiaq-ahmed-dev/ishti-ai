@@ -34,6 +34,54 @@ DEFAULT_HEADERS = {
 }
 
 
+SEARXNG_CONTAINER = "ishti-searxng"
+DOCKER_DESKTOP = r"C:\Program Files\Docker\Docker\Docker Desktop.exe"
+_heal = {"last": 0.0}
+
+
+def ensure_searxng(wait_s: float = 90) -> bool:
+    """Degraded-mode self-heal: start the SearXNG container, launching Docker Desktop first if its engine is
+    down (after a reboot neither is running and search silently fell back to poor providers)."""
+    import subprocess
+    import time
+    url = SearxngSearchProvider.URL + "/healthz"
+    ok = lambda: requests.get(url, timeout=2).status_code == 200
+    try:
+        if ok():
+            return True
+    except Exception:
+        pass
+    flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    run = lambda *a: subprocess.run(["docker", *a], capture_output=True, text=True, timeout=30, creationflags=flags)
+    try:
+        if run("info").returncode != 0 and os.path.isfile(DOCKER_DESKTOP):
+            subprocess.Popen([DOCKER_DESKTOP], close_fds=True)
+        deadline = time.time() + wait_s
+        while time.time() < deadline:
+            if run("start", SEARXNG_CONTAINER).returncode == 0:
+                break
+            time.sleep(3)
+        while time.time() < deadline:
+            try:
+                if ok():
+                    return True
+            except Exception:
+                pass
+            time.sleep(1.5)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return False
+
+
+def heal_in_background():
+    """At most one self-heal attempt every 10 minutes, never blocking the search that noticed the outage."""
+    import threading
+    import time
+    if time.time() - _heal["last"] > 600:
+        _heal["last"] = time.time()
+        threading.Thread(target=ensure_searxng, daemon=True).start()
+
+
 class SearxngSearchProvider(WebSearchProvider):
     """Local SearXNG metasearch (Docker, ishti/searxng/settings.yml). Aggregates Google, Brave,
     DuckDuckGo, Wikipedia... Scraping Bing directly now returns unrelated pages (it matched only
@@ -58,7 +106,8 @@ class SearxngSearchProvider(WebSearchProvider):
             r.raise_for_status()
             hits = r.json().get("results", [])
         except Exception as exc:
-            print(f"[SearXNG] unavailable ({type(exc).__name__}); falling back")
+            print(f"[SearXNG] unavailable ({type(exc).__name__}); falling back and starting it in the background")
+            heal_in_background()
             return []
         return [WebSearchResult(title=h.get("title", ""), url=h["url"], snippet=h.get("content", "")[:400],
                                 publication_date=h.get("publishedDate") or "",
