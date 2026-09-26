@@ -7,13 +7,25 @@ import { DeleteButton } from "@/components/rare/delete-button";
 import { AnimatedCounter } from "@/components/rare/animated-counter";
 import { ThemeSwitch } from "@/components/ThemeToggle";
 
-export function Page({ title, subtitle, action, children }: { title: string; subtitle?: string; action?: ReactNode; children: ReactNode }) {
+export function Page({
+  title,
+  subtitle,
+  action,
+  children,
+  className = "max-w-[1560px]",
+}: {
+  title: string;
+  subtitle?: string;
+  action?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
   return (
     <div className="scroll-thin h-full overflow-y-auto">
-      <div className="mx-auto max-w-4xl px-8 py-7">
-        <div className="mb-6 flex items-end justify-between">
+      <div className={`mx-auto w-full px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-7 ${className}`}>
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold">{title}</h1>
+            <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
             {subtitle && <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>}
           </div>
           {action}
@@ -61,7 +73,7 @@ export function Memory() {
   const groups = facts.reduce<Record<string, Fact[]>>((acc, f) => ((acc[f.entity] ??= []).push(f), acc), {});
   return (
     <Page title="Memory" subtitle="Exact facts ISHTI looks up before anything else. Updated in place, never duplicated.">
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {Object.entries(groups).map(([entity, rows], i) => (
           <motion.div key={entity} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
             <Card>

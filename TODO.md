@@ -24,8 +24,11 @@ Worked top to bottom. Each item is checked only after it has been verified by us
 
 ## D. Files: organize by content, not only by extension
 - [x] Folder questions count subfolders too and skip Office lock files (after organizing, "how many pdfs" said 1)
-- [ ] Detect audio-only .mp4/.webm with ffprobe → Audio, not Videos (the owner's Videos folder got audio files)
-- [ ] Organize by name and content: read text from PDFs/docs (first page), group by topic (invoices, company mail, university …), preview → yes → move, with undo
+- [x] Detect audio-only .mp4/.webm with ffprobe → Audio, not Videos (the owner's Videos folder got audio files)
+- [x] Organize by name and content: read text from PDFs/docs (first page), group by topic (invoices, company mail, university …), preview → yes → move, with undo
+
+## H. Chat history (owner request)
+- [ ] Recent chats in the sidebar (clean list, newest first); click to reopen a chat with its messages; new chat button
 
 ## E. Shopping: best price from verified stores
 - [ ] "Find me a <product>" → search official and verified stores (the manufacturer, and big retailers for PK and international), pull prices and links, and return a comparison table sorted by price, with the cheapest highlighted

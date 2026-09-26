@@ -32,7 +32,9 @@ WORDS = {"pdf": "PDFs", "document": "Documents", "doc": "Documents", "spreadshee
          "movie": "Videos", "audio": "Audio", "song": "Audio", "music": "Audio", "archive": "Archives",
          "zip": "Archives", "installer": "Installers", "setup": "Installers", "exe": "Installers", "code": "Code"}
 SKIP = {".crdownload", ".part", ".partial", ".tmp", ".download", ".opdownload"}
-ORGANIZE = re.compile(r"\b(?:arrange|organi[sz]e|clean\s*up|tidy(?:\s+up)?|sort(?:\s+out)?)\b", I)
+ORGANIZE = re.compile(r"\b(?:arrange|(?:re)?organi[sz]e|clean\s*up|tidy(?:\s+up)?|sort(?:\s+out)?)\b", I)
+SMART = re.compile(r"\b(?:by|using|with)\s+(?:the\s+|their\s+)?(?:file\s+)?(?:names?|contents?|topics?|subjects?)\b|"
+                   r"\b(?:contents?|properly|related|topics?|smart|reorgani[sz]e|audios?)\b", I)
 UNDO = re.compile(r"^undo\b(?:.*\b(?:organi|arrang|clean|sort|that|last|it)\w*)?\W*$", I)
 ASK = re.compile(r"\b(?:how\s+many|count|list|show|what(?:'s|\s+is|\s+are)|largest|biggest|newest|latest|"
                  r"oldest|recent)\b", I)
@@ -206,6 +208,16 @@ def run(text, session):
         kinds[kind_of(e.name)] = kinds.get(kind_of(e.name), 0) + 1
     trace(session, "scan", f"open {name} ({len(scanned)} files)", folder=path, count=len(scanned),
           kinds=kinds, sample=[e.name for e in scanned[:12]])
+    if ORGANIZE.search(t) and SMART.search(t):
+        from ishti.skills.folders.smart import smart_plan
+        moves, summary = smart_plan(path, trace=lambda n, label, **kw: trace(session, n, label, **kw))
+        if not moves:
+            return {"reply": f"{name} is already organized by content - nothing to move.", "sources": []}
+        session["pending"] = {"skill": "folders", "moves": moves, "name": name}
+        trace(session, "plan", f"plan {len(moves)} moves into {len(summary)} topic folders", status="waiting", groups=summary)
+        top = ", ".join(f"{k} {v}" for k, v in sorted(summary.items(), key=lambda kv: -kv[1])[:12])
+        return {"reply": f"Plan for {name}, by name and content: move {len(moves)} files - {top}. "
+                         "Nothing is deleted or overwritten, and it can be undone. Go ahead? (yes/no)", "sources": []}
     if ORGANIZE.search(t):
         moves = plan_moves(path)
         if not moves:
