@@ -3,6 +3,7 @@ Screenshot/coordinate clicking needs a local vision model - logged in NEEDS.md."
 import json
 import os
 import re
+import threading
 import uuid
 
 from ishti import llm
@@ -35,6 +36,8 @@ MAX_STEPS = 10
 # Profile 10, whatsapp = Profile 9, or the isolated fallback). Fine for one request at a time; the
 # upgrade path is passing the server through _loop/_call if requests ever run concurrently.
 SERVER = "browser"
+# One page per Chrome profile: parallel tasks take turns in the browser (re-entrant for WhatsApp -> browser).
+LOCK = threading.RLock()
 
 
 def use_server(name, session):
@@ -189,6 +192,11 @@ def _loop(session, msgs, log, steps_left):
 
 
 def run(text, session, server="browser", start_url=None, hint="", start_snapshot=None):
+    with LOCK:
+        return _run_locked(text, session, server, start_url, hint, start_snapshot)
+
+
+def _run_locked(text, session, server, start_url, hint, start_snapshot):
     p = session.get("pending")
     use_server(p["server"] if p and p.get("skill") == "browser" and p.get("server") else server, session)
     if p and p.get("skill") == "browser":

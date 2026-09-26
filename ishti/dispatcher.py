@@ -59,6 +59,38 @@ def seed_owner():
         print(f"[dispatcher] owner seed skipped: {exc}")
 
 
+class View(dict):
+    """One request's view of a chat session. Its live trace, token stream and route are its own; everything
+    else (history, pending question, last entity...) reads and writes through to the shared session. Lets
+    several requests of one chat, and the parallel steps of one plan, run at once without mixing streams."""
+    OWN = ("trace", "on_token", "route")
+
+    def __init__(self, shared, **own):
+        super().__init__({k: own.get(k) for k in self.OWN})
+        self.shared = shared
+
+    def __getitem__(self, k):
+        return super().__getitem__(k) if k in self.OWN else self.shared[k]
+
+    def __setitem__(self, k, v):
+        super().__setitem__(k, v) if k in self.OWN else self.shared.__setitem__(k, v)
+
+    def __contains__(self, k):
+        return k in self.OWN or k in self.shared
+
+    def get(self, k, default=None):
+        return super().get(k, default) if k in self.OWN else self.shared.get(k, default)
+
+    def setdefault(self, k, default=None):
+        return super().setdefault(k, default) if k in self.OWN else self.shared.setdefault(k, default)
+
+    def pop(self, k, *default):
+        return super().pop(k, *default) if k in self.OWN else self.shared.pop(k, *default)
+
+
+INFLIGHT = {}  # session id -> threading.Condition guarding its count of running requests
+
+
 def _remember(text, reply, skill):
     try:
         from ishti.semantic import get_semantic
@@ -174,8 +206,7 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
     t0 = time.perf_counter()
     conv = get_conversation_manager()
     sid = session_id or conv.active_session_id or conv.new_chat("New Session")
-    s = SESSIONS.setdefault(sid, {"id": sid, "history": [], "pending": None, "last_entity": None})
-    s["on_token"] = on_token
+    shared = SESSIONS.setdefault(sid, {"id": sid, "history": [], "pending": None, "last_entity": None})
     events = []  # kept with the answer so a reopened chat still shows its thinking and graph
 
     def trace(**ev):
@@ -183,8 +214,28 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
         events.append({k: v for k, v in ev.items() if k not in ("sample", "results")})
         if on_event:
             on_event(ev)
-    s["trace"] = trace
+    s = View(shared, trace=trace, on_token=on_token)
     s["trace"](type="received", text=text, channel=channel)
+
+    # Independent requests of one chat run at once; a follow-up, a yes/no or a correction waits for the
+    # requests already running, because it is about their answer.
+    from ishti.skills import answer_of
+    cond = INFLIGHT.setdefault(sid, threading.Condition())
+    with cond:
+        if shared.get("running") and (FOLLOW_UP.search(text) or CORRECTION.match(text.strip()) or answer_of(text)):
+            s["trace"](type="tool", name="wait", label="waiting for your earlier request to finish first", status="start")
+            cond.wait_for(lambda: not shared.get("running"), timeout=600)
+            s["trace"](type="tool", name="wait", label="earlier request finished", status="done")
+        shared["running"] = shared.get("running", 0) + 1
+    try:
+        return _handle(text, sid, conv, s, events, t0, channel)
+    finally:
+        with cond:
+            shared["running"] -= 1
+            cond.notify_all()
+
+
+def _handle(text, sid, conv, s, events, t0, channel):
 
     pending, fix = s.get("pending"), CORRECTION.match(text.strip())
     wanted = fix and ALIASES.get(fix["skill"].lower(), fix["skill"].lower().replace(" ", "_"))
@@ -197,15 +248,15 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
         if pending:  # a real follow-up, not an answer to the skill's question: drop the question
             s["pending"] = None
         text = contextualize(text, s)
-        if (planner.candidate(text) and not (SKILLS.get("browser") and SKILLS["browser"].matches(text))
-                and (steps := planner.plan(text, SKILLS))):  # a browser task already covers "…and tell me what's there"
+        if planner.candidate(text, SKILLS, s) and (steps := planner.plan(text, SKILLS)):
             dec = {"skill": "plan", "confidence": 1.0, "source": "planner", "steps": steps}
         else:
             dec = route(text, SKILLS)
     s["trace"](type="route", skill=dec["skill"], source=dec.get("source"), confidence=dec.get("confidence"),
                why=why(dec), scores=dec.get("scores", []), steps=dec.get("steps", []))
     if dec["skill"] == "plan":
-        name, out = "plan", planner.run(steps, s, lambda t, d: _run(t, s, d)[1])
+        # each step gets its own view (own route, no token stream): independent steps run in parallel
+        name, out = "plan", planner.run(steps, s, lambda t, d: _run(t, View(s.shared, trace=s["trace"]), d)[1])
     else:
         name, out, dec = _run(text, s, dec)
         tried, current = {name}, name

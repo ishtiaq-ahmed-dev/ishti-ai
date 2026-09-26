@@ -1,23 +1,46 @@
-"""Multi-skill plans: "check the latest Ollama version and remember it" -> web_search, then memory.
-Only requests with a connector followed by an action verb pay for the LLM planning call; the
-planner may still answer with one step, in which case normal routing takes over."""
+"""Multi-skill plans: "check the latest Ollama version and remember it" -> web_search, then memory;
+"check the weather and edit the latest video in downloads" -> weather and video, run in parallel.
+Only requests that look like several tasks pay for the LLM planning call; the planner may still
+answer with one step, in which case normal routing takes over."""
+import concurrent.futures as cf
 import json
 import re
 
 from ishti import llm
 
-# ponytail: connector+verb regex as the gate (Laya zero-shot scored 0/4 on multi-task detection).
-# Upgrade path: a Laya noul "several tasks?" once the fine-tuned checkpoint exists (NEEDS.md #1).
 GATE = re.compile(r"\b(?:and|then|also|after\s+that|afterwards)\s+(?:then\s+|also\s+)?(?:please\s+)?"
                   r"(?:tell|open|find|search|check|remember|save|note|show|get|launch|start|summari[sz]e|read|"
-                  r"write|look|give|set|forget|research|play|compare|translate|what|what's|how|where|when|who)\b",
-                  re.I)
+                  r"write|look|give|set|forget|research|play|compare|translate|edit|organi[sz]e|remind|send|buy|"
+                  r"download|install|trim|make|create|what|what's|how|where|when|who)\b", re.I)
+# Clause boundaries for multi-task detection: connectors and sentence ends.
+CLAUSE = re.compile(r"\s*(?:,?\s*\b(?:and\s+(?:also|then)|and|also|then|after\s+that|plus)\b|[;.!?]+(?:\s+|$))\s*", re.I)
+READS = {"browser", "web_search", "web_fetch", "chat", "whatsapp"}  # "open X and tell me what's there" is one browser task
 MAX_STEPS = 4
 PREV = "{prev}"
 
 
-def candidate(text):
-    return len(text.split()) >= 6 and bool(GATE.search(text))
+def clause_skills(text, skills):
+    """Laya (with the deterministic triggers first) routes each clause on its own; [(clause, skill)].
+    Laya zero-shot scored 0/4 when asked "is this several tasks?" about the whole message, but it routes
+    single-task clauses well, so several clauses landing on different skills is the multi-task signal."""
+    from ishti.router import route
+    parts = [p for p in CLAUSE.split(text) if p and len(p.split()) >= 2]
+    return [(p, route(p, skills)["skill"]) for p in parts[:6]] if len(parts) >= 2 else []
+
+
+def candidate(text, skills=None, session=None):
+    if len(text.split()) < 6:
+        return False
+    if not skills:
+        return bool(GATE.search(text))
+    found = clause_skills(text, skills)
+    kinds = {k for _, k in found if k}
+    several = len(kinds - {"chat"}) >= 2 or (bool(GATE.search(text)) and len(kinds) >= 2)
+    if several and kinds <= READS and skills.get("browser") and skills["browser"].matches(text):
+        several = False  # one browser task that also reads the page
+    if several and session is not None and session.get("trace"):
+        session["trace"](type="tool", name="split", label="several tasks: " + ", ".join(f"{k} ({c[:40]})" for c, k in found))
+    return several
 
 
 def plan(text, skills):
@@ -40,12 +63,22 @@ def plan(text, skills):
 
 
 def run(steps, session, run_step):
-    """run_step(text, decision) -> skill output. Stops early if a step waits for the owner (a pending
-    confirmation), so nothing after an unconfirmed action runs."""
+    """run_step(text, decision) -> skill output. Steps that don't use {prev} are independent and run in
+    parallel; a chain runs in order and stops if a step waits for the owner (a pending confirmation), so
+    nothing after an unconfirmed action runs."""
+    dec = lambda i, step: {"skill": step["skill"], "confidence": 1.0, "source": "plan", "step": i}
+    if not any(PREV in s["request"] for s in steps):
+        # ponytail: one thread per step; model calls still queue on the single GPU, but web, files, APIs and
+        # the browser overlap. Browser steps serialize on the browser skill's own lock.
+        with cf.ThreadPoolExecutor(len(steps)) as pool:
+            outs = list(pool.map(lambda p: run_step(p[1]["request"], dec(*p)), enumerate(steps, 1)))
+        replies = [f"**{i}. {s['request'][:70]}**\n{o['reply']}" for i, (s, o) in enumerate(zip(steps, outs), 1)]
+        return {"reply": "\n\n".join(replies), "sources": [x for o in outs for x in o.get("sources", [])],
+                "mode": "PLAN", "steps": steps}
     replies, sources, prev = [], [], ""
     for i, step in enumerate(steps, 1):
         text = step["request"].replace(PREV, prev[:400])
-        out = run_step(text, {"skill": step["skill"], "confidence": 1.0, "source": "plan", "step": i})
+        out = run_step(text, dec(i, step))
         replies.append(out["reply"])
         sources += out.get("sources", [])
         prev = out["reply"]
@@ -68,5 +101,15 @@ if __name__ == "__main__":
     assert calls[1] == ("memory", "remember ollama latest is R1") and out["reply"] == "R1\n\nR2", (calls, out)
     s = {"pending": None}
     stop = lambda text, dec: (s.update(pending={"skill": "browser"}) or {"reply": "Go ahead?", "sources": []})
-    assert "Waiting" in run([{"skill": "browser", "request": "a"}, {"skill": "chat", "request": "b"}], s, stop)["reply"]
+    assert "Waiting" in run([{"skill": "browser", "request": "a"}, {"skill": "chat", "request": f"b {PREV}"}], s, stop)["reply"]
+    import threading
+    import time
+    seen = []
+    slow = lambda text, dec: (seen.append(threading.get_ident()), time.sleep(0.3)) and {} or {"reply": text.upper(), "sources": []}
+    t = time.time()
+    out = run([{"skill": "weather", "request": "weather today"}, {"skill": "video", "request": "list videos"}], {}, slow)
+    assert time.time() - t < 0.5 and len(set(seen)) == 2, "independent steps must run in parallel"
+    assert out["reply"].index("WEATHER TODAY") < out["reply"].index("LIST VIDEOS")
+    assert [p for p in CLAUSE.split("check the weather today and also edit the video. then remind me at 5") if p] == [
+        "check the weather today", "edit the video", "remind me at 5"]
     print("[self-check] planner OK - gate, {prev} chaining, stops at a pending confirmation")

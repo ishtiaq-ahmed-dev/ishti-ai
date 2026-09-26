@@ -52,6 +52,11 @@ def unread(snap):
 
 
 def run(text, session):
+    with browser.LOCK:
+        return _run(text, session)
+
+
+def _run(text, session):
     p = session.get("pending")
     if p and p.get("skill") == "browser":  # yes/no to a send the browser engine asked about
         return browser.run(text, session)

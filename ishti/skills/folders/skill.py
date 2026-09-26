@@ -38,6 +38,8 @@ SMART = re.compile(r"\b(?:by|using|with)\s+(?:the\s+|their\s+)?(?:file\s+)?(?:na
 UNDO = re.compile(r"^undo\b(?:.*\b(?:organi|arrang|clean|sort|that|last|it)\w*)?\W*$", I)
 ASK = re.compile(r"\b(?:how\s+many|count|list|show|what(?:'s|\s+is|\s+are)|largest|biggest|newest|latest|"
                  r"oldest|recent)\b", I)
+VIDEO_EDIT = re.compile(r"\b(?:edit|trim|cut|compress|caption|subtitle|overlay|title|reframe)\b.*\bvideos?\b|"
+                        r"\bvideos?\b.*\b(?:edit|trim|cut|compress|caption|subtitle|overlay|reframe)\b", I)
 UNDO_DIR = os.path.join(ROOT, "data", "undo")
 
 
@@ -127,6 +129,8 @@ def match(text):
     t = text.strip()
     if UNDO.match(t):
         return True
+    if not ORGANIZE.search(t) and VIDEO_EDIT.search(t):  # "edit the latest video in downloads" is the video skill's
+        return False
     return bool((ORGANIZE.search(t) or ASK.search(t)) and folder_in(t)[1])
 
 

@@ -50,6 +50,11 @@ LABELLED = [
 def main():
     bad = [n for n, s in d.SKILLS.items() if s.status == "broken"]
     assert not bad, f"broken skills: {[(n, d.SKILLS[n].problem) for n in bad]}"
+    # parallel requests of one chat: own trace/stream, shared history and pending question
+    shared = {"history": [], "pending": None}
+    a, b = d.View(shared, trace="A"), d.View(shared, trace="B", on_token=print)
+    a["pending"] = {"skill": "video"}
+    assert b["pending"] == shared["pending"] and b.get("trace") == "B" and a.get("on_token") is None
 
     if CONFIG["router"]["use_laya"]:
         router.route("warm up", d.SKILLS)  # first call loads the checkpoint
