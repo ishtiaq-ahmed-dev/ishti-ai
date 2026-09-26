@@ -43,6 +43,8 @@ LABELLED = [
     ("find me the cheapest samsung galaxy s25", "shopping"), ("i want to buy an iphone 16, compare prices", "shopping"),
     ("where can I buy a ps5 slim", "shopping"),
     ("analyze nvidia stock", "markets"), ("usd to pkr rate", "markets"), ("OGDC share price", "markets"),
+    ("take a screenshot", "desktop"), ("set volume to 30", "desktop"), ("install gimp", "desktop"),
+    ("lock my pc", "desktop"), ("what is using the most memory", "desktop"),
     ("i study in imsciences", "owner"), ("where i stid ?", "owner"), ("what semester am i in?", "owner"),
     ("why your response is late", "owner"), ("check my whatsap and let me know which chat is unread", "whatsapp"),
 ]
