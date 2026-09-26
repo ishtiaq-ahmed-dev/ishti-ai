@@ -214,17 +214,19 @@ TESTS = {"A": test_A, "B": test_B, "C": test_C, "D": test_D, "E": test_E, "F": t
          "G": test_G, "H": test_H, "I": test_I, "J": test_J, "K": test_K, "L": test_L}
 
 if __name__ == "__main__":
+    from orchestrator.memory.user_profile import scratch_memory
     wanted = [a.upper() for a in sys.argv[1:]] or list(TESTS)
-    engine = ExecutionEngine()
     print("=" * 70)
     print("ISHTI END-TO-END ACCEPTANCE TESTS - real stack, no mocks")
     print("=" * 70)
 
-    for key in wanted:
-        try:
-            TESTS[key](engine)
-        except Exception as exc:
-            check(f"{key}: raised {type(exc).__name__}", False, str(exc)[:200])
+    with scratch_memory():  # writes (audio toggle etc.) go to a temp copy of the owner's memory
+        engine = ExecutionEngine()
+        for key in wanted:
+            try:
+                TESTS[key](engine)
+            except Exception as exc:
+                check(f"{key}: raised {type(exc).__name__}", False, str(exc)[:200])
 
     passed = sum(1 for r in RESULTS if r["passed"])
     print("\n" + "=" * 70)

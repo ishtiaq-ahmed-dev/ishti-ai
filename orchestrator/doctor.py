@@ -428,23 +428,24 @@ class IshtiDoctor:
         except Exception as e:
             self._log_result("E2E", "TEST 15: Owner commands (show memory)", False, str(e))
 
-        # Test 16: Remember command
-        try:
-            engine = ExecutionEngine()
-            result = engine.process_request("remember my favorite color is blue")
-            passed = result.get("mode") == "OWNER_COMMAND" and "Remembered" in result.get("final_answer", "")
-            self._log_result("E2E", "TEST 16: Remember command", passed, "Memory stored")
-        except Exception as e:
-            self._log_result("E2E", "TEST 16: Remember command", False, str(e))
+        # Tests 16-17: Remember / forget, against a temp copy of the owner's memory (AUDIT.md B7)
+        from orchestrator.memory.user_profile import scratch_memory
+        with scratch_memory():
+            try:
+                engine = ExecutionEngine()
+                result = engine.process_request("remember my favorite color is blue")
+                passed = result.get("mode") == "OWNER_COMMAND" and "Remembered" in result.get("final_answer", "")
+                self._log_result("E2E", "TEST 16: Remember command", passed, "Memory stored")
+            except Exception as e:
+                self._log_result("E2E", "TEST 16: Remember command", False, str(e))
 
-        # Test 17: Forget command
-        try:
-            engine = ExecutionEngine()
-            result = engine.process_request("forget favorite color")
-            passed = result.get("mode") == "OWNER_COMMAND"
-            self._log_result("E2E", "TEST 17: Forget command", passed, "Memory removed")
-        except Exception as e:
-            self._log_result("E2E", "TEST 17: Forget command", False, str(e))
+            try:
+                engine = ExecutionEngine()
+                result = engine.process_request("forget favorite color")
+                passed = result.get("mode") == "OWNER_COMMAND"
+                self._log_result("E2E", "TEST 17: Forget command", passed, "Memory removed")
+            except Exception as e:
+                self._log_result("E2E", "TEST 17: Forget command", False, str(e))
 
         # Test 18: Visible browser trigger detection
         try:

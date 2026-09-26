@@ -29,10 +29,6 @@ Each entry lists what's needed, why it's blocked, and what would have to change.
 - **Now:** voice is push-to-talk (HUD mic button → local whisper).
 - **To change:** wire `voice/wake_word.py` (energy threshold) or openWakeWord (open-source, CPU) to record → `ishti.voice.transcribe` → `dispatcher.handle(channel="voice")` → `ishti.voice.speak`. Needs a background audio thread in the server process.
 
-## 7. Tests that write to production memory
-- `orchestrator/doctor.py` tests 16-17 and `orchestrator/test_capabilities.py` still write "Test Project" / "my favorite color is blue" into the real owner memory (AUDIT B7).
-- **To change:** point them at a temp directory, the way `ishti/check.py` does.
-
 ## 8. Remote access hardening
 - The server binds 127.0.0.1 only. `/api/facts` (DELETE) and `/api/voice` have no auth, which is fine on localhost. If the Cloudflare tunnel in `remote/tunnel_setup.md` is ever enabled, Cloudflare Access must sit in front of it, or a bearer token must be added to the dispatcher routes first.
 

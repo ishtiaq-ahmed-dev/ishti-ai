@@ -6,7 +6,10 @@ Stores and retrieves stable owner profile, preferences, projects, and context.
 import os
 import re
 import json
+import shutil
+import tempfile
 import time
+from contextlib import contextmanager
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, asdict, field
 
@@ -365,6 +368,29 @@ def get_user_memory() -> UserMemory:
     if _user_memory_instance is None:
         _user_memory_instance = UserMemory()
     return _user_memory_instance
+
+
+@contextmanager
+def scratch_memory():
+    """For tests: owner-memory reads and writes go to a temp copy; the real files are never touched.
+    (Tests used to overwrite the owner's real role and add junk projects/notes - AUDIT.md B7.)"""
+    global USER_PROFILE_PATH, PREFERENCES_PATH, PROJECTS_PATH, CONTEXT_PATH, _user_memory_instance
+    real = (USER_PROFILE_PATH, PREFERENCES_PATH, PROJECTS_PATH, CONTEXT_PATH)
+    tmp = tempfile.mkdtemp(prefix="ishti_mem_")
+    for p in real:
+        if os.path.exists(p):
+            shutil.copy(p, tmp)
+    USER_PROFILE_PATH, PREFERENCES_PATH, PROJECTS_PATH, CONTEXT_PATH = (os.path.join(tmp, os.path.basename(p)) for p in real)
+    _user_memory_instance = None
+    import orchestrator.deep_research as research  # research runs archive reports too
+    real_research, research.RESEARCH_MEM_DIR = research.RESEARCH_MEM_DIR, tmp
+    try:
+        yield tmp
+    finally:
+        USER_PROFILE_PATH, PREFERENCES_PATH, PROJECTS_PATH, CONTEXT_PATH = real
+        research.RESEARCH_MEM_DIR = real_research
+        _user_memory_instance = None
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 if __name__ == "__main__":

@@ -372,7 +372,8 @@ class CapabilityTestSuite:
         def capture(event_type, data):
             events.append(event_type)
         engine.event_callback = capture
-        
+        engine.confirmation_callback = lambda task: True  # the test plays the human; unattended = deny
+
         result = engine.process_request("test")
         expected_events = ["task_started", "task_finished", "execution_started", "execution_finished"]
         return all(e in events for e in expected_events)
@@ -486,6 +487,8 @@ def run_tests():
 
 
 if __name__ == "__main__":
-    results = run_tests()
+    from orchestrator.memory.user_profile import scratch_memory
+    with scratch_memory():  # tests write profile/projects/notes; never into the owner's real memory
+        results = run_tests()
     # Exit with error code if any tests failed
     sys.exit(0 if results["failed"] == 0 else 1)
