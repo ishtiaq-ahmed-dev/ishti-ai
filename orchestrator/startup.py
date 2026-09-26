@@ -1,0 +1,235 @@
+"""
+ISHTI Startup Sequence & Health-Check Orchestrator
+Executes the startup sequence:
+1. Environment & GPU verification
+2. Ollama health-check & auto-start
+3. Model responsiveness test (auto re-benchmark if unresponsive)
+4. Animated terminal HUD display
+5. Launch Web UI server & Voice Listener
+6. TTS Audio Announcement
+7. Open dedicated Chrome browser window to Web UI
+"""
+
+import os
+import sys
+import time
+import subprocess
+import requests
+import webbrowser
+
+ROOT_DIR = r"D:\ISHTI"
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+from orchestrator.model_router import ModelRouter
+from voice.tts import speak, speakable
+from orchestrator.memory.user_profile import get_user_memory
+from orchestrator.memory.capability_registry import get_capability_registry
+
+CHROME_EXE = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+PROFILE_DIR = r"D:\ISHTI\data\chrome_profile"
+
+
+def print_banner():
+    banner = r"""
+  ========================================================================
+    ___ ____  _   _ _____ ___ 
+   |_ _/ ___|| | | |_   _|_ _|    ISHTI - INTELLIGENT PERSONAL ASSISTANT
+    | |\___ \| |_| | | |  | |     100% Local Inference • Zero Ongoing Cost
+    | | ___) |  _  | | |  | |     RTX 5070 Ti (16GB GDDR7) • Intel Ultra 9
+   |___|____/|_| |_| |_| |___|    Filesystem & Profile Isolation Enforced
+  ========================================================================
+    """
+    print(banner)
+
+
+def check_ollama(router: ModelRouter) -> bool:
+    print("  [1/6] Checking Ollama Service...", end="", flush=True)
+    try:
+        r = requests.get(f"{router.host}/api/tags", timeout=3)
+        if r.status_code == 200:
+            print(" [ONLINE]")
+            return True
+    except Exception:
+        pass
+
+    print(" [OFFLINE] -> Launching Ollama daemon...", end="", flush=True)
+    try:
+        subprocess.Popen(
+            ["ollama", "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+        for _ in range(8):
+            time.sleep(1.0)
+            try:
+                r = requests.get(f"{router.host}/api/tags", timeout=2)
+                if r.status_code == 200:
+                    print(" [READY]")
+                    return True
+            except Exception:
+                continue
+    except Exception as e:
+        print(f" [FAILED: {e}]")
+        return False
+    return False
+
+
+def check_model_responsiveness(router: ModelRouter) -> str:
+    print("  [2/6] Checking Active Model Responsiveness...", end="", flush=True)
+    model = router.get_model("primary")
+    try:
+        t0 = time.time()
+        res = requests.post(
+            f"{router.host}/api/generate",
+            json={"model": model, "prompt": "ping", "stream": False},
+            timeout=10,
+        )
+        if res.status_code == 200:
+            elapsed = round(time.time() - t0, 2)
+            print(f" [{model} OK ({elapsed}s)]")
+            return model
+    except Exception as e:
+        print(f" [WARN: {model} failed ({e})]")
+
+    print("        Triggering automatic model re-benchmark...", flush=True)
+    router.run_full_benchmark(reason="startup_health_check_failed")
+    return router.get_model("primary")
+
+
+def check_web_ui() -> bool:
+    print("  [3/6] Checking Web UI Server...", end="", flush=True)
+    try:
+        r = requests.get("http://127.0.0.1:8888/api/status", timeout=2)
+        if r.status_code == 200:
+            print(" [ACTIVE (http://127.0.0.1:8888)]")
+            return True
+    except Exception:
+        pass
+
+    print(" [STARTING]...", end="", flush=True)
+    python_exe = os.path.join(ROOT_DIR, "venv", "Scripts", "python.exe")
+    server_script = os.path.join(ROOT_DIR, "interface", "web_ui", "server.py")
+    subprocess.Popen(
+        [python_exe, server_script],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+    )
+    for _ in range(8):
+        time.sleep(1.0)
+        try:
+            r = requests.get("http://127.0.0.1:8888/api/status", timeout=2)
+            if r.status_code == 200:
+                print(" [ONLINE]")
+                return True
+        except Exception:
+            continue
+    print(" [FAILED]")
+    return False
+
+
+def launch_browser():
+    print("  [4/6] Launching Isolated Chrome Window...", end="", flush=True)
+    if os.path.exists(CHROME_EXE):
+        subprocess.Popen([
+            CHROME_EXE,
+            f"--user-data-dir={PROFILE_DIR}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--app=http://127.0.0.1:8888",
+        ])
+        print(" [LAUNCHED]")
+    else:
+        webbrowser.open("http://127.0.0.1:8888")
+        print(" [DEFAULT BROWSER]")
+
+
+def announce_readiness(model: str):
+    print("  [5/6] Voice Synthesis Announcement...", end="", flush=True)
+    greeting = f"All systems online. I am ISHTI. Running locally on your RTX 5070 Ti with {model.split(':')[0]}. Standing by."
+    print(" [SPOKEN]")
+    speak(greeting, wait=False)
+
+
+def main():
+    print_banner()
+    router = ModelRouter()
+
+    # Step 1: Ollama
+    if not check_ollama(router):
+        print("\n[CRITICAL ERROR] Could not start Ollama. Please check installation.")
+        sys.exit(1)
+
+    # Step 2: Model
+    active_model = check_model_responsiveness(router)
+
+    # Step 3: Web UI
+    if not check_web_ui():
+        print("\n[WARNING] Web UI could not start. Falling back to terminal REPL.")
+
+    # Step 4: Chrome
+    launch_browser()
+
+    # Step 5: Voice Announcement
+    announce_readiness(active_model)
+
+    # Step 6: Probe what ISHTI can actually do right now, so the registry holds measured
+    # state instead of "unknown" and can justify any refusal it ever makes.
+    print("  [6/6] Probing live capabilities...", end="", flush=True)
+    try:
+        probes = get_capability_registry().probe_all(include_browser=False)
+        ok = sum(1 for v in probes.values() if v["ok"])
+        print(f" [{ok}/{len(probes)} healthy]")
+        for name, res in probes.items():
+            if not res["ok"]:
+                print(f"        - {name}: {res['detail'][:70]}")
+    except Exception as e:
+        print(f" [SKIPPED: {e}]")
+
+    print("\n" + "=" * 72)
+    print("  ISHTI IS READY FOR INSTRUCTIONS")
+    print("  Web HUD: http://127.0.0.1:8888")
+    print("  Type commands below, or speak into your microphone.")
+    print("  Press Ctrl+C to stop.")
+    print("=" * 72 + "\n")
+
+    # Interactive CLI REPL
+    from orchestrator.crew import ExecutionEngine
+    engine = ExecutionEngine()
+
+    while True:
+        try:
+            prompt = input("ISHTI> ").strip()
+            if not prompt:
+                continue
+            if prompt.lower() in ["exit", "quit", "shutdown"]:
+                print("Shutting down ISHTI. Goodbye!")
+                speak("Shutting down. Goodbye.", wait=True)
+                break
+            if prompt.lower() in ["rebenchmark", "benchmark"]:
+                print("Running full model benchmark...")
+                router.run_full_benchmark(reason="cli_user_request")
+                continue
+
+            print(f"\n[Processing]: {prompt}")
+            # Same entry point as the Web UI. Calling execute_plan directly here used to
+            # skip intent routing, memory injection and the response guard, so the terminal
+            # and the HUD behaved differently for the same question.
+            res = engine.process_request(prompt)
+            answer = res.get("final_answer", "")
+            print("\n[ISHTI Response]:")
+            print(answer)
+            if answer and get_user_memory().get_preferences().audio_output:
+                speak(speakable(answer), wait=False)
+            print("-" * 50 + "\n")
+        except KeyboardInterrupt:
+            print("\nSession paused. Goodbye!")
+            break
+        except Exception as e:
+            print(f"\n[Error]: {e}\n")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,92 @@
+{
+  "assistant_name": "ISHTI",
+  "tagline": "Your Personal AI Assistant",
+  "version": "1.0.0",
+  "cost_model": "Zero Ongoing Fees (100% Local Inference)",
+  "ollama": {
+    "host": "http://127.0.0.1:11434",
+    "fast_model": "llama3.2:3b",
+    "primary_model": "qwen2.5:14b",
+    "fallback_model": "deepseek-r1:8b",
+    "coding_model": "qwen2.5:14b",
+    "last_benchmark": "2026-09-24T17:54:20",
+    "benchmark_scores": {
+      "llama3.2:3b": {
+        "json_tool": 100,
+        "planning": 100,
+        "speed_wps": 0.0,
+        "latency_s": 0.0,
+        "avg_latency_s": 0.55,
+        "quality_score": 100
+      },
+      "qwythos-9b:latest": {
+        "json_tool": 25,
+        "planning": 100,
+        "speed_wps": 0.0,
+        "latency_s": 0.0,
+        "avg_latency_s": 9.12,
+        "quality_score": 55
+      },
+      "qwen-27b:latest": {
+        "json_tool": 25,
+        "planning": 100,
+        "speed_wps": 0.0,
+        "latency_s": 0.0,
+        "avg_latency_s": 15.57,
+        "quality_score": 55
+      },
+      "deepseek-r1:8b": {
+        "json_tool": 100,
+        "planning": 100,
+        "speed_wps": 0.0,
+        "latency_s": 0.0,
+        "avg_latency_s": 4.33,
+        "quality_score": 100
+      },
+      "qwen2.5:14b": {
+        "json_tool": 100,
+        "planning": 100,
+        "speed_wps": 0.0,
+        "latency_s": 0.0,
+        "avg_latency_s": 2.51,
+        "quality_score": 100
+      }
+    }
+  },
+  "hardware": {
+    "cpu": "Intel Core Ultra 9 (24 Cores + NPU)",
+    "gpu": "NVIDIA GeForce RTX 5070 Ti (16GB VRAM)",
+    "ram": "64GB DDR5"
+  },
+  "browser": {
+    "profile_dir": "D:\\ISHTI\\data\\chrome_profile",
+    "executable_path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "headless": false,
+    "user_agent_prefix": "ISHTI-Agentic-Browser"
+  },
+  "security": {
+    "sandbox_root": "D:\\ISHTI",
+    "profile_isolation": true,
+    "confirm_consequential_actions": true,
+    "consequential_action_types": [
+      "send_message",
+      "publish_post",
+      "purchase_or_pay",
+      "delete_file",
+      "execute_shell"
+    ]
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8888
+  },
+  "voice": {
+    "wake_word": "ishti",
+    "whisper_model": "base",
+    "whisper_device": "cuda",
+    "tts_engine": "sapi5",
+    "tts_rate": 185,
+    "tts_volume": 1.0,
+    "listen_enabled": true
+  }
+}

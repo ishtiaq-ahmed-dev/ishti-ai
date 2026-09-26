@@ -1,0 +1,14 @@
+# environment
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# runtime data: browser profile, sessions, logs, media, models (personal / large)
+data/
+models/
+
+# runtime memory: personal facts, notes, sessions, research archives
+orchestrator/memory/*.json
+orchestrator/memory/**/*.json
+orchestrator/memory/reflections.md

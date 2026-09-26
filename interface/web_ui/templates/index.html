@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ISHTI - Your Personal AI Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Orbitron:wght@600;800;900&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/ishti.css">
+  <link rel="icon" type="image/jpeg" href="/static/ishti_logo.jpg">
+</head>
+<body>
+
+  <!-- Top HUD Header -->
+  <header class="hud-header">
+    <div class="brand-section">
+      <img src="/static/ishti_logo.jpg" alt="ISHTI Core" class="brand-logo">
+      <div class="brand-text">
+        <h1>ISHTI</h1>
+        <p>Personal AI Assistant • Autonomous Neural Core</p>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="nav-tab active" data-view="viewChat">
+        <span>💬</span> CHAT
+      </button>
+      <button class="nav-tab" data-view="viewExecutions" id="tabExecutions">
+        <span>⚡</span> EXECUTIONS <span class="nav-badge" id="badgeExecCount">0</span>
+      </button>
+      <button class="nav-tab" data-view="viewResearch" id="tabResearch">
+        <span>🌐</span> RESEARCH <span class="nav-badge" id="badgeResearchCount">0</span>
+      </button>
+      <button class="nav-tab" data-view="viewSkills">
+        <span>🧠</span> SKILLS
+      </button>
+      <button class="nav-tab" data-view="viewMemory">
+        <span>📜</span> MEMORY
+      </button>
+      <button class="nav-tab" data-view="viewDoctor">
+        <span>🩺</span> DOCTOR
+      </button>
+      <button class="nav-tab" data-view="viewErrors">
+        <span>🪵</span> ERROR LOG
+      </button>
+    </nav>
+
+    <!-- Telemetry Badges -->
+    <div class="telemetry-badges">
+      <div class="badge online">
+        <span class="indicator-dot"></span>
+        <span>OLLAMA: ONLINE</span>
+      </div>
+      <div class="badge model" id="badgeModel">
+        <span>MODEL: LOCAL RUNTIME</span>
+      </div>
+      <div class="badge cost">
+        <span>$0.00 / ZERO ONGOING FEES</span>
+      </div>
+      <div class="badge isolation">
+        <span>PROFILE ISOLATION: ACTIVE</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========================================================
+       PAGE 1: MAIN CHAT VIEW (with session sidebar)
+       ======================================================== -->
+  <main class="view-container active" id="viewChat">
+
+    <!-- Left Panel: Sessions + Hardware -->
+    <aside class="glass-panel" style="gap:12px;">
+      <!-- Session History Panel -->
+      <div class="panel-title">
+        <span>💬 Chat Sessions</span>
+        <button id="btnNewChat" class="btn-new-chat" title="Start a new conversation">+ NEW</button>
+      </div>
+      <div class="sessions-list" id="sessionsList">
+        <div style="color:var(--text-dim);font-size:11px;">Loading sessions...</div>
+      </div>
+
+      <div style="border-top:1px solid rgba(0,240,255,0.12);margin:6px 0;"></div>
+
+      <div class="panel-title">
+        <span>Hardware & Telemetry</span>
+        <span style="font-size: 10px; color: var(--gold-accent);">RTX 5070 Ti</span>
+      </div>
+
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-label">GPU Model</div>
+          <div class="metric-val" style="font-size:11px; color:var(--cyan-glow);">RTX 5070 Ti</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">VRAM Capacity</div>
+          <div class="metric-val">16 GB GDDR7</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Host CPU</div>
+          <div class="metric-val" style="font-size:10.5px;">Ultra 9 (24C+NPU)</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">System RAM</div>
+          <div class="metric-val">64 GB DDR5</div>
+        </div>
+      </div>
+
+      <div class="panel-title" style="margin-top: 10px;">
+        <span>Model Routing Matrix</span>
+        <button id="btnRebenchmark" style="background:transparent;border:1px solid var(--border-neon);color:var(--cyan-glow);border-radius:4px;padding:2px 8px;font-size:9.5px;cursor:pointer;">REBENCHMARK</button>
+      </div>
+
+      <div class="metric-card" style="margin-bottom: 8px;">
+        <div class="metric-label">Primary Agent Model</div>
+        <div class="metric-val" id="valModel" style="color:var(--cyan-glow);font-size:12.5px;">Detecting...</div>
+      </div>
+
+      <div class="metric-card" style="margin-bottom: 8px;">
+        <div class="metric-label">Fast Classifier Model</div>
+        <div class="metric-val" id="valFastModel" style="color:var(--gold-accent);font-size:12.5px;">Detecting...</div>
+      </div>
+    </aside>
+
+    <!-- Center View: Core Reactor & Chat -->
+    <section class="central-view">
+
+      <!-- Holographic Core Reactor -->
+      <div class="reactor-wrapper" id="reactorWrapper" title="Click to toggle voice listening">
+        <div class="reactor-ring-outer"></div>
+        <div class="reactor-ring-inner"></div>
+        <canvas id="audioVisualizer"></canvas>
+        <div class="reactor-core idle" id="reactorCore">
+          <span style="font-size: 26px; filter: drop-shadow(0 0 8px var(--cyan-glow));">⚡</span>
+          <span class="core-status-text" id="coreStatusText">STANDBY</span>
+        </div>
+      </div>
+
+      <!-- Real-Time Answer State Indicator -->
+      <div id="answerStatusContainer" style="display:none;">
+        <div class="answer-status-pill" id="answerStatusPill">
+          <span class="indicator-dot"></span>
+          <span id="answerStatusText">SEARCHING WEB</span>
+        </div>
+      </div>
+
+      <!-- Output Feed with Streaming Text Animation -->
+      <div class="output-feed" id="outputFeed">
+        <div class="feed-item ishti msg-entrance">
+          <strong>ISHTI:</strong>
+          <div>Greetings. I am ISHTI, your personal artificial intelligence assistant. System runtime is active on your RTX 5070 Ti at zero ongoing cost. Connected to real-time internet search, computer control, video editing, and deep research. Speak or enter a command below.</div>
+        </div>
+      </div>
+
+      <!-- JARVIS Quick Capabilities Action Bar -->
+      <div class="quick-capabilities-bar" style="display:flex; gap:8px; margin-bottom:8px; overflow-x:auto; padding:2px 0;">
+        <button type="button" class="quick-chip" onclick="document.getElementById('cmdInput').value='search on pc for reflections.md'; document.getElementById('btnTransmit').click();" style="background:rgba(0,240,255,0.08); border:1px solid rgba(0,240,255,0.3); color:var(--cyan-glow); border-radius:12px; padding:4px 10px; font-size:11px; cursor:pointer; white-space:nowrap;">🔍 Search PC</button>
+        <button type="button" class="quick-chip" onclick="document.getElementById('cmdInput').value='check system telemetry'; document.getElementById('btnTransmit').click();" style="background:rgba(0,240,255,0.08); border:1px solid rgba(0,240,255,0.3); color:var(--cyan-glow); border-radius:12px; padding:4px 10px; font-size:11px; cursor:pointer; white-space:nowrap;">⚡ Hardware Status</button>
+        <button type="button" class="quick-chip" onclick="document.getElementById('cmdInput').value='trim video test_sample.mp4 from 00:00:01 to 00:00:03'; document.getElementById('btnTransmit').click();" style="background:rgba(255,183,3,0.08); border:1px solid rgba(255,183,3,0.3); color:var(--gold-accent); border-radius:12px; padding:4px 10px; font-size:11px; cursor:pointer; white-space:nowrap;">🎬 Video Editing</button>
+        <button type="button" class="quick-chip" onclick="document.getElementById('cmdInput').value='open notepad'; document.getElementById('btnTransmit').click();" style="background:rgba(0,240,255,0.08); border:1px solid rgba(0,240,255,0.3); color:var(--cyan-glow); border-radius:12px; padding:4px 10px; font-size:11px; cursor:pointer; white-space:nowrap;">🖥️ Launch App</button>
+        <button type="button" class="quick-chip" onclick="document.getElementById('cmdInput').value='Open the browser and search for RTX 5070 Ti drivers'; document.getElementById('btnTransmit').click();" style="background:rgba(0,240,255,0.08); border:1px solid rgba(0,240,255,0.3); color:var(--cyan-glow); border-radius:12px; padding:4px 10px; font-size:11px; cursor:pointer; white-space:nowrap;">🌐 Visible Browser</button>
+      </div>
+
+      <!-- Command Bar -->
+      <form class="command-bar" id="cmdForm">
+        <input type="text" class="cmd-input" id="cmdInput" placeholder="Command ISHTI (e.g. 'What is the latest version of Python?' or 'Research the latest autonomous AI agent projects')..." autocomplete="off">
+        <button type="button" class="btn-icon" id="voiceToggleBtn" title="Voice Input (Speech-to-Text)">
+          🎙️
+        </button>
+        <button type="submit" class="btn-primary" id="btnTransmit">
+          TRANSMIT
+        </button>
+      </form>
+
+    </section>
+
+    <!-- Right Panel: Quick Skills & Recent Reflections -->
+    <aside class="glass-panel">
+      <div class="panel-title">
+        <span>Skill Memory ("Learn Once")</span>
+      </div>
+      <div class="skills-list" id="skillsList">
+        <div style="color:var(--text-dim);font-size:11px;">Loading skills...</div>
+      </div>
+
+      <div class="panel-title" style="margin-top: 14px;">
+        <span>Reflections Audit Log</span>
+      </div>
+      <div class="reflections-box" id="reflectionsLog" style="max-height: 220px;">
+        Loading reflections...
+      </div>
+    </aside>
+
+  </main>
+
+
+  <!-- ========================================================
+       PAGE 2: DEDICATED EXECUTIONS VIEW
+       ======================================================== -->
+  <main class="view-container" id="viewExecutions">
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      
+      <!-- Execution Header Card -->
+      <div class="exec-header">
+        <div>
+          <div style="font-size:10px; color:var(--cyan-glow); font-family:var(--font-mono); text-transform:uppercase;">Live DAG Execution View</div>
+          <div class="exec-task-title" id="execTaskTitle">No active execution</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="badge online" id="execStatusBadge">IDLE</div>
+        </div>
+      </div>
+
+      <!-- Live Progress Bar -->
+      <div>
+        <div style="display:flex; justify-content:space-between; font-size:11px; font-family:var(--font-mono);">
+          <span>PROGRESS</span>
+          <span id="execProgressText">0%</span>
+        </div>
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill" id="execProgressFill"></div>
+        </div>
+      </div>
+
+      <!-- Agent Status Badges -->
+      <div class="agent-status-row">
+        <div class="agent-badge active" id="agentPlanner">🧠 Planner Agent: READY</div>
+        <div class="agent-badge" id="agentResearcher">🌐 Research Agent: STANDBY</div>
+        <div class="agent-badge" id="agentBrowser">🖥️ Browser Agent: STANDBY</div>
+        <div class="agent-badge" id="agentVerifier">🛡️ Verification Agent: STANDBY</div>
+      </div>
+
+      <!-- Interactive Clickable DAG Canvas -->
+      <div class="dag-canvas-card">
+        <div class="panel-title">
+          <span>Execution DAG Stages (Click Node to Inspect)</span>
+          <span style="font-size:10px; color:var(--text-dim);">Topological Order</span>
+        </div>
+        <div id="execStagesContainer" style="display:flex; flex-direction:column; gap:12px;">
+          <div style="color:var(--text-dim); font-size:12px; text-align:center; padding:20px;">
+            Awaiting prompt to construct execution plan...
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Side: Live Event Log Stream -->
+    <aside class="glass-panel">
+      <div class="panel-title">
+        <span>Live Execution Event Stream</span>
+        <button id="btnClearLog" style="background:transparent;border:none;color:var(--text-dim);cursor:pointer;font-size:10px;">CLEAR</button>
+      </div>
+      <div class="event-log-stream" id="eventLogStream">
+        <div class="log-entry">
+          <span class="log-ts">00:00:00</span>
+          <span>Execution engine online and listening.</span>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+
+  <!-- ========================================================
+       PAGE 3: DEDICATED DEEP RESEARCH VIEW
+       ======================================================== -->
+  <main class="view-container" id="viewResearch">
+    
+    <!-- Left Column: Queries & Source Cards -->
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      
+      <!-- Research Status Card -->
+      <div class="glass-panel" style="padding:14px;">
+        <div class="panel-title">
+          <span>Research Topic</span>
+          <span class="badge model" id="researchStatusBadge">IDLE</span>
+        </div>
+        <div id="researchTopicText" style="font-family:var(--font-hud); font-size:13px; color:#fff; margin-bottom:8px;">
+          No active research.
+        </div>
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill" id="researchProgressFill"></div>
+        </div>
+      </div>
+
+      <!-- Formulated Search Queries -->
+      <div class="glass-panel" style="padding:14px;">
+        <div class="panel-title">
+          <span>Formulated Search Queries</span>
+        </div>
+        <div class="research-queries-list" id="researchQueriesList">
+          <div style="color:var(--text-dim); font-size:11px;">Awaiting research query formulation...</div>
+        </div>
+      </div>
+
+      <!-- Verified Source Cards Grid -->
+      <div class="glass-panel" style="flex:1; padding:14px;">
+        <div class="panel-title">
+          <span>Verified Online Sources (<span id="researchSourcesCount">0</span>)</span>
+        </div>
+        <div id="researchSourcesGrid" style="display:flex; flex-direction:column; gap:8px; max-height:360px; overflow-y:auto;">
+          <div style="color:var(--text-dim); font-size:11px;">No sources gathered yet.</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Column: Final Synthesized Report -->
+    <section class="glass-panel">
+      <div class="panel-title">
+        <span>Deep Research Verified Report</span>
+        <button id="btnCopyReport" style="background:transparent;border:1px solid var(--border-neon);color:var(--cyan-glow);border-radius:4px;padding:3px 10px;font-size:10px;cursor:pointer;">COPY REPORT</button>
+      </div>
+      <div class="research-report-card" id="researchReportContent">
+        <p style="color:var(--text-dim); text-align:center; padding:40px 0;">
+          Launch a research query (e.g. <em>"Research the latest open-source autonomous AI agent projects"</em>) to see the live investigation and report.
+        </p>
+      </div>
+    </section>
+
+  </main>
+
+
+  <!-- ========================================================
+       PAGE 4: DOCTOR DIAGNOSTICS VIEW
+       ======================================================== -->
+  <main class="view-container" id="viewDoctor">
+    <section class="glass-panel">
+      <div class="panel-title">
+        <span>ISHTI System Diagnostics &amp; Health Probe</span>
+        <button class="btn-primary" id="btnRunDoctor">RUN FULL DIAGNOSTICS</button>
+      </div>
+      <div style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center;">
+        <div style="font-size:12px; color:var(--text-dim);" id="docLastRunText">Probe status: Ready</div>
+        <div class="badge online" id="docOverallBadge">STATUS: HEALTHY</div>
+      </div>
+      <div class="doctor-grid" id="doctorCardsGrid">
+        <!-- Filled dynamically -->
+      </div>
+    </section>
+  </main>
+
+
+  <!-- ========================================================
+       PAGE 5: SKILLS EXPLORER VIEW
+       ======================================================== -->
+  <main class="view-container" id="viewSkills">
+    <section class="glass-panel">
+      <div class="panel-title">
+        <span>Learned Skills Registry ("Learn Once")</span>
+        <span style="font-size:11px; color:var(--cyan-glow);">Persistent Memory</span>
+      </div>
+      <div id="skillsFullGrid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:14px; margin-top:10px;">
+        <!-- Filled dynamically -->
+      </div>
+    </section>
+  </main>
+
+
+  <!-- ========================================================
+       PAGE 6: MEMORY & REFLECTIONS VIEW
+       ======================================================== -->
+  <main class="view-container" id="viewMemory">
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; width:100%;">
+      
+      <!-- Reflections Self-Healing Log -->
+      <section class="glass-panel">
+        <div class="panel-title">
+          <span>Self-Healing Reflections &amp; Audit Log</span>
+        </div>
+        <div class="reflections-box" id="memoryReflectionsBox" style="max-height:75vh; height:75vh;">
+          Loading reflections...
+        </div>
+      </section>
+
+      <!-- Research Memory Archives -->
+      <section class="glass-panel">
+        <div class="panel-title">
+          <span>Saved Research Memory Archives</span>
+        </div>
+        <div id="researchArchiveList" style="display:flex; flex-direction:column; gap:10px; max-height:75vh; overflow-y:auto;">
+          <div style="color:var(--text-dim); font-size:12px;">No research memory archives found.</div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+
+  <!-- ========================================================
+       PAGE 7: ERROR LOG VIEW
+       ======================================================== -->
+  <main class="view-container" id="viewErrors">
+    <section class="glass-panel" style="width:100%;">
+      <div class="panel-title">
+        <span>🪵 ISHTI Subsystem Error &amp; Diagnostic Audit Log</span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span class="badge model" id="errorCountBadge">0 ERRORS</span>
+          <button class="btn-primary" id="btnClearErrors" style="font-size:10px;padding:6px 14px;">CLEAR ALL</button>
+          <button class="btn-primary" id="btnRefreshErrors" style="font-size:10px;padding:6px 14px;">REFRESH</button>
+        </div>
+      </div>
+      <div class="error-log-grid" id="errorLogGrid">
+        <div style="color:var(--text-dim);font-size:12px;text-align:center;padding:40px 0;">
+          No errors logged. System is clean. 🟢
+        </div>
+      </div>
+    </section>
+  </main>
+
+
+  <!-- ========================================================
+       NODE INSPECTION SLIDE-OVER DRAWER
+       ======================================================== -->
+  <div class="drawer-overlay" id="nodeDrawer">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <div class="panel-title" style="margin:0; border:none;">Subtask Details</div>
+      <button id="btnCloseDrawer" style="background:transparent;border:none;color:#fff;font-size:18px;cursor:pointer;">✕</button>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Task Name</div>
+      <div class="metric-val" id="drawerTaskName">-</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Action / Tool Type</div>
+      <div class="metric-val" id="drawerToolType" style="color:var(--cyan-glow);">-</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Execution Status &amp; Duration</div>
+      <div class="metric-val" id="drawerDuration" style="color:var(--gold-accent);">-</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Output &amp; Evidence Snippet</div>
+      <div id="drawerOutput" style="font-family:var(--font-mono); font-size:11px; color:#fff; max-height:220px; overflow-y:auto; margin-top:6px; white-space:pre-wrap;">-</div>
+    </div>
+  </div>
+
+
+  <!-- ========================================================
+       CONSEQUENTIAL ACTION MODAL GATE
+       ======================================================== -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="consequential-modal">
+      <div class="modal-header">
+        <span class="modal-warning-icon">⚠️</span>
+        <div class="modal-title">Human Confirmation Required</div>
+      </div>
+      <div style="font-size:12px;color:var(--text-dim);">
+        The following task has been classified as <strong>consequential</strong> (messaging, public publishing, financial transaction, or system modification). Review the payload before proceeding:
+      </div>
+      <div class="modal-body" id="modalTaskName" style="color:var(--gold-accent);font-weight:600;margin-bottom:6px;"></div>
+      <div class="modal-body" id="modalDetails"></div>
+      <div class="modal-actions">
+        <button class="btn-reject" id="btnReject">REJECT ACTION (ESC)</button>
+        <button class="btn-approve" id="btnApprove">APPROVE &amp; DISPATCH (Y)</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/ishti.js"></script>
+</body>
+</html>
