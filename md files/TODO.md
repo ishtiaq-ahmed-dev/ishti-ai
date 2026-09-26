@@ -79,19 +79,20 @@ New:
 - [ ] Install skills from GitHub repos (show the code, install only after a yes, run isolated)
 
 ## L. Finish from K (in progress)
-- [ ] Professional ad-style edit: intro title card, graded main clip, lower-third, burned captions (whisper), outro CTA, transitions, loudness -14 LUFS, aspect presets
-- [ ] Same edit written as a real CapCut project (pyCapCut; CapCut 8.9 drafts are plain JSON) and CapCut opened
-- [ ] Verify the output: ffprobe checks, black frames, loudness, and key frames read by Gemma 3 (vision) for text visibility/spelling
+- [x] Professional ad-style edit: intro title card, graded main clip, lower-third, burned captions (whisper), outro CTA, transitions, loudness -14 LUFS, aspect presets
+- [x] Same edit written as a real CapCut project (pyCapCut; CapCut 8.9 drafts are plain JSON) and CapCut opened
+- [x] Verify the output: ffprobe checks, black frames, loudness, and key frames read by Gemma 3 (vision) for text visibility/spelling
 - [ ] More skills (prayer times, translate, dictionary, unit convert, document summary, news)
 - [ ] Install skills from GitHub repos (show code, yes to install, isolated)
 
 ## M. Verified search + real-time voice (owner feature set, build in this order)
-- [ ] 1. Self-verifying search: each page checked "does it answer the question?" before use; off-target pages dropped; ambiguous queries get one clarifying question; max 2-3 reformulations then "no confident match"
-- [ ] 2. Live step narration over a WebSocket event stream (dashboard subscribes; skills emit checkpoints: searching, found N sources, reading, ambiguous?)
-- [ ] 3. Confirmation-on-ambiguity: the reply (yes/no or "the blue one") goes back into the same in-progress task
-- [ ] 4. Voice: sentence-chunk streaming TTS (first audio < 1 s), live STT partials on the dashboard
-- [ ] 5. Barge-in: Silero VAD always on, sustained speech aborts TTS + LLM (< ~150 ms), self-echo filter by word match, interrupted context kept
-- [ ] 6. Avatar/waveform with distinct listening / thinking / speaking states
+- [x] 1. Self-verifying search: each page checked "does it answer the question?" before use; off-target pages dropped; ambiguous queries get one clarifying question; max 2-3 reformulations then "no confident match"
+- [x] 2. Live step narration over a WebSocket event stream (dashboard subscribes; skills emit checkpoints: searching, found N sources, reading, ambiguous?)
+- [x] 3. Confirmation-on-ambiguity: the reply (yes/no or "the blue one") goes back into the same in-progress task
+- [x] 4. Voice: sentence-chunk streaming TTS (first audio < 1 s), live STT partials on the dashboard
+- [x] 5. Barge-in: Silero VAD always on, sustained speech aborts TTS + LLM (< ~150 ms), self-echo filter by word match, interrupted context kept
+  - Owner action: no microphone opens right now (only the Bluetooth speaker's hands-free mic, MME error 1). Connect a mic and allow "Let desktop apps access your microphone" in Windows privacy settings, then tune voice.barge_in in config.json on the real room.
+- [x] 6. Avatar/waveform with distinct listening / thinking / speaking states
 
 ## N. Skills catalog (C:\Users\PC\Downloads\ISHTI_skills_catalog.md) - in its build order
 - [ ] 0. Situation layer in the dispatcher: security tiers T0-T3 in manifests, universal confirmation gate, ambiguity question, multi-step recovery report, error/capability-gap logging to NEEDS.md, rate-limit guard for repeated T2, degraded mode, session recovery, queued announcements
