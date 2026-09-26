@@ -54,8 +54,8 @@ def synthesize(text: str) -> bytes:
     return buf.getvalue()
 
 
-def speak(text: str):
-    """Play on this PC's speakers without blocking; SAPI5 if Piper is unavailable."""
+def speak(text: str, wait: bool = False):
+    """Play on this PC's speakers (in the background unless wait); SAPI5 if Piper is unavailable."""
     def play():
         with _play_lock:
             try:
@@ -69,7 +69,10 @@ def speak(text: str):
                 print(f"[voice] Piper playback failed ({exc}); falling back to SAPI5")
                 from voice.tts import speak as sapi_speak
                 sapi_speak(speakable(text))
-    threading.Thread(target=play, daemon=True).start()
+    t = threading.Thread(target=play, daemon=True)
+    t.start()
+    if wait:
+        t.join()
 
 
 if __name__ == "__main__":

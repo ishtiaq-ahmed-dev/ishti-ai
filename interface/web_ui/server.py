@@ -60,6 +60,16 @@ MAIN_LOOP: asyncio.AbstractEventLoop = None  # set at startup; worker threads ha
 async def _capture_loop():
     global MAIN_LOOP
     MAIN_LOOP = asyncio.get_running_loop()
+    from ishti import CONFIG
+    if CONFIG["voice"].get("wake_enabled"):
+        from ishti import wake
+
+        def on_voice_command(text):
+            res = ishti_handle(text, channel="voice")
+            sync_event_callback("task_completed_full", res)  # show the spoken exchange in the HUD
+            return res["final_answer"]
+
+        wake.start(on_voice_command)
 
 
 async def broadcast_event(event_type: str, data: Dict[str, Any]):

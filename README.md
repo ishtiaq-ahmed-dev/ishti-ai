@@ -48,6 +48,7 @@ The Python packages are in `venv` (`torch` cu128, `laya`, `chromadb`, `mcp`, `fa
 | `ishti/semantic.py` | ChromaDB + `nomic-embed-text` for conversation context |
 | `ishti/mcp_client.py` | Thin MCP client: persistent stdio sessions per configured server |
 | `ishti/voice.py` | faster-whisper `large-v3` (CUDA, int8_float16) + Piper |
+| `ishti/wake.py` | Hands-free: say **"hey jarvis, …"** (openWakeWord) → record until silence (Silero VAD) → dispatcher → spoken reply |
 | `ishti/skills/<name>/` | `manifest.json` + `skill.py` per skill |
 | `interface/web_ui/` | HUD (FastAPI + WebSocket); `/api/execute` goes through the dispatcher |
 | `orchestrator/`, `tools/`, `browser/`, `desktop/`, `voice/` | Pre-dispatcher code, reused by skills (weather, web search, legacy routes) |

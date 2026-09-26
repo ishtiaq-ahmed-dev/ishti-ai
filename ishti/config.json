@@ -35,6 +35,9 @@
     "whisper_model": "large-v3",
     "whisper_device": "cuda",
     "whisper_compute": "int8_float16",
+    "wake_enabled": true,
+    "wake_model": "hey_jarvis",
+    "wake_threshold": 0.5,
     "piper_voice": "en_US-lessac-medium",
     "piper_dir": "D:\\ISHTI\\data\\piper"
   }

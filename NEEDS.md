@@ -25,9 +25,11 @@ Each entry lists what's needed, why it's blocked, and what would have to change.
 - **Now:** new skills return the whole reply at once. The HUD's word-streaming animation is cosmetic.
 - **To change:** `llm.chat(stream=True)` plus a WebSocket event per chunk from the dispatcher (the HUD already listens on `/ws`).
 
-## 6. Hands-free voice (wake word)
-- **Now:** voice is push-to-talk (HUD mic button → local whisper).
-- **To change:** wire `voice/wake_word.py` (energy threshold) or openWakeWord (open-source, CPU) to record → `ishti.voice.transcribe` → `dispatcher.handle(channel="voice")` → `ishti.voice.speak`. Needs a background audio thread in the server process.
+## 6. Custom "hey ishti" wake word
+- **Now:** hands-free listening works (`ishti/wake.py`) with openWakeWord's pretrained **"hey jarvis"** model. Replies are spoken, and each exchange shows up in the HUD. No microphone is connected at the moment; the listener retries every 30 s.
+- **Need:** a "hey ishti" model.
+- **Why deferred:** openWakeWord custom models are trained from thousands of synthetic clips plus negative audio (about 1 hour on a GPU), using their training notebook.
+- **To change:** generate the positive clips locally with Piper (already installed, many voices), train with openWakeWord's `train.py`, drop the `.onnx` into `data/`, and set `voice.wake_model` to its path. No code change.
 
 ## 8. Remote access hardening
 - The server binds 127.0.0.1 only. `/api/facts` (DELETE) and `/api/voice` have no auth, which is fine on localhost. If the Cloudflare tunnel in `remote/tunnel_setup.md` is ever enabled, Cloudflare Access must sit in front of it, or a bearer token must be added to the dispatcher routes first.
