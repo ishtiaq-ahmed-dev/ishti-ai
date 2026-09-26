@@ -92,5 +92,6 @@ Each skill is a folder with a manifest:
 
 - Consequential actions (buy, pay, send, submit, post, delete, log in, Enter on a submit form) stop and wait for an explicit "yes". A timeout or error means **no**.
 - Unknown app names are refused rather than passed to a shell. Shell commands from the legacy planner always need confirmation.
+- Remote/tunnelled requests need the token in `data/api_token` (see `remote/tunnel_setup.md`); only unproxied localhost is trusted.
 - The browser runs in its own profile (`data/mcp_browser_profile`), never your daily Chrome profile.
 - The HUD mic records locally and is transcribed by whisper on this PC (Chrome's Web Speech API, which sends audio to Google, was removed).

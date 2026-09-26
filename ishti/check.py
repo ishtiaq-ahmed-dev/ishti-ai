@@ -64,7 +64,20 @@ def main():
             assert r["skill"] == skill and expect in r["final_answer"], r
     finally:
         d.get_conversation_manager().delete_session(sid)
-    print("[check] core loop OK - routing, memory, live skill, local LLM")
+    check_remote_auth()
+    print("[check] core loop OK - routing, memory, live skill, local LLM, remote auth")
+
+
+def check_remote_auth():
+    """Tunnel traffic reaches the server from 127.0.0.1, so it must still need the token."""
+    from fastapi.testclient import TestClient
+    from interface.web_ui import server
+    c = TestClient(server.app)  # client host "testclient" = remote
+    assert c.get("/api/skills").status_code == 401
+    assert c.get("/api/skills", headers={"Authorization": f"Bearer {server.API_TOKEN}"}).status_code == 200
+    proxied = type("Conn", (), {"client": type("C", (), {"host": "127.0.0.1"})(), "cookies": {}, "query_params": {},
+                                "headers": {"cf-connecting-ip": "203.0.113.9"}})()
+    assert not server.authorized(proxied)
 
 
 if __name__ == "__main__":

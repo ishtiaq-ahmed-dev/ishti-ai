@@ -9,6 +9,7 @@ import os
 import sys
 import json
 import asyncio
+import secrets
 from typing import Dict, Any, List
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -31,6 +32,42 @@ from ishti.dispatcher import api as ishti_api, handle as ishti_handle, HOOKS as 
 
 app = FastAPI(title="ISHTI Personal AI Assistant")
 app.include_router(ishti_api)  # /api/chat, /api/skills, /api/facts (the dispatcher)
+
+# Remote access (Cloudflare tunnel, remote/tunnel_setup.md) arrives from cloudflared on 127.0.0.1,
+# so "is it localhost?" is not enough: anything proxied or non-local must carry the token.
+TOKEN_PATH = os.path.join(ROOT_DIR, "data", "api_token")
+PROXY_HEADERS = ("cf-connecting-ip", "x-forwarded-for", "forwarded", "x-real-ip")
+
+
+def _api_token() -> str:
+    if not os.path.exists(TOKEN_PATH):
+        os.makedirs(os.path.dirname(TOKEN_PATH), exist_ok=True)
+        with open(TOKEN_PATH, "w") as f:
+            f.write(secrets.token_urlsafe(32))
+    with open(TOKEN_PATH) as f:
+        return f.read().strip()
+
+
+API_TOKEN = _api_token()
+
+
+def authorized(conn) -> bool:
+    """conn: Request or WebSocket. Local, unproxied = trusted; otherwise token via header, cookie or ?token=."""
+    if conn.client and conn.client.host in ("127.0.0.1", "::1") and not any(h in conn.headers for h in PROXY_HEADERS):
+        return True
+    supplied = (conn.headers.get("authorization", "").removeprefix("Bearer ").strip()
+                or conn.cookies.get("ishti_token") or conn.query_params.get("token") or "")
+    return secrets.compare_digest(supplied, API_TOKEN)
+
+
+@app.middleware("http")
+async def require_token_for_remote(request: Request, call_next):
+    if not authorized(request):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    response = await call_next(request)
+    if request.query_params.get("token"):  # open https://<tunnel>/?token=... once; the cookie does the rest
+        response.set_cookie("ishti_token", API_TOKEN, httponly=True, secure=True, samesite="strict")
+    return response
 
 STATIC_DIR = os.path.join(ROOT_DIR, "interface", "web_ui", "static")
 TEMPLATES_DIR = os.path.join(ROOT_DIR, "interface", "web_ui", "templates")
@@ -333,6 +370,9 @@ async def confirm_action(req: Request):
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    if not authorized(websocket):
+        await websocket.close(code=1008)
+        return
     await websocket.accept()
     active_websockets.append(websocket)
     try:

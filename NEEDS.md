@@ -31,8 +31,5 @@ Each entry lists what's needed, why it's blocked, and what would have to change.
 - **Why deferred:** openWakeWord custom models are trained from thousands of synthetic clips plus negative audio (about 1 hour on a GPU), using their training notebook.
 - **To change:** generate the positive clips locally with Piper (already installed, many voices), train with openWakeWord's `train.py`, drop the `.onnx` into `data/`, and set `voice.wake_model` to its path. No code change.
 
-## 8. Remote access hardening
-- The server binds 127.0.0.1 only. `/api/facts` (DELETE) and `/api/voice` have no auth, which is fine on localhost. If the Cloudflare tunnel in `remote/tunnel_setup.md` is ever enabled, Cloudflare Access must sit in front of it, or a bearer token must be added to the dispatcher routes first.
-
 ## 9. Semantic-memory threshold
 - `ishti/semantic.py` keeps recalls with cosine distance ≤ 0.45, calibrated on a handful of samples. Re-tune it once real conversation history exists (log the distances, pick the knee).

@@ -1,6 +1,12 @@
 # Remote Access Setup: Cloudflare Tunnel + Cloudflare Access (Zero Trust)
 *Secure, zero-cost remote reachability for ISHTI from your smartphone, tablet, or external laptop without port forwarding or exposing plain ports.*
 
+> **ISHTI requires a token for every tunnelled request** (cloudflared connects from 127.0.0.1, so
+> ISHTI treats any request carrying `Cf-Connecting-Ip` / `X-Forwarded-For` as remote). The token is
+> in `D:\ISHTI\data\api_token` (created on first start). On your phone, open
+> `https://<your-tunnel-host>/?token=<token>` once; a secure cookie handles the rest. API clients send
+> `Authorization: Bearer <token>`. Keep Cloudflare Access in front as well.
+
 ---
 
 ## Architecture Overview
