@@ -222,7 +222,8 @@ def _did_t2(s, name, text):
     s["last_t2"] = (_t2_key(name, text), time.time())
 
 
-INFLIGHT_FILE = os.path.join(ROOT, "data", "inflight.json")
+# next to the memory DB, so checks/replays that run on a scratch memory never leave a false "before I restarted" note
+INFLIGHT_FILE = os.path.join(os.path.dirname(CONFIG["memory"]["db_path"]), "inflight.json")
 
 
 def _inflight(sid, text=None):

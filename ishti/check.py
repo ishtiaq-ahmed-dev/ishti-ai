@@ -150,4 +150,6 @@ def check_remote_auth():
 
 
 if __name__ == "__main__":
-    main()
+    from orchestrator.memory.user_profile import scratch_memory
+    with scratch_memory():  # chat sessions, profile and research archives go to a temp dir, even if the run is killed
+        main()
