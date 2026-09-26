@@ -24,7 +24,8 @@ dispatcher (FastAPI, ishti/dispatcher.py)
 ## Run
 
 ```bat
-start.bat                 :: health checks, then HUD at http://127.0.0.1:8888
+start.bat                 :: starts ISHTI (health checks, models, then HUD at http://127.0.0.1:8888)
+stop.bat                  :: cleanly terminates ISHTI web servers and background processes
 python -m ishti [port]    :: server only
 python -m ishti.check     :: end-to-end check: routing accuracy + memory + live skill + LLM
 ```
