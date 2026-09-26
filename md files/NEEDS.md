@@ -16,11 +16,6 @@ Each entry lists what's needed, why it's blocked, and what would have to change.
 - **Now:** a code question loads `ishti-qwen2.5-coder:14b` and evicts the planner, so the first reply after a switch costs about 5 s.
 - **Options:** use `qwen2.5-coder:7b` (both fit), or accept the swap. The config change is one line; no code change.
 
-## 6. Custom "hey ishti" wake word
-- **Now:** hands-free listening works (`ishti/wake.py`) with openWakeWord's pretrained **"hey jarvis"** model. Replies are spoken, and each exchange shows up in the HUD. No microphone is connected at the moment; the listener retries every 30 s.
-- **Need:** a "hey ishti" model.
-- **Why deferred:** openWakeWord custom models are trained from thousands of synthetic clips plus negative audio (about 1 hour on a GPU), using their training notebook.
-- **To change:** generate the positive clips locally with Piper (already installed, many voices), train with openWakeWord's `train.py`, drop the `.onnx` into `data/`, and set `voice.wake_model` to its path. No code change.
 
 ## 9. Semantic-memory threshold
 - `ishti/semantic.py` keeps recalls with cosine distance ≤ 0.45, calibrated on a handful of samples. Re-tune it once real conversation history exists (log the distances, pick the knee).
