@@ -2,7 +2,7 @@
   "llm": {
     "base_url": "http://127.0.0.1:11434/v1",
     "models": {
-      "planner": "qwen2.5:14b",
+      "planner": "ishti-qwen2.5:14b",
       "coder": "qwen2.5-coder:14b",
       "fast": "llama3.2:3b"
     },

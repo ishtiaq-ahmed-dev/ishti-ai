@@ -34,15 +34,16 @@ def main():
     assert not bad, f"broken skills: {[(n, d.SKILLS[n].problem) for n in bad]}"
 
     if CONFIG["router"]["use_laya"]:
-        hits, slow = 0, 0
+        router.route("warm up", d.SKILLS)  # first call loads the checkpoint
+        hits, ms = 0, []
         for text, want in LABELLED:
             got = router.route(text, d.SKILLS)
             hits += got["skill"] == want
-            slow = max(slow, got["ms"])
+            ms.append(got["ms"])
             if got["skill"] != want:
                 print(f"  route miss: {text!r} -> {got['skill']} ({got['source']}), want {want}")
         acc = hits / len(LABELLED)
-        print(f"routing: {hits}/{len(LABELLED)} correct, slowest {slow} ms")
+        print(f"routing: {hits}/{len(LABELLED)} correct, median {sorted(ms)[len(ms) // 2]} ms")
         assert acc >= 0.85, f"routing accuracy {acc:.0%} < 85%"
         assert not router.laya_error, router.laya_error
 
