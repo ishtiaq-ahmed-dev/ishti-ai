@@ -1,10 +1,11 @@
 """Dispatcher: request -> route (rules / Laya) -> skill -> reply.
 Text and voice both call handle(); voice is just another input channel."""
+import io
 import json
 import threading
 import time
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from ishti import ROOT
@@ -117,9 +118,38 @@ async def forget_endpoint(name: str):
 
 
 def warm_up():
-    """Load the Laya checkpoint now so the first real request doesn't pay ~4 s."""
+    """Load Laya and whisper now so the first real request doesn't pay their load time."""
     route("hello", SKILLS)
+    try:
+        from ishti.voice import stt_model
+        stt_model()
+    except Exception as exc:
+        print(f"[dispatcher] whisper preload skipped: {exc}")
 
 
 seed_owner()
 threading.Thread(target=warm_up, daemon=True).start()
+
+
+@api.post("/api/stt")
+async def stt_endpoint(audio: UploadFile):
+    """Browser mic -> local faster-whisper -> text (the HUD then submits it like typed text)."""
+    import asyncio
+    from ishti.voice import transcribe
+    data = io.BytesIO(await audio.read())
+    return {"text": await asyncio.get_running_loop().run_in_executor(None, transcribe, data)}
+
+
+@api.post("/api/voice")
+async def voice_endpoint(audio: UploadFile, session_id: str = Form(None)):
+    """Full voice round trip for any client: audio in -> dispatcher -> reply text + Piper WAV (base64)."""
+    import asyncio
+    import base64
+    from ishti.voice import synthesize, transcribe
+    loop = asyncio.get_running_loop()
+    text = await loop.run_in_executor(None, transcribe, io.BytesIO(await audio.read()))
+    if not text:
+        return JSONResponse({"error": "no speech heard"}, status_code=422)
+    res = await loop.run_in_executor(None, handle, text, session_id, "voice")
+    wav = await loop.run_in_executor(None, synthesize, res["final_answer"])
+    return {**res, "transcript": text, "audio_wav_b64": base64.b64encode(wav).decode()}

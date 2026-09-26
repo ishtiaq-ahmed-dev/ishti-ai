@@ -3,7 +3,7 @@
     "base_url": "http://127.0.0.1:11434/v1",
     "models": {
       "planner": "ishti-qwen2.5:14b",
-      "coder": "qwen2.5-coder:14b",
+      "coder": "ishti-qwen2.5-coder:14b",
       "fast": "llama3.2:3b"
     },
     "fallback": "qwen2.5:14b",
@@ -32,8 +32,9 @@
     }
   },
   "voice": {
-    "whisper_model": "small",
+    "whisper_model": "large-v3",
     "whisper_device": "cuda",
+    "whisper_compute": "int8_float16",
     "piper_voice": "en_US-lessac-medium",
     "piper_dir": "D:\\ISHTI\\data\\piper"
   }

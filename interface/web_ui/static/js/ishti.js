@@ -1171,61 +1171,63 @@ window.addEventListener('keydown', (e) => {
 });
 
 // ========================================================
-// VOICE INPUT (WEBSPEECH / WHISPER FALLBACK)
+// VOICE INPUT (local: MediaRecorder -> /api/stt -> faster-whisper on this PC)
+// Web Speech API was removed: in Chrome it streams audio to Google's servers.
 // ========================================================
+let mediaRecorder = null;
+
 function initSpeechRecognition() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    console.warn('SpeechRecognition API not available in this browser.');
-    return;
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    console.warn('Microphone recording not available in this browser.');
   }
-  recognition = new SpeechRecognition();
-  recognition.continuous = false;
-  recognition.interimResults = false;
-  recognition.lang = 'en-US';
-
-  recognition.onstart = () => {
-    isListening = true;
-    const btn = document.getElementById('voiceToggleBtn');
-    if (btn) btn.classList.add('active');
-    setReactorState('listening', 'LISTENING...');
-  };
-
-  recognition.onresult = (event) => {
-    const transcript = event.results[0][0].transcript;
-    console.log('Voice recognized:', transcript);
-    const input = document.getElementById('cmdInput');
-    if (input) {
-      input.value = transcript;
-      document.getElementById('cmdForm').dispatchEvent(new Event('submit'));
-    }
-  };
-
-  recognition.onerror = (event) => {
-    console.warn('Speech recognition error:', event.error);
-    isListening = false;
-    const btn = document.getElementById('voiceToggleBtn');
-    if (btn) btn.classList.remove('active');
-    setReactorState('idle', 'ONLINE');
-  };
-
-  recognition.onend = () => {
-    isListening = false;
-    const btn = document.getElementById('voiceToggleBtn');
-    if (btn) btn.classList.remove('active');
-  };
 }
 
-function toggleVoiceInput() {
-  if (!recognition) {
-    alert('Voice input is ready via backend faster-whisper or Chrome Speech Recognition. Please speak now.');
+function setVoiceButton(active) {
+  const btn = document.getElementById('voiceToggleBtn');
+  if (btn) btn.classList.toggle('active', active);
+}
+
+async function toggleVoiceInput() {
+  if (isListening && mediaRecorder) {
+    mediaRecorder.stop();  // onstop sends the clip
     return;
   }
-  if (isListening) {
-    recognition.stop();
-  } else {
-    recognition.start();
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    alert('Microphone blocked: ' + err.message);
+    return;
   }
+  const chunks = [];
+  mediaRecorder = new MediaRecorder(stream);
+  mediaRecorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+  mediaRecorder.onstop = async () => {
+    stream.getTracks().forEach((t) => t.stop());
+    isListening = false;
+    setVoiceButton(false);
+    setReactorState('thinking', 'TRANSCRIBING...');
+    const form = new FormData();
+    form.append('audio', new Blob(chunks, { type: mediaRecorder.mimeType }), 'speech.webm');
+    try {
+      const res = await fetch('/api/stt', { method: 'POST', body: form });
+      const { text } = await res.json();
+      const input = document.getElementById('cmdInput');
+      if (text && input) {
+        input.value = text;
+        document.getElementById('cmdForm').dispatchEvent(new Event('submit'));
+      } else {
+        setReactorState('idle', 'NO SPEECH HEARD');
+      }
+    } catch (err) {
+      console.warn('STT failed:', err);
+      setReactorState('idle', 'ONLINE');
+    }
+  };
+  mediaRecorder.start();
+  isListening = true;
+  setVoiceButton(true);
+  setReactorState('listening', 'LISTENING... (click to stop)');
 }
 
 // ========================================================

@@ -211,7 +211,8 @@ async def execute_task(req: Request):
         # Speak the whole answer, not just its first line, when audio output is enabled.
         answer = res.get("final_answer", "")
         if answer and get_user_memory().get_preferences().audio_output:
-            speak(speakable(answer), wait=False)
+            from ishti.voice import speak as piper_speak
+            piper_speak(answer)
             res["spoken"] = True
         return res
 

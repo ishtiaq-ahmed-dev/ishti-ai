@@ -1,0 +1,3 @@
+# ollama create ishti-qwen2.5-coder:14b -f ishti/coder.Modelfile  (12k context, see planner.Modelfile)
+FROM qwen2.5-coder:14b
+PARAMETER num_ctx 12288

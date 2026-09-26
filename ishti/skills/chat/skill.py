@@ -27,7 +27,7 @@ def run(text, session):
     ctx = build_context(text)
     msgs = session.get("history", [])[-12:] + [
         {"role": "user", "content": f"{ctx}\n\nOwner: {text}" if ctx else text}]
-    out = (llm.chat(msgs, role=role).content or "").strip()
+    out = (llm.chat(msgs, role=role, max_tokens=2048 if role == "coder" else 1024).content or "").strip()
     if not inspect(out)[0]:  # refusal / contamination -> one clean retry
         out = (llm.chat(msgs[-1:], role=role, temperature=0).content or "").strip()
     return {"reply": out or "No answer from the local model.", "sources": []}
