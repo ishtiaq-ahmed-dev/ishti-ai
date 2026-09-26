@@ -1,8 +1,17 @@
 """Chat skill: local LLM answer. Exact facts are injected first and win; semantic recall
 that mentions the same entity is dropped so a stale memory can't contradict a fact."""
+import re
+
 from ishti import llm
 from ishti.facts import get_facts
 from orchestrator.response_guard import inspect
+
+
+ARITHMETIC = re.compile(r"\d\s*(?:[-+*/x×^]|times|plus|minus|divided\s+by|multiplied\s+by|to\s+the\s+power\s+of)\s*\d", re.I)
+
+
+def match(text):
+    return bool(ARITHMETIC.search(text))
 
 
 def build_context(text):

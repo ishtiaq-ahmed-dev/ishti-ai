@@ -153,20 +153,12 @@ def test_H(engine):
 
 def test_I(engine):
     print("\nTEST I - English audio output")
-    import tempfile, pyttsx3
-    from voice.tts import speakable
-    wav = os.path.join(tempfile.gettempdir(), "ishti_test_tts.wav")
-    eng = pyttsx3.init()
-    eng.save_to_file(speakable("**Tomorrow** in Peshawar: 32C, sunny [1]"), wav)
-    eng.runAndWait()
-    size = os.path.getsize(wav) if os.path.exists(wav) else 0
+    from ishti import CONFIG
+    from ishti.voice import synthesize  # Piper is the primary TTS now (AUDIT.md B6)
+    size = len(synthesize("**Tomorrow** in Peshawar: 32C, sunny [1]"))
     ok = check("I: TTS produced audio bytes", size > 1000, f"{size} bytes")
-    voices = [v.name for v in eng.getProperty("voices")]
-    ok &= check("I: an English voice is selected",
-                any("english" in v.lower() or "david" in v.lower() or "zira" in v.lower() for v in voices),
-                str(voices[:3]))
-    if os.path.exists(wav):
-        os.remove(wav)
+    ok &= check("I: an English voice is selected", CONFIG["voice"]["piper_voice"].startswith("en_"),
+                CONFIG["voice"]["piper_voice"])
     r = ask(engine, "read that")
     ok &= check("I: audio toggle command works",
                 get_user_memory().get_preferences().audio_output is True, r["final_answer"][:60])

@@ -1,4 +1,6 @@
 """Legacy skill: hands the request to orchestrator/crew.ExecutionEngine unchanged."""
+import re
+
 from orchestrator.intent_detector import IntentDetector
 
 MODES = {"VIDEO_EDIT", "PC_SEARCH", "PC_TELEMETRY", "APP_CONTROL", "DEEP_RESEARCH",
@@ -7,7 +9,8 @@ _engine = None
 
 
 def match(text):
-    return IntentDetector.classify(text)["mode"] in MODES
+    # the regex cues are article-free ("open task manager"); strip articles so "open the task manager" hits
+    return IntentDetector.classify(re.sub(r"\b(?:the|a|an|my)\s+", "", text, flags=re.I))["mode"] in MODES
 
 
 def engine():

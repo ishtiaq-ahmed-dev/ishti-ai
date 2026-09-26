@@ -3,6 +3,17 @@
   "version": "1.0.0",
   "description": "General conversation and questions answered by the local LLM, with exact facts and semantic memory injected. Code questions use the coder model.",
   "route": "general conversation, greetings, explanations, math, advice, writing, or coding help that needs no live data",
-  "needs": {"python": ["openai"], "models": ["planner", "coder"], "mcp": [], "apis": []},
-  "status": "working"
+  "needs": {
+    "python": [
+      "openai"
+    ],
+    "models": [
+      "planner",
+      "coder"
+    ],
+    "mcp": [],
+    "apis": []
+  },
+  "status": "working",
+  "priority": 90
 }

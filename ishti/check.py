@@ -25,7 +25,9 @@ LABELLED = [
     ("launch vs code", "legacy"), ("mujhe batao mera project kahan hai", "memory"),
     ("which folder did I keep the thesis in", "memory"), ("where did I save my resume", "memory"),
     ("will it rain tomorrow", "weather"), ("is it cold outside", "weather"),
-    ("what's the forecast for the weekend", "weather"),
+    ("what's the forecast for the weekend", "weather"), ("what is 17 times 23?", "chat"),
+    ("log into my university portal and download the timetable", "browser"),
+    ("fill the contact form on my website", "browser"),
 ]
 
 
