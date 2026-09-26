@@ -1,7 +1,7 @@
 {
   "name": "web_fetch",
   "version": "1.0.0",
-  "description": "Reads a URL given in the request (HTTP -> Jina reader -> Playwright cascade) and answers about it with the local LLM. Faster than driving the browser.",
+  "description": "Reads a URL given in the request (direct HTTP, then the local headless browser) and answers about it with the local LLM. Faster than driving the browser.",
   "route": "reading, summarizing or answering questions about a specific URL given in the request",
   "priority": 30,
   "needs": {

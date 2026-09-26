@@ -101,7 +101,7 @@ class CapabilityRegistry:
                 category="internet",
                 requirements=["internet_connection", "requests", "beautifulsoup4"],
                 tools=["WebFetcher", "ContentExtractor"],
-                fallbacks=["reader_mode_jina", "playwright_browser"],
+                fallbacks=["playwright_browser"],
             ),
             Capability(
                 name="browser_headless",

@@ -2,8 +2,7 @@
 ISHTI Resilient Web Fetcher
 Retrieves online page content using a cascade of methods:
 1. Fast direct HTTP fetch + ContentExtractor
-2. Reader Mode fallback (r.jina.ai open reader)
-3. Isolated Chrome Playwright session (D:\\ISHTI\\data\\chrome_profile)
+2. Isolated Chrome Playwright session (local; the old r.jina.ai cloud reader step was removed)
 """
 
 import os
@@ -52,31 +51,12 @@ class WebFetcher:
                         "method": "direct_http",
                     }
         except Exception as e:
-            print(f"[WebFetcher] Direct HTTP failed for {url}: {e}. Trying reader mode...")
+            print(f"[WebFetcher] Direct HTTP failed for {url}: {e}. Trying the local browser...")
 
-        # Strategy 2: Reader Mode (Jina Reader fallback)
-        try:
-            reader_url = f"https://r.jina.ai/{url}"
-            res = requests.get(reader_url, timeout=self.timeout + 2)
-            if res.status_code == 200 and len(res.text) > 100:
-                text = res.text[:max_chars]
-                # Extract title from first line if present
-                title = url
-                lines = text.split("\n")
-                if lines and lines[0].startswith("Title:"):
-                    title = lines[0].replace("Title:", "").strip()
-                return {
-                    "url": url,
-                    "title": title,
-                    "content": text,
-                    "date": "",
-                    "status": "success",
-                    "method": "reader_mode",
-                }
-        except Exception as e:
-            print(f"[WebFetcher] Reader mode failed for {url}: {e}. Trying Playwright browser...")
+        # (A Jina r.jina.ai "reader mode" step used to sit here: a third-party cloud service that saw
+        # every URL ISHTI read, and took 10-12 s. Removed - local-first; the local browser covers JS pages.)
 
-        # Strategy 3: Playwright Isolated Chrome Browser
+        # Strategy 2: Playwright Isolated Chrome Browser
         try:
             from browser.browser_agent import BrowserAgent
             agent = BrowserAgent(headless=True)

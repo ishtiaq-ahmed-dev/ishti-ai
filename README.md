@@ -88,7 +88,7 @@ Each skill is a folder with a manifest:
 | web_search | live answers with citations | local SearXNG → Wikipedia / GitHub / arXiv / Bing fallback + page reader |
 | browser | open sites, read, click, fill forms | Playwright MCP + local LLM tool calls |
 | deep_research | explicitly requested research reports | multi-query search + parallel reading + relevance filter |
-| web_fetch | answer about a URL in the request | HTTP → Jina reader → Playwright fetch cascade |
+| web_fetch | answer about a URL in the request | direct HTTP → local headless browser |
 | chat | everything else; code questions use the coder model | Ollama |
 | legacy | PC file search, app launch, video edit, telemetry | `orchestrator/crew.py` (being split up, NEEDS.md #4) |
 

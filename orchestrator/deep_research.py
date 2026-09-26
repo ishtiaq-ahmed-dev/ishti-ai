@@ -32,6 +32,9 @@ RESEARCH_MEM_DIR = os.path.join(ROOT_DIR, "orchestrator", "memory", "research")
 os.makedirs(RESEARCH_MEM_DIR, exist_ok=True)
 
 
+READ_BUDGET_S = 4.0
+
+
 class DeepResearchEngine:
     def __init__(self, event_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None):
         self.search_manager = get_search_manager()
@@ -74,34 +77,30 @@ class DeepResearchEngine:
         relevant = filter_sources(search_query, [r.to_dict() | {"_obj": r} for r in results])
         results = [r["_obj"] for r in relevant] or results[:2]
 
-        # Read top 2 sources in parallel for depth
-        self.emit("status_change", {"state": "RESEARCHING", "detail": f"Reading top {min(len(results), 2)} sources..."})
+        # Read the top sources in parallel under one time budget. A slow page (the reader-mode
+        # fallback can take 10-12 s) must not hold the answer hostage: past the budget its search
+        # snippet is used instead.
+        self.emit("status_change", {"state": "RESEARCHING", "detail": f"Reading top {min(len(results), 3)} sources..."})
         sources_context = []
         sources_list = []
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            future_to_res = {
-                executor.submit(self.fetcher.fetch, r.url, max_chars=2500): r
-                for r in results[:2]
-            }
-            for idx, future in enumerate(concurrent.futures.as_completed(future_to_res)):
-                res_obj = future_to_res[future]
-                try:
-                    fetched = future.result()
-                    content = fetched.get("content") or res_obj.snippet
-                except Exception:
-                    content = res_obj.snippet
-
-                sources_context.append(f"[{idx+1}] Title: {res_obj.title}\nURL: {res_obj.url}\nExcerpt: {content[:1000]}")
-                sources_list.append({
-                    "id": idx + 1,
-                    "title": res_obj.title,
-                    "domain": res_obj.source,
-                    "url": res_obj.url,
-                    "snippet": res_obj.snippet,
-                    # verified = the page was actually fetched and had content, not a literal True
-                    "verified": bool(content and len(content) > 80),
-                })
+        top = results[:3]
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=len(top) or 1)
+        futures = [pool.submit(self.fetcher.fetch, r.url, max_chars=2500) for r in top]
+        concurrent.futures.wait(futures, timeout=READ_BUDGET_S)
+        pool.shutdown(wait=False, cancel_futures=True)
+        for idx, (res_obj, fut) in enumerate(zip(top, futures)):
+            fetched = fut.result() if fut.done() and not fut.exception() else {}
+            content = fetched.get("content") or res_obj.snippet
+            sources_context.append(f"[{idx+1}] Title: {res_obj.title}\nURL: {res_obj.url}\nExcerpt: {content[:1000]}")
+            sources_list.append({
+                "id": idx + 1,
+                "title": res_obj.title,
+                "domain": res_obj.source,
+                "url": res_obj.url,
+                "snippet": res_obj.snippet,
+                # verified = the page itself was read in time and had content, not a literal True
+                "verified": bool(fetched.get("content") and len(fetched["content"]) > 80),
+            })
 
         # Add remaining un-fetched sources as references (not fetched -> not verified)
         for idx in range(len(sources_list), len(results)):
