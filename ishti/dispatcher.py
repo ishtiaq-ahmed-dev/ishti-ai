@@ -99,6 +99,15 @@ def _remember(text, reply, skill):
         print(f"[dispatcher] semantic memory write skipped: {exc}")
 
 
+def _learn(text):
+    try:
+        from ishti.skills.owner.skill import learn
+        if found := learn(text):
+            print(f"[dispatcher] learned about the owner: {found}")
+    except Exception as exc:
+        print(f"[dispatcher] owner learning skipped: {exc}")
+
+
 FOLLOW_UP = re.compile(
     r"^\s*(?:why\s+(?:did|didn'?t|did\s*not|didnot|don'?t|won'?t)\s+you|(?:no[,.!]?\s+)?i\s+(?:asked|meant|said|wanted)|"
     r"(?:search|look|check|try|do)\s+(?:it\s+|that\s+|this\s+)?(?:now|again|instead|properly|online)|"
@@ -286,6 +295,7 @@ def _handle(text, sid, conv, s, events, t0, channel):
             conv.add_message(sid, "ishti", reply, sources=out.get("sources"), metadata={"events": events[-150:]})
     if name not in ("memory",) and is_safe_for_history(reply):  # exact facts already live in SQLite
         threading.Thread(target=_remember, args=(text, reply, name), daemon=True).start()
+    threading.Thread(target=_learn, args=(text,), daemon=True).start()  # the owner's lasting facts and preferences
     return {**{k: v for k, v in out.items() if k not in ("reply", "persisted")},
             "request": text, "final_answer": reply, "mode": out.get("mode") or (name or "none").upper(), "skill": name,
             "sources": out.get("sources", []), "session_id": sid, "channel": channel, "route": dec,

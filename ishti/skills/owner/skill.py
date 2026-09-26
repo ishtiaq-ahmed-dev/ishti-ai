@@ -77,6 +77,63 @@ def tell(t, session):
     return {"reply": "Saved: " + ", ".join(f"{k.replace('_', ' ')} = {v}" for k, v in found.items()) + ".", "sources": []}
 
 
+# Only messages that can carry a lasting fact: a standing preference, or the owner describing themselves.
+LEARNABLE = re.compile(r"\b(?:prefer|always|never|not\s+needed|no\s+need|don'?t\s+(?:want|need|like)|should(?:n'?t)?|"
+                       r"i\s+(?:like|love|hate|want\s+(?:it|you|ishti|them|the)|usually|mostly|am|'m|work|study|use|build|"
+                       r"make|develop|run|teach|manage|have\s+been)|i'm)\b", I)
+LEARN_EXAMPLES = (
+    'how many pdfs are in my downloads -> {}\n'
+    'tell me a joke -> {}\n'
+    'check my whatsapp and tell me unread chats -> {}\n'
+    'i work at a bank as a data analyst -> {"job": "data analyst", "company_type": "bank"}\n'
+    'answer me in simple english always -> {"prefers_language": "simple English"}\n'
+    'the suggestion buttons are not needed -> {"prefers_suggestion_buttons": "not shown"}\n'
+    'always give me prices in a table with links -> {"prefers_price_answers": "a table with store links"}\n'
+    'at my job i build mobile apps in flutter -> {"job_work": "builds mobile apps", "stack": "Flutter"}\n'
+    'never ask me twice before opening an app -> {"prefers_app_opening": "open apps without asking twice"}')
+
+
+def learn(text, save=True):
+    """Runs in the background after every message: lasting facts about the owner (profile, professional
+    data, working style, how they want ISHTI to behave) go to the exact fact store, updated in place.
+    The chat skill puts every owner fact in its context, so preferences shape later answers."""
+    from ishti import llm
+    question = text.rstrip().endswith("?") or re.match(r"\s*(?:what|where|which|who|when|how|why|do|does|can|is|are)\b", text, I)
+    if TELL.match(text.strip()) or not LEARNABLE.search(text) or len(text) > 1500 or (
+            question and not re.search(r"\b(?:prefer|always|never|should)\b", text, I)):
+        return {}
+    owner = {a: v for a, v in get_facts().get("owner").items() if a != "entity"}
+    known = "\n".join(f"- {a}: {v}" for a, v in owner.items()) or "(none)"
+    raw = llm.ask(
+        f"Already saved about the owner (never repeat these):\n{known}\n\nThe owner's message to their assistant:\n"
+        f"{text}\n\nDoes this message state something NEW and LASTING about the owner - their studies, job, skills, "
+        "projects, how they work - or a standing preference for how the assistant should behave? Most messages are "
+        "just tasks and contain nothing: then output {}. But a message that says how the assistant should always, never "
+        "or generally behave (answer format, length, language, UI, what it should or shouldn't do) IS a standing "
+        "preference: save it. Never guess or describe the task itself. Keys are short "
+        "snake_case, preferences about the assistant start with prefers_, reuse a saved key when it changes, values are short phrases that keep the owner's full meaning. "
+        f"Examples:\n{LEARN_EXAMPLES}\n\nOutput only one JSON object (at most 3 entries).",
+        system=None, temperature=0, max_tokens=120)
+    try:
+        found = json.loads(re.search(r"\{.*\}", raw, re.S)[0])
+    except (TypeError, ValueError):
+        return {}
+    found = {re.sub(r"\W+", "_", str(k)).strip("_").lower()[:40]: str(v).strip()[:160]
+             for k, v in (found.items() if isinstance(found, dict) else []) if str(v).strip()}
+    # grounded: a saved value must share a real word (first 5 letters) with the message - the 14B model
+    # otherwise copies its few-shot examples ("works at night" for a message that never says night)
+    stems = {w[:5] for w in re.findall(r"[a-z0-9]{3,}", text.lower())}
+    found = {k: v for k, v in found.items() if any(w[:5] in stems for w in re.findall(r"[a-z0-9]{3,}", v.lower())
+                                                    if w not in ("not", "yes", "the", "and", "owner"))}
+    same = lambda a, b: a.lower() in b.lower() or b.lower() in a.lower()
+    found = dict([(k, v) for k, v in found.items()  # only what's new: the model likes to restate saved facts
+                  if not any(same(v, str(old)) for old in owner.values()) and not (k in owner and same(v, owner[k]))][:3])
+    if save:
+        for k, v in found.items():
+            get_facts().set("owner", k, v)
+    return found
+
+
 def about_me(t):
     from ishti import llm
     facts = "\n".join(f"- {a}: {v}" for a, v in get_facts().get("owner").items() if a != "entity") or "(nothing saved)"

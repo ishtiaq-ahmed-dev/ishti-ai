@@ -51,7 +51,13 @@ Worked top to bottom. Each item is checked only after it has been verified by us
 - [x] "check my whatsap…" missed the WhatsApp skill (typo) and got generic web advice → typo-tolerant trigger; unread chats are read straight from the page (5 s instead of 85 s)
 - [x] The saved Chrome tokens didn't work: the extension shows `PLAYWRIGHT_MCP_EXTENSION_TOKEN=…` and that whole line was pasted → the prefix is stripped on save and load
 - [x] "why your response is late…", "you do not perform parallel tasks… fix yourself" went to browser → web → deep research → questions about ISHTI itself are answered honestly from its own skills and limits, never escalated to the web
-- [ ] Queued messages: the owner can keep typing and sending while ISHTI works; messages run in order
-- [ ] "check the weather today and also … videos in download edit that" did only the weather → "and also" requests run every part
-- [ ] "videos in download edit that" / "the latest video in the download" → list the recent videos and ask which one; "latest"/"first" picks it; a bare path asks what edit to make
+- [x] Queued messages: the owner can keep typing and sending while ISHTI works; messages run in order
+- [x] "check the weather today and also … videos in download edit that" did only the weather → "and also" requests run every part
+- [x] "videos in download edit that" / "the latest video in the download" → list the recent videos and ask which one; "latest"/"first" picks it; a bare path asks what edit to make
 - [x] Web answers ended with "KNOWN FACTS override this…" → the shared style prompt no longer mentions KNOWN FACTS (only the chat skill, which actually has them)
+
+## J. Multitasking and learning the owner (owner request, 26 Sep)
+- [x] Several different tasks in one message: Laya routes each clause; two or more skills = a plan; independent steps run in parallel (3 tasks in 2 s), chained ones ({prev}) in order
+- [x] Several messages at once: the chat sends up to 3 together (more queue above the input); the server runs independent requests of one chat side by side, each with its own live trace; a follow-up, yes/no or correction waits for the answer it is about; browser work takes turns (one page)
+- [x] Personal and professional facts are saved when stated ("I study at…"); lasting preferences and working style are learned in the background from every message (grounded: a value must share a word with the message), backfilled from past chats, and applied to answers through the style prompt
+- [ ] Laya fine-tune on the route log + corrections once there are enough labels (NEEDS #1) - still the path to "more accurate"

@@ -47,6 +47,11 @@ def chat(messages, role="planner", system=STYLE, tools=None, temperature=0.3, ma
     """Returns the OpenAI message object (has .content and .tool_calls).
     max_tokens is always set: with tools the model can keep generating after its tool call.
     on_token(str) streams the reply as it is generated (plain replies only, not tool calls)."""
+    if system is STYLE:  # the owner's standing preferences (learned from chats) apply to every styled answer
+        from ishti.facts import get_facts
+        prefs = [f"- {a.removeprefix('prefers_').replace('_', ' ')}: {v}"
+                 for a, v in get_facts().get("owner").items() if a.startswith("prefers_")]
+        system = STYLE + ("\nThe owner's standing preferences:\n" + "\n".join(prefs) if prefs else "")
     msgs = ([{"role": "system", "content": system}] if system else []) + list(messages)
     args = dict(model=model_for(role), messages=msgs, temperature=temperature, max_tokens=max_tokens, **kw)
     context = " ".join(str(m.get("content", "")) for m in messages if m.get("role") == "user")
