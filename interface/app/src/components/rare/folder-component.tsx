@@ -57,6 +57,7 @@ const sizeScales = {
 type FolderComponentProps = Omit<React.ComponentProps<"div">, "color"> & {
   color?: "black" | "white" | "blue";
   size?: "sm" | "md" | "lg";
+  allowOpen?: boolean;
 };
 
 const BASE_WIDTH = 321;
@@ -68,6 +69,7 @@ const FLAP_PATH =
 const FolderComponent = ({
   color = "black",
   size = "md",
+  allowOpen = true,
   className,
   ...props
 }: FolderComponentProps) => {
@@ -98,7 +100,11 @@ const FolderComponent = ({
           setIsHovered(false);
           setIsOpen(false);
         }}
-        onClick={() => setIsOpen((o) => !o)}
+        onClick={() => {
+          if (allowOpen) {
+            setIsOpen((o) => !o);
+          }
+        }}
       >
         <div
           className="absolute top-1/2 left-1/2"

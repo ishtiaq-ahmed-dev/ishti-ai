@@ -4,6 +4,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { getJSON } from "@/lib/api";
 import { AnimatedCounter } from "@/components/rare/animated-counter";
 import { Page } from "@/sections/Pages";
+import { AgentOrb } from "@/components/AgentOrb";
+import type { OrbState } from "@/lib/agent-state";
 
 type Overview = {
   requests: number; by_source: Record<string, number>; by_skill: Record<string, number>;
@@ -14,14 +16,16 @@ type Overview = {
   prefs: { audio_output: boolean; response_length: string };
 };
 
-function Stage({ icon, title, lines, count, label, i }:
-  { icon: ReactNode; title: string; lines: string[]; count?: number; label?: string; i: number }) {
+function Stage({ icon, orbState, title, lines, count, label, i }:
+  { icon: ReactNode; orbState?: OrbState; title: string; lines: string[]; count?: number; label?: string; i: number }) {
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04, duration: 0.25 }}
-      className="relative flex min-w-0 flex-1 flex-col gap-2 rounded-2xl border border-border bg-card/40 p-4 shadow-xs">
+      className="group relative flex min-w-0 flex-1 flex-col gap-2 rounded-2xl border border-border bg-card/40 p-4 shadow-xs hover:border-accent/40 transition-colors">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2.5 min-w-0">
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent">{icon}</span>
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent overflow-hidden">
+            {orbState ? <AgentOrb state={orbState} size={20} className="shrink-0" /> : icon}
+          </span>
           <span className="text-sm font-semibold tracking-tight truncate">{title}</span>
         </div>
         <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-mono font-medium text-muted-foreground shrink-0">
@@ -44,25 +48,25 @@ function Stage({ icon, title, lines, count, label, i }:
   );
 }
 
-export function Overview() {
+export function Overview({ onToggleNav }: { onToggleNav?: () => void }) {
   const [o, setO] = useState<Overview>();
   useEffect(() => { const load = () => getJSON<Overview>("/api/overview").then(setO); load(); const t = setInterval(load, 10000); return () => clearInterval(t); }, []);
   if (!o) return null;
   const src = (k: string) => o.by_source[k] ?? 0;
   const max = Math.max(1, ...o.skills.map((s) => s.uses));
   const stages = [
-    { icon: <MessageSquareText className="h-4 w-4" />, title: "Input", lines: ["Text in this app", `Voice · whisper ${o.voice.whisper_model}`, `Hands-free · "${o.voice.wake_model.replace("_", " ")}"`], count: o.requests, label: "requests" },
-    { icon: <Sparkles className="h-4 w-4" />, title: "Understand", lines: ["Follow-ups rewritten with the chat", "\"this year\" → real dates"], count: undefined },
-    { icon: <Route className="h-4 w-4" />, title: "Route", lines: ["Skill patterns first", `Laya ${o.laya.model} ${o.laya.loaded ? "· loaded" : ""}`], count: src("rule") + src("laya"), label: `${src("rule")} rule · ${src("laya")} Laya` },
-    { icon: <GitBranch className="h-4 w-4" />, title: "Plan", lines: ["Several tasks → steps", "Answers carried between steps"], count: src("plan"), label: "plan steps" },
-    { icon: <Wrench className="h-4 w-4" />, title: "Skills", lines: [`${o.skills.length} skills`, `${o.skills.filter((s) => s.status !== "broken").length} working`], count: o.skills.length, label: "skills" },
-    { icon: <Brain className="h-4 w-4" />, title: "Tools & memory", lines: [`LLM ${o.models.planner}`, "SearXNG · Playwright MCP · FFmpeg", `${o.facts.length + o.owner.length} facts · ${o.memories} memories`] },
-    { icon: <CheckCheck className="h-4 w-4" />, title: "Verify", lines: ["Answer check by the local model", "Falls short → next skill"], count: src("escalation"), label: "escalations" },
-    { icon: <AudioLines className="h-4 w-4" />, title: "Answer", lines: ["Streamed with its reasoning", `Voice ${o.prefs.audio_output ? "on" : "off"} · ${o.voice.piper_voice}`] },
+    { icon: <MessageSquareText className="h-4 w-4" />, orbState: "listening" as OrbState, title: "Input", lines: ["Text in this app", `Voice · whisper ${o.voice.whisper_model}`, `Hands-free · "${o.voice.wake_model.replace("_", " ")}"`], count: o.requests, label: "requests" },
+    { icon: <Sparkles className="h-4 w-4" />, orbState: "solving" as OrbState, title: "Understand", lines: ["Follow-ups rewritten with the chat", "\"this year\" → real dates"], count: undefined },
+    { icon: <Route className="h-4 w-4" />, orbState: "working" as OrbState, title: "Route", lines: ["Skill patterns first", `Laya ${o.laya.model} ${o.laya.loaded ? "· loaded" : ""}`], count: src("rule") + src("laya"), label: `${src("rule")} rule · ${src("laya")} Laya` },
+    { icon: <GitBranch className="h-4 w-4" />, orbState: "weaving" as OrbState, title: "Plan", lines: ["Several tasks → steps", "Answers carried between steps"], count: src("plan"), label: "plan steps" },
+    { icon: <Wrench className="h-4 w-4" />, orbState: "shaping" as OrbState, title: "Skills", lines: [`${o.skills.length} skills`, `${o.skills.filter((s) => s.status !== "broken").length} working`], count: o.skills.length, label: "skills" },
+    { icon: <Brain className="h-4 w-4" />, orbState: "connecting" as OrbState, title: "Tools & memory", lines: [`LLM ${o.models.planner}`, "SearXNG · Playwright MCP · FFmpeg", `${o.facts.length + o.owner.length} facts · ${o.memories} memories`] },
+    { icon: <CheckCheck className="h-4 w-4" />, orbState: "solving" as OrbState, title: "Verify", lines: ["Answer check by the local model", "Falls short → next skill"], count: src("escalation"), label: "escalations" },
+    { icon: <AudioLines className="h-4 w-4" />, orbState: "composing" as OrbState, title: "Answer", lines: ["Streamed with its reasoning", `Voice ${o.prefs.audio_output ? "on" : "off"} · ${o.voice.piper_voice}`] },
   ];
 
   return (
-    <Page title="Overview" subtitle="How ISHTI works, what it can do, and what it knows about you - live.">
+    <Page title="Overview" subtitle="How ISHTI works, what it can do, and what it knows about you - live." onToggleNav={onToggleNav}>
       <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pipeline</div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
         {stages.map((s, i) => (

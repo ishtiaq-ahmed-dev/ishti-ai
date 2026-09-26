@@ -22,21 +22,19 @@ const WALL_TOP = 6;
 const WALL_TOP_OPEN = 13.5;
 const WALL_BASE = 20;
 
-const TILE = 48;
-const PANEL = 84;
-const HOLD = { deleted: 1400, kept: 600 };
+const HOLD = { deleted: 1200, kept: 500 };
 
 const EASE = [0.32, 0.72, 0, 1] as const;
 const EASE_LID = [0.34, 1.1, 0.64, 1] as const;
 
-const WIDTH = { duration: 0.62, ease: EASE } as const;
-const LID = { duration: 0.6, ease: EASE_LID } as const;
-const WALL = { duration: 0.56, ease: EASE } as const;
-const IN = { duration: 0.44, ease: EASE, delay: 0.14 } as const;
-const OUT = { duration: 0.3, ease: EASE } as const;
+const WIDTH = { duration: 0.45, ease: EASE } as const;
+const LID = { duration: 0.5, ease: EASE_LID } as const;
+const WALL = { duration: 0.45, ease: EASE } as const;
+const IN = { duration: 0.35, ease: EASE, delay: 0.1 } as const;
+const OUT = { duration: 0.25, ease: EASE } as const;
 const TAP = { duration: 0.2, ease: EASE } as const;
-const SWAP = { duration: 0.22, ease: EASE } as const;
-const SETTLE = { duration: 0.45, ease: EASE } as const;
+const SWAP = { duration: 0.2, ease: EASE } as const;
+const SETTLE = { duration: 0.4, ease: EASE } as const;
 const PRESS = {
   type: "spring",
   stiffness: 520,
@@ -54,8 +52,6 @@ const ACCENT = "#FF5F2E";
 const LIFT =
   "shadow-[0_0.5px_1px_rgba(0,0,0,0.05),0_1px_3px_rgba(0,0,0,0.08),inset_0_0.5px_0_rgba(255,255,255,0.9)] dark:shadow-[0_0.5px_1px_rgba(0,0,0,0.35),0_1.5px_4px_rgba(0,0,0,0.25),inset_0_0.5px_0_rgba(255,255,255,0.07)]";
 
-const CIRCLE = `grid h-7 w-7 place-items-center rounded-full transition-colors duration-200 hover:bg-[#FAFAFD] dark:hover:bg-[#2C2C2C] ${FOCUS} ${SURFACE} ${LIFT}`;
-
 const ICON = {
   viewBox: "0 0 24 24",
   fill: "none",
@@ -66,7 +62,7 @@ const ICON = {
 
 const panelMotion = {
   hidden: { opacity: 0, x: -6, transition: OUT },
-  shown: { opacity: 1, x: 0, transition: { ...IN, staggerChildren: 0.07 } },
+  shown: { opacity: 1, x: 0, transition: { ...IN, staggerChildren: 0.05 } },
 };
 
 const circleMotion = {
@@ -76,32 +72,44 @@ const circleMotion = {
 
 function Circle({
   label,
+  size = "md",
   onClick,
   children,
 }: {
   label: string;
-  onClick: () => void;
+  size?: "sm" | "md";
+  onClick: (e: React.MouseEvent) => void;
   children: ReactNode;
 }) {
   const reduced = useReducedMotion() ?? false;
+  const isSm = size === "sm";
 
   return (
     <motion.div className="flex" variants={reduced ? undefined : circleMotion}>
       <motion.button
         type="button"
         aria-label={label}
-        onClick={onClick}
-        whileHover={reduced ? undefined : { scale: 1.03 }}
-        whileTap={reduced ? undefined : { scale: 0.84 }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick(e);
+        }}
+        whileHover={reduced ? undefined : { scale: 1.05 }}
+        whileTap={reduced ? undefined : { scale: 0.88 }}
         transition={PRESS}
-        className={CIRCLE}
+        className={cn(
+          "grid place-items-center rounded-full transition-colors duration-200 hover:bg-[#FAFAFD] dark:hover:bg-[#2C2C2C]",
+          FOCUS,
+          SURFACE,
+          LIFT,
+          isSm ? "h-5 w-5" : "h-7 w-7",
+        )}
       >
         <svg
           {...ICON}
-          width="14"
-          height="14"
+          width={isSm ? "10" : "14"}
+          height={isSm ? "10" : "14"}
           stroke="currentColor"
-          strokeWidth="3.5"
+          strokeWidth={isSm ? "3" : "3.5"}
         >
           {children}
         </svg>
@@ -118,10 +126,12 @@ export type DeleteButtonProps = Omit<
 > & {
   onConfirm?: () => void;
   onCancel?: () => void;
+  size?: "sm" | "md";
 };
 
 export function DeleteButton({
   className,
+  size = "md",
   onConfirm,
   onCancel,
   ...props
@@ -131,6 +141,11 @@ export function DeleteButton({
   const [status, setStatus] = useState<Status>("idle");
   const trigger = useRef<HTMLButtonElement>(null);
   const timing = (transition: Transition) => (reduced ? INSTANT : transition);
+
+  const isSm = size === "sm";
+  const TILE = isSm ? 26 : 48;
+  const PANEL = isSm ? 52 : 84;
+  const iconSize = isSm ? 14 : 20;
 
   const top = useMotionValue(WALL_TOP);
   const wall = useTransform(top, (y) => WALL_BASE - y);
@@ -159,7 +174,8 @@ export function DeleteButton({
     };
   }, [status, reduced, settle]);
 
-  const resolve = (next: Exclude<Status, "idle">) => {
+  const resolve = (next: Exclude<Status, "idle">, e?: React.MouseEvent) => {
+    e?.stopPropagation();
     setOpen(false);
     setStatus(next);
     trigger.current?.focus();
@@ -171,7 +187,14 @@ export function DeleteButton({
       data-slot="delete-button"
       data-state={open ? "open" : "closed"}
       data-status={status}
-      className={cn("relative h-12 rounded-2xl", SURFACE, GLYPH, className)}
+      onClick={(e) => e.stopPropagation()}
+      className={cn(
+        "relative shrink-0 select-none overflow-hidden",
+        isSm ? "h-6.5 rounded-lg" : "h-12 rounded-2xl",
+        SURFACE,
+        GLYPH,
+        className,
+      )}
       animate={{ width: open ? TILE + PANEL : TILE }}
       transition={timing(WIDTH)}
       onKeyDown={(event) => {
@@ -184,15 +207,17 @@ export function DeleteButton({
         type="button"
         aria-label="Delete"
         aria-expanded={open}
-        onClick={() => {
-          if (open) return resolve("kept");
+        onClick={(e) => {
+          e.stopPropagation();
+          if (open) return resolve("kept", e);
           setStatus("idle");
           setOpen(true);
         }}
         whileTap={reduced ? undefined : { scale: 0.94 }}
         transition={TAP}
         className={cn(
-          "relative z-10 grid h-12 w-12 place-items-center rounded-2xl",
+          "relative z-10 grid place-items-center cursor-pointer",
+          isSm ? "h-6.5 w-6.5 rounded-lg" : "h-12 w-12 rounded-2xl",
           FOCUS,
         )}
       >
@@ -201,8 +226,8 @@ export function DeleteButton({
             <motion.svg
               key="done"
               {...ICON}
-              width="20"
-              height="20"
+              width={iconSize}
+              height={iconSize}
               stroke={ACCENT}
               strokeWidth="2.5"
               initial={{ opacity: 0, scale: 0.6 }}
@@ -221,8 +246,8 @@ export function DeleteButton({
             <motion.svg
               key="bin"
               {...ICON}
-              width="20"
-              height="20"
+              width={iconSize}
+              height={iconSize}
               stroke="currentColor"
               strokeWidth="2"
               className="overflow-visible"
@@ -256,7 +281,8 @@ export function DeleteButton({
             key="panel"
             style={{ width: PANEL }}
             className={cn(
-              "absolute inset-y-0 right-0 flex items-center justify-center gap-2 rounded-2xl",
+              "absolute inset-y-0 right-0 flex items-center justify-center",
+              isSm ? "gap-1 rounded-lg pr-0.5" : "gap-2 rounded-2xl",
               RECESS,
             )}
             variants={reduced ? undefined : panelMotion}
@@ -271,10 +297,10 @@ export function DeleteButton({
                 RECESS,
               )}
             />
-            <Circle label="Confirm delete" onClick={() => resolve("deleted")}>
+            <Circle size={size} label="Confirm delete" onClick={(e) => resolve("deleted", e)}>
               <path d="M4 12.5 9.5 18 20 7" stroke={ACCENT} />
             </Circle>
-            <Circle label="Cancel" onClick={() => resolve("kept")}>
+            <Circle size={size} label="Cancel" onClick={(e) => resolve("kept", e)}>
               <path d="M6 6 18 18M18 6 6 18" />
             </Circle>
           </motion.div>

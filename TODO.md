@@ -61,3 +61,19 @@ Worked top to bottom. Each item is checked only after it has been verified by us
 - [x] Several messages at once: the chat sends up to 3 together (more queue above the input); the server runs independent requests of one chat side by side, each with its own live trace; a follow-up, yes/no or correction waits for the answer it is about; browser work takes turns (one page)
 - [x] Personal and professional facts are saved when stated ("I study at…"); lasting preferences and working style are learned in the background from every message (grounded: a value must share a word with the message), backfilled from past chats, and applied to answers through the style prompt
 - [ ] Laya fine-tune on the route log + corrections once there are enough labels (NEEDS #1) - still the path to "more accurate"
+
+## K. Owner requests + chat failures, 26 Sep (afternoon)
+Fixes from the chats:
+- [ ] "the new era" as the answer to "Which video?" went to web search → names match without filler words; "top/first video" picks it
+- [ ] "i am in th semester" wasn't saved; "add in memory …" crashed the apps skill (TypeError) → "I am in…" is a fact; "add/save it in memory" uses the conversation; apps crash fixed at the root
+- [ ] "you didn't even open CapCut…" re-listed videos → complaints about the last answer are follow-ups (redo it the right way)
+- [ ] Bitcoin answer mixed $96k and $84k from different pages → live prices come from market APIs, not page text
+New:
+- [ ] "About you" section: see and edit everything ISHTI knows about the owner, plus custom instructions sent with every message (like Claude's), and a preview of exactly what is sent
+- [ ] Reply in the owner's language (Urdu, Roman Urdu, English)
+- [ ] Markets: stocks, crypto, gold, currency with a real analyzer (trend, RSI, moving averages, volatility, fundamentals) and a Markets section; research open-source stock terminals (OpenBB etc.)
+- [ ] Edited videos/images play and download inside the chat
+- [ ] "send this video to qasim ims" → WhatsApp: find the contact (fuzzy for spelling/voice errors), exact match sends, otherwise ask which one; attach the file
+- [ ] Video editing like an editor: professional ad-style edit (intro title card, captions, music bed, transitions, grading, loudness), open in CapCut (install it with winget after a yes if missing), and verify the result frame by frame with a local vision model
+- [ ] More skills: prayer times, currency, news, translate, dictionary, document summary, unit conversion
+- [ ] Install skills from GitHub repos (show the code, install only after a yes, run isolated)

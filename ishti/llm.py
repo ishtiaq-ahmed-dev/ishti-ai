@@ -10,7 +10,8 @@ from ishti import CONFIG
 STYLE = (
     "You are ISHTI, a local personal assistant for your owner. "
     "Reply short, direct and in plain language. No filler, no restating the question, "
-    "no long paragraphs. If detail is truly needed, use a few short bullet points."
+    "no long paragraphs. If detail is truly needed, use a few short bullet points. "
+    "Always reply in the language the owner writes in: Urdu script in Urdu, Roman Urdu in Roman Urdu, English in English."
 )
 
 _cfg = CONFIG["llm"]
@@ -43,15 +44,26 @@ def model_for(role: str) -> str:
     return name
 
 
+def style() -> str:
+    """What goes with every styled answer: the base style, the owner's own custom instructions (edited in
+    About you) and the standing preferences learned from their chats. Shown verbatim in About you."""
+    from ishti.facts import get_facts
+    owner = get_facts().get("owner")
+    prefs = [f"- {a.removeprefix('prefers_').replace('_', ' ')}: {v}" for a, v in owner.items() if a.startswith("prefers_")]
+    out = STYLE
+    if owner.get("instructions"):
+        out += "\n\nThe owner's instructions (always follow them):\n" + owner["instructions"]
+    if prefs:
+        out += "\n\nThe owner's standing preferences:\n" + "\n".join(prefs)
+    return out
+
+
 def chat(messages, role="planner", system=STYLE, tools=None, temperature=0.3, max_tokens=1024, on_token=None, **kw):
     """Returns the OpenAI message object (has .content and .tool_calls).
     max_tokens is always set: with tools the model can keep generating after its tool call.
     on_token(str) streams the reply as it is generated (plain replies only, not tool calls)."""
-    if system is STYLE:  # the owner's standing preferences (learned from chats) apply to every styled answer
-        from ishti.facts import get_facts
-        prefs = [f"- {a.removeprefix('prefers_').replace('_', ' ')}: {v}"
-                 for a, v in get_facts().get("owner").items() if a.startswith("prefers_")]
-        system = STYLE + ("\nThe owner's standing preferences:\n" + "\n".join(prefs) if prefs else "")
+    if system is STYLE:
+        system = style()
     msgs = ([{"role": "system", "content": system}] if system else []) + list(messages)
     args = dict(model=model_for(role), messages=msgs, temperature=temperature, max_tokens=max_tokens, **kw)
     context = " ".join(str(m.get("content", "")) for m in messages if m.get("role") == "user")

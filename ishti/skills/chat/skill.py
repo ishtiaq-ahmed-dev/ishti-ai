@@ -22,7 +22,8 @@ def match(text):
 
 def build_context(text):
     f = get_facts()
-    rows = f.mentioned_in(text) + [("owner", a, v) for a, v in f.get("owner").items() if a != "entity"]
+    rows = f.mentioned_in(text) + [("owner", a, v) for a, v in f.get("owner").items()  # instructions/prefs: llm.style()
+                                   if a not in ("entity", "instructions") and not a.startswith("prefers_")]
     seen = {e.lower() for e, _, _ in rows if e != "owner"}
     try:
         from ishti.semantic import get_semantic
@@ -44,7 +45,7 @@ def run(text, session):
     trace(session, "model", f"thinking with {llm.model_for(role)}", status="start")
     # memory goes in the system prompt, not the owner's turn: in the user turn the model echoed the
     # "KNOWN FACTS" header back into its answer
-    system = llm.STYLE + (f"\n\nContext you may use (never mention these headings; the known facts are exact "
+    system = llm.style() + (f"\n\nContext you may use (never mention these headings; the known facts are exact "
                            f"and override anything else you recall):\n{ctx}" if ctx else "")
     msgs = session.get("history", [])[-12:] + [{"role": "user", "content": text}]
     out = (llm.chat(msgs, role=role, system=system, max_tokens=2048 if role == "coder" else 1024,

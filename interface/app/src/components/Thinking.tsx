@@ -3,6 +3,8 @@ import { CheckCircle2, ChevronDown, CircleDashed, Loader2, PauseCircle, XCircle 
 import { useState } from "react";
 import type { TraceEvent } from "@/lib/api";
 import StepPlayer from "@/components/rare/step-player";
+import { AgentOrb } from "@/components/AgentOrb";
+import { resolveAgentState, resolveToolState } from "@/lib/agent-state";
 
 const ICON = {
   start: <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />,
@@ -41,14 +43,25 @@ export function Thinking({ events, live }: { events: TraceEvent[]; live: boolean
   const steps = route?.steps ?? [];
   const startedSteps = events.filter((e) => e.type === "step" && e.status === "start").length;
   const list = rows(events);
+  const resolved = resolveAgentState(events, live);
 
   return (
     <div className="mb-2 text-[13px]">
-      <button onClick={() => setOpen(!expanded)}
-        className="flex items-center gap-1.5 rounded-md py-0.5 text-muted-foreground transition-colors hover:text-foreground">
-        {live ? <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" /> : <CheckCircle2 className="h-3.5 w-3.5 text-success" />}
-        <span>{live ? (route ? `Working · ${route.skill}` : "Thinking…")
-                    : `Thought for ${(done?.ms ?? 0) < 1000 ? `${done?.ms ?? 0} ms` : `${((done?.ms ?? 0) / 1000).toFixed(1)} s`} · ${done?.skill ?? route?.skill ?? ""}`}</span>
+      <button
+        type="button"
+        onClick={() => setOpen(!expanded)}
+        className="flex items-center gap-2 rounded-md py-0.5 text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
+      >
+        {live ? (
+          <AgentOrb events={events} live={live} size={20} className="shrink-0 -my-0.5" />
+        ) : (
+          <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
+        )}
+        <span className={live ? "font-medium text-foreground transition-colors" : ""}>
+          {live
+            ? resolved.label
+            : `Thought for ${(done?.ms ?? 0) < 1000 ? `${done?.ms ?? 0} ms` : `${((done?.ms ?? 0) / 1000).toFixed(1)} s`} · ${done?.skill ?? route?.skill ?? ""}`}
+        </span>
         <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`} />
       </button>
       <AnimatePresence initial={false}>
@@ -84,8 +97,14 @@ export function Thinking({ events, live }: { events: TraceEvent[]; live: boolean
                 <AnimatePresence initial={false}>
                   {list.map((r) => (
                     <motion.li key={r.key} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.18 }} className={`flex items-start gap-1.5 ${r.indent ? "pl-4" : ""}`}>
-                      <span className="mt-0.5 shrink-0">{ICON[r.status]}</span>
+                      transition={{ duration: 0.18 }} className={`flex items-start gap-2 ${r.indent ? "pl-4" : ""}`}>
+                      <span className="mt-0.5 shrink-0 flex items-center justify-center w-4 h-4">
+                        {r.status === "start" ? (
+                          <AgentOrb state={resolveToolState(r.text)} size={20} className="shrink-0 -my-0.5" />
+                        ) : (
+                          ICON[r.status]
+                        )}
+                      </span>
                       <span className={r.indent ? "min-w-0 flex-1 break-words text-muted-foreground" : "min-w-0 flex-1 break-words font-medium"}>{r.text}</span>
                     </motion.li>
                   ))}
@@ -98,3 +117,5 @@ export function Thinking({ events, live }: { events: TraceEvent[]; live: boolean
     </div>
   );
 }
+
+export default Thinking;

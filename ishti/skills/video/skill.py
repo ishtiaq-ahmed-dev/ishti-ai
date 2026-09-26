@@ -53,7 +53,7 @@ def find_video(name):
 
 
 VIDEO_EXT = (".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".wmv")
-NEWEST = re.compile(r"\b(?:latest|lastest|lastets|last|newest|recent|most\s+recent)\b", re.I)
+NEWEST = re.compile(r"\b(?:latest|lastest|lastets|last|newest|recent|most\s+recent|top)\b", re.I)
 OLDEST = re.compile(r"\b(?:first|oldest|earliest)\b", re.I)
 INFO = re.compile(r"\b(?:info|details|duration|how\s+long|length|resolution|size)\b", re.I)
 ANSWER_EDIT = re.compile(r"\b(?:speed|slow|faster|audio|mute|9:16|portrait|shorter|smaller|text|name|first|last|"
@@ -83,9 +83,10 @@ def pick(answer, choices):
     m = re.search(r"\b(\d{1,2})\b", answer)
     if m and 1 <= int(m.group(1)) <= len(choices):
         return choices[int(m.group(1)) - 1]
-    if NEWEST.search(answer):
+    if NEWEST.search(answer) or re.search(r"\btop\b", answer, re.I):
         return choices[0]
-    words = [w for w in re.findall(r"[a-z0-9]+", answer.lower()) if len(w) > 2]
+    filler = {"the", "one", "this", "that", "video", "file", "named", "called", "please", "edit", "open", "mp4"}
+    words = [w for w in re.findall(r"[a-z0-9]+", answer.lower()) if len(w) > 2 and w not in filler]
     return next((c for c in choices if words and all(w in os.path.basename(c).lower() for w in words)), None)
 
 

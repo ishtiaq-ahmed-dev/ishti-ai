@@ -20,8 +20,10 @@ DOCTOR = re.compile(r"^(?:run (?:the )?diagnostics|(?:ishti )?doctor|system chec
 ATTRS = (r"university|uni|college|school|major|degree|job|company|employer|profession|birthday|age|email|phone|"
          r"semester|department|field|full\s+name")
 TELL = re.compile(r"^(?:(?:and|also|btw|by\s+the\s+way|fyi)[,\s]+)?(?:i\s+(?:study|am\s+studying|work|am\s+working|teach|"
-                  r"was\s+born|graduated|did\s+my)\b|i(?:'m|\s+am)\s+(?:a|an|in\s+(?:my|the)|doing|pursuing|from)\b|"
-                  rf"my\s+(?:{ATTRS})\s+(?:is|are)\b)[^?]*$", I)
+                  r"was\s+born|graduated|did\s+my)\b|i(?:'m|\s+am)\s+(?:a|an|in|doing|pursuing|from)\b|"
+                  rf"my\s+(?:{ATTRS})\s+(?:is|are)\b|"
+                  # "remember that I'm in 7th semester", "add in memory: I study at…" (after the follow-up rewrite)
+                  r"(?:please\s+)?(?:remember|note|save|add|store|update)\b.{0,40}\b(?:i|i'm|my|me)\b)[^?]*$", I)
 ABOUT_ME = re.compile(rf"\bmy\s+(?:{ATTRS}|name|city|country)\b", I)
 VERBS = ("study", "work", "live", "born", "teach", "graduated")
 SELF = re.compile(r"\bwhy\s+(?:are|is|do|did|does|can'?t|cant|won'?t|don'?t|dont|odnt|didn'?t|didnot)\s+(?:you|your|ishti)\b|"
@@ -58,10 +60,14 @@ def match(text):
 def tell(t, session):
     from ishti import llm
     from ishti.skills import trace
-    raw = llm.ask(f"The owner said this about themselves:\n{t}\n\nExtract the lasting personal or professional facts as "
-                  'one JSON object of short snake_case attribute -> short value, e.g. {"university": "IMSciences"} or '
-                  '{"job": "data analyst", "company": "Systems Ltd"}. Fix obvious typos and write names with proper capitals (IMSciences, BS AI). If it states no '
-                  "lasting fact about them, output {}. Output only the JSON.", system=None, temperature=0, max_tokens=80)
+    raw = llm.ask(f"The owner told their assistant this about themselves:\n{t}\n\nExtract every fact about the owner as "
+                  "one JSON object of short snake_case attribute -> short value. Current status counts too (semester, "
+                  "year, job, current project, tools they use) - it is updated when it changes. Examples: "
+                  '"i am in 5th semester ok" -> {"semester": "5th"}; "i work at Systems Ltd as a data analyst" -> '
+                  '{"job": "data analyst", "company": "Systems Ltd"}; "remember that i use vs code daily" -> '
+                  '{"editor": "VS Code"}. Fix obvious typos and write names with proper capitals. Output {} only if '
+                  "it says nothing about the owner (e.g. a mood like 'I'm tired').", system=None, temperature=0,
+                  max_tokens=80, response_format={"type": "json_object"})
     try:
         found = json.loads(re.search(r"\{.*\}", raw, re.S)[0])
     except (TypeError, ValueError):
@@ -71,10 +77,12 @@ def tell(t, session):
     if not found:  # "I'm a bit tired today": talk, never a web search
         from ishti.skills.chat import skill as chat
         return chat.run(t, session)
+    lines = []
     for k, v in found.items():
-        get_facts().set("owner", k, v)
-    trace(session, "memory", "saved: " + ", ".join(f"{k} = {v}" for k, v in found.items()))
-    return {"reply": "Saved: " + ", ".join(f"{k.replace('_', ' ')} = {v}" for k, v in found.items()) + ".", "sources": []}
+        old = get_facts().set("owner", k, v)  # upsert: returns the previous value
+        lines.append(f"{k.replace('_', ' ')}: {old} -> {v}" if old and old != v else f"{k.replace('_', ' ')}: {v}")
+    trace(session, "memory", "saved: " + ", ".join(lines))
+    return {"reply": "Updated your memory: " + "; ".join(lines) + ".", "sources": []}
 
 
 # Only messages that can carry a lasting fact: a standing preference, or the owner describing themselves.

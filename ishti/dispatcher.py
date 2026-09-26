@@ -108,13 +108,15 @@ def _learn(text):
         print(f"[dispatcher] owner learning skipped: {exc}")
 
 
+URDU = re.compile("[؀-ۿ]")  # Arabic-script letters (Urdu)
 FOLLOW_UP = re.compile(
     r"^\s*(?:why\s+(?:did|didn'?t|did\s*not|didnot|don'?t|won'?t)\s+you|(?:no[,.!]?\s+)?i\s+(?:asked|meant|said|wanted)|"
     r"(?:search|look|check|try|do)\s+(?:it\s+|that\s+|this\s+)?(?:now|again|instead|properly|online)|"
     r"(?:and\s+)?(?:now|then|also)\s+(?:do|search|check|try|make|use)|what\s+about|same\s+(?:for|with)|"
     r"(?:not|no)\s+(?:that|this|my)\b)"
     r"|\b(?:do\s+it|redo|again|instead|like\s+(?:that|before)|the\s+(?:first|second|third|last|previous)\s+one|"
-    r"you\s+(?:added|moved|put|did|made|said|gave))\b", re.I)
+    r"you\s+(?:added|moved|put|did|made|said|gave)|you\s+(?:didn'?t|didnot|did\s+not)\s+(?:even\s+)?\w+|"
+    r"(?:add|save|put|store|update|write)\s+(?:it\s+|this\s+|that\s+)?(?:in|to|into)\s+(?:the\s+|your\s+|my\s+)?memory)\b", re.I)
 
 
 def contextualize(text, s) -> str:
@@ -244,7 +246,20 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
             cond.notify_all()
 
 
+def translate(text, to):
+    from ishti import llm
+    return llm.ask(f"Translate into {to}. Keep names, numbers, file paths, links and markdown exactly. Output only the "
+                   f"translation.\n\n{text}", system=None, temperature=0, max_tokens=1200).strip() or text
+
+
 def _handle(text, sid, conv, s, events, t0, channel):
+    # Urdu script: skills and routing work in English, so understand it in English and answer back in Urdu.
+    # (Roman Urdu stays as typed: the style prompt already answers in the owner's language.)
+    urdu = bool(URDU.search(text))
+    if urdu:
+        s["trace"](type="tool", name="understand", label="Urdu message: reading it in English", status="start")
+        text = translate(text, "English")
+        s["trace"](type="tool", name="understand", label=f"understood as: {text[:120]}", status="done", rewritten=text)
 
     pending, fix = s.get("pending"), CORRECTION.match(text.strip())
     wanted = fix and ALIASES.get(fix["skill"].lower(), fix["skill"].lower().replace(" ", "_"))
@@ -285,6 +300,9 @@ def _handle(text, sid, conv, s, events, t0, channel):
                 break
 
     reply = out["reply"]
+    if urdu and not URDU.search(reply):
+        s["trace"](type="tool", name="translate", label="answer in Urdu", status="done")
+        reply = out["reply"] = translate(reply, "Urdu")
     s["trace"](type="done", skill=name, ms=round((time.perf_counter() - t0) * 1000))
     s["last_request"], s["last_skill"] = text, name
     s["history"] = (s["history"] + [{"role": "user", "content": text},
@@ -333,6 +351,53 @@ async def route_log_endpoint(limit: int = 500):
         rows = f.db.execute("SELECT ts, text, skill, confidence, source FROM route_log ORDER BY ts DESC LIMIT ?",
                             (limit,)).fetchall()
     return {"rows": [dict(zip(("ts", "text", "skill", "confidence", "source"), r)) for r in rows]}
+
+
+@api.post("/api/facts")
+async def save_fact_endpoint(req: Request):
+    try:
+        data = await req.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+    entity = str(data.get("entity", "")).strip()
+    attr = str(data.get("attr", "")).strip()
+    value = str(data.get("value", "")).strip()
+    old_attr = data.get("old_attr")
+    if not entity or not attr:
+        return JSONResponse({"error": "Entity and attribute are required"}, status_code=400)
+
+    f = get_facts()
+    if old_attr and str(old_attr).strip() != attr:
+        f.forget(entity, str(old_attr).strip())
+    prev = f.set(entity, attr, value)
+    return {"status": "ok", "entity": entity, "attr": attr, "value": value, "previous": prev}
+
+
+@api.get("/api/about")
+async def about_get():
+    """About you: what ISHTI knows about the owner, their custom instructions, and exactly what is sent."""
+    from ishti import llm
+    from ishti.skills.chat.skill import build_context
+    owner = {a: v for a, v in get_facts().get("owner").items() if a != "entity"}
+    return {"facts": {a: v for a, v in owner.items() if a != "instructions" and not a.startswith("prefers_")},
+            "prefs": {a: v for a, v in owner.items() if a.startswith("prefers_")},
+            "instructions": owner.get("instructions", ""),
+            "sent": {"style": llm.style(), "context": build_context("")}}
+
+
+@api.post("/api/about/instructions")
+async def about_instructions(req: Request):
+    text = str((await req.json()).get("instructions", "")).strip()[:4000]
+    if text:
+        get_facts().set("owner", "instructions", text)
+    else:
+        get_facts().forget("owner", "instructions")
+    return await about_get()
+
+
+@api.delete("/api/facts/{name}/{attr}")
+async def forget_attr_endpoint(name: str, attr: str):
+    return {"deleted": get_facts().forget(name, attr)}
 
 
 @api.delete("/api/facts/{name}")

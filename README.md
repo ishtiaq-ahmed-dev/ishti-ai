@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/ishti_full_wordmark.svg" alt="ISHTI: Personal AI Assistant" width="360" />
+</p>
+
 # ISHTI: local-first personal AI assistant
 
 Runs 100% on this PC after setup: Ollama LLMs, Laya routing, SQLite + ChromaDB memory, faster-whisper STT, Piper TTS and the Playwright MCP browser. No cloud API calls at runtime.

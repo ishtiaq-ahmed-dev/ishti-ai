@@ -5,8 +5,10 @@ import { del, getJSON, postJSON, streamChat, type Result, type Source, type Trac
 import { ActivityGraph, ConversationGraph, type Turn } from "@/components/ActivityGraph";
 import { Thinking } from "@/components/Thinking";
 import { FolderScan } from "@/components/FolderScan";
-import MatrixOrb from "@/components/rare/matrix-orb";
-import FluidOrb from "@/components/rare/fluid-orb";
+import { AgentOrb } from "@/components/AgentOrb";
+import { resolveAgentState } from "@/lib/agent-state";
+import BorderBeam from "border-beam";
+import VoiceBeam from "voice-glow";
 import DeleteButton from "@/components/rare/delete-button";
 import { IshtiBrand } from "@/components/IshtiBrand";
 import { Markdown } from "@/components/Markdown";
@@ -58,9 +60,11 @@ function Sources({ sources }: { sources: Source[] }) {
 type Props = {
   owner: string;
   onBusy: (busy: boolean) => void;
+  showNav?: boolean;
+  onToggleNav?: () => void;
 };
 
-export function Chat({ owner, onBusy }: Props) {
+export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(() => {
@@ -83,11 +87,14 @@ export function Chat({ owner, onBusy }: Props) {
   });
   const [graphFor, setGraphFor] = useState<number | null>(null);
   const [recording, setRecording] = useState(false);
+  const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [graphView, setGraphView] = useState<"answer" | "chat">("answer");
   const [fullGraph, setFullGraph] = useState(false);
   const recorder = useRef<MediaRecorder | null>(null);
   const box = useRef<HTMLTextAreaElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
+  const scrollContainer = useRef<HTMLDivElement>(null);
+  const isInitialLoad = useRef(true);
   const running = msgs.filter((m) => m.live).length;
   const busy = running > 0;
   // Up to 3 messages run at once (the server runs independent ones side by side; a follow-up waits for the
@@ -116,10 +123,26 @@ export function Chat({ owner, onBusy }: Props) {
     if (el) { el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 220)}px`; }
   }, [input]);
 
-  useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs]);
+  useEffect(() => {
+    if (isInitialLoad.current) {
+      if (msgs.length > 0) {
+        if (scrollContainer.current) {
+          scrollContainer.current.scrollTop = scrollContainer.current.scrollHeight;
+        } else {
+          bottom.current?.scrollIntoView({ behavior: "instant" });
+        }
+        requestAnimationFrame(() => {
+          isInitialLoad.current = false;
+        });
+      }
+      return;
+    }
+    bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [msgs]);
 
   const selectSession = useCallback(async (id: string) => {
     setGraphFor(null);
+    isInitialLoad.current = true;
     try {
       localStorage.setItem("ishti-session-id", id);
       if (window.location.hash.startsWith("#chat") || !window.location.hash) {
@@ -137,6 +160,13 @@ export function Chat({ owner, onBusy }: Props) {
             sources: m.sources ?? [], request: last };
     }));
     setSessionId(id);
+    requestAnimationFrame(() => {
+      if (scrollContainer.current) {
+        scrollContainer.current.scrollTop = scrollContainer.current.scrollHeight;
+      } else {
+        bottom.current?.scrollIntoView({ behavior: "instant" });
+      }
+    });
   }, []);
 
   const newChat = useCallback(async () => {
@@ -206,6 +236,7 @@ export function Chat({ owner, onBusy }: Props) {
   async function send(text: string) {
     text = text.trim();
     if (!text) return;
+    isInitialLoad.current = false;
     setInput("");
     if (!canStart) { setQueue((q) => [...q, text]); return; }
     const reply: Msg = { id: nextId++, role: "ishti", text: "", events: [], live: true, sources: [], request: text };
@@ -239,21 +270,28 @@ export function Chat({ owner, onBusy }: Props) {
 
   async function toggleMic() {
     if (recording && recorder.current) { recorder.current.stop(); return; }
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const chunks: Blob[] = [];
-    const rec = new MediaRecorder(stream);
-    rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-    rec.onstop = async () => {
-      stream.getTracks().forEach((t) => t.stop());
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      setAudioStream(stream);
+      const chunks: Blob[] = [];
+      const rec = new MediaRecorder(stream);
+      rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+      rec.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setAudioStream(null);
+        setRecording(false);
+        const form = new FormData();
+        form.append("audio", new Blob(chunks, { type: rec.mimeType }), "speech.webm");
+        const { text } = await fetch("/api/stt", { method: "POST", body: form }).then((r) => r.json());
+        if (text) send(text);
+      };
+      recorder.current = rec;
+      rec.start();
+      setRecording(true);
+    } catch {
       setRecording(false);
-      const form = new FormData();
-      form.append("audio", new Blob(chunks, { type: rec.mimeType }), "speech.webm");
-      const { text } = await fetch("/api/stt", { method: "POST", body: form }).then((r) => r.json());
-      if (text) send(text);
-    };
-    recorder.current = rec;
-    rec.start();
-    setRecording(true);
+      setAudioStream(null);
+    }
   }
 
   const graphMsg = msgs.find((m) => m.id === graphFor);
@@ -331,6 +369,16 @@ export function Chat({ owner, onBusy }: Props) {
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex items-center justify-between border-b border-border px-4 sm:px-6 py-3 shrink-0">
           <div className="flex items-center gap-2.5">
+            {!showNav && onToggleNav && (
+              <button
+                type="button"
+                onClick={onToggleNav}
+                title="Show navigation bar"
+                className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
+              >
+                <PanelLeft className="h-4 w-4 text-accent" />
+              </button>
+            )}
             <button
               type="button"
               onClick={toggleHistory}
@@ -339,12 +387,26 @@ export function Chat({ owner, onBusy }: Props) {
             >
               {showHistory ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
             </button>
-            <MatrixOrb state={recording ? "listening" : busy ? "thinking" : "idle"} size={34} color="#6e56cf"
-              className="[&>span]:sr-only" />
+            <AgentOrb
+              events={msgs.find((m) => m.live)?.events}
+              live={busy}
+              recording={recording}
+              size={32}
+              className="shrink-0"
+            />
             <div>
               <IshtiBrand variant="wordmark" size={24} className="translate-y-0.5" />
-              <div className="text-[11px] text-muted-foreground">
-                {recording ? "Listening…" : busy ? (running > 1 ? `Working on ${running} tasks` : "Working on it") : "Local · private · ready"}</div>
+              <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 min-w-0">
+                {recording ? (
+                  <span className="text-amber-500 font-medium">Listening to voice…</span>
+                ) : busy ? (
+                  <span className="text-accent font-medium truncate">
+                    {running > 1 ? `Working on ${running} tasks` : resolveAgentState(msgs.find((m) => m.live)?.events, true).label}
+                  </span>
+                ) : (
+                  "Local · private · ready"
+                )}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-1">
@@ -359,11 +421,12 @@ export function Chat({ owner, onBusy }: Props) {
           </div>
         </header>
 
-        <div className="scroll-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        <div ref={scrollContainer} className="scroll-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
           {msgs.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-5 px-6">
-              <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.4 }}>
-                <FluidOrb size={120} color="#5b3fd6" />
+              <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.4 }} className="relative flex items-center justify-center">
+                <div className="absolute inset-0 -m-8 rounded-full bg-accent/10 blur-3xl pointer-events-none" />
+                <AgentOrb size={64} state="breathing" />
               </motion.div>
               <div className="text-center flex flex-col items-center">
                 <IshtiBrand variant="full" size={64} className="mb-3" />
@@ -379,12 +442,19 @@ export function Chat({ owner, onBusy }: Props) {
                     transition={{ duration: 0.22, ease: "easeOut" }}
                     className={m.role === "user" ? "flex justify-end min-w-0" : "flex gap-3 min-w-0 max-w-full"}>
                     {m.role === "user" ? (
-                      <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-sm text-accent-foreground">
-                        {m.text}</div>
+                      <div
+                        className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-accent-foreground shadow-xs"
+                        style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-leading)" }}
+                      >
+                        {m.text}
+                      </div>
                     ) : (
                       <>
                         <IshtiBrand variant="icon" size={28} className="mt-1 shrink-0 shadow-sm" />
-                        <div className="min-w-0 flex-1 max-w-full overflow-hidden">
+                        <div
+                          className="min-w-0 flex-1 max-w-full overflow-hidden"
+                          style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-leading)" }}
+                        >
                           <Thinking events={m.events} live={m.live} />
                           {(() => {
                             const scan = m.events.findLast((e) => e.type === "tool" && e.name === "scan");
@@ -439,20 +509,55 @@ export function Chat({ owner, onBusy }: Props) {
               </motion.ul>
             )}
           </AnimatePresence>
-          <div className="mx-auto flex w-full max-w-4xl xl:max-w-5xl items-end gap-2 rounded-2xl border border-border bg-background p-2 shadow-[0_2px_12px_rgba(29,27,46,0.06)] transition-shadow focus-within:shadow-[0_2px_18px_rgba(110,86,207,0.18)]">
-            <textarea ref={box} value={input} onChange={(e) => setInput(e.target.value)} rows={1}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }}
-              placeholder="Ask or tell ISHTI to do anything…"
-              className="scroll-thin max-h-[220px] min-h-[40px] flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 text-sm leading-relaxed outline-none placeholder:text-muted-foreground" />
-            <button type="button" onClick={toggleMic} title="Speak (local whisper)"
-              className={`grid h-9 w-9 place-items-center rounded-xl transition-colors cursor-pointer ${recording ? "bg-danger text-white" : "text-muted-foreground hover:bg-muted"}`}>
-              {recording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-            </button>
-            <button type="submit" disabled={!input.trim()} title={canStart ? "Send" : "Queue: runs when a slot is free"}
-              className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-white transition-opacity disabled:opacity-40 cursor-pointer">
-              <ArrowUp className="h-4 w-4" />
-            </button>
-          </div>
+          {recording ? (
+            <VoiceBeam
+              active={recording}
+              stream={audioStream}
+              colorVariant="gold"
+              theme="auto"
+              className="mx-auto w-full max-w-4xl xl:max-w-5xl rounded-2xl"
+            >
+              <div className="flex w-full items-end gap-2 rounded-2xl border border-border bg-background p-2 shadow-[0_2px_12px_rgba(29,27,46,0.06)] transition-shadow focus-within:shadow-[0_2px_18px_rgba(110,86,207,0.18)]">
+                <textarea ref={box} value={input} onChange={(e) => setInput(e.target.value)} rows={1}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }}
+                  placeholder="Ask or tell ISHTI to do anything…"
+                  style={{ fontSize: "var(--chat-input-size)" }}
+                  className="scroll-thin max-h-[220px] min-h-[40px] flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 leading-relaxed outline-none placeholder:text-muted-foreground" />
+                <button type="button" onClick={toggleMic} title="Speak (local whisper)"
+                  className={`grid h-9 w-9 place-items-center rounded-xl transition-colors cursor-pointer ${recording ? "bg-danger text-white" : "text-muted-foreground hover:bg-muted"}`}>
+                  {recording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                </button>
+                <button type="submit" disabled={!input.trim()} title={canStart ? "Send" : "Queue: runs when a slot is free"}
+                  className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-white transition-opacity disabled:opacity-40 cursor-pointer">
+                  <ArrowUp className="h-4 w-4" />
+                </button>
+              </div>
+            </VoiceBeam>
+          ) : (
+            <BorderBeam
+              active={busy}
+              colorVariant="gold"
+              size="md"
+              theme="auto"
+              className="mx-auto w-full max-w-4xl xl:max-w-5xl rounded-2xl"
+            >
+              <div className="flex w-full items-end gap-2 rounded-2xl border border-border bg-background p-2 shadow-[0_2px_12px_rgba(29,27,46,0.06)] transition-shadow focus-within:shadow-[0_2px_18px_rgba(110,86,207,0.18)]">
+                <textarea ref={box} value={input} onChange={(e) => setInput(e.target.value)} rows={1}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }}
+                  placeholder="Ask or tell ISHTI to do anything…"
+                  style={{ fontSize: "var(--chat-input-size)" }}
+                  className="scroll-thin max-h-[220px] min-h-[40px] flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 leading-relaxed outline-none placeholder:text-muted-foreground" />
+                <button type="button" onClick={toggleMic} title="Speak (local whisper)"
+                  className={`grid h-9 w-9 place-items-center rounded-xl transition-colors cursor-pointer ${recording ? "bg-danger text-white" : "text-muted-foreground hover:bg-muted"}`}>
+                  {recording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                </button>
+                <button type="submit" disabled={!input.trim()} title={canStart ? "Send" : "Queue: runs when a slot is free"}
+                  className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-white transition-opacity disabled:opacity-40 cursor-pointer">
+                  <ArrowUp className="h-4 w-4" />
+                </button>
+              </div>
+            </BorderBeam>
+          )}
         </form>
       </div>
 
