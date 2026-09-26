@@ -1,0 +1,16 @@
+{
+  "name": "online_fallback",
+  "version": "1.0.0",
+  "description": "For jobs this PC can't do locally (heavy media and conversions): finds a free online tool (reusing ones that worked before, from the 'online_fallbacks_used' registry), asks before uploading the owner's file, runs the tool in the owner's main Chrome, and saves the result.",
+  "route": "do a job on a file with a free online tool or website, when it can't be done on this PC",
+  "priority": 24,
+  "laya": false,
+  "needs": {
+    "python": ["mcp"],
+    "models": ["planner"],
+    "mcp": ["main"],
+    "apis": []
+  },
+  "status": "working",
+  "tier": "T2"
+}

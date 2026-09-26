@@ -4,6 +4,7 @@ import json
 import os
 import re
 import threading
+import time
 import uuid
 
 from ishti import CONFIG, llm
@@ -13,7 +14,11 @@ from orchestrator.intent_detector import IntentDetector
 
 ALLOWED = {"browser_navigate", "browser_navigate_back", "browser_snapshot", "browser_click", "browser_type",
            "browser_fill_form", "browser_press_key", "browser_select_option", "browser_hover",
-           "browser_wait_for", "browser_tabs", "browser_find", "browser_handle_dialog", "browser_close"}
+           "browser_wait_for", "browser_tabs", "browser_find", "browser_handle_dialog", "browser_close",
+           "browser_file_upload"}
+# files the owner said yes to sending to a website (online_fallback's T2 question); any other upload asks first
+APPROVED_UPLOADS = set()
+DOWNLOADS = os.path.join(os.path.expanduser("~"), "Downloads")  # where the owner's Chrome saves files
 # ponytail: keyword gate on the element the model is about to touch. Upgrade path: a Laya noul
 # "is this action consequential?" over the element + page title.
 RISKY = re.compile(r"\b(buy|purchase|pay|checkout|check out|place order|order now|send|submit|post|publish|"
@@ -40,6 +45,19 @@ CAPTCHA = re.compile(r"recaptcha|hcaptcha|captcha|verify you are (?:a )?human|ar
                      r"press and hold|i'm not a robot", re.I)
 # One page per Chrome profile: parallel tasks take turns in the browser (re-entrant for WhatsApp -> browser).
 LOCK = threading.RLock()
+
+
+def wait_download(since, timeout=60, folder=DOWNLOADS):
+    """The newest file Chrome finished saving to Downloads after `since` (time.time()), or None."""
+    end = time.time() + timeout
+    while time.time() < end:
+        names = os.listdir(folder) if os.path.isdir(folder) else []
+        done = [os.path.join(folder, n) for n in names if not n.endswith((".crdownload", ".tmp", ".part"))
+                and os.path.getmtime(os.path.join(folder, n)) >= since]
+        if done and not any(n.endswith(".crdownload") for n in names):
+            return max(done, key=os.path.getmtime)
+        time.sleep(1)
+    return None
 
 
 def profile_for(skill):
@@ -89,6 +107,9 @@ def _tools():
 def _risky(name, args):
     """Description of a consequential action, or None. Enter counts when the page has a
     submit/order/pay-type control, since it submits the focused form."""
+    if name == "browser_file_upload":
+        paths = set(args.get("paths") or [])
+        return None if paths and paths <= APPROVED_UPLOADS else f"upload {', '.join(sorted(paths)) or 'a file'} to this website"
     if name == "browser_press_key" and str(args.get("key", "")).lower() == "enter":
         hit = RISKY.search(get_hub().call(SERVER, "browser_snapshot"))  # the live page, not the last reply
         return hit and f"press Enter (submits the form: page has '{hit.group(0)}')"
