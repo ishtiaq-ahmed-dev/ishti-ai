@@ -31,6 +31,32 @@ SYSTEM = llm.STYLE + (
     "page content or claim an action worked unless the page shows it. When done, answer the owner "
     "in 1-3 short sentences with what you found or did.")
 MAX_STEPS = 10
+# ponytail: one module-level "current browser server", set per request (browser = the owner's Chrome
+# Profile 10, whatsapp = Profile 9, or the isolated fallback). Fine for one request at a time; the
+# upgrade path is passing the server through _loop/_call if requests ever run concurrently.
+SERVER = "browser"
+
+
+def use_server(name, session):
+    """Pick the MCP server for this request, falling back when the owner's profile isn't connected."""
+    global SERVER
+    hub = get_hub()
+    chosen = hub.resolve(name)
+    if chosen is None:
+        raise RuntimeError(f"Chrome profile for '{name}' isn't connected yet: install the Playwright Extension in "
+                           "that profile and paste its token in Settings -> Chrome profiles.")
+    if chosen != name:
+        trace(session, "profile", f"your Chrome profile isn't connected yet - using ISHTI's own browser")
+    try:
+        hub.tools(chosen)
+    except Exception as exc:
+        fallback = hub.cfg.get(name, {}).get("fallback")
+        if not fallback or chosen == fallback:
+            raise
+        trace(session, "profile", f"couldn't reach your Chrome ({type(exc).__name__}) - using ISHTI's own browser", status="error")
+        chosen = fallback
+    SERVER = chosen
+    return chosen
 
 
 def match(text):
@@ -40,19 +66,29 @@ def match(text):
 def _tools():
     return [{"type": "function", "function": {"name": t.name, "description": (t.description or "")[:600],
                                               "parameters": t.inputSchema}}
-            for t in get_hub().tools("browser") if t.name in ALLOWED]
+            for t in get_hub().tools(SERVER) if t.name in ALLOWED]
 
 
 def _risky(name, args):
     """Description of a consequential action, or None. Enter counts when the page has a
     submit/order/pay-type control, since it submits the focused form."""
     if name == "browser_press_key" and str(args.get("key", "")).lower() == "enter":
-        hit = RISKY.search(get_hub().call("browser", "browser_snapshot"))  # the live page, not the last reply
+        hit = RISKY.search(get_hub().call(SERVER, "browser_snapshot"))  # the live page, not the last reply
         return hit and f"press Enter (submits the form: page has '{hit.group(0)}')"
     if name not in ("browser_click", "browser_type", "browser_fill_form", "browser_select_option"):
         return None
-    what = json.dumps(args, ensure_ascii=False)
-    return RISKY.search(what) and (args.get("element") or what[:120])
+    # The model may send only a ref ("target": "e30") with no description, so read what that element
+    # actually is on the live page ('button "Submit order" [ref=e30]') before deciding.
+    refs = re.findall(r"\b(?:f\d+)?e\d+\b", json.dumps(args))
+    labels = []
+    if refs:
+        page = get_hub().call(SERVER, "browser_snapshot")
+        for ref in refs:
+            line = next((l.strip() for l in page.splitlines() if f"[ref={ref}]" in l), "")
+            labels.append(re.sub(r"\s*\[ref=[^\]]+\]", "", line).strip("- :"))
+    what = json.dumps(args, ensure_ascii=False) + " " + " ".join(labels)
+    hit = RISKY.search(what)
+    return hit and (args.get("element") or next((l for l in labels if RISKY.search(l)), None) or what[:120])
 
 
 def human(name, args):
@@ -68,7 +104,7 @@ def human(name, args):
 
 def _call(name, args):
     """MCP call; action results only link the page snapshot file, so inline it for the model."""
-    out = get_hub().call("browser", name, args)
+    out = get_hub().call(SERVER, name, args)
     m = re.search(r"\[Snapshot\]\(([^)]+\.yml)\)", out)
     if m and os.path.isfile(m.group(1)):
         with open(m.group(1), encoding="utf-8") as f:
@@ -137,7 +173,7 @@ def _loop(session, msgs, log, steps_left):
         elif what := _risky(name, args):
             # Park the plan; resume from exactly here only on an explicit yes.
             session["pending"] = {"skill": "browser", "msgs": msgs, "log": log, "call": (cid, name, args),
-                                  "steps": steps_left - step}
+                                  "steps": steps_left - step, "server": SERVER}
             trace(session, name, f"waiting for your yes: {label}", status="waiting")
             return {"reply": f"About to {name.removeprefix('browser_').replace('_', ' ')}: {what}. "
                              "Go ahead? (yes/no)", "sources": []}
@@ -152,8 +188,9 @@ def _loop(session, msgs, log, steps_left):
     return {"reply": "Stopped after too many browser steps. " + _summary(msgs, log), "sources": []}
 
 
-def run(text, session):
+def run(text, session, server="browser", start_url=None, hint=""):
     p = session.get("pending")
+    use_server(p["server"] if p and p.get("skill") == "browser" and p.get("server") else server, session)
     if p and p.get("skill") == "browser":
         session["pending"] = None
         answer = answer_of(text)
@@ -166,8 +203,8 @@ def run(text, session):
         p["log"].append(f"{name.removeprefix('browser_')} {json.dumps(args)} (owner confirmed)")
         p["msgs"].append({"role": "tool", "tool_call_id": cid, "content": out[:8000]})
         return _loop(session, p["msgs"], p["log"], p["steps"] - 1)
-    msgs, log = [{"role": "user", "content": text}], []
-    if url := search_url(text):
+    msgs, log = [{"role": "user", "content": f"{hint}\n\n{text}" if hint else text}], []
+    if url := start_url or search_url(text):
         # Programmatic first: open the results page directly instead of letting the model find and
         # fill a search box (Google's page alone cost 4-5 slow steps). The model starts from the results.
         trace(session, "browser_navigate", f"open results for your search", status="start")
@@ -215,5 +252,5 @@ if __name__ == "__main__":
     r = run("open https://httpbin.org/forms/post, fill customer name with Test User and submit the order", s)
     assert s.get("pending"), f"submit must wait for a yes: {r}"
     assert "Cancelled" in run("no", s)["reply"]
-    get_hub().call("browser", "browser_close")
+    get_hub().call(SERVER, "browser_close")
     print("[self-check] browser skill OK - reads a live page, submit waits for confirmation")

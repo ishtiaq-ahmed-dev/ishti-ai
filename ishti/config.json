@@ -26,6 +26,22 @@
   },
   "mcp_servers": {
     "browser": {
+      "note": "Owner's Chrome 'Profile 10' (search + Google logins) via the Playwright Extension; token in data/mcp_tokens.json",
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@0.0.82", "--extension", "--profile-dir-name", "Profile 10",
+               "--output-dir", "D:\\ISHTI\\data\\mcp_output"],
+      "token_key": "browser",
+      "fallback": "browser_isolated"
+    },
+    "whatsapp": {
+      "note": "Owner's Chrome 'Profile 9' (WhatsApp Web) via the Playwright Extension",
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@0.0.82", "--extension", "--profile-dir-name", "Profile 9",
+               "--output-dir", "D:\\ISHTI\\data\\mcp_output"],
+      "token_key": "whatsapp"
+    },
+    "browser_isolated": {
+      "note": "Fallback until the extension is set up: ISHTI's own separate profile, no logins",
       "command": "npx",
       "args": ["-y", "@playwright/mcp@0.0.82", "--user-data-dir", "D:\\ISHTI\\data\\mcp_browser_profile",
                "--output-dir", "D:\\ISHTI\\data\\mcp_output"]

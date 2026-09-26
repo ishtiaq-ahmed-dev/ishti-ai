@@ -1,6 +1,7 @@
 """Dispatcher: request -> route (rules / Laya) -> skill -> reply.
 Text and voice both call handle(); voice is just another input channel."""
 import io
+import os
 import json
 import re
 import threading
@@ -404,3 +405,39 @@ async def overview_endpoint():
         "reminders": reminders, "memories": memories,
         "prefs": {"audio_output": prefs.audio_output, "response_length": prefs.response_length},
     }
+
+
+@api.get("/api/chrome_profiles")
+async def chrome_profiles_get():
+    """Which of the owner's Chrome profiles ISHTI may use, and whether each is connected (never the token)."""
+    from ishti import CONFIG
+    from ishti.mcp_client import load_tokens
+    tokens = load_tokens()
+    out = []
+    for name, cfg in CONFIG.get("mcp_servers", {}).items():
+        if cfg.get("token_key"):
+            args = cfg.get("args", [])
+            profile = next((args[i + 1] for i, a in enumerate(args[:-1]) if a == "--profile-dir-name"), "")
+            out.append({"key": cfg["token_key"], "server": name, "profile": profile, "purpose": cfg.get("note", ""),
+                        "connected": bool(tokens.get(cfg["token_key"]))})
+    return {"profiles": out}
+
+
+@api.post("/api/chrome_profiles")
+async def chrome_profiles_set(req: Request):
+    """Save a Playwright Extension token for one profile (local data/mcp_tokens.json, git-ignored)."""
+    from ishti import CONFIG
+    from ishti.mcp_client import TOKENS_PATH, get_hub, load_tokens
+    body = await req.json()
+    key, token = str(body.get("key", "")), str(body.get("token", "")).strip()
+    keys = {c["token_key"]: n for n, c in CONFIG.get("mcp_servers", {}).items() if c.get("token_key")}
+    if key not in keys or len(token) > 400 or not re.fullmatch(r"[\w\-.=+/:]*", token):
+        return JSONResponse({"error": "unknown profile or malformed token"}, status_code=400)
+    tokens = {**load_tokens(), key: token}
+    if not token:
+        tokens.pop(key, None)  # empty = disconnect
+    os.makedirs(os.path.dirname(TOKENS_PATH), exist_ok=True)
+    with open(TOKENS_PATH, "w", encoding="utf-8") as f:
+        json.dump(tokens, f)
+    get_hub().close(keys[key])  # reconnect with the new token on next use
+    return await chrome_profiles_get()

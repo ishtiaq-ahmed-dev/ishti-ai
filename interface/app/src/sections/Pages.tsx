@@ -83,9 +83,9 @@ export function Memory() {
               </div>
               <dl className="space-y-1 text-sm">
                 {rows.map((f) => (
-                  <div key={f.attr} className="flex gap-2">
+                  <div key={f.attr} className="flex items-start gap-2 min-w-0">
                     <dt className="w-24 shrink-0 text-muted-foreground">{f.attr}</dt>
-                    <dd className="min-w-0 break-words">{f.value}
+                    <dd className="min-w-0 flex-1 break-words">{f.value}
                       {f.previous && <span className="ml-1 text-[11px] text-muted-foreground line-through">{f.previous}</span>}</dd>
                   </div>
                 ))}
@@ -109,13 +109,15 @@ export function Skills() {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {skills.map((s, i) => (
           <motion.div key={s.name} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.025 }}>
-            <Card className="h-full">
-              <div className="mb-1 flex items-center justify-between">
-                <span className="font-semibold">{s.name}</span>
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${tone(s.status)}`}>{s.status} · v{s.version}</span>
+            <Card className="h-full flex flex-col justify-between">
+              <div>
+                <div className="mb-1.5 flex items-center justify-between gap-2 min-w-0">
+                  <span className="font-semibold truncate">{s.name}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium shrink-0 ${tone(s.status)}`}>{s.status} · v{s.version}</span>
+                </div>
+                <p className="text-sm text-muted-foreground break-words">{s.description}</p>
               </div>
-              <p className="text-sm text-muted-foreground">{s.description}</p>
-              {s.problem && <p className="mt-1 text-xs text-danger">{s.problem}</p>}
+              {s.problem && <p className="mt-2 text-xs text-danger break-words">{s.problem}</p>}
             </Card>
           </motion.div>
         ))}
@@ -133,11 +135,11 @@ type Check = { test: string; status: string; details: string };
 function Stat({ label, value, unit, sub }: { label: string; value: number; unit: string; sub?: string }) {
   return (
     <Card>
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums">
+      <div className="text-xs text-muted-foreground truncate">{label}</div>
+      <div className="mt-1 text-2xl font-semibold tabular-nums truncate">
         <AnimatedCounter value={Math.round(value)} />{unit}
       </div>
-      {sub && <div className="text-[11px] text-muted-foreground">{sub}</div>}
+      {sub && <div className="text-[11px] text-muted-foreground truncate" title={sub}>{sub}</div>}
     </Card>
   );
 }
@@ -199,6 +201,48 @@ export function System() {
 }
 
 // ---------------------------------------------------------------- Settings
+type Profile = { key: string; profile: string; purpose: string; connected: boolean };
+
+/** The owner's own Chrome profiles ISHTI may drive (via the Playwright Extension). Tokens stay on this PC. */
+function ChromeProfiles() {
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  useEffect(() => { getJSON<{ profiles: Profile[] }>("/api/chrome_profiles").then((d) => setProfiles(d.profiles)); }, []);
+  const save = (key: string, token: string) =>
+    postJSON<{ profiles: Profile[] }>("/api/chrome_profiles", { key, token }).then((d) => { setProfiles(d.profiles); setDraft({}); });
+  return (
+    <Card>
+      <div className="font-medium">Chrome profiles</div>
+      <div className="mb-3 text-xs text-muted-foreground">
+        ISHTI only ever uses these two profiles of your Chrome. In each one, install the{" "}
+        <a className="text-accent" href="https://chromewebstore.google.com/detail/playwright-extension/mmlmfjhmonkocbjadbfplnigmagldckm"
+          target="_blank" rel="noreferrer">Playwright Extension</a>, open it, copy its token and paste it here.
+        Until then ISHTI uses its own separate browser (no logins). Sending messages or submitting forms always asks you first.
+      </div>
+      <div className="space-y-2">
+        {profiles.map((p) => (
+          <div key={p.key} className="flex flex-wrap items-center gap-2 rounded-xl border border-border p-2.5">
+            <span className={`h-2 w-2 rounded-full ${p.connected ? "bg-success" : "bg-muted-foreground/40"}`} />
+            <div className="min-w-[160px] flex-1">
+              <div className="text-sm font-medium">{p.profile} · {p.key === "whatsapp" ? "WhatsApp" : "Search & logins"}</div>
+              <div className="text-[11px] text-muted-foreground">{p.connected ? "Connected" : "Not connected"}</div>
+            </div>
+            <input type="password" placeholder={p.connected ? "Replace token…" : "Paste token…"} value={draft[p.key] ?? ""}
+              onChange={(e) => setDraft({ ...draft, [p.key]: e.target.value })}
+              className="w-56 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs outline-none focus:border-accent" />
+            <button disabled={!draft[p.key]} onClick={() => save(p.key, draft[p.key])}
+              className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40">Save</button>
+            {p.connected && (
+              <button onClick={() => save(p.key, "")} className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted">
+                Disconnect</button>
+            )}
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 export function Settings() {
   const [p, setP] = useState<{ audio_output: boolean; wake_enabled: boolean; wake_model: string; models: Record<string, string> }>();
   useEffect(() => { getJSON<typeof p>("/api/prefs").then(setP); }, []);
@@ -218,6 +262,7 @@ export function Settings() {
               className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow ${p.audio_output ? "right-0.5" : "left-0.5"}`} />
           </button>
         </Card>
+        <ChromeProfiles />
         <Card><div className="font-medium">Hands-free</div>
           <div className="text-xs text-muted-foreground">Wake word “{p.wake_model.replace("_", " ")}” is {p.wake_enabled ? "on" : "off"} (needs a microphone).</div></Card>
         <Card><div className="mb-1 font-medium">Models</div>

@@ -1,0 +1,10 @@
+{
+  "name": "whatsapp",
+  "version": "1.0.0",
+  "description": "Reads and writes WhatsApp messages in WhatsApp Web, inside the owner's own Chrome 'Profile 9' (already logged in) through the Playwright Extension. Sending always waits for the owner's yes.",
+  "route": "reading or sending WhatsApp messages",
+  "priority": 16,
+  "laya": false,
+  "needs": {"python": ["mcp"], "models": ["planner"], "mcp": ["whatsapp"], "apis": []},
+  "status": "working"
+}

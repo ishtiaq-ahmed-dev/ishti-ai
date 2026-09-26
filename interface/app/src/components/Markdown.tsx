@@ -13,7 +13,7 @@ function inline(text: string): ReactNode[] {
     else if (t.startsWith("`")) out.push(<code key={m.index} className="rounded bg-muted px-1 py-0.5 font-mono text-[12px]">{t.slice(1, -1)}</code>);
     else {
       const [, label, url] = t.match(/\[([^\]]+)\]\(([^)]+)\)/)!;
-      out.push(<a key={m.index} href={url} target="_blank" rel="noreferrer" className="text-accent underline-offset-2 hover:underline">{label}</a>);
+      out.push(<a key={m.index} href={url} target="_blank" rel="noreferrer" className="text-accent underline-offset-2 hover:underline break-all">{label}</a>);
     }
     last = (m.index ?? 0) + t.length;
   }
@@ -48,5 +48,5 @@ export function Markdown({ text }: { text: string }) {
         accent="#6e56cf" className="my-2" />);
     }
   }
-  return <div className="text-sm leading-relaxed">{blocks.map((b, i) => <Fragment key={i}>{b}</Fragment>)}</div>;
+  return <div className="text-sm leading-relaxed break-words min-w-0 max-w-full overflow-hidden">{blocks.map((b, i) => <Fragment key={i}>{b}</Fragment>)}</div>;
 }

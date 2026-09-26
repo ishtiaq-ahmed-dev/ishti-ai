@@ -12,6 +12,19 @@ from mcp.client.stdio import stdio_client
 from ishti import CONFIG
 
 
+TOKENS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "mcp_tokens.json")
+
+
+def load_tokens() -> dict:
+    """Playwright Extension tokens per profile, pasted by the owner in Settings. Local file, never committed."""
+    import json
+    try:
+        with open(TOKENS_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
 class MCPHub:
     def __init__(self, servers=None):
         self.cfg = servers or CONFIG.get("mcp_servers", {})
@@ -24,7 +37,11 @@ class MCPHub:
         # The anyio contexts must open and close in this one task, so the session lives here and
         # requests arrive through a queue.
         cfg = self.cfg[name]
-        params = StdioServerParameters(command=cfg["command"], args=cfg.get("args", []), env=cfg.get("env"))
+        env = None
+        if cfg.get("token_key"):  # extension mode: the profile's token lets it connect without a popup
+            token = load_tokens().get(cfg["token_key"])
+            env = {**os.environ, **({"PLAYWRIGHT_MCP_EXTENSION_TOKEN": token} if token else {})}
+        params = StdioServerParameters(command=cfg["command"], args=cfg.get("args", []), env=env)
         try:
             async with stdio_client(params) as (r, w), ClientSession(r, w) as session:
                 await session.initialize()
@@ -71,6 +88,14 @@ class MCPHub:
                 asyncio.run_coroutine_threadsafe(self._serve(name, ready), self.loop)
                 ready.result(timeout)
         return self.live[name]
+
+    def resolve(self, name):
+        """The server to actually use: an extension-mode profile without its token would pop an approval
+        dialog in Chrome and block, so it falls back (e.g. to ISHTI's isolated browser) until set up."""
+        cfg = self.cfg.get(name, {})
+        if cfg.get("token_key") and not load_tokens().get(cfg["token_key"]):
+            return cfg.get("fallback")
+        return name
 
     def tools(self, name):
         return self._ensure(name)[1]

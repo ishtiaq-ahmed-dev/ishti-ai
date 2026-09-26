@@ -34,10 +34,11 @@ Worked top to bottom. Each item is checked only after it has been verified by us
 - [ ] "Find me a <product>" → search official and verified stores (the manufacturer, and big retailers for PK and international), pull prices and links, and return a comparison table sorted by price, with the cheapest highlighted
 
 ## F. Use the owner's own Chrome profiles
-- [ ] Profile 10 (`C:\Users\PC\AppData\Local\Google\Chrome\User Data\Profile 10`): searching and anything that needs a Google login
-- [ ] Profile 9 (`…\User Data\Profile 9`): WhatsApp Web
-- [ ] Nothing else is ever touched. Sending messages or anything consequential still waits for a yes.
-- Approach: Playwright MCP `--extension` mode connects to the running Chrome through the "Playwright MCP Bridge" extension (a copied profile would lose logins, and Chrome blocks remote-debugging on its real user-data folder). **Owner action needed:** install that extension in Profile 9 and Profile 10.
+- [x] Profile 10 (`C:\Users\PC\AppData\Local\Google\Chrome\User Data\Profile 10`): searching and anything that needs a Google login
+- [x] Profile 9 (`…\User Data\Profile 9`): WhatsApp Web
+- [x] Nothing else is ever touched. Sending messages or anything consequential still waits for a yes.
+- Approach: Playwright MCP `--extension` mode connects to the running Chrome through the "Playwright MCP Bridge" extension (a copied profile would lose logins, and Chrome blocks remote-debugging on its real user-data folder). **Owner action needed:** install the Playwright Extension in Profile 9 and Profile 10, then paste each profile's token in Settings → Chrome profiles. Until then ISHTI uses its own isolated browser, and WhatsApp says it isn't connected.
+- [x] Safety fix found while testing: a click sent as a bare element ref (`target: e30`) skipped the consequential-action gate; the gate now reads what that element is on the live page
 
 ## G. Carry-overs (NEEDS.md)
 - [ ] Skill builder: create new skills when nothing fits (NEEDS #10)

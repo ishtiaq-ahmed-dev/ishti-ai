@@ -84,47 +84,49 @@ export default function App() {
             </div>
           </div>
 
-          <nav className="space-y-0.5">
-            {NAV.map(({ key, label, icon: Icon }) => (
-              <button key={key} onClick={() => setPage(key)}
-                className={`relative flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors ${page === key ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-                {page === key && <motion.span layoutId="nav-active" className="absolute inset-0 rounded-xl bg-accent-soft"
-                  transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
-                <Icon className={`relative h-4 w-4 ${page === key ? "text-accent" : ""}`} />
-                <span className="relative font-medium">{label}</span>
-              </button>
-            ))}
-          </nav>
+          <div className="scroll-thin flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
+            <nav className="space-y-0.5">
+              {NAV.map(({ key, label, icon: Icon }) => (
+                <button key={key} onClick={() => setPage(key)}
+                  className={`relative flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors ${page === key ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                  {page === key && <motion.span layoutId="nav-active" className="absolute inset-0 rounded-xl bg-accent-soft"
+                    transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
+                  <Icon className={`relative h-4 w-4 ${page === key ? "text-accent" : ""}`} />
+                  <span className="relative font-medium">{label}</span>
+                </button>
+              ))}
+            </nav>
 
-          <div className="mt-6 flex items-center justify-between px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <span>Recent</span>
-            <button onClick={() => { setPage("chat"); setOpenSession({ id: "", n: Date.now() }); }}
-              className="rounded-md px-1.5 py-0.5 normal-case tracking-normal text-accent hover:bg-accent-soft">+ New</button>
-          </div>
-          <div className="scroll-thin mt-1 max-h-[34vh] space-y-0.5 overflow-y-auto">
-            {sessions.length ? sessions.map((x) => (
-              <div key={x.session_id}
-                className={`group flex cursor-pointer items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors ${activeSession === x.session_id && page === "chat" ? "bg-accent-soft text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
-                onClick={() => { setPage("chat"); setOpenSession({ id: x.session_id, n: Date.now() }); }}>
-                <span className="min-w-0 flex-1 truncate">{x.title}</span>
-                <span className="text-[10px] opacity-60 group-hover:hidden">{ago(x.updated_at)}</span>
-                <button title="Delete chat" className="hidden rounded p-0.5 hover:bg-background group-hover:block"
-                  onClick={(e) => { e.stopPropagation(); del(`/api/sessions/${x.session_id}`).then(loadSessions); }}>
-                  <X className="h-3 w-3" /></button>
-              </div>
-            )) : <div className="px-3 py-1 text-xs text-muted-foreground">Your chats appear here.</div>}
+            <div className="mt-5 flex items-center justify-between px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <span>Recent</span>
+              <button onClick={() => { setPage("chat"); setOpenSession({ id: "", n: Date.now() }); }}
+                className="rounded-md px-1.5 py-0.5 normal-case tracking-normal text-accent hover:bg-accent-soft">+ New</button>
+            </div>
+            <div className="mt-1 space-y-0.5">
+              {sessions.length ? sessions.map((x) => (
+                <div key={x.session_id}
+                  className={`group flex cursor-pointer items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors ${activeSession === x.session_id && page === "chat" ? "bg-accent-soft text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+                  onClick={() => { setPage("chat"); setOpenSession({ id: x.session_id, n: Date.now() }); }}>
+                  <span className="min-w-0 flex-1 truncate">{x.title}</span>
+                  <span className="text-[10px] opacity-60 group-hover:hidden">{ago(x.updated_at)}</span>
+                  <button title="Delete chat" className="hidden rounded p-0.5 hover:bg-background group-hover:block"
+                    onClick={(e) => { e.stopPropagation(); del(`/api/sessions/${x.session_id}`).then(loadSessions); }}>
+                    <X className="h-3 w-3" /></button>
+                </div>
+              )) : <div className="px-3 py-1 text-xs text-muted-foreground">Your chats appear here.</div>}
+            </div>
+
+            <div className="mt-5 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">My projects</div>
+            <div className="mt-1 space-y-0.5">
+              {projects.length ? projects.map((p, i) => (
+                <div key={p.entity} title={p.value} className="flex items-center gap-2 truncate rounded-lg px-3 py-1.5 text-sm text-muted-foreground">
+                  <FolderKanban className="h-3.5 w-3.5 shrink-0" style={{ color: ["#6e56cf", "#2f6fdd", "#1f9d6b", "#d98a1c"][i % 4] }} />
+                  <span className="truncate capitalize">{p.entity}</span></div>
+              )) : <div className="px-3 py-1 text-xs text-muted-foreground">Tell me “Project X is at D:\…”</div>}
+            </div>
           </div>
 
-          <div className="mt-5 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">My projects</div>
-          <div className="mt-1 space-y-0.5">
-            {projects.length ? projects.map((p, i) => (
-              <div key={p.entity} title={p.value} className="flex items-center gap-2 truncate rounded-lg px-3 py-1.5 text-sm text-muted-foreground">
-                <FolderKanban className="h-3.5 w-3.5 shrink-0" style={{ color: ["#6e56cf", "#2f6fdd", "#1f9d6b", "#d98a1c"][i % 4] }} />
-                <span className="truncate capitalize">{p.entity}</span></div>
-            )) : <div className="px-3 py-1 text-xs text-muted-foreground">Tell me “Project X is at D:\…”</div>}
-          </div>
-
-          <div className="mt-auto rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 p-3 text-white">
+          <div className="mt-3 shrink-0 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 p-3 text-white">
             <div className="flex items-center gap-1.5 text-sm font-semibold"><Bell className="h-3.5 w-3.5" /> Local-first</div>
             <p className="mt-1 text-[11px] leading-snug text-white/85">Models, memory and voice run on this PC. Nothing leaves it.</p>
             <a href="https://rareui.com" target="_blank" rel="noreferrer" className="mt-2 inline-block text-[10px] text-white/70 underline-offset-2 hover:underline">

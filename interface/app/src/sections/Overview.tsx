@@ -1,5 +1,5 @@
 import { motion } from "motion/react";
-import { ArrowRight, AudioLines, Brain, CheckCheck, GitBranch, MessageSquareText, Route, Sparkles, Wrench } from "lucide-react";
+import { AudioLines, Brain, CheckCheck, GitBranch, MessageSquareText, Route, Sparkles, Wrench } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { getJSON } from "@/lib/api";
 import { AnimatedCounter } from "@/components/rare/animated-counter";
@@ -19,9 +19,14 @@ function Stage({ icon, title, lines, count, label, i }:
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04, duration: 0.25 }}
       className="relative flex min-w-0 flex-1 flex-col gap-2 rounded-2xl border border-border bg-card/40 p-4 shadow-xs">
-      <div className="flex items-center gap-2.5">
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent">{icon}</span>
-        <span className="text-sm font-semibold tracking-tight">{title}</span>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent">{icon}</span>
+          <span className="text-sm font-semibold tracking-tight truncate">{title}</span>
+        </div>
+        <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-mono font-medium text-muted-foreground shrink-0">
+          0{i + 1}
+        </span>
       </div>
       <div className="mt-0.5 space-y-1">
         {lines.map((l) => (
@@ -61,13 +66,8 @@ export function Overview() {
       <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pipeline</div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
         {stages.map((s, i) => (
-          <div key={s.title} className="relative flex min-w-0">
+          <div key={s.title} className="flex min-w-0">
             <Stage {...s} i={i} />
-            {i % 4 !== 3 && (
-              <div className="absolute -right-3 top-1/2 z-10 hidden -translate-y-1/2 lg:flex items-center justify-center pointer-events-none">
-                <ArrowRight className="h-4 w-4 text-accent/50" />
-              </div>
-            )}
           </div>
         ))}
       </div>

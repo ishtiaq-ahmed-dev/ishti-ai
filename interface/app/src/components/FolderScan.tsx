@@ -10,7 +10,7 @@ export function FolderScan({ scan, plan }: { scan: TraceEvent; plan?: TraceEvent
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
       className="my-2 flex items-center gap-4 rounded-2xl border border-border bg-card p-3">
-      <div className="shrink-0" style={{ width: 104, height: 88 }}>
+      <div className="shrink-0 overflow-hidden rounded-xl bg-muted/20" style={{ width: 104, height: 88 }}>
         <div style={{ transform: "scale(0.32)", transformOrigin: "top left" }}><Folder color="blue" size="sm" /></div>
       </div>
       <div className="min-w-0 flex-1">

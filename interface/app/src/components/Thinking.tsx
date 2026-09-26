@@ -56,7 +56,7 @@ export function Thinking({ events, live }: { events: TraceEvent[]; live: boolean
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25, ease: "easeOut" }} className="overflow-hidden">
             <div className="mt-1.5 space-y-2 border-l-2 border-accent-soft pl-3">
-              {route?.why && <p className="text-muted-foreground">{route.why}</p>}
+              {route?.why && <p className="text-muted-foreground break-words">{route.why}</p>}
               {route?.scores && route.scores.length > 0 && (
                 <div className="space-y-1">
                   {route.scores.map(([name, v]) => (
@@ -75,8 +75,8 @@ export function Thinking({ events, live }: { events: TraceEvent[]; live: boolean
                 <div className="space-y-1">
                   <StepPlayer steps={steps.map((s) => ({ label: s.skill }))} value={Math.max(0, startedSteps - 1)}
                     playing={false} showControl={false} size={14} />
-                  <ol className="list-decimal pl-4 text-muted-foreground">
-                    {steps.map((s, i) => <li key={i}><b className="text-foreground">{s.skill}</b>: {s.request}</li>)}
+                  <ol className="list-decimal pl-4 text-muted-foreground break-words">
+                    {steps.map((s, i) => <li key={i} className="break-words"><b className="text-foreground">{s.skill}</b>: {s.request}</li>)}
                   </ol>
                 </div>
               )}
@@ -85,8 +85,8 @@ export function Thinking({ events, live }: { events: TraceEvent[]; live: boolean
                   {list.map((r) => (
                     <motion.li key={r.key} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.18 }} className={`flex items-start gap-1.5 ${r.indent ? "pl-4" : ""}`}>
-                      <span className="mt-0.5">{ICON[r.status]}</span>
-                      <span className={r.indent ? "text-muted-foreground" : "font-medium"}>{r.text}</span>
+                      <span className="mt-0.5 shrink-0">{ICON[r.status]}</span>
+                      <span className={r.indent ? "min-w-0 flex-1 break-words text-muted-foreground" : "min-w-0 flex-1 break-words font-medium"}>{r.text}</span>
                     </motion.li>
                   ))}
                 </AnimatePresence>
