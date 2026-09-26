@@ -1,0 +1,15 @@
+{
+  "name": "folders",
+  "version": "1.0.0",
+  "description": "Questions about a folder (count/list files by type, largest, newest) and organizing a folder's loose files into type subfolders with preview, confirmation, no overwrites and undo. Known folders come from the Windows registry; typo-tolerant.",
+  "route": "how many or which files are in a folder, or organizing / cleaning up a folder like Downloads",
+  "priority": 25,
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "status": "working",
+  "laya": false
+}

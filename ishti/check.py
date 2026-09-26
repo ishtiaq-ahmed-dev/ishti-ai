@@ -36,6 +36,8 @@ LABELLED = [
     ("is it going to snow in Murree this weekend", "weather"),
     ("remind me in 20 minutes to call Ali", "reminders"), ("set a timer for 10 minutes", "reminders"),
     ("list my reminders", "reminders"),
+    ("how many pdfs are in my dwonload folder", "folders"), ("arrange the complete downloads folder", "folders"),
+    ("what are the largest files on my desktop", "folders"),
 ]
 
 

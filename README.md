@@ -12,7 +12,7 @@ dispatcher (FastAPI, ishti/dispatcher.py)
    ├─ skill triggers (regex)  ─┐
    ├─ Laya typed decisions    ─┼→ skill  →  reply (+ Piper audio)
    └─ default: chat           ─┘
-          skills: memory · reminders · weather · web_search · deep_research · web_fetch · browser (MCP)
+          skills: memory · reminders · folders · weather · web_search · deep_research · web_fetch · browser (MCP)
                   files · apps · system · video · chat
           memory: exact facts (SQLite)  >  semantic recall (ChromaDB)
 ```
@@ -95,6 +95,7 @@ Each skill is a folder with a manifest:
 | reminders | 'remind me in 20 min to…', 'at 5pm', 'tomorrow at 9', timers, list, cancel; fired by voice + HUD, missed ones announced at next start | SQLite + 1 s background loop |
 | owner | mute/unmute, who am I, what do you know about me, what can you do, run diagnostics | fact store + skill manifests + doctor |
 | chat | everything else; code questions use the coder model | Ollama |
+| folders | 'how many PDFs in my downloads', largest/newest files, and organizing a folder into type subfolders (preview → yes → move, never overwrites, 'undo that') | stdlib; known folders from the Windows registry |
 | files | find files on this PC by name/type/content | `desktop/computer_use.search_pc` |
 | apps | open or switch to desktop apps (alias list / PATH, never a shell) | `desktop/computer_use` |
 | system | CPU / RAM / GPU / disk status | psutil + nvidia-smi |
