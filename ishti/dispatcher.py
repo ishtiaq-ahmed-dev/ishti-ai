@@ -658,11 +658,20 @@ threading.Thread(target=warm_up, daemon=True).start()
 
 @api.post("/api/stt")
 async def stt_endpoint(audio: UploadFile):
-    """Browser mic -> local faster-whisper -> text (the HUD then submits it like typed text)."""
+    """Browser mic -> local faster-whisper -> text (the HUD then submits it like typed text). The final take drops
+    what the voice loop drops too - one stray word or a barely-heard fragment ("Arabic", "at 4.") - so a
+    half-caught recording is not sent as a message; live partials ("partial.webm") show everything."""
     import asyncio
-    from ishti.voice import transcribe
     data = io.BytesIO(await audio.read())
-    return {"text": await asyncio.get_running_loop().run_in_executor(None, transcribe, data)}
+    final = audio.filename != "partial.webm"
+    return {"text": await asyncio.get_running_loop().run_in_executor(None, _heard, data, final)}
+
+
+def _heard(data, final=True):
+    from ishti.voice import transcribe
+    from ishti.wake import stray
+    text = transcribe(data)
+    return "" if final and text and stray(text) else text
 
 
 @api.post("/api/voice")
@@ -670,9 +679,9 @@ async def voice_endpoint(audio: UploadFile, session_id: str = Form(None)):
     """Full voice round trip for any client: audio in -> dispatcher -> reply text + Piper WAV (base64)."""
     import asyncio
     import base64
-    from ishti.voice import synthesize, transcribe
+    from ishti.voice import synthesize
     loop = asyncio.get_running_loop()
-    text = await loop.run_in_executor(None, transcribe, io.BytesIO(await audio.read()))
+    text = await loop.run_in_executor(None, _heard, io.BytesIO(await audio.read()))
     if not text:
         return JSONResponse({"error": "no speech heard"}, status_code=422)
     res = await loop.run_in_executor(None, handle, text, session_id, "voice")

@@ -70,7 +70,22 @@ def plan(text, skills):
         return None
     steps = [s for s in steps if isinstance(s, dict) and s.get("skill") in live and str(s.get("request", "")).strip()
              and not (s["skill"] == "chat" and smalltalk(re.sub(r"[?,.!]", " ", str(s["request"]))))]
+    steps = fold(steps)
     return steps[:MAX_STEPS] if len(steps) >= 2 else None
+
+
+def fold(steps):
+    """A chat step right after a browser step is about that page, which chat can't see ("open Classroom in Chrome
+    and let me know if there is anything new" became browser + a chat "I don't have access"): it joins the
+    browser step."""
+    out = []
+    for step in steps:
+        if out and step["skill"] == "chat" and out[-1]["skill"] == "browser":
+            ask = step["request"].replace(PREV, "what you found there")
+            out[-1] = {**out[-1], "request": f"{out[-1]['request'].rstrip(' .')}, then {ask[0].lower()}{ask[1:]}"}
+        else:
+            out.append(step)
+    return out
 
 
 def run(steps, session, run_step):
@@ -128,6 +143,12 @@ def run(steps, session, run_step):
 
 
 if __name__ == "__main__":
+    classroom = [{"skill": "markets", "request": "Nvidia price"},
+                 {"skill": "browser", "request": "Open Chrome and go to Google Classroom"},
+                 {"skill": "chat", "request": f"Let me know if there are new assignments in {PREV}"}]
+    assert fold(classroom) == [classroom[0], {"skill": "browser", "request": "Open Chrome and go to Google Classroom, then "
+                                              "let me know if there are new assignments in what you found there"}]
+    assert fold(classroom[:1] + classroom[2:]) == classroom[:1] + classroom[2:]  # chat after other skills stays
     assert candidate("check the latest version of ollama and remember it")
     assert candidate("find the file ishti_logo and then open task manager")
     assert not candidate("tell me the pros and cons of rust")
