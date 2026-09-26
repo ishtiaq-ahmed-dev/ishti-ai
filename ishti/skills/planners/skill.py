@@ -169,7 +169,7 @@ def op_post(text, session):
                 with open(cand, encoding="utf-8", errors="ignore") as f:
                     known.append(re.sub(r"\s+", " ", f.read(1500)))
                 break
-    body = llm.ask(f"Draft a {platform} post: {text}\n" + ("Facts to use (only these, don't invent features):\n" + "\n".join(known) + "\n" if known else "")
+    body = llm.ask(f"Draft a {platform} post: {text}\n" + ("Facts to use (only these, don't invent features; never print local file paths):\n" + "\n".join(known) + "\n" if known else "")
                    + "Match the platform's style and length. Give 2 alternatives.", max_tokens=700)
     return f"Drafts ({platform}) - copy the one you like; I don't post anything myself:\n\n{body}"
 

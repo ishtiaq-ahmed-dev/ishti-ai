@@ -55,6 +55,7 @@ LABELLED = [
     ("remind me every day at 8pm to take my medicine", "reminders"),
     ("check my email", "email"), ("send an email to ali@example.com about the meeting", "email"),
     ("add a meeting with Ali tomorrow at 3pm", "calendar"), ("what is on my calendar this week", "calendar"),
+    ("make 10 flashcards on photosynthesis", "planners"), ("plan a trip to swat for 3 days", "planners"),
     ("git status of the ishti project", "dev"), ("run the tests", "dev"), ("lint the ishti project", "dev"),
     ("download https://example.com/report.pdf", "webtools"), ("watch https://example.com/jobs for changes", "webtools"),
     ("find duplicate files in downloads", "fileops"), ("rename the photos in downloads to trip", "fileops"),
