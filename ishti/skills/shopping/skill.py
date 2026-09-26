@@ -4,12 +4,16 @@ Prices come from the store pages themselves: schema.org Product data (official s
 else the most repeated price in the page text. Price-guide sites are shown only as a reference."""
 import concurrent.futures as cf
 import json
+import os
 import re
+import threading
+import time
 from collections import Counter
 from urllib.parse import urlparse
 
 import requests
 
+from ishti import ROOT
 from ishti.skills import trace
 
 TRIGGER = re.compile(r"\b(?:cheapest|lowest\s+price|best\s+(?:price|deal)|where\s+(?:can\s+i|to|should\s+i)\s+buy|"
@@ -38,8 +42,74 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
                          "Chrome/140.0 Safari/537.36", "Accept-Language": "en-US,en;q=0.9"}
 
 
+# Price-drop tracking: "tell me when the S25 gets cheaper", "watch the price of airpods pro 2".
+WATCH = re.compile(r"\b(?:tell|notify|alert)\s+me\s+when\s+.+\s+(?:gets?\s+cheaper|drops?|price\s+(?:drops?|falls?|goes\s+down))\b|"
+                   r"\b(?:watch|track|monitor)\s+(?:the\s+)?price\s+(?:of|for)\b|\bprice\s+(?:drop\s+)?alert\b", re.I)
+WATCHES = os.path.join(ROOT, "data", "price_watch.json")
+CHECK_EVERY_S = 6 * 3600
+
+
 def match(text):
-    return bool(TRIGGER.search(text)) and not NOT_SHOPPING.search(text)
+    return (bool(TRIGGER.search(text)) or bool(WATCH.search(text))) and not NOT_SHOPPING.search(text)
+
+
+def _watches():
+    try:
+        with open(WATCHES, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return []
+
+
+def watch(text, session):
+    from ishti.facts import get_facts
+    product = product_of(re.sub(r"\b(?:tell|notify|alert)\s+me\s+when|gets?\s+cheaper|price\s+(?:drops?|falls?|alert)|watch|track|monitor|the\s+price\s+(?:of|for)", " ", text, flags=re.I))
+    country = get_facts().get("owner").get("country", "")
+    rows = [r for r in compare(product, country, lambda n, l: trace(session, n, l)) if r["kind"] != "guide"]
+    if not rows:
+        return f"I couldn't find {product} in verified stores to start tracking."
+    best = rows[0]
+    items = [w for w in _watches() if w["product"].lower() != product.lower()]
+    items.append({"product": product, "country": country, "price": best["price"], "currency": best["currency"],
+                  "store": best["store"], "url": best["url"], "since": time.strftime("%Y-%m-%d")})
+    with open(WATCHES, "w", encoding="utf-8") as f:
+        json.dump(items, f, indent=1)
+    start_price_watch()
+    return (f"Tracking **{product}**: cheapest now {best['currency']} {best['price']:,.0f} at {best['store']}. "
+            f"I'll tell you when a verified store goes lower (checked every {CHECK_EVERY_S // 3600} h).")
+
+
+def check_price_watches(announce):
+    items, changed = _watches(), False
+    for w in items:
+        rows = [r for r in compare(w["product"], w["country"]) if r["kind"] != "guide" and r["currency"] == w["currency"]]
+        if rows and rows[0]["price"] < w["price"]:
+            new = rows[0]
+            announce(f"💸 {w['product']} dropped to {new['currency']} {new['price']:,.0f} at {new['store']} "
+                     f"(was {w['price']:,.0f}): {new['url']}")
+            w.update(price=new["price"], store=new["store"], url=new["url"])
+            changed = True
+    if changed:
+        with open(WATCHES, "w", encoding="utf-8") as f:
+            json.dump(items, f, indent=1)
+
+
+_price_thread = {"on": False}
+
+
+def start_price_watch():
+    """Background re-check (only inside the running server, where announcements go somewhere)."""
+    from ishti.dispatcher import HOOKS
+    if _price_thread["on"] or not HOOKS.get("emit"):
+        return
+    _price_thread["on"] = True
+
+    def loop():
+        while True:
+            time.sleep(CHECK_EVERY_S)
+            if _watches():
+                check_price_watches(lambda msg: HOOKS["emit"]("assistant_message", {"reply": msg}))
+    threading.Thread(target=loop, daemon=True, name="price-watch").start()
 
 
 def product_of(text):
@@ -170,6 +240,8 @@ def table(product, rows):
 
 def run(text, session):
     from ishti.facts import get_facts
+    if WATCH.search(text):
+        return {"reply": watch(text, session), "sources": []}
     product = product_of(text)
     country = get_facts().get("owner").get("country", "")
     trace(session, "product", f"looking for: {product}" + (f" ({country})" if country else ""))
@@ -194,4 +266,6 @@ if __name__ == "__main__":
     rows = [{"store": "B", "kind": "store", "price": 2.0, "currency": "PKR", "url": "https://b"},
             {"store": "A", "kind": "official", "price": 1.0, "currency": "PKR", "url": "https://a"}]
     assert "**A** (cheapest)" in table("X", sorted(rows, key=lambda r: r["price"]))
+    assert match("tell me when the samsung s25 gets cheaper") and match("watch the price of airpods pro 2")
+    assert WATCH.search("price alert for ps5 slim")
     print("[self-check] shopping OK")
