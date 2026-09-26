@@ -1,0 +1,11 @@
+{
+  "name": "planners",
+  "version": "1.0.0",
+  "description": "The local model writes and saves to Documents\\ISHTI: flashcards (Anki CSV), quizzes, study plans, YouTube lecture notes (yt-dlp + local whisper), trip itineraries, general workout and meal plans, and social-media post drafts (never posted).",
+  "route": "make flashcards, quiz me, study plan, summarise a YouTube lecture, plan a trip, workout or meal plan, draft a social media post",
+  "needs": {"python": ["yt_dlp"], "models": [], "mcp": [], "apis": []},
+  "priority": 21,
+  "status": "working",
+  "tier": "T1",
+  "laya": false
+}
