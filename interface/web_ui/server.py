@@ -101,6 +101,8 @@ async def _capture_loop():
             piper_speak(msg)
 
     start_reminders(announce)
+    from ishti.skills.webtools.skill import _start as start_page_watch
+    start_page_watch()  # pages the owner asked to watch keep being checked after a restart
     if CONFIG["voice"].get("wake_enabled"):
         from ishti import wake
 
