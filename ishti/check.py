@@ -45,6 +45,8 @@ LABELLED = [
     ("analyze nvidia stock", "markets"), ("usd to pkr rate", "markets"), ("OGDC share price", "markets"),
     (r"transcribe C:\Users\PC\Downloads\talk.mp3", "media"), ("record my screen for 2 minutes", "media"),
     (r"resize C:\Users\PC\Pictures\photo.jpg to 800 px wide", "media"),
+    (r"summarize C:\Users\PC\Documents\report.pdf", "docs"), ("make a presentation about solar energy", "docs"),
+    ("take a note: call the bank tomorrow", "docs"),
     ("git status of the ishti project", "dev"), ("run the tests", "dev"), ("lint the ishti project", "dev"),
     ("download https://example.com/report.pdf", "webtools"), ("watch https://example.com/jobs for changes", "webtools"),
     ("find duplicate files in downloads", "fileops"), ("rename the photos in downloads to trip", "fileops"),

@@ -100,7 +100,7 @@ New:
 - [x] 2. Files: batch rename, zip, dedupe, diff, tags, recycle bin (send2trash)
 - [x] 3. Browser extras: downloads, page-change monitor, scrape, captcha handoff
 - [x] 10. Development: run code (sandbox), git, tests, lint, explain codebase
-- [ ] 5-9. Media/docs/office: video/audio/image/PDF/Office wrappers
+- [x] 5-9. Media/docs/office (logged gaps: AI image generation needs ComfyUI running; background removal/upscaling need large model downloads; PDF image recompression needs Ghostscript): video/audio/image/PDF/Office wrappers
 - [ ] 11-21. Finance ledger, automation, learning, security, travel, health, analytics, meta-skills (demand-driven as the catalog says)
 
 ## O. After M and N: go through the owner's chat history again and fix what failed
