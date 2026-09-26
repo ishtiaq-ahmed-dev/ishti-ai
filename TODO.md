@@ -28,7 +28,7 @@ Worked top to bottom. Each item is checked only after it has been verified by us
 - [x] Organize by name and content: read text from PDFs/docs (first page), group by topic (invoices, company mail, university …), preview → yes → move, with undo
 
 ## H. Chat history (owner request)
-- [ ] Recent chats in the sidebar (clean list, newest first); click to reopen a chat with its messages; new chat button
+- [x] Recent chats in the sidebar (clean list, newest first); click to reopen a chat with its messages (and each answer's thinking + graph, saved with it); new chat button; delete on hover
 
 ## E. Shopping: best price from verified stores
 - [ ] "Find me a <product>" → search official and verified stores (the manufacturer, and big retailers for PK and international), pull prices and links, and return a comparison table sorted by price, with the cheapest highlighted

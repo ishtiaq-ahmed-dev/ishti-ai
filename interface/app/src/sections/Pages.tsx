@@ -106,7 +106,7 @@ export function Skills() {
   const tone = (s: string) => s === "working" ? "bg-emerald-50 text-emerald-700" : s === "broken" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700";
   return (
     <Page title="Skills" subtitle="Each skill is a folder with a manifest; a broken one is skipped without affecting the rest.">
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {skills.map((s, i) => (
           <motion.div key={s.name} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.025 }}>
             <Card className="h-full">
@@ -204,7 +204,7 @@ export function Settings() {
   useEffect(() => { getJSON<typeof p>("/api/prefs").then(setP); }, []);
   if (!p) return null;
   return (
-    <Page title="Settings" subtitle="Everything runs on this PC. Models are set in ishti/config.json.">
+    <Page title="Settings" subtitle="Everything runs on this PC. Models are set in ishti/config.json." className="max-w-4xl">
       <div className="space-y-3">
         <Card className="flex items-center justify-between">
           <div><div className="font-medium">Appearance</div><div className="text-xs text-muted-foreground">Switch between pure white light mode and pure black dark mode.</div></div>

@@ -28,7 +28,10 @@ function Sources({ sources }: { sources: Source[] }) {
   );
 }
 
-export function Chat({ owner, onBusy }: { owner: string; onBusy: (busy: boolean) => void }) {
+type Props = { owner: string; onBusy: (busy: boolean) => void; open: { id: string; n: number } | null;
+                onSession: (id: string) => void };
+
+export function Chat({ owner, onBusy, open, onSession }: Props) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -47,9 +50,30 @@ export function Chat({ owner, onBusy }: { owner: string; onBusy: (busy: boolean)
     if (el) { el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 220)}px`; }
   }, [input]);
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs]);
+  useEffect(() => {  // reopen a chat from the sidebar ("" = start a new one)
+    if (!open) return;
+    setGraphFor(null);
+    if (!open.id) { newChat(); return; }
+    postJSON(`/api/sessions/${open.id}/activate`);
+    getJSON<{ messages: { role: string; content: string; sources?: Source[]; metadata?: { events?: TraceEvent[] } }[] }>(`/api/sessions/${open.id}/messages`)
+      .then(({ messages }) => {
+        let last = "";
+        setMsgs(messages.map((m) => {
+          if (m.role === "user") last = m.content;
+          return m.role === "user"
+            ? { id: nextId++, role: "user", text: m.content, events: [], live: false, sources: [] }
+            : { id: nextId++, role: "ishti", text: m.content, events: m.metadata?.events ?? [], live: false,
+                sources: m.sources ?? [], request: last };
+        }));
+        setSessionId(open.id);
+        onSession(open.id);
+      });
+  }, [open]);  // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
+    if (open) return;
     getJSON<{ active_session_id: string }>("/api/sessions").then((d) => setSessionId(d.active_session_id));
-  }, []);
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const patch = (id: number, f: (m: Msg) => Msg) => setMsgs((all) => all.map((m) => (m.id === id ? f(m) : m)));
 
@@ -66,6 +90,7 @@ export function Chat({ owner, onBusy }: { owner: string; onBusy: (busy: boolean)
         token: (t) => patch(reply.id, (m) => ({ ...m, text: m.text + t })),
       });
       setSessionId(res.session_id);
+      onSession(res.session_id);
       patch(reply.id, (m) => ({ ...m, text: res.final_answer, sources: res.sources ?? [], live: false }));
     } catch (err) {
       patch(reply.id, (m) => ({ ...m, text: `Couldn't reach ISHTI: ${(err as Error).message}`, live: false }));
@@ -77,6 +102,7 @@ export function Chat({ owner, onBusy }: { owner: string; onBusy: (busy: boolean)
     setSessionId(d.session_id);
     setMsgs([]);
     setGraphFor(null);
+    onSession(d.session_id);
   }
 
   async function toggleMic() {
@@ -144,7 +170,7 @@ export function Chat({ owner, onBusy }: { owner: string; onBusy: (busy: boolean)
               </div>
             </div>
           ) : (
-            <div className="mx-auto max-w-3xl space-y-5 px-6 py-6">
+            <div className="mx-auto w-full max-w-4xl xl:max-w-5xl space-y-5 px-4 sm:px-6 py-6">
               <AnimatePresence initial={false}>
                 {msgs.map((m) => (
                   <motion.div key={m.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
@@ -157,7 +183,7 @@ export function Chat({ owner, onBusy }: { owner: string; onBusy: (busy: boolean)
                       <>
                         <div className="mt-1 h-7 w-7 shrink-0 rounded-full bg-gradient-to-br from-violet-400 to-indigo-600 shadow-[0_0_12px_rgba(110,86,207,0.45)]" />
                         <div className="min-w-0 flex-1">
-                          <Thinking events={m.events} live={m.live} />
+                          {(m.live || m.events.length > 0) && <Thinking events={m.events} live={m.live} />}
                           {(() => {
                             const scan = m.events.findLast((e) => e.type === "tool" && e.name === "scan");
                             const plan = m.events.findLast((e) => e.type === "tool" && e.name === "plan");
@@ -192,7 +218,7 @@ export function Chat({ owner, onBusy }: { owner: string; onBusy: (busy: boolean)
         </div>
 
         <form onSubmit={(e) => { e.preventDefault(); send(input); }} className="px-6 pb-5">
-          <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border border-border bg-background p-2 shadow-[0_2px_12px_rgba(29,27,46,0.06)] transition-shadow focus-within:shadow-[0_2px_18px_rgba(110,86,207,0.18)]">
+          <div className="mx-auto flex w-full max-w-4xl xl:max-w-5xl items-end gap-2 rounded-2xl border border-border bg-background p-2 shadow-[0_2px_12px_rgba(29,27,46,0.06)] transition-shadow focus-within:shadow-[0_2px_18px_rgba(110,86,207,0.18)]">
             <textarea ref={box} value={input} onChange={(e) => setInput(e.target.value)} rows={1}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }}
               placeholder="Ask or tell ISHTI to do anything…"

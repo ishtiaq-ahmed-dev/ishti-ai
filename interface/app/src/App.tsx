@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
-import { Bell, Bot, Brain, Cpu, LayoutDashboard, ListChecks, MessageSquare, Settings as SettingsIcon, FolderKanban } from "lucide-react";
+import { Bell, Bot, Brain, Cpu, LayoutDashboard, ListChecks, MessageSquare, Settings as SettingsIcon, FolderKanban, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { getJSON } from "@/lib/api";
+import { del, getJSON } from "@/lib/api";
 import { Chat } from "@/sections/Chat";
 import { Memory, Settings, Skills, System, Tasks } from "@/sections/Pages";
 import { Overview } from "@/sections/Overview";
@@ -20,6 +20,12 @@ const NAV = [
 type Key = (typeof NAV)[number]["key"];
 
 type Fact = { entity: string; attr: string; value: string };
+type Session = { session_id: string; title: string; updated_at: string; message_count: number };
+
+function ago(iso: string) {
+  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  return m < 1 ? "now" : m < 60 ? `${m}m` : m < 1440 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`;
+}
 
 export default function App() {
   const [page, setPage] = useState<Key>("chat");
@@ -27,6 +33,11 @@ export default function App() {
   const [projects, setProjects] = useState<Fact[]>([]);
   const [alerts, setAlerts] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [openSession, setOpenSession] = useState<{ id: string; n: number } | null>(null);
+  const [activeSession, setActiveSession] = useState<string | null>(null);
+  const loadSessions = useCallback(() => getJSON<{ sessions: Session[] }>("/api/sessions")
+    .then((d) => setSessions(d.sessions.filter((x) => x.message_count > 0).slice(0, 12))), []);
   const onBusy = useCallback((b: boolean) => setBusy(b), []);
 
   useEffect(() => {
@@ -44,8 +55,9 @@ export default function App() {
       }
     };
     if (typeof Notification !== "undefined" && Notification.permission === "default") Notification.requestPermission();
+    loadSessions();
     return () => ws.close();
-  }, [busy]);
+  }, [busy, loadSessions]);
 
   return (
     <div className="flex h-full p-3 bg-canvas text-foreground transition-colors duration-200">
@@ -84,7 +96,26 @@ export default function App() {
             ))}
           </nav>
 
-          <div className="mt-6 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">My projects</div>
+          <div className="mt-6 flex items-center justify-between px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span>Recent</span>
+            <button onClick={() => { setPage("chat"); setOpenSession({ id: "", n: Date.now() }); }}
+              className="rounded-md px-1.5 py-0.5 normal-case tracking-normal text-accent hover:bg-accent-soft">+ New</button>
+          </div>
+          <div className="scroll-thin mt-1 max-h-[34vh] space-y-0.5 overflow-y-auto">
+            {sessions.length ? sessions.map((x) => (
+              <div key={x.session_id}
+                className={`group flex cursor-pointer items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors ${activeSession === x.session_id && page === "chat" ? "bg-accent-soft text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+                onClick={() => { setPage("chat"); setOpenSession({ id: x.session_id, n: Date.now() }); }}>
+                <span className="min-w-0 flex-1 truncate">{x.title}</span>
+                <span className="text-[10px] opacity-60 group-hover:hidden">{ago(x.updated_at)}</span>
+                <button title="Delete chat" className="hidden rounded p-0.5 hover:bg-background group-hover:block"
+                  onClick={(e) => { e.stopPropagation(); del(`/api/sessions/${x.session_id}`).then(loadSessions); }}>
+                  <X className="h-3 w-3" /></button>
+              </div>
+            )) : <div className="px-3 py-1 text-xs text-muted-foreground">Your chats appear here.</div>}
+          </div>
+
+          <div className="mt-5 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">My projects</div>
           <div className="mt-1 space-y-0.5">
             {projects.length ? projects.map((p, i) => (
               <div key={p.entity} title={p.value} className="flex items-center gap-2 truncate rounded-lg px-3 py-1.5 text-sm text-muted-foreground">
@@ -105,7 +136,8 @@ export default function App() {
           <AnimatePresence mode="wait">
             <motion.div key={page} className="h-full" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}>
-              {page === "chat" && <Chat owner={owner} onBusy={onBusy} />}
+              {page === "chat" && <Chat owner={owner} onBusy={onBusy} open={openSession}
+                onSession={(id) => { setActiveSession(id); loadSessions(); }} />}
               {page === "overview" && <Overview />}
               {page === "tasks" && <Tasks />}
               {page === "memory" && <Memory />}

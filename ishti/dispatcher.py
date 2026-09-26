@@ -175,7 +175,14 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
     sid = session_id or conv.active_session_id or conv.new_chat("New Session")
     s = SESSIONS.setdefault(sid, {"id": sid, "history": [], "pending": None, "last_entity": None})
     s["on_token"] = on_token
-    s["trace"] = lambda **ev: on_event and on_event({"t": round((time.perf_counter() - t0) * 1000), **ev})
+    events = []  # kept with the answer so a reopened chat still shows its thinking and graph
+
+    def trace(**ev):
+        ev = {"t": round((time.perf_counter() - t0) * 1000), **ev}
+        events.append({k: v for k, v in ev.items() if k not in ("sample", "results")})
+        if on_event:
+            on_event(ev)
+    s["trace"] = trace
     s["trace"](type="received", text=text, channel=channel)
 
     pending, fix = s.get("pending"), CORRECTION.match(text.strip())
@@ -224,7 +231,7 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
     if not out.get("persisted"):  # legacy skill writes its own session history
         conv.add_message(sid, "user", text)
         if is_safe_for_history(reply):
-            conv.add_message(sid, "ishti", reply, sources=out.get("sources"))
+            conv.add_message(sid, "ishti", reply, sources=out.get("sources"), metadata={"events": events[-150:]})
     if name not in ("memory",) and is_safe_for_history(reply):  # exact facts already live in SQLite
         threading.Thread(target=_remember, args=(text, reply, name), daemon=True).start()
     return {**{k: v for k, v in out.items() if k not in ("reply", "persisted")},
