@@ -104,3 +104,8 @@ New:
 - [x] 11-21. Finance ledger + portfolio, repeating schedules + daily brief, planners (study/quiz/flashcards/lectures/itinerary/workout/meal/post drafts), security (password generator), calendar, Gmail, lifelog + screen time, meta (skill health, audit, usage), price-drop tracking, skillsmith. Needs accounts/tools this PC lacks: see NEEDS.md #12
 
 ## O. After M and N: go through the owner's chat history again and fix what failed
+- [x] Test chats leaked into the owner's chat list and a false "before I restarted" note appeared -> checks run on scratch memory/sessions; the in-flight file follows the memory DB
+- [x] Voice heard "IMSciences" as "IIM sciences" -> whisper gets the owner's names as vocabulary
+- [x] Urdu speech came out in Hindi script and got nonsense replies -> prefer Urdu transcription; Hindi-script text understood and answered in Urdu (kal = tomorrow with a future verb)
+- [x] "Hi, how are you ... search X" became a greeting step + a search with the greeting in the query -> small talk dropped from plans and queries
+- [x] "https://imsciences.edu.pk/ try here" summarised the homepage -> follow-up = the earlier question on that site: site links (+ their PDFs) and a site search are read, only pages that answer are used, otherwise the closest pages are listed

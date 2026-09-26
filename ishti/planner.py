@@ -24,8 +24,18 @@ def clause_skills(text, skills):
     Laya zero-shot scored 0/4 when asked "is this several tasks?" about the whole message, but it routes
     single-task clauses well, so several clauses landing on different skills is the multi-task signal."""
     from ishti.router import route
-    parts = [p for p in CLAUSE.split(text) if p and len(p.split()) >= 2]
+    # "Hi, how are you ... can you search X": greetings are not tasks (they became a "1. Hi, how are you" step)
+    parts = [p for p in CLAUSE.split(text) if p and len(p.split()) >= 2 and not smalltalk(p)]
     return [(p, route(p, skills)["skill"]) for p in parts[:6]] if len(parts) >= 2 else []
+
+
+SMALLTALK = re.compile(r"^\W*(?:(?:hi|hello|hey|salam|assalam\w*(?:\s+o\s+alaikum)?|good\s+(?:morning|afternoon|evening)|okay|ok|"
+                       r"so|please|thanks?|thank\s+you|how\s+are\s+you(?:\s+doing)?|how\s+can\s+i\s+help\s+you(?:\s+today)?|"
+                       r"i\s+am\s+(?:fine|good)|ishti|there|dear|bro)\W*)+$", re.I)
+
+
+def smalltalk(clause):
+    return bool(SMALLTALK.match(clause.strip()))
 
 
 def candidate(text, skills=None, session=None):
@@ -58,7 +68,8 @@ def plan(text, skills):
         steps = json.loads(out).get("steps") or []
     except (ValueError, AttributeError):
         return None
-    steps = [s for s in steps if isinstance(s, dict) and s.get("skill") in live and str(s.get("request", "")).strip()]
+    steps = [s for s in steps if isinstance(s, dict) and s.get("skill") in live and str(s.get("request", "")).strip()
+             and not (s["skill"] == "chat" and smalltalk(re.sub(r"[?,.!]", " ", str(s["request"]))))]
     return steps[:MAX_STEPS] if len(steps) >= 2 else None
 
 

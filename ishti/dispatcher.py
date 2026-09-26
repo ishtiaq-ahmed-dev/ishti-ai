@@ -135,7 +135,9 @@ FOLLOW_UP = re.compile(
     r"(?:not|no)\s+(?:that|this|my)\b)"
     r"|\b(?:do\s+it|redo|again|instead|like\s+(?:that|before)|the\s+(?:first|second|third|last|previous)\s+one|"
     r"you\s+(?:added|moved|put|did|made|said|gave)|you\s+(?:didn'?t|didnot|did\s+not)\s+(?:even\s+)?\w+|"
-    r"(?:add|save|put|store|update|write)\s+(?:it\s+|this\s+|that\s+)?(?:in|to|into)\s+(?:the\s+|your\s+|my\s+)?memory)\b", re.I)
+    r"(?:add|save|put|store|update|write)\s+(?:it\s+|this\s+|that\s+)?(?:in|to|into)\s+(?:the\s+|your\s+|my\s+)?memory|"
+    # "https://imsciences.edu.pk/ try here": the earlier question, on this site
+    r"(?:try|look|check|search|find\s+it)\s+(?:it\s+)?(?:here|there|on\s+this|in\s+this)|(?:on|use)\s+this\s+(?:site|website|page|link))\b", re.I)
 
 
 def contextualize(text, s) -> str:

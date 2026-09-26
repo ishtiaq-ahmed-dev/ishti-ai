@@ -71,6 +71,12 @@ def run(text, session):
     engine = copy.copy(_engine)
     engine.event_callback = lambda kind, data: trace(session, kind, (data or {}).get("detail") or kind.replace("_", " "),
                                                      **{k: v for k, v in (data or {}).items() if k in ("queries", "state")})
+    # "Hi, how are you ... can you search X": greetings and filler aren't search terms (and "today" in
+    # "how can I help you today" became a date)
+    from ishti.planner import CLAUSE, smalltalk
+    kept = [c for c in CLAUSE.split(text) if c and not smalltalk(c)]
+    text = re.sub(r"^\s*(?:okay|ok|so)?[,\s]*(?:can|could)\s+you\s+(?:please\s+)?(?:search\s+(?:on\s+)?(?:the\s+)?(?:website|web|internet|google)\s*(?:for|what)?\s*)?",
+                  "", " ".join(kept) or text, flags=re.I).strip() or text
     query = ground_dates(text)
     if query != text:
         trace(session, "dates", f"search for: {query}")
