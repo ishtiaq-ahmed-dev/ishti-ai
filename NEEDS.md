@@ -16,12 +16,6 @@ Each entry lists what's needed, why it's blocked, and what would have to change.
 - **Now:** a code question loads `ishti-qwen2.5-coder:14b` and evicts the planner, so the first reply after a switch costs about 5 s.
 - **Options:** use `qwen2.5-coder:7b` (both fit), or accept the swap. The config change is one line; no code change.
 
-## 4. Delete the old engine
-- **Now:** every request goes through dispatcher skills. The `legacy` skill is gone, replaced by `files`, `apps`, `system`, `video`, `deep_research` and `web_fetch`. `orchestrator/crew.py` (1100 LOC), `planner.py`, `self_heal.py`, `model_router.py` and `memory/capability_registry.py` + `capability_escalation.py` are no longer on the request path.
-- **Still uses them:** `orchestrator/test_e2e.py`, `test_capabilities.py` and `doctor.py`, which test through `ExecutionEngine`. `server.py` still builds one at import (for `/api/status` and `/api/rebenchmark`).
-- **To change:** port those tests and doctor checks to `ishti.dispatcher.handle`, then delete the modules. `intent_detector.py` stays: skills use it as their trigger library.
-- Multi-skill plans are done (`ishti/planner.py`), so nothing depends on the old DAG planner any more.
-
 ## 6. Custom "hey ishti" wake word
 - **Now:** hands-free listening works (`ishti/wake.py`) with openWakeWord's pretrained **"hey jarvis"** model. Replies are spoken, and each exchange shows up in the HUD. No microphone is connected at the moment; the listener retries every 30 s.
 - **Need:** a "hey ishti" model.

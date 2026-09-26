@@ -17,7 +17,6 @@ ROOT_DIR = r"D:\ISHTI"
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-from orchestrator.crew import ExecutionEngine
 from orchestrator.response_guard import find_refusals, find_contamination
 from orchestrator.memory.user_profile import get_user_memory
 
@@ -37,8 +36,10 @@ def check(name, passed, detail=""):
 
 
 def ask(engine, prompt):
+    """Every request goes through the real dispatcher (routing + skills), like the HUD and voice."""
+    from ishti.dispatcher import handle
     t0 = time.time()
-    res = engine.process_request(prompt)
+    res = handle(prompt, "e2e")
     res["_elapsed"] = round(time.time() - t0, 1)
     return res
 
@@ -110,15 +111,14 @@ def test_E(engine):
 
 
 def test_F(engine):
-    print("\nTEST F - Visible browser (real window)")
-    r = ask(engine, "Open the browser and search for RTX 5070 Ti drivers")
-    ok = check("F: routed to visible browser", r.get("mode") == "BROWSER_VISIBLE", r.get("mode"))
-    ok &= check("F: browser was NOT headless", r.get("browser_headless") is False)
-    ok &= check("F: results actually came back", r.get("verified") is True,
-                f"{len(r.get('sources', []))} sources")
-    ok &= check("F: used the isolated profile",
-                os.path.isdir(r"D:\ISHTI\data\chrome_profile"))
+    print("\nTEST F - Visible browser (Playwright MCP, real window)")
+    r = ask(engine, "go to example.com in the browser and tell me the main heading")
     print(f"    > {r['final_answer'][:200]}")
+    ok = check("F: routed to the browser skill", r.get("skill") == "browser", r.get("skill"))
+    ok &= check("F: read the live page", "example domain" in r["final_answer"].lower())
+    ok &= check("F: used the isolated profile", os.path.isdir(r"D:\ISHTI\data\mcp_browser_profile"))
+    from ishti.mcp_client import get_hub
+    get_hub().call("browser", "browser_close")
     return ok
 
 
@@ -198,10 +198,12 @@ def test_L(engine):
     print("\nTEST L - Refusal filter")
     poisoned = ("I'm not capable of directly searching the internet. Unfortunately, I cannot access "
                 "websites. Also, per security protocols, this is a CLASSIFIED document.")
-    guarded = engine._guard_answer(
-        poisoned, "what is the latest version of Ollama",
+    from orchestrator.response_guard import fallback_from_evidence, inspect
+    ok_flag, _, _ = inspect(poisoned)
+    check("L: poisoned reply is detected", not ok_flag)
+    guarded = fallback_from_evidence(  # what a guarded route answers with instead of the refusal
         [{"id": 1, "title": "Ollama releases", "snippet": "v0.12.0 released",
-          "url": "https://github.com/ollama/ollama/releases"}], "SIMPLE")
+          "url": "https://github.com/ollama/ollama/releases"}], "what is the latest version of Ollama")
     print(f"    > {guarded[:200]}")
     ok = check("L: refusal text never reaches the owner", not find_refusals(guarded))
     ok &= check("L: contamination stripped", not find_contamination(guarded))
@@ -220,8 +222,16 @@ if __name__ == "__main__":
     print("ISHTI END-TO-END ACCEPTANCE TESTS - real stack, no mocks")
     print("=" * 70)
 
+    import shutil
+    import tempfile
+    from ishti import CONFIG
+    tmp = tempfile.mkdtemp(prefix="ishti_e2e_")  # facts/route log/semantic memory: a temp copy too
+    if os.path.exists(CONFIG["memory"]["db_path"]):
+        shutil.copy(CONFIG["memory"]["db_path"], os.path.join(tmp, "ishti.db"))
+    CONFIG["memory"].update(db_path=os.path.join(tmp, "ishti.db"), chroma_dir=os.path.join(tmp, "chroma"))
+
     with scratch_memory():  # writes (audio toggle etc.) go to a temp copy of the owner's memory
-        engine = ExecutionEngine()
+        engine = None
         for key in wanted:
             try:
                 TESTS[key](engine)

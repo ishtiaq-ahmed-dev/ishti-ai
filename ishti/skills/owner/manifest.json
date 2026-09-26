@@ -1,0 +1,10 @@
+{
+  "name": "owner",
+  "version": "1.0.0",
+  "description": "Owner commands: audio on/off ('mute', 'read that'), 'who am I', 'what do you know about me' (dumps saved facts), 'what can you do' (skill list from manifests), 'run diagnostics'.",
+  "route": "commands about ISHTI itself: audio on or off, who am I, what do you know about me, what can you do, diagnostics",
+  "priority": 5,
+  "laya": false,
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "status": "working"
+}

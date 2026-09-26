@@ -21,5 +21,5 @@ def run(text, session):
     w = get_weather(city, which_day(text))
     if not w["ok"]:
         return {"reply": f"Couldn't get the weather for {city}: {w['error']}", "sources": []}
-    return {"reply": w["answer"], "sources": [{"id": 1, "title": "Open-Meteo forecast", "url": w["source"],
+    return {"reply": w["answer"], "verified": True, "sources": [{"id": 1, "title": "Open-Meteo forecast", "url": w["source"],
                                                "domain": "open-meteo.com", "snippet": w["answer"]}]}

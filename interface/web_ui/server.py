@@ -21,8 +21,6 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 from orchestrator.model_router import ModelRouter
-from orchestrator.planner import Planner
-from orchestrator.crew import ExecutionEngine
 from orchestrator.doctor import IshtiDoctor
 from orchestrator.memory.conversation import get_conversation_manager
 from orchestrator.memory.error_logger import ErrorLogger
@@ -71,7 +69,6 @@ async def require_token_for_remote(request: Request, call_next):
 
 STATIC_DIR = os.path.join(ROOT_DIR, "interface", "web_ui", "static")
 TEMPLATES_DIR = os.path.join(ROOT_DIR, "interface", "web_ui", "templates")
-SKILLS_DIR = os.path.join(ROOT_DIR, "orchestrator", "memory", "skills")
 REFLECTIONS_PATH = os.path.join(ROOT_DIR, "orchestrator", "memory", "reflections.md")
 RESEARCH_MEM_DIR = os.path.join(ROOT_DIR, "orchestrator", "memory", "research")
 
@@ -84,10 +81,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # Shared state
 model_router = ModelRouter()
-planner = Planner()
 active_websockets: List[WebSocket] = []
-pending_confirmations: Dict[str, asyncio.Event] = {}
-confirmation_decisions: Dict[str, bool] = {}
 last_execution_state: Dict[str, Any] = {}
 last_research_state: Dict[str, Any] = {}
 MAIN_LOOP: asyncio.AbstractEventLoop = None  # set at startup; worker threads have no loop of their own
@@ -128,39 +122,9 @@ def sync_event_callback(event_type: str, data: Dict[str, Any]):
         asyncio.run_coroutine_threadsafe(broadcast_event(event_type, data), MAIN_LOOP)
 
 
-def confirmation_gate_ui(task: Dict[str, Any]) -> bool:
-    """Blocks until user clicks Approve or Reject on the Web UI modal, or times out."""
-    task_id = task.get("id", "step_gate")
-    event = asyncio.Event()
-    pending_confirmations[task_id] = event
-
-    # Broadcast to UI
-    sync_event_callback("consequential_modal_open", {
-        "task_id": task_id,
-        "name": task.get("name", "Consequential Action"),
-        "details": task.get("consequential_details", ""),
-    })
-
-    # Speak alert
-    speak("Confirmation required for consequential action. Please review the draft on your screen.", wait=False)
-
-    # No answer, timeout or error = deny. A consequential action must never self-approve.
-    try:
-        asyncio.run_coroutine_threadsafe(event.wait(), MAIN_LOOP).result(timeout=60)
-        approved = confirmation_decisions.get(task_id, False)
-    except Exception:
-        approved = False
-
-    pending_confirmations.pop(task_id, None)
-    confirmation_decisions.pop(task_id, None)
-    return approved
-
-
-engine = ExecutionEngine(
-    confirmation_callback=confirmation_gate_ui,
-    event_callback=sync_event_callback,
-)
-ISHTI_HOOKS.update(confirm=confirmation_gate_ui, emit=sync_event_callback, engine=engine)
+# Skills confirm consequential actions in the conversation itself (session 'pending'), so there is
+# no separate UI approval gate any more.
+ISHTI_HOOKS.update(emit=sync_event_callback)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -179,15 +143,8 @@ async def get_status():
     fast = model_router.get_model("fast")
     fallback = model_router.get_model("fallback")
 
-    skills = []
-    if os.path.exists(SKILLS_DIR):
-        for fname in os.listdir(SKILLS_DIR):
-            if fname.endswith(".json"):
-                try:
-                    with open(os.path.join(SKILLS_DIR, fname), "r", encoding="utf-8") as f:
-                        skills.append(json.load(f))
-                except Exception:
-                    pass
+    from ishti.dispatcher import SKILLS as ISHTI_SKILLS
+    skills = [s.info() for s in ISHTI_SKILLS.values()]  # the live skill manifests, with load status
 
     return {
         "status": "online",
@@ -376,19 +333,6 @@ async def trigger_rebenchmark():
     await broadcast_event("benchmark_completed", {"scores": scores})
     speak("Model re-benchmarking complete. Optimal models selected.", wait=False)
     return JSONResponse({"status": "success", "scores": scores})
-
-
-@app.post("/api/confirm_action")
-async def confirm_action(req: Request):
-    body = await req.json()
-    task_id = body.get("task_id")
-    approved = body.get("approved", False)
-
-    if task_id in pending_confirmations:
-        confirmation_decisions[task_id] = approved
-        pending_confirmations[task_id].set()
-        return JSONResponse({"status": "resolved", "task_id": task_id, "approved": approved})
-    return JSONResponse({"status": "not_found", "task_id": task_id}, status_code=404)
 
 
 @app.websocket("/ws")

@@ -27,7 +27,7 @@ CORRECTION = re.compile(
     r"|use)\s+(?:the\s+)?(?P<skill>[a-z_ ]+?)(?:\s+skill)?(?:\s+for\s+(?:that|this|it))?[.!]?$", re.I)
 ALIASES = {"search": "web_search", "web": "web_search", "internet": "web_search", "web search": "web_search",
            "pc": "legacy", "computer": "legacy", "files": "legacy", "browser": "browser", "llm": "chat"}
-HOOKS = {"confirm": None, "emit": None, "engine": None}  # filled by the web server for UI-bound skills
+HOOKS = {"emit": None}  # the web server sets emit(event, data) so skills can push HUD events
 api = APIRouter()
 
 

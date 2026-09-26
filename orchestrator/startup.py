@@ -24,7 +24,6 @@ if ROOT_DIR not in sys.path:
 from orchestrator.model_router import ModelRouter
 from voice.tts import speak, speakable
 from orchestrator.memory.user_profile import get_user_memory
-from orchestrator.memory.capability_registry import get_capability_registry
 
 CHROME_EXE = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 PROFILE_DIR = r"D:\ISHTI\data\chrome_profile"
@@ -175,18 +174,13 @@ def main():
     # Step 5: Voice Announcement
     announce_readiness(active_model)
 
-    # Step 6: Probe what ISHTI can actually do right now, so the registry holds measured
-    # state instead of "unknown" and can justify any refusal it ever makes.
-    print("  [6/6] Probing live capabilities...", end="", flush=True)
-    try:
-        probes = get_capability_registry().probe_all(include_browser=False)
-        ok = sum(1 for v in probes.values() if v["ok"])
-        print(f" [{ok}/{len(probes)} healthy]")
-        for name, res in probes.items():
-            if not res["ok"]:
-                print(f"        - {name}: {res['detail'][:70]}")
-    except Exception as e:
-        print(f" [SKIPPED: {e}]")
+    # Step 6: Load the skills; any with a missing dependency is reported and skipped.
+    print("  [6/6] Loading skills...", end="", flush=True)
+    from ishti.dispatcher import SKILLS, handle
+    broken = {n: s.problem for n, s in SKILLS.items() if s.status == "broken"}
+    print(f" [{len(SKILLS) - len(broken)}/{len(SKILLS)} ready]")
+    for name, problem in broken.items():
+        print(f"        - {name}: {problem[:70]}")
 
     print("\n" + "=" * 72)
     print("  ISHTI IS READY FOR INSTRUCTIONS")
@@ -196,8 +190,6 @@ def main():
     print("=" * 72 + "\n")
 
     # Interactive CLI REPL
-    from orchestrator.crew import ExecutionEngine
-    engine = ExecutionEngine()
 
     while True:
         try:
@@ -217,7 +209,7 @@ def main():
             # Same entry point as the Web UI. Calling execute_plan directly here used to
             # skip intent routing, memory injection and the response guard, so the terminal
             # and the HUD behaved differently for the same question.
-            res = engine.process_request(prompt)
+            res = handle(prompt, channel="text")
             answer = res.get("final_answer", "")
             print("\n[ISHTI Response]:")
             print(answer)

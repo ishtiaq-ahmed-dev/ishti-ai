@@ -447,13 +447,13 @@ function renderSkillsFullGrid(skills) {
     card.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
         <span style="font-family:var(--font-hud); font-size:13px; color:var(--cyan-glow);">⚡ ${escapeHtml(s.name || s.skill_id)}</span>
-        <span class="badge online" style="font-size:9px;">VERIFIED</span>
+        <span class="badge ${s.status === 'broken' ? 'offline' : 'online'}" style="font-size:9px;">${escapeHtml((s.status || '').toUpperCase())} v${escapeHtml(s.version || '')}</span>
       </div>
       <div style="font-size:11.5px; color:#fff; margin-bottom:10px; line-height:1.4;">
-        ${escapeHtml(s.description || 'Learned autonomous capability')}
+        ${escapeHtml(s.description || '')}
       </div>
       <div style="font-size:10px; color:var(--text-dim); font-family:var(--font-mono);">
-        TRIGGER: ${escapeHtml(Array.isArray(s.triggers) ? s.triggers.join(', ') : s.triggers || 'Direct intent')}
+        HANDLES: ${escapeHtml(s.route || '')}${s.problem ? ' | PROBLEM: ' + escapeHtml(s.problem) : ''}
       </div>
     `;
     container.appendChild(card);
