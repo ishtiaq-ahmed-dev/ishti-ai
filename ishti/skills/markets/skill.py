@@ -111,6 +111,63 @@ def stock_line(name, text, deep):
     return line, f"https://finance.yahoo.com/quote/{s['symbol']}", chart
 
 
+WATCHLIST = __import__("os").path.join(__import__("ishti").ROOT, "data", "watchlist.json")
+DEFAULT_WATCH = [{"kind": "metal", "id": "XAU"}, {"kind": "crypto", "id": "bitcoin"}, {"kind": "fx", "id": "USD/PKR"},
+                 {"kind": "psx", "id": "OGDC"}, {"kind": "stock", "id": "NVDA"}, {"kind": "stock", "id": "AAPL"}]
+
+
+def watchlist(items=None):
+    """Read (items=None) or replace the owner's watchlist (data/watchlist.json)."""
+    if items is not None:
+        with open(WATCHLIST, "w", encoding="utf-8") as f:
+            json.dump(items, f)
+        return items
+    try:
+        with open(WATCHLIST, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return DEFAULT_WATCH
+
+
+def resolve(q):
+    """Free text ('nvidia', 'OGDC', 'btc', 'gold', 'usd/pkr') -> watchlist item, or None."""
+    q = q.strip()
+    if m := FX_PAIR.search(q.replace("/", " to ")):
+        return {"kind": "fx", "id": f"{CUR[m.group(1).lower()]}/{CUR[m.group(2).lower()]}"}
+    if q.lower() in METALS:
+        return {"kind": "metal", "id": METALS[q.lower()]}
+    if COINS.fullmatch(q) or re.search(r"\bcoin\b|\bcrypto\b", q, I):
+        return {"kind": "crypto", "id": data.crypto_id(COINS.sub(lambda m: m.group(0), q))}
+    if sym := psx_symbol(q, q):
+        return {"kind": "psx", "id": sym}
+    ticker = q if q.isupper() and data.stock(q) else data.find_ticker(q)
+    return {"kind": "stock", "id": ticker} if ticker else None
+
+
+def quote(item):
+    """One watchlist card: label, price, change %, currency and a sparkline (recent closes) where available."""
+    kind, id_ = item["kind"], item["id"]
+    if kind == "fx":
+        a, b = id_.split("/")
+        return {**item, "label": f"{a}/{b}", "price": data.fx(a, b), "currency": b, "change_pct": None, "spark": []}
+    if kind == "metal":
+        return {**item, "label": {"XAU": "Gold", "XAG": "Silver"}.get(id_, id_), "price": data.metal(id_),
+                "currency": "USD", "unit": "oz", "change_pct": None, "spark": []}
+    if kind == "crypto":
+        q, hist = data.crypto(id_), data.crypto_history(id_, 90)
+        return {**item, "label": id_.replace("-", " ").title(), "price": q["price"], "currency": "USD",
+                "change_pct": q["change_24h"], "spark": hist[-60:]}
+    if kind == "psx":
+        q = data.psx(id_) or {}
+        return {**item, "label": id_, "name": q.get("name"), "price": q.get("price"), "currency": "PKR",
+                "change_pct": float(q["change_pct"]) * (1 if (q.get("change") or 0) >= 0 else -1) if q.get("change_pct") else None,
+                "spark": []}
+    s = data.stock(id_)
+    a = data.analyze(s["closes"])
+    return {**item, "label": s["symbol"], "name": s["name"], "price": float(a["last"]), "currency": s["currency"],
+            "change_pct": None if a["chg_1d"] is None else float(a["chg_1d"]), "spark": s["closes"][-60:]}
+
+
 def run(text, session):
     local = owner_currency()
     deep = bool(ANALYZE.search(text))

@@ -390,6 +390,50 @@ async def save_fact_endpoint(req: Request):
     return {"status": "ok", "entity": entity, "attr": attr, "value": value, "previous": prev}
 
 
+@api.get("/api/markets/watchlist")
+async def markets_watch():
+    import asyncio
+    from ishti.skills.markets import skill as mk
+
+    def cards():
+        import concurrent.futures as cf
+        def safe(item):
+            try:
+                return mk.quote(item)
+            except Exception as exc:
+                return {**item, "label": item["id"], "error": f"{type(exc).__name__}"}
+        with cf.ThreadPoolExecutor(8) as pool:
+            return list(pool.map(safe, mk.watchlist()))
+    return {"items": await asyncio.get_running_loop().run_in_executor(None, cards)}
+
+
+@api.post("/api/markets/watchlist")
+async def markets_watch_edit(req: Request):
+    """{"add": "nvidia"} or {"remove": {"kind", "id"}}"""
+    import asyncio
+    from ishti.skills.markets import skill as mk
+    body = await req.json()
+    items = mk.watchlist()
+    if body.get("add"):
+        item = await asyncio.get_running_loop().run_in_executor(None, mk.resolve, str(body["add"])[:60])
+        if not item:
+            return JSONResponse({"error": f"couldn't find '{body['add']}'"}, status_code=404)
+        if item not in items:
+            items = mk.watchlist(items + [item])
+    if isinstance(body.get("remove"), dict):
+        items = mk.watchlist([i for i in items if i != body["remove"]])
+    return await markets_watch()
+
+
+@api.get("/api/markets/analyze")
+async def markets_analyze(q: str):
+    """The analyzer page: the same answer the chat gives for 'analyze <q>', plus chart data."""
+    import asyncio
+    from ishti.skills.markets import skill as mk
+    out = await asyncio.get_running_loop().run_in_executor(None, mk.run, f"analyze {q[:80]} stock", {})
+    return out or JSONResponse({"error": "nothing found"}, status_code=404)
+
+
 @api.get("/api/about")
 async def about_get():
     """About you: what ISHTI knows about the owner, their custom instructions, and exactly what is sent."""

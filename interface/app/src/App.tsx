@@ -1,11 +1,12 @@
 import { AnimatePresence, motion } from "motion/react";
-import { Bell, Bot, Brain, UserRound, Cpu, FolderKanban, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, Settings as SettingsIcon } from "lucide-react";
+import { Bell, Bot, Brain, CandlestickChart, UserRound, Cpu, FolderKanban, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, Settings as SettingsIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { getJSON } from "@/lib/api";
 import { Chat } from "@/sections/Chat";
 import { Memory, Settings, Skills, System, Tasks } from "@/sections/Pages";
 import { Overview } from "@/sections/Overview";
 import { AboutYou } from "@/sections/AboutYou";
+import { Markets } from "@/sections/Markets";
 import { NotificationBell } from "@/components/rare/notification-bell";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { IshtiBrand } from "@/components/IshtiBrand";
@@ -15,6 +16,7 @@ const NAV = [
   { key: "chat", label: "Chat", icon: MessageSquare },
   { key: "overview", label: "Overview", icon: LayoutDashboard },
   { key: "tasks", label: "Tasks", icon: ListChecks },
+  { key: "markets", label: "Markets", icon: CandlestickChart },
   { key: "about", label: "About you", icon: UserRound },
   { key: "memory", label: "Memory", icon: Brain },
   { key: "skills", label: "Skills", icon: Bot },
@@ -140,7 +142,7 @@ export default function App() {
               <div className="flex h-full w-[240px] flex-col min-h-0 px-3 py-4">
                 {/* Official Brand Header */}
                 <div className="mb-4 flex items-center justify-between px-1 pt-0.5">
-                  <IshtiBrand variant="full" size={42} className="cursor-pointer" onClick={() => setPage("chat")} title="ISHTI - Personal AI Assistant" />
+                  <IshtiBrand variant="lockup" className="cursor-pointer" onClick={() => setPage("chat")} title="ISHTI - Personal AI Assistant" />
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
@@ -214,6 +216,7 @@ export default function App() {
               {page === "chat" && <Chat owner={owner} onBusy={onBusy} showNav={showNav} onToggleNav={toggleNav} />}
               {page === "overview" && <Overview onToggleNav={toggleNav} />}
               {page === "tasks" && <Tasks onToggleNav={toggleNav} />}
+              {page === "markets" && <Markets onToggleNav={toggleNav} />}
               {page === "about" && <AboutYou onToggleNav={toggleNav} />}
               {page === "memory" && <Memory onToggleNav={toggleNav} />}
               {page === "skills" && <Skills onToggleNav={toggleNav} />}
