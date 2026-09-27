@@ -20,7 +20,12 @@ from ishti import CONFIG
 RATE, FRAME = 16000, 1280                 # openWakeWord works on 80 ms frames of 16 kHz int16
 BLOCK = 640                               # mic read size: 40 ms, the barge-in detector's resolution
 PRE_ROLL = 6                              # keep 0.5 s before the trigger: the command often follows in one breath
-END_SILENCE, NO_SPEECH, MAX_LEN = 10, 50, 150   # frames: 0.8 s quiet ends it, 4 s of nothing cancels, 12 s cap
+END_SILENCE, NO_SPEECH, MAX_LEN = 5, 50, 150    # frames: 0.4 s quiet ends a turn, 4 s of nothing cancels, 12 s cap
+END_SILENCE_UNFINISHED = 13                       # 1.04 s when the last words sound unfinished ("and ...", "the ...", "um")
+UNFINISHED = re.compile(r"\b(?:and|or|but|so|because|the|a|an|to|of|for|with|in|on|my|your|is|are|um+|uh+|er+|like|then|"
+                        r"aur|ke|ki|ko|se|mein|ya)\W*$", re.I)
+BACKCHANNEL = re.compile(r"^\W*(?:(?:uh[- ]?huh|mm+[- ]?hmm*|m+h?m+|hmm+|okay|ok|yeah|yep|right|ah+|oh+|achha|acha|haan|ji|"
+                         r"theek|wow|nice|cool|sure)\W*){1,3}$", re.I)  # "uh-huh" while ISHTI talks isn't a new turn
 PARTIAL_EVERY = 12                        # frames (~1 s) between live partial transcripts
 # Regex strips the wake phrase. Covers common Whisper mis-transcriptions of "hey ishti".
 WAKE_TEXT = re.compile(r"^\W*(?:hey|hi|ok|okay)?\W*(?:jarvis|sarvis|larvis|ishti|ishty|travis|jessica|istie|ishi|isti|yishti|"
@@ -157,7 +162,10 @@ class Listener:
         n = len(self.buf) - PRE_ROLL
         if n > 0 and n % PARTIAL_EVERY == 0 and self.heard:
             self._partial(np.concatenate(self.buf))
-        if (self.heard and self.silent >= END_SILENCE) or (not self.heard and n >= NO_SPEECH) or n >= MAX_LEN:
+        # turn-taking gap: 0.4 s of quiet ends the turn, unless the words so far sound unfinished (then ~1 s)
+        needed = END_SILENCE_UNFINISHED if UNFINISHED.search(getattr(self, "_last_partial", "")) else END_SILENCE
+        if (self.heard and self.silent >= needed) or (not self.heard and n >= NO_SPEECH) or n >= MAX_LEN:
+            self._last_partial = ""
             audio = np.concatenate(self.buf) if self.heard else np.zeros(0, np.int16)
             self.buf = None
             self.oww.reset()
@@ -227,6 +235,7 @@ class Listener:
                 from ishti.voice import transcribe
                 text = WAKE_TEXT.sub("", transcribe(audio.astype(np.float32) / 32768)).strip()
                 if text:
+                    self._last_partial = text
                     self.on_event("stt_partial", {"text": text})
             finally:
                 self._partial_busy = False
@@ -277,8 +286,9 @@ class Listener:
             frames = list(self._check or [])
             heard = transcribe(np.concatenate(frames).astype(np.float32) / 32768) if frames else ""
             words = re.findall(r"[a-z0-9']+", heard.lower())
-            if speaking:
-                self._decision = "echo" if is_echo(heard, talker, BARGE["echo_overlap"]) else heard
+            if speaking:  # its own voice, or a back-channel ("uh-huh", a cough -> empty) is not an interruption
+                self._decision = "echo" if (is_echo(heard, talker, BARGE["echo_overlap"]) or not words
+                                            or BACKCHANNEL.match(heard)) else heard
             else:  # thinking, nothing playing: no echo possible. Words start a new command (the task carries on in
                 # the background unless they say stop); that command still passes the stray-word filter
                 self._decision = heard if words else "echo"
@@ -513,5 +523,25 @@ if __name__ == "__main__":
     t3.say = t3.said.append
     lis._announce("What will the weather be tomorrow?", "Sunny, 33 degrees.", t3)
     assert t3.said[0].startswith("About What will the weather be tomorrow") and "Sunny" in " ".join(t3.said), t3.said
+    assert BACKCHANNEL.match("Uh-huh.") and BACKCHANNEL.match("okay okay") and BACKCHANNEL.match("Mm-hmm")
+    assert not BACKCHANNEL.match("okay stop") and not BACKCHANNEL.match("wait, what about tomorrow")
+    assert UNFINISHED.search("send the report to") and UNFINISHED.search("open youtube and") and not UNFINISHED.search("open youtube")
+    # stop latency: from the first block of the owner's voice to talker.pause(), in audio time
+    lis._quiet_until, lis._run_len, lis._check, lis._decision = 0, 0, None, None
+    lis._pre.clear()
+    t4 = FakeTalker()
+    voice = pcm16k("Wait, stop, I have a question.")
+    start = next(i for i in range(0, len(voice) - BLOCK, BLOCK) if np.abs(voice[i:i + BLOCK]).mean() > 300)
+    for n, i in enumerate(range(start, len(voice) - BLOCK, BLOCK)):
+        lis.watch(voice[i:i + BLOCK], t4)
+        if t4.paused:
+            break
+    stop_ms = (n + 1) * BLOCK / RATE * 1000
+    assert t4.paused and stop_ms <= 200, stop_ms  # plus one output block (~23 ms) until the sound actually stops
+    deadline = time.time() + 20
+    while lis._check is not None and time.time() < deadline:
+        lis.watch(np.zeros(BLOCK, np.int16), t4)
+        time.sleep(0.02)
+    print(f"[self-check] barge-in stops the voice {stop_ms:.0f} ms (+~23 ms output block) after the owner starts talking")
     print("[self-check] wake OK - wake word, command capture, echo resumes, real speech barges in and keeps context, "
           "thinking-time requests run side by side")
