@@ -6,7 +6,8 @@ _engine = None
 
 
 def match(text):
-    return IntentDetector.classify(text)["mode"] == "DEEP_RESEARCH"
+    from ishti.skills.markets.skill import INVEST  # "research nvidia, how much should I buy" is a markets decision
+    return IntentDetector.classify(text)["mode"] == "DEEP_RESEARCH" and not INVEST.search(text)
 
 
 def run(text, session):

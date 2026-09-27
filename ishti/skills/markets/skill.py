@@ -21,15 +21,35 @@ COINS = re.compile(r"\b(bitcoin|btc|ethereum|eth|solana|sol|dogecoin|doge|xrp|ri
                    r"litecoin|ltc|toncoin|shiba\s+inu|pepe|tron|trx|polkadot|dot|avalanche|avax|chainlink)\b", I)
 STOCKY = re.compile(r"\b(?:stocks?|shares?|ticker|equit(?:y|ies)|psx|kse|nasdaq|nyse|s&p|dow\s+jones|market\s+cap|"
                     r"stock\s+market|share\s+price|index|etf)\b", I)
-ANALYZE = re.compile(r"\b(?:analy[sz]e|analysis|analyzer|technical|trend|outlook|forecast|rsi|moving\s+average|macd|"
-                     r"should\s+i\s+(?:buy|sell|invest)|worth\s+(?:buying|investing)|bullish|bearish)\b", I)
+ANALYZE = re.compile(r"\b(?:analy[sz]e|analysis|analyzer|research|technical|trend|outlook|forecast|predict(?:ion)?|rsi|"
+                     r"moving\s+average|macd|should\s+i\s+(?:buy|sell|invest|hold)|worth\s+(?:buying|investing)|bullish|bearish|"
+                     r"how\s+much\s+(?:\w+\s+){0,3}(?:should|to|can)\s+(?:i\s+)?(?:buy|invest)|buy\s+or\s+sell|when\s+(?:to|should\s+i)\s+sell|"
+                     r"stop[-\s]?loss|take[-\s]?profit|target\s+price|price\s+target|entry\s+(?:price|point)|recommend)\b", I)
+TRACK = re.compile(r"\b(?:how\s+(?:did|are)\s+(?:your|the|my)\s+(?:market\s+|stock\s+|trading\s+)?(?:calls|picks|recommendations|predictions)|"
+                   r"(?:market|stock)\s+calls?\s+(?:track\s+record|results)|track\s+record)\b", I)
 TRIGGER = re.compile(rf"{FX_PAIR.pattern}|{FX_RATE.pattern}|\b(?:gold|silver)\s+(?:price|rate)|\b(?:price|rate)\s+of\s+"
                      rf"(?:the\s+)?(?:gold|silver)\b|\b(?:gold|silver)\b.*\btoday\b|{COINS.pattern}|{STOCKY.pattern}|"
-                     r"\b(?:crypto|cryptocurrenc(?:y|ies)|forex|exchange\s+rate)\b", I)
+                     r"\b(?:crypto|cryptocurrenc(?:y|ies)|forex|exchange\s+rate|stop[-\s]?loss|take[-\s]?profit|price\s+(?:target|prediction)|"
+                     r"target\s+price|buy\s+or\s+sell)\b", I)
+# an investment decision ("how much should I buy", "when to sell") - general deep research leaves these to markets/Laya
+INVEST = re.compile(r"\b(?:how\s+much\s+(?:\w+\s+){0,3}(?:should|to|can)\s+(?:i\s+)?(?:buy|invest)|when\s+(?:to|should\s+i)\s+sell|"
+                    r"should\s+i\s+(?:buy|sell|invest|hold)|buy\s+or\s+sell|stop[-\s]?loss|take[-\s]?profit|price\s+target)\b", I)
 
 
 def match(text):
-    return bool(TRIGGER.search(text)) and not re.search(r"\b(?:jewell?ery|ring|necklace|buy\s+(?:a|an|the))\b", text, I)
+    return bool(TRACK.search(text)) or (bool(TRIGGER.search(text) or (INVEST.search(text) and named_asset(text)))
+                                        and not re.search(r"\b(?:jewell?ery|ring|necklace|buy\s+(?:a|an|the))\b", text, I))
+
+
+def named_asset(text):
+    """A coin, gold/silver, an ALL-CAPS ticker, or a KSE-100 company - without a network call (routing runs on every
+    message; the PSX list is only used once it's cached)."""
+    if COINS.search(text) or re.search(r"\b(?:gold|silver)\b", text, I) or re.search(r"\b[A-Z]{2,5}\b(?<!\bI)", text):
+        return True
+    hit = data._cache.get("psx:list")
+    names = {w for n in (hit[1].values() if hit else []) for w in re.findall(r"[a-z]{4,}", n.lower())} - {
+        "company", "limited", "pakistan", "bank", "development", "corporation", "industries", "power", "cement", "holdings"}
+    return bool(names & set(re.findall(r"[a-z]{4,}", text.lower())))
 
 
 def owner_currency():
@@ -111,6 +131,30 @@ def stock_line(name, text, deep):
     return line, f"https://finance.yahoo.com/quote/{s['symbol']}", chart
 
 
+def research_desk(text, session, local):
+    """Full research + decision for up to 3 named assets (research.py): what to do, at what price, how much, when to sell."""
+    from ishti.skills.markets import research
+    names = [w for w in METALS if re.search(rf"\b{w}\b", text, I)] + list(dict.fromkeys(c.lower() for c in COINS.findall(text)))
+    taken = set(names)
+    names += [n for n in stock_names(text) if n.lower() not in taken and n.lower() not in METALS]
+    if not names:
+        return None
+    parts, sources = [], []
+    for n in names[:3]:
+        try:
+            body, src = research.research(n, text, session, local)
+        except Exception as exc:
+            body, src = f"**{n}**: research failed ({type(exc).__name__}: {str(exc)[:120]}).", None
+        parts.append(body)
+        if src:
+            sources.append(src)
+    note = ("\n\n---\n_How this was decided: 5 years of prices, fundamentals, analyst targets and news, a backtest on the "
+            "asset's own history and 3,000 simulated price paths. It is a rules-based estimate of odds, not a guarantee and "
+            "not licensed financial advice - markets can move against any plan, so never invest money you can't afford to "
+            "lose, and keep to the stop-loss._")
+    return {"reply": "\n\n".join(parts) + note, "sources": sources, "no_escalate": True}
+
+
 WATCHLIST = __import__("os").path.join(__import__("ishti").ROOT, "data", "watchlist.json")
 DEFAULT_WATCH = [{"kind": "metal", "id": "XAU"}, {"kind": "crypto", "id": "bitcoin"}, {"kind": "fx", "id": "USD/PKR"},
                  {"kind": "psx", "id": "OGDC"}, {"kind": "stock", "id": "NVDA"}, {"kind": "stock", "id": "AAPL"}]
@@ -170,7 +214,12 @@ def quote(item):
 
 def run(text, session):
     local = owner_currency()
+    if TRACK.search(text):
+        from ishti.skills.markets import research
+        return {"reply": research.track_record(), "sources": []}
     deep = bool(ANALYZE.search(text))
+    if deep and not FX_PAIR.search(text) and (out := research_desk(text, session, local)):
+        return out
     jobs, lines, sources, charts = [], [], [], []
 
     for a, b in FX_PAIR.findall(text):
@@ -247,4 +296,7 @@ if __name__ == "__main__":
     assert FX_PAIR.findall("usd to pkr and usd to inr") == [("usd", "pkr"), ("usd", "inr")]
     assert FX_RATE.findall("what is the dollar rate today")[0][0] == "dollar"
     assert [c.lower() for c in COINS.findall("bitcoin and eth price")] == ["bitcoin", "eth"]
+    assert match("should I buy BTC now") and match("what is the stop loss for HBL") and match("how did your market calls do")
+    assert not match("when to sell my car") and not match("how much rice should I buy for a month")
+    assert INVEST.search("research nvidia, how much should I buy with $3000") and ANALYZE.search("predict tesla stock price")
     print("[self-check] markets OK")

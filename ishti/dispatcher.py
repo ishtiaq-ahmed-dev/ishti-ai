@@ -750,6 +750,9 @@ def warm_up():
     """Load Laya now so the first real request doesn't pay ~4 s. Whisper is NOT preloaded: it would sit
     on ~1.6 GB of VRAM next to the 14B model and push it into slow shared memory; it loads on first use."""
     route("hello", SKILLS)
+    import threading
+    from ishti.skills.markets.data import psx_symbols  # lets routing recognise "engro", "lucky" as PSX companies
+    threading.Thread(target=psx_symbols, daemon=True).start()
     try:  # the voice engine is small and on the CPU: loaded now, the first spoken sentence starts at once
         from ishti.voice import current_voice, kokoro, tts_voice
         v = current_voice()

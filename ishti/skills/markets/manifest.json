@@ -1,8 +1,8 @@
 {
   "name": "markets",
   "version": "1.0.0",
-  "description": "Live stocks (yfinance, the free data layer OpenBB uses; PSX from the exchange), crypto (CoinGecko), gold/silver (per ounce and per tola) and currency rates, plus a technical analyzer: trend, RSI, MACD, moving averages, volatility, drawdown.",
-  "route": "stock prices, shares, crypto, gold or silver rates, currency exchange rates, or analysing a stock or coin",
+  "description": "Live stocks (yfinance; PSX live from the exchange, history as SYMBOL.KA), crypto, gold/silver and currency rates, plus a research desk: 5 years of prices, fundamentals, analyst targets and news, a backtest on the asset's own history and 3,000 simulated price paths -> BUY / BUY ON A DIP / WAIT / AVOID with buy price, stop-loss, two sell targets and how much to buy for the owner's capital (1.5% risk per trade, max 20% in one asset); 'how did your market calls do' checks past calls.",
+  "route": "stock prices, shares, crypto, gold or silver rates, currency rates; research a stock or coin and decide whether to buy, how much, and when to sell",
   "needs": {
     "python": [
       "yfinance",
