@@ -140,8 +140,12 @@ function CollapsibleCard({
     >
       <button
         type="button"
-        onClick={onToggle}
-        className="w-full flex items-center justify-between p-4 text-left hover:bg-muted/20 transition-colors cursor-pointer select-none group"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={(e) => {
+          e.currentTarget.blur();
+          onToggle();
+        }}
+        className="w-full flex items-center justify-between p-4 text-left hover:bg-muted/20 transition-colors cursor-pointer select-none group focus:outline-hidden"
         aria-expanded={isOpen}
       >
         <div className="flex items-center gap-3 min-w-0">
@@ -153,7 +157,7 @@ function CollapsibleCard({
               <span className="text-sm font-semibold text-foreground tracking-tight">{title}</span>
               {badge}
             </div>
-            {preview && !isOpen && (
+            {preview && (
               <p className="text-xs text-muted-foreground truncate mt-0.5" title={preview}>
                 {preview}
               </p>
@@ -177,11 +181,13 @@ function CollapsibleCard({
       <AnimatePresence initial={false}>
         {isOpen && (
           <motion.div
+            key="content"
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.22, ease: "easeInOut" }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             className="overflow-hidden border-t border-border"
+            style={{ willChange: "height, opacity" }}
           >
             {children}
           </motion.div>
@@ -393,12 +399,9 @@ export function Overview({ onToggleNav }: { onToggleNav?: () => void }) {
             </div>
 
             <div className="max-h-96 overflow-y-auto scroll-thin divide-y divide-border/60">
-              {filteredSkills.map((s, i) => (
-                <motion.div
+              {filteredSkills.map((s) => (
+                <div
                   key={s.name}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: i * 0.015 }}
                   className="grid grid-cols-[130px_1fr_100px] sm:grid-cols-[150px_1fr_120px] items-center gap-3 px-4 py-2.5 hover:bg-muted/30 transition-colors"
                 >
                   <div className="flex items-center gap-2 text-sm font-medium">
@@ -432,7 +435,7 @@ export function Overview({ onToggleNav }: { onToggleNav?: () => void }) {
                       {s.uses}
                     </span>
                   </div>
-                </motion.div>
+                </div>
               ))}
               {filteredSkills.length === 0 && (
                 <div className="p-6 text-center text-xs text-muted-foreground">

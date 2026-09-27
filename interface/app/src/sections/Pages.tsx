@@ -14,6 +14,7 @@ import {
   FolderOpen,
   History,
   Lock,
+  MessageSquare,
   Monitor,
   Moon,
   PanelLeft,
@@ -30,6 +31,7 @@ import {
   Type,
   User,
   Volume2,
+  Wrench,
   X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -38,6 +40,7 @@ import { TaskList, type Task } from "@/components/rare/task-list";
 import { DeleteButton } from "@/components/rare/delete-button";
 import { AnimatedCounter } from "@/components/rare/animated-counter";
 import { ThemeSwitch } from "@/components/ThemeToggle";
+import RareFolder from "@/components/rare/folder-component";
 import { CHAT_FONT_SIZES, getChatFontSize, setChatFontSize, type ChatFontSize } from "@/lib/font-size";
 import { cn } from "@/lib/utils";
 import { ModelsCard, VoiceCard, WhisperCard } from "@/components/ModelsVoices";
@@ -931,6 +934,8 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [search, setSearch] = useState("");
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [activeSkill, setActiveSkill] = useState<SkillInfo | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"folders" | "tree">("folders");
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
 
@@ -991,6 +996,27 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
     setExpandedFolders(next);
   };
 
+  const handleCopy = (text: string, key: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    try {
+      navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 1800);
+    } catch {}
+  };
+
+  const handleOpenInChat = (skillName: string) => {
+    try {
+      localStorage.setItem("ishti-page", "chat");
+      window.location.hash = "#chat";
+      window.dispatchEvent(
+        new CustomEvent("ishti-start-new-chat", {
+          detail: { initialPrompt: `How do I use the ${skillName} skill?` },
+        })
+      );
+    } catch {}
+  };
+
   return (
     <Page
       title="Skills"
@@ -1005,6 +1031,7 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
               onClick={() => {
                 setViewMode("folders");
                 setSelectedFolder(null);
+                setActiveSkill(null);
               }}
               className={cn(
                 "flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer",
@@ -1019,7 +1046,10 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
             </button>
             <button
               type="button"
-              onClick={() => setViewMode("tree")}
+              onClick={() => {
+                setViewMode("tree");
+                setActiveSkill(null);
+              }}
               className={cn(
                 "flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer",
                 viewMode === "tree"
@@ -1052,10 +1082,13 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
         {/* Breadcrumb Path & Search Bar */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-2xl border border-border bg-card/40 p-3.5 shadow-xs">
           {/* Breadcrumb Navigation */}
-          <div className="flex items-center gap-2 text-xs font-mono min-w-0">
+          <div className="flex items-center gap-2 text-xs font-mono min-w-0 flex-wrap">
             <button
               type="button"
-              onClick={() => setSelectedFolder(null)}
+              onClick={() => {
+                setSelectedFolder(null);
+                setActiveSkill(null);
+              }}
               className="flex items-center gap-1.5 text-muted-foreground hover:text-accent font-semibold transition-colors cursor-pointer shrink-0"
             >
               <Folder className="h-4 w-4 text-accent" />
@@ -1065,13 +1098,28 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
             {selectedFolder && (
               <>
                 <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
-                <span className="flex items-center gap-1 font-semibold text-foreground truncate bg-accent-soft px-2 py-0.5 rounded-md">
-                  <FolderOpen className="h-3.5 w-3.5 text-accent shrink-0" />
-                  <span className="truncate">{selectedFolder}</span>
-                </span>
                 <button
                   type="button"
-                  onClick={() => setSelectedFolder(null)}
+                  onClick={() => setActiveSkill(null)}
+                  className="flex items-center gap-1 font-semibold text-foreground truncate bg-accent-soft px-2 py-0.5 rounded-md hover:bg-accent/20 transition-colors cursor-pointer"
+                >
+                  <FolderOpen className="h-3.5 w-3.5 text-accent shrink-0" />
+                  <span className="truncate">{selectedFolder}</span>
+                </button>
+                {activeSkill && (
+                  <>
+                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
+                    <span className="flex items-center gap-1 font-mono text-accent truncate bg-accent/10 border border-accent/30 px-2 py-0.5 rounded-md">
+                      <span>{activeSkill.name}</span>
+                    </span>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedFolder(null);
+                    setActiveSkill(null);
+                  }}
                   className="flex items-center gap-1 rounded-lg border border-border bg-background px-2 py-0.5 text-[11px] font-sans font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer ml-1"
                 >
                   <ArrowLeft className="h-3 w-3" />
@@ -1094,11 +1142,14 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
           </div>
         </div>
 
-        {/* Category Pills Bar (Quick Switcher) */}
+        {/* Category Pills Bar (Quick Switcher with React Animation) */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scroll-thin">
           <button
             type="button"
-            onClick={() => setSelectedFolder(null)}
+            onClick={() => {
+              setSelectedFolder(null);
+              setActiveSkill(null);
+            }}
             className={cn(
               "flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium shrink-0 transition-all cursor-pointer shadow-xs",
               selectedFolder === null && !search
@@ -1128,6 +1179,7 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
                 type="button"
                 onClick={() => {
                   setSelectedFolder(isSelected ? null : cat);
+                  setActiveSkill(null);
                   if (viewMode === "tree") {
                     setExpandedFolders((prev) => ({ ...prev, [cat]: true }));
                   }
@@ -1135,7 +1187,7 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
                 className={cn(
                   "flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium shrink-0 transition-all cursor-pointer shadow-xs",
                   isSelected
-                    ? "bg-accent text-white font-semibold"
+                    ? "bg-accent text-white font-semibold shadow-sm"
                     : "border border-border bg-card/60 text-muted-foreground hover:text-foreground hover:bg-muted/40"
                 )}
               >
@@ -1150,189 +1202,369 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
         </div>
 
         {/* ========================================================
-             MODE 1: FOLDER CARDS VIEW (DEFAULT)
+             MODES 1 & 2: FOLDERS VIEW (REACT ANIMATION BETWEEN FOLDERS)
              ======================================================== */}
-        {viewMode === "folders" && !search && selectedFolder === null && (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {categories.map((cat, i) => {
-              const catSkills = skillsByCategory[cat] || [];
-              const meta = CATEGORY_METAS[cat] || {
-                label: cat,
-                desc: "Skill module category",
-                color: "text-accent",
-                bg: "bg-accent-soft",
-                border: "border-border",
-              };
-              const workingCount = catSkills.filter((s) => s.status === "working").length;
-              const issueCount = catSkills.length - workingCount;
+        {viewMode === "folders" && !search && (
+          <AnimatePresence mode="wait">
+            {selectedFolder === null ? (
+              <motion.div
+                key="folders-overview-grid"
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.98 }}
+                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+              >
+                {categories.map((cat, i) => {
+                  const catSkills = skillsByCategory[cat] || [];
+                  const meta = CATEGORY_METAS[cat] || {
+                    label: cat,
+                    desc: "Skill module category",
+                    color: "text-accent",
+                    bg: "bg-accent-soft",
+                    border: "border-border",
+                  };
+                  const workingCount = catSkills.filter((s) => s.status === "working").length;
+                  const issueCount = catSkills.length - workingCount;
 
-              return (
-                <motion.div
-                  key={cat}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.02 }}
-                >
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => setSelectedFolder(cat)}
-                    className="group relative flex flex-col justify-between rounded-2xl border border-border bg-card/50 p-4 shadow-xs hover:border-accent/50 hover:bg-card/80 transition-all cursor-pointer h-full"
-                  >
+                  return (
+                    <motion.div
+                      key={cat}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.02 }}
+                    >
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => {
+                          setSelectedFolder(cat);
+                          setActiveSkill(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            setSelectedFolder(cat);
+                            setActiveSkill(null);
+                          }
+                        }}
+                        className="group relative flex flex-col justify-between rounded-2xl border border-border bg-card/50 p-4 shadow-xs hover:border-accent/60 hover:bg-card/80 hover:shadow-md transition-all cursor-pointer h-full select-none"
+                      >
+                        <div>
+                          {/* 3D Folder Icon from Chat Section */}
+                          <div
+                            className="relative flex items-center justify-center rounded-xl bg-gradient-to-b from-accent-soft/30 to-accent-soft/10 border border-border/50 overflow-hidden py-2 mb-3.5 group-hover:border-accent/40 group-hover:from-accent-soft/45 transition-all select-none"
+                            style={{ height: 104 }}
+                          >
+                            <div
+                              style={{
+                                width: 209,
+                                height: 176,
+                                transform: "scale(0.44)",
+                                transformOrigin: "center center",
+                                willChange: "transform",
+                              }}
+                              className="flex items-center justify-center shrink-0 select-none group-hover:scale-[0.49] transition-transform duration-300"
+                            >
+                              <RareFolder color="blue" size="sm" allowOpen={true} />
+                            </div>
+                            <div className="absolute top-2 right-2 flex items-center gap-1.5">
+                              <span className="rounded-md bg-card/85 backdrop-blur-xs px-2 py-0.5 text-[11px] font-mono font-medium text-foreground border border-border/60">
+                                {catSkills.length} skills
+                              </span>
+                              {issueCount > 0 && (
+                                <span className="rounded-md bg-red-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-red-500 border border-red-500/20">
+                                  {issueCount} issue
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Folder Name & Description */}
+                          <h3 className="font-semibold text-foreground text-sm group-hover:text-accent transition-colors flex items-center gap-1.5">
+                            <span>{cat}</span>
+                            <ChevronRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all text-accent" />
+                          </h3>
+                          <div className="text-[11px] font-mono text-muted-foreground/80 mt-0.5 truncate">
+                            ishti/skills/{cat.toLowerCase().replace(/[^a-z0-9]+/g, "_")}/
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-2 line-clamp-2 leading-relaxed">
+                            {meta.desc}
+                          </p>
+                        </div>
+
+                        {/* Preview of skill names inside folder */}
+                        <div className="mt-4 pt-3 border-t border-border/60">
+                          <div className="flex flex-wrap gap-1">
+                            {catSkills.slice(0, 4).map((s) => (
+                              <span
+                                key={s.name}
+                                className="rounded-md bg-background px-2 py-0.5 text-[10px] font-mono text-foreground/80 border border-border/60"
+                              >
+                                {s.name}
+                              </span>
+                            ))}
+                            {catSkills.length > 4 && (
+                              <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+                                +{catSkills.length - 4} more
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </motion.div>
+            ) : (
+              <motion.div
+                key={`folder-${selectedFolder}`}
+                initial={{ opacity: 0, x: 24, filter: "blur(2px)" }}
+                animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+                exit={{ opacity: 0, x: -24, filter: "blur(2px)" }}
+                transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+                className="space-y-4"
+              >
+                {/* Folder Header Banner */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl border border-accent/30 bg-accent/5 p-4 shadow-xs">
+                  <div className="flex items-center gap-3">
+                    <div className="grid h-11 w-11 place-items-center rounded-xl bg-accent text-white shadow-xs">
+                      <FolderOpen className="h-6 w-6 fill-current/30" />
+                    </div>
                     <div>
-                      {/* Folder Top Row: Icon + Count */}
-                      <div className="flex items-center justify-between gap-2 mb-3">
-                        <div
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="text-base font-bold text-foreground tracking-tight">
+                          {selectedFolder}
+                        </h2>
+                        <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-[11px] font-semibold text-accent font-mono">
+                          {skillsByCategory[selectedFolder]?.length || 0} skills in folder
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        {CATEGORY_METAS[selectedFolder]?.desc || "Folder containing registered skills"}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedFolder(null);
+                      setActiveSkill(null);
+                    }}
+                    className="flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted/40 transition-colors cursor-pointer shadow-xs self-end sm:self-auto"
+                  >
+                    <ArrowLeft className="h-3.5 w-3.5 text-accent" />
+                    <span>Back to All Folders</span>
+                  </button>
+                </div>
+
+                {/* The Skills Names Only Grid */}
+                <div className="rounded-2xl border border-border bg-card/40 p-4 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap pb-2 border-b border-border/60">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Skills in {selectedFolder}
+                      </span>
+                      <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-mono font-semibold text-accent">
+                        {skillsByCategory[selectedFolder]?.length || 0} total
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      Click any skill name to inspect details & actions
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                    {(skillsByCategory[selectedFolder] || []).map((s) => {
+                      const isSelected = activeSkill?.name === s.name;
+                      return (
+                        <motion.button
+                          key={s.name}
+                          type="button"
+                          onClick={() => setActiveSkill(isSelected ? null : s)}
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
                           className={cn(
-                            "grid h-10 w-10 place-items-center rounded-xl border group-hover:scale-105 transition-transform",
-                            meta.bg,
-                            meta.border,
-                            meta.color
+                            "group flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left transition-all cursor-pointer shadow-xs",
+                            isSelected
+                              ? "border-accent bg-accent/15 ring-2 ring-accent/30 shadow-sm"
+                              : "border-border bg-background/80 hover:border-accent/50 hover:bg-card"
                           )}
                         >
-                          <Folder className="h-5 w-5 fill-current/20" />
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-mono font-medium text-muted-foreground">
-                            {catSkills.length} skills
-                          </span>
-                          {issueCount > 0 && (
-                            <span className="rounded-md bg-red-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-red-500 border border-red-500/20">
-                              {issueCount} issue
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className={cn(
+                                "h-2 w-2 shrink-0 rounded-full",
+                                s.status === "broken"
+                                  ? "bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.7)]"
+                                  : s.status === "working"
+                                  ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.7)]"
+                                  : "bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.7)]"
+                              )}
+                            />
+                            <span
+                              className={cn(
+                                "font-mono text-xs font-semibold truncate transition-colors",
+                                isSelected ? "text-accent" : "text-foreground group-hover:text-accent"
+                              )}
+                            >
+                              {s.name}
                             </span>
-                          )}
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                              v{s.version}
+                            </span>
+                            {isSelected ? (
+                              <ChevronUp className="h-3.5 w-3.5 text-accent shrink-0" />
+                            ) : (
+                              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/60 group-hover:text-foreground shrink-0" />
+                            )}
+                          </div>
+                        </motion.button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Active Skill Inspector / Detail Viewer */}
+                <AnimatePresence mode="wait">
+                  {activeSkill ? (
+                    <motion.div
+                      key={activeSkill.name}
+                      initial={{ opacity: 0, y: 10, height: 0 }}
+                      animate={{ opacity: 1, y: 0, height: "auto" }}
+                      exit={{ opacity: 0, y: -10, height: 0 }}
+                      transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                      className="overflow-hidden"
+                    >
+                      <div className="rounded-2xl border border-accent/40 bg-card p-5 shadow-sm space-y-4">
+                        {/* Top Row */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/80 pb-3">
+                          <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+                            <span className="font-mono text-base font-bold text-foreground">
+                              {activeSkill.name}
+                            </span>
+                            <span
+                              className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${tone(
+                                activeSkill.status
+                              )}`}
+                            >
+                              {activeSkill.status === "working"
+                                ? "Operational"
+                                : activeSkill.status === "broken"
+                                ? "Needs Attention"
+                                : activeSkill.status}
+                            </span>
+                            <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-mono text-muted-foreground">
+                              v{activeSkill.version}
+                            </span>
+                            <span className="rounded-md bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent">
+                              {activeSkill.category || selectedFolder}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenInChat(activeSkill.name)}
+                              className="flex items-center gap-1.5 rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:opacity-90 transition-all cursor-pointer"
+                            >
+                              <MessageSquare className="h-3.5 w-3.5" />
+                              <span>Open in Chat</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setActiveSkill(null)}
+                              className="grid h-8 w-8 place-items-center rounded-xl border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
+                              title="Close inspector"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
                         </div>
-                      </div>
 
-                      {/* Folder Name & Path */}
-                      <h3 className="font-semibold text-foreground text-sm group-hover:text-accent transition-colors flex items-center gap-1.5">
-                        <span>{cat}</span>
-                        <ChevronRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all text-accent" />
-                      </h3>
-                      <div className="text-[11px] font-mono text-muted-foreground/80 mt-0.5">
-                        ishti/skills/{cat.toLowerCase().replace(/[^a-z0-9]+/g, "_")}/
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-2 line-clamp-2 leading-relaxed">
-                        {meta.desc}
-                      </p>
-                    </div>
-
-                    {/* Preview of skills inside folder */}
-                    <div className="mt-4 pt-3 border-t border-border/60">
-                      <div className="flex flex-wrap gap-1">
-                        {catSkills.slice(0, 4).map((s) => (
-                          <span
-                            key={s.name}
-                            className="rounded-md bg-background px-2 py-0.5 text-[10px] font-mono text-foreground/80 border border-border/60"
+                        {/* File Path & Copy */}
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 rounded-xl bg-muted/50 p-2.5 border border-border/60">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <FileCode className="h-4 w-4 text-accent shrink-0" />
+                            <span className="font-mono text-xs text-foreground/90 truncate">
+                              {activeSkill.path || `ishti/skills/${activeSkill.name}.py`}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) =>
+                              handleCopy(
+                                activeSkill.path || `ishti/skills/${activeSkill.name}.py`,
+                                `path-${activeSkill.name}`,
+                                e
+                              )
+                            }
+                            className="flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground hover:border-accent hover:text-accent transition-colors cursor-pointer shrink-0"
                           >
-                            {s.name}
-                          </span>
-                        ))}
-                        {catSkills.length > 4 && (
-                          <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
-                            +{catSkills.length - 4} more
-                          </span>
+                            {copiedKey === `path-${activeSkill.name}` ? (
+                              <>
+                                <Check className="h-3.5 w-3.5 text-emerald-500" />
+                                <span className="text-emerald-500">Copied!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="h-3.5 w-3.5" />
+                                <span>Copy Path</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+
+                        {/* Route Trigger */}
+                        {activeSkill.route && (
+                          <div className="rounded-xl border border-border/80 bg-background/80 p-3 space-y-1">
+                            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                              <Wrench className="h-3 w-3 text-accent" />
+                              <span>Routing & Trigger Intent</span>
+                            </div>
+                            <p className="text-xs text-foreground font-mono bg-muted/40 p-2 rounded-lg leading-relaxed">
+                              {activeSkill.route}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Description */}
+                        <div className="space-y-1">
+                          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                            Description
+                          </div>
+                          <p className="text-xs text-muted-foreground leading-relaxed">
+                            {activeSkill.description}
+                          </p>
+                        </div>
+
+                        {/* Problem/Error Warning if any */}
+                        {activeSkill.problem && (
+                          <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-3 text-xs text-red-500 space-y-1">
+                            <div className="font-semibold flex items-center gap-1.5">
+                              <span>Diagnostic Issue:</span>
+                            </div>
+                            <p className="leading-relaxed font-mono">{activeSkill.problem}</p>
+                          </div>
                         )}
                       </div>
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* ========================================================
-             MODE 2: SPECIFIC FOLDER CONTENTS VIEW
-             ======================================================== */}
-        {viewMode === "folders" && !search && selectedFolder !== null && (
-          <div className="space-y-4">
-            {/* Folder Header Banner */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl border border-accent/30 bg-accent/5 p-4 shadow-xs">
-              <div className="flex items-center gap-3">
-                <div className="grid h-11 w-11 place-items-center rounded-xl bg-accent text-white shadow-xs">
-                  <FolderOpen className="h-6 w-6 fill-current/30" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h2 className="text-base font-bold text-foreground tracking-tight">
-                      {selectedFolder}
-                    </h2>
-                    <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-[11px] font-semibold text-accent font-mono">
-                      {skillsByCategory[selectedFolder]?.length || 0} skills in folder
-                    </span>
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    {CATEGORY_METAS[selectedFolder]?.desc || "Folder containing registered skills"}
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSelectedFolder(null)}
-                className="flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted/40 transition-colors cursor-pointer shadow-xs self-end sm:self-auto"
-              >
-                <ArrowLeft className="h-3.5 w-3.5 text-accent" />
-                <span>Back to All Folders</span>
-              </button>
-            </div>
-
-            {/* Skills Grid inside this Folder */}
-            <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {(skillsByCategory[selectedFolder] || []).map((s, i) => (
-                <motion.div
-                  key={s.name}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.02 }}
-                >
-                  <Card className="h-full flex flex-col justify-between hover:border-accent/40 transition-colors shadow-xs">
-                    <div>
-                      {/* Name & Version */}
-                      <div className="mb-2 flex items-center justify-between gap-2 min-w-0">
-                        <span className="font-semibold text-foreground text-sm truncate">
-                          {s.name}
-                        </span>
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-medium shrink-0 ${tone(
-                            s.status
-                          )}`}
-                        >
-                          v{s.version}
-                        </span>
-                      </div>
-
-                      {/* Code Path Tag */}
-                      <div className="mb-2 flex items-center gap-1 text-[10px] font-mono text-muted-foreground bg-muted/60 px-2 py-1 rounded-md overflow-hidden" title={s.path || `ishti/skills/${s.name}`}>
-                        <FileCode className="h-3 w-3 text-accent shrink-0" />
-                        <span className="truncate">{s.path || `ishti/skills/${s.name}`}</span>
-                      </div>
-
-                      {/* Description */}
-                      <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3" title={s.description}>
-                        {s.description}
-                      </p>
-
-                      {/* Route Trigger */}
-                      {s.route && (
-                        <div className="mt-2 text-[10px] text-muted-foreground/90 bg-card border border-border/70 rounded-md p-1.5">
-                          <span className="font-semibold text-foreground/80">Route: </span>
-                          <span className="italic">{s.route}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {s.problem && (
-                      <p className="mt-2 text-xs text-danger break-words bg-danger/10 border border-danger/20 rounded-md p-1.5">
-                        {s.problem}
-                      </p>
-                    )}
-                  </Card>
-                </motion.div>
-              ))}
-            </div>
-          </div>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="no-skill-selected"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="rounded-2xl border border-dashed border-border/80 bg-card/20 p-4 text-center text-xs text-muted-foreground"
+                    >
+                      💡 Click on any skill name above to inspect its code path, route trigger, description, and status.
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            )}
+          </AnimatePresence>
         )}
 
         {/* ========================================================
@@ -1415,59 +1647,44 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
                         transition={{ duration: 0.22, ease: "easeInOut" }}
                         className="overflow-hidden border-t border-border"
                       >
-                        <div className="p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                          {catSkills.map((s, i) => (
-                            <motion.div
-                              key={s.name}
-                              initial={{ opacity: 0, y: 6 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              transition={{ delay: i * 0.015 }}
-                            >
-                              <Card className="h-full flex flex-col justify-between hover:border-accent/40 transition-colors shadow-xs">
-                                <div>
-                                  <div className="mb-2 flex items-center justify-between gap-2 min-w-0">
-                                    <span className="font-semibold text-foreground text-sm truncate">
+                        <div className="p-4 space-y-3">
+                          <div className="grid gap-2.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                            {catSkills.map((s) => {
+                              const isSelected = activeSkill?.name === s.name;
+                              return (
+                                <button
+                                  key={s.name}
+                                  type="button"
+                                  onClick={() => setActiveSkill(isSelected ? null : s)}
+                                  className={cn(
+                                    "flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left transition-all cursor-pointer shadow-xs",
+                                    isSelected
+                                      ? "border-accent bg-accent/15 ring-2 ring-accent/30"
+                                      : "border-border bg-background hover:border-accent/40 hover:bg-muted/30"
+                                  )}
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span
+                                      className={cn(
+                                        "h-2 w-2 shrink-0 rounded-full",
+                                        s.status === "broken"
+                                          ? "bg-red-500"
+                                          : s.status === "working"
+                                          ? "bg-emerald-500"
+                                          : "bg-amber-500"
+                                      )}
+                                    />
+                                    <span className="font-mono text-xs font-semibold text-foreground truncate">
                                       {s.name}
                                     </span>
-                                    <span
-                                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium shrink-0 ${tone(
-                                        s.status
-                                      )}`}
-                                    >
-                                      v{s.version}
-                                    </span>
                                   </div>
-
-                                  <div
-                                    className="mb-2 flex items-center gap-1 text-[10px] font-mono text-muted-foreground bg-muted/60 px-2 py-1 rounded-md overflow-hidden"
-                                    title={s.path || `ishti/skills/${s.name}`}
-                                  >
-                                    <FileCode className="h-3 w-3 text-accent shrink-0" />
-                                    <span className="truncate">
-                                      {s.path || `ishti/skills/${s.name}`}
-                                    </span>
-                                  </div>
-
-                                  <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3" title={s.description}>
-                                    {s.description}
-                                  </p>
-
-                                  {s.route && (
-                                    <div className="mt-2 text-[10px] text-muted-foreground/90 bg-card border border-border/70 rounded-md p-1.5">
-                                      <span className="font-semibold text-foreground/80">Route: </span>
-                                      <span className="italic">{s.route}</span>
-                                    </div>
-                                  )}
-                                </div>
-
-                                {s.problem && (
-                                  <p className="mt-2 text-xs text-danger break-words bg-danger/10 border border-danger/20 rounded-md p-1.5">
-                                    {s.problem}
-                                  </p>
-                                )}
-                              </Card>
-                            </motion.div>
-                          ))}
+                                  <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                                    v{s.version}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                       </motion.div>
                     )}
@@ -1489,68 +1706,181 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
               </div>
               <button
                 type="button"
-                onClick={() => setSearch("")}
+                onClick={() => {
+                  setSearch("");
+                  setActiveSkill(null);
+                }}
                 className="text-xs text-accent hover:underline cursor-pointer"
               >
                 Clear Search
               </button>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {filteredSkills.map((s, i) => (
+            <div className="rounded-2xl border border-border bg-card/40 p-4 shadow-xs space-y-3">
+              <div className="grid gap-2.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                {filteredSkills.map((s) => {
+                  const isSelected = activeSkill?.name === s.name;
+                  return (
+                    <button
+                      key={s.name}
+                      type="button"
+                      onClick={() => setActiveSkill(isSelected ? null : s)}
+                      className={cn(
+                        "group flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left transition-all cursor-pointer shadow-xs",
+                        isSelected
+                          ? "border-accent bg-accent/15 ring-2 ring-accent/30 shadow-sm"
+                          : "border-border bg-background/80 hover:border-accent/50 hover:bg-card"
+                      )}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className={cn(
+                            "h-2 w-2 shrink-0 rounded-full",
+                            s.status === "broken"
+                              ? "bg-red-500"
+                              : s.status === "working"
+                              ? "bg-emerald-500"
+                              : "bg-amber-500"
+                          )}
+                        />
+                        <div className="min-w-0">
+                          <div className="font-mono text-xs font-semibold text-foreground group-hover:text-accent truncate">
+                            {s.name}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground truncate">
+                            {s.category || "General"}
+                          </div>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0">
+                        v{s.version}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Active Skill Inspector for Search View */}
+            <AnimatePresence mode="wait">
+              {activeSkill && (
                 <motion.div
-                  key={s.name}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.015 }}
+                  key={activeSkill.name}
+                  initial={{ opacity: 0, y: 10, height: 0 }}
+                  animate={{ opacity: 1, y: 0, height: "auto" }}
+                  exit={{ opacity: 0, y: -10, height: 0 }}
+                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                  className="overflow-hidden"
                 >
-                  <Card className="h-full flex flex-col justify-between hover:border-accent/40 transition-colors shadow-xs">
-                    <div>
-                      <div className="mb-1.5 flex items-center justify-between gap-2 min-w-0">
-                        <span className="font-semibold text-foreground text-sm truncate">
-                          {s.name}
+                  <div className="rounded-2xl border border-accent/40 bg-card p-5 shadow-sm space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/80 pb-3">
+                      <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+                        <span className="font-mono text-base font-bold text-foreground">
+                          {activeSkill.name}
                         </span>
                         <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-medium shrink-0 ${tone(
-                            s.status
+                          className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${tone(
+                            activeSkill.status
                           )}`}
                         >
-                          v{s.version}
+                          {activeSkill.status === "working"
+                            ? "Operational"
+                            : activeSkill.status === "broken"
+                            ? "Needs Attention"
+                            : activeSkill.status}
+                        </span>
+                        <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-mono text-muted-foreground">
+                          v{activeSkill.version}
+                        </span>
+                        <span className="rounded-md bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent">
+                          {activeSkill.category || "General"}
                         </span>
                       </div>
-
-                      {/* Folder Category Badge + Code Path */}
-                      <div className="flex items-center gap-1.5 mb-2">
-                        <span className="rounded-md bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold text-accent flex items-center gap-1">
-                          <Folder className="h-2.5 w-2.5" />
-                          <span>{s.category || "General"}</span>
-                        </span>
-                        <span className="text-[10px] font-mono text-muted-foreground truncate">
-                          {s.path || `ishti/skills/${s.name}`}
-                        </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenInChat(activeSkill.name)}
+                          className="flex items-center gap-1.5 rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:opacity-90 transition-all cursor-pointer"
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" />
+                          <span>Open in Chat</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveSkill(null)}
+                          className="grid h-8 w-8 place-items-center rounded-xl border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
+                          title="Close inspector"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
                       </div>
-
-                      <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3" title={s.description}>
-                        {s.description}
-                      </p>
-
-                      {s.route && (
-                        <div className="mt-2 text-[10px] text-muted-foreground/90 bg-card border border-border/70 rounded-md p-1.5">
-                          <span className="font-semibold text-foreground/80">Route: </span>
-                          <span className="italic">{s.route}</span>
-                        </div>
-                      )}
                     </div>
 
-                    {s.problem && (
-                      <p className="mt-2 text-xs text-danger break-words bg-danger/10 border border-danger/20 rounded-md p-1.5">
-                        {s.problem}
-                      </p>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 rounded-xl bg-muted/50 p-2.5 border border-border/60">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileCode className="h-4 w-4 text-accent shrink-0" />
+                        <span className="font-mono text-xs text-foreground/90 truncate">
+                          {activeSkill.path || `ishti/skills/${activeSkill.name}.py`}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) =>
+                          handleCopy(
+                            activeSkill.path || `ishti/skills/${activeSkill.name}.py`,
+                            `path-${activeSkill.name}`,
+                            e
+                          )
+                        }
+                        className="flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground hover:border-accent hover:text-accent transition-colors cursor-pointer shrink-0"
+                      >
+                        {copiedKey === `path-${activeSkill.name}` ? (
+                          <>
+                            <Check className="h-3.5 w-3.5 text-emerald-500" />
+                            <span className="text-emerald-500">Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-3.5 w-3.5" />
+                            <span>Copy Path</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {activeSkill.route && (
+                      <div className="rounded-xl border border-border/80 bg-background/80 p-3 space-y-1">
+                        <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                          <Wrench className="h-3 w-3 text-accent" />
+                          <span>Routing & Trigger Intent</span>
+                        </div>
+                        <p className="text-xs text-foreground font-mono bg-muted/40 p-2 rounded-lg leading-relaxed">
+                          {activeSkill.route}
+                        </p>
+                      </div>
                     )}
-                  </Card>
+
+                    <div className="space-y-1">
+                      <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        Description
+                      </div>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        {activeSkill.description}
+                      </p>
+                    </div>
+
+                    {activeSkill.problem && (
+                      <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-3 text-xs text-red-500 space-y-1">
+                        <div className="font-semibold flex items-center gap-1.5">
+                          <span>Diagnostic Issue:</span>
+                        </div>
+                        <p className="leading-relaxed font-mono">{activeSkill.problem}</p>
+                      </div>
+                    )}
+                  </div>
                 </motion.div>
-              ))}
-            </div>
+              )}
+            </AnimatePresence>
 
             {filteredSkills.length === 0 && (
               <div className="rounded-2xl border border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
