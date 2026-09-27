@@ -40,3 +40,11 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Chatterbox (https://github.com/resemble-ai/chatterbox)
+
+Used as a library (the voice-conversion half, `chatterbox.vc`) to turn ISHTI's speech into the owner's own voice for
+voice notes he sends; weights `ResembleAI/chatterbox` (s3gen.safetensors, conds.pt) in `data/clone`. MIT License,
+Copyright (c) 2025 Resemble AI. Its package pins torch 2.6, which can't run on this GPU (RTX 5070 Ti, sm_120), so it is
+installed with `pip install --no-deps chatterbox-tts` plus librosa, s3tokenizer, diffusers, resemble-perth,
+conformer==0.3.2, omegaconf and einops; ISHTI keeps torch 2.11+cu128. Output carries Resemble's Perth watermark.

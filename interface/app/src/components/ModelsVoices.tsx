@@ -19,8 +19,9 @@ import {
   CheckCircle2,
   Radio,
   FileAudio,
+  UserRound,
 } from "lucide-react";
-import { getJSON, postJSON } from "@/lib/api";
+import { del, getJSON, postJSON } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export type Model = {
@@ -168,6 +169,166 @@ export function useManage() {
   };
 
   return { st, msg, setMsg, busy, playing, act, preview, load };
+}
+
+type OwnVoiceState = { exists: boolean; seconds?: number; recorded?: string };
+const READ_ALOUD =
+  "Hi, this is me. I'm recording my voice so ISHTI can send voice notes that sound like me. " +
+  "I'll be home around eight tonight, and we can talk about the plans for the weekend then.";
+
+/** "Your own voice": a 10-20 s sample the owner records here; WhatsApp voice notes are then converted to his voice. */
+function OwnVoice() {
+  const [st, setSt] = useState<OwnVoiceState>();
+  const [rec, setRec] = useState<MediaRecorder | null>(null);
+  const [secs, setSecs] = useState(0);
+  const [status, setStatus] = useState("");
+  const [err, setErr] = useState("");
+  const [playing, setPlaying] = useState(false);
+  const audio = useRef<HTMLAudioElement | null>(null);
+
+  const load = useCallback(() => getJSON<OwnVoiceState>("/api/manage/owner_voice").then(setSt).catch(() => {}), []);
+  useEffect(() => {
+    load();
+  }, [load]);
+  useEffect(() => {
+    if (!rec) return;
+    const t = setInterval(() => setSecs((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [rec]);
+  useEffect(() => {
+    if (rec && secs >= 20) rec.stop(); // 20 s is plenty; the converter uses the first 10
+  }, [rec, secs]);
+
+  const start = async () => {
+    setErr("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      const r = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+      r.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+      r.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setRec(null);
+        setStatus("Saving your sample…");
+        try {
+          const res = await fetch("/api/manage/owner_voice", { method: "POST", body: new Blob(chunks, { type: r.mimeType }) });
+          const body = await res.json();
+          if (!res.ok || body.error) setErr(body.error || `HTTP ${res.status}`);
+        } catch (e) {
+          setErr(String((e as Error).message || e));
+        }
+        setStatus("");
+        load();
+      };
+      setSecs(0);
+      r.start();
+      setRec(r);
+    } catch {
+      setErr("Couldn't use the microphone - allow it for this page, or connect one.");
+    }
+  };
+
+  const hear = () => {
+    if (playing) {
+      audio.current?.pause();
+      setPlaying(false);
+      return;
+    }
+    setStatus("Making a sample voice note in your voice (the first one takes ~10 s)…");
+    const a = new Audio("/api/manage/owner_voice/preview");
+    audio.current = a;
+    a.oncanplay = () => setStatus("");
+    a.onended = () => setPlaying(false);
+    a.onerror = () => {
+      setStatus("");
+      setPlaying(false);
+      setErr("Couldn't make the sample - is the own-voice converter downloaded (engine files below)?");
+    };
+    setPlaying(true);
+    a.play().catch(() => setPlaying(false));
+  };
+
+  const remove = async () => {
+    if (!window.confirm("Delete your voice sample? Voice notes will use ISHTI's voice until you record a new one.")) return;
+    await del("/api/manage/owner_voice").catch(() => {});
+    load();
+  };
+
+  return (
+    <div className="rounded-xl border border-border/70 bg-card/60 p-3 space-y-2.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-2.5 min-w-0">
+          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+            <UserRound className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-foreground">Your own voice</div>
+            <div className="text-[10px] text-muted-foreground">
+              {st?.exists
+                ? `Recorded ${st.recorded} (${st.seconds}s). WhatsApp voice notes are sent in your voice.`
+                : "Record 10-20 seconds once, and voice notes ISHTI sends for you will sound like you."}
+            </div>
+          </div>
+        </div>
+        {st?.exists && !rec && (
+          <span className="rounded-md bg-success/15 px-2 py-0.5 text-[9px] font-mono font-semibold text-success shrink-0">READY</span>
+        )}
+      </div>
+
+      {rec && (
+        <div className="rounded-lg border border-accent/40 bg-accent/5 p-2.5 text-[11px] leading-relaxed text-foreground">
+          <div className="mb-1 font-semibold text-accent">Read this aloud, in your normal voice ({secs}s / 10-20s):</div>
+          {READ_ALOUD}
+        </div>
+      )}
+      {(status || err) && (
+        <div role={err ? "alert" : "status"} className={cn("text-[11px]", err ? "text-danger" : "text-muted-foreground")}>
+          {err || status}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        {rec ? (
+          <button
+            type="button"
+            onClick={() => rec.stop()}
+            disabled={secs < 10}
+            className="flex items-center gap-1.5 rounded-lg bg-danger px-3 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+          >
+            <Square className="h-3 w-3" /> {secs < 10 ? `Keep reading… ${10 - secs}s` : "Stop and save"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={start}
+            disabled={!!status}
+            className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[11px] font-semibold text-white hover:opacity-90 disabled:opacity-50 cursor-pointer"
+          >
+            <Mic className="h-3 w-3" /> {st?.exists ? "Record again" : "Record my voice"}
+          </button>
+        )}
+        {st?.exists && !rec && (
+          <>
+            <button
+              type="button"
+              onClick={hear}
+              className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-[11px] font-medium hover:bg-muted cursor-pointer"
+            >
+              {playing ? <Square className="h-3 w-3" /> : <Play className="h-3 w-3" />} Hear a voice note
+            </button>
+            <button
+              type="button"
+              onClick={remove}
+              className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] text-danger hover:bg-danger/10 cursor-pointer"
+              aria-label="Delete my voice sample"
+            >
+              <Trash2 className="h-3 w-3" /> Delete
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function Progress({ job }: { job?: Job }) {
@@ -665,6 +826,7 @@ export function VoiceCard({
                 </div>
               ) : (
                 <>
+                  <OwnVoice />
                   {/* --- Voice Roster --- */}
                   <div>
                     <div className="mb-2.5 flex items-baseline justify-between">

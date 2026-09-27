@@ -994,6 +994,40 @@ async def manage_preview(name: str):
         return _manage_error(exc)
 
 
+# ---- the owner's own voice (voice notes sent in his name): a sample he records in Settings -> Voices ----
+@api.get("/api/manage/owner_voice")
+async def owner_voice_state():
+    from ishti import manage
+    return await _off(manage.owner_voice_state)
+
+
+@api.post("/api/manage/owner_voice")
+async def owner_voice_save(req: Request):
+    """Raw recording from the browser (webm/ogg/wav) -> data/owner_voice/sample.wav."""
+    from ishti import manage
+    try:
+        return await _off(manage.save_owner_voice, await req.body())
+    except Exception as exc:
+        return _manage_error(exc)
+
+
+@api.delete("/api/manage/owner_voice")
+async def owner_voice_delete():
+    from ishti import manage
+    return await _off(manage.delete_owner_voice)
+
+
+@api.get("/api/manage/owner_voice/preview")
+async def owner_voice_preview():
+    from fastapi.responses import Response
+    from ishti.voice import synthesize_as_owner
+    try:
+        wav, _ = await _off(synthesize_as_owner, "Hi, this is a voice note sent through ISHTI. It should sound just like me.")
+        return Response(wav, media_type="audio/wav")
+    except Exception as exc:
+        return _manage_error(exc)
+
+
 @api.get("/api/chrome_profiles")
 async def chrome_profiles_get():
     """Which of the owner's Chrome profiles ISHTI may use, and whether each is connected (never the token)."""

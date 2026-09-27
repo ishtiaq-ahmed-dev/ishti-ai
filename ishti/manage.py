@@ -209,6 +209,9 @@ def engines():
     out["s2"] = {"label": "Fish Audio S2 (studio quality; 2.7x slower than real time here, ~4 GB VRAM - not for live talk)",
                  "voices": [], "files": [(os.path.join(s2, f), S2_URL.format(file=f)) for f in ("s2-pro-q4_k_m.gguf", "tokenizer.json")],
                  "docker_image": "ishti-s2cpp"}
+    from ishti.clone import DIR as CLONE, FILES as CLONE_FILES
+    out["clone"] = {"label": "Your own voice converter (Chatterbox VC) - voice notes in your voice", "voices": [],
+                    "files": [(os.path.join(CLONE, f), f"https://huggingface.co/ResembleAI/chatterbox/resolve/main/{f}") for f in CLONE_FILES]}
     return out
 
 
@@ -267,6 +270,9 @@ def delete_files(key):
             os.remove(path)
     if e.get("docker_image"):
         subprocess.run(["docker", "rmi", "-f", e["docker_image"]], capture_output=True, timeout=120, creationflags=NO_WINDOW)
+    if key == "clone":
+        import ishti.clone
+        ishti.clone._vc = None  # frees its GPU memory too
     _audit(f"deleted voice files {key}")
 
 
@@ -297,6 +303,50 @@ def download_files(key):
         except Exception as exc:
             JOBS[key].update(status="error", error=str(exc)[:200])
     threading.Thread(target=job, daemon=True).start()
+
+
+def owner_voice_state():
+    from ishti.voice import OWNER_SAMPLE
+    if not os.path.isfile(OWNER_SAMPLE):
+        return {"exists": False}
+    import wave
+    with wave.open(OWNER_SAMPLE) as w:
+        secs = w.getnframes() / w.getframerate()
+    return {"exists": True, "seconds": round(secs, 1), "recorded": time.strftime("%d %b %Y %H:%M", time.localtime(os.path.getmtime(OWNER_SAMPLE)))}
+
+
+def save_owner_voice(raw):
+    """The browser's recording -> mono 24 kHz WAV. Refused if shorter than 8 s or nearly silent: a bad sample would
+    make every voice note sound wrong."""
+    import tempfile
+    import wave
+    import numpy as np
+    from ishti.skills.media.skill import ff
+    from ishti.voice import OWNER_SAMPLE
+    if len(raw) < 2000:
+        raise ValueError("the recording is empty - check the microphone and record again")
+    src = os.path.join(tempfile.mkdtemp(), "rec.bin")
+    with open(src, "wb") as f:
+        f.write(raw)
+    tmp = src + ".wav"
+    ff("-i", src, "-ac", "1", "-ar", "24000", "-af", "silenceremove=start_periods=1:start_threshold=-45dB", tmp)
+    with wave.open(tmp) as w:
+        pcm = np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(np.float32) / 32768
+        secs = w.getnframes() / w.getframerate()
+    if secs < 8:
+        raise ValueError(f"only {secs:.0f} s of speech - record at least 10 seconds")
+    if np.sqrt((pcm ** 2).mean()) < 0.01:
+        raise ValueError("the recording is almost silent - speak closer to the microphone")
+    os.makedirs(os.path.dirname(OWNER_SAMPLE), exist_ok=True)
+    shutil.move(tmp, OWNER_SAMPLE)
+    return {"ok": True, "seconds": round(secs, 1)}
+
+
+def delete_owner_voice():
+    from ishti.voice import OWNER_SAMPLE
+    if os.path.isfile(OWNER_SAMPLE):
+        os.remove(OWNER_SAMPLE)
+    return {"ok": True}
 
 
 def preview(name):
