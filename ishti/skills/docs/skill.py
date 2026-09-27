@@ -22,6 +22,8 @@ PATH = re.compile(r"[A-Za-z]:\\[^\"'<>|?*\n]+?\.(?:pdf|docx?|xlsx?|csv|pptx|txt|
 HOME = os.path.join(os.path.expanduser("~"), "Documents", "ISHTI")
 NOTES = os.path.join(os.path.expanduser("~"), "Documents", "ISHTI Notes")
 OPS = [
+    ("invoice", re.compile(r"\b(?:make|create|generate|write|prepare|send)\s+(?:an?\s+)?invoice\b", I)),
+    ("pdf_form", re.compile(r"\b(?:fill(?:\s+in|\s+out)?|complete)\b.+\.pdf\b|\b(?:what|which|list)\s+(?:form\s+)?fields\b.+\.pdf\b", I)),
     ("note_add", re.compile(r"^\s*(?:take\s+a\s+note|note(?:\s+this)?|make\s+a\s+note|jot\s+down|write\s+down)\s*[:,-]?\s*(?P<body>.+)", I | re.S)),
     ("note_find", re.compile(r"\b(?:search|find|show|list)\s+(?:in\s+)?(?:my\s+)?notes\b", I)),
     ("make_deck", re.compile(r"\b(?:make|create|build|generate|prepare)\s+(?:a\s+|an\s+)?(?:powerpoint|presentation|slides?|deck|ppt)\b", I)),
@@ -206,9 +208,9 @@ def _word():
     return w
 
 
-def op_to_pdf(m, text, session):
-    src = paths(text, (".docx", ".doc"))[0]
-    dst = beside(src, "pdf", ".pdf").replace("_pdf.pdf", ".pdf") if not os.path.exists(os.path.splitext(src)[0] + ".pdf") else beside(src, "export", ".pdf")
+def docx_to_pdf(src, dst=None):
+    dst = dst or (beside(src, "pdf", ".pdf").replace("_pdf.pdf", ".pdf") if not os.path.exists(os.path.splitext(src)[0] + ".pdf")
+                  else beside(src, "export", ".pdf"))
     w = _word()
     try:
         doc = w.Documents.Open(os.path.abspath(src), ReadOnly=True)
@@ -216,7 +218,21 @@ def op_to_pdf(m, text, session):
         doc.Close(False)
     finally:
         w.Quit()
-    return f"PDF: {dst}"
+    return dst
+
+
+def op_to_pdf(m, text, session):
+    return f"PDF: {docx_to_pdf(paths(text, ('.docx', '.doc'))[0])}"
+
+
+def op_invoice(m, text, session):
+    from ishti.skills.docs.forms import op_invoice as make
+    return make(m, text, session, docx_to_pdf)
+
+
+def op_pdf_form(m, text, session):
+    from ishti.skills.docs.forms import op_pdf_form as form
+    return form(m, text, session, paths)
 
 
 def op_to_word(m, text, session):

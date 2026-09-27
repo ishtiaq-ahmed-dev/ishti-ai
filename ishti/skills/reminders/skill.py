@@ -25,8 +25,9 @@ TOMORROW_ONLY = re.compile(r"\btomorrow\b", I)
 # Repeating schedules: "every day at 9", "every weekday at 8:30", "every monday at 10", "every 2 hours".
 # With "remind me" it's a reminder; without, the request itself runs at that time ("every morning at 8 give me my brief").
 DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
-RECUR = re.compile(r"\b(?:every|each)\s+(?P<per>day|morning|evening|night|weekday|(?:mon|tues|wednes|thurs|fri|satur|sun)day|"
-                   r"(?P<n>\d+)\s*(?P<u>minutes?|mins?|hours?|hrs?))\b", I)
+RECUR = re.compile(r"\b(?:every|each)\s+(?P<per>day|morning|evening|night|weekday|month|(?:mon|tues|wednes|thurs|fri|satur|sun)day|"
+                   r"(?P<n>\d+)\s*(?P<u>minutes?|mins?|hours?|hrs?))\b|\b(?P<monthly>monthly)\b", I)
+DAY_OF_MONTH = re.compile(r"\b(?:on\s+)?(?:the\s+)?(?P<d>[12]?\d|3[01])(?:st|nd|rd|th)\b", I)
 
 
 def _db():
@@ -46,7 +47,10 @@ def repeat_of(text):
     m = RECUR.search(text)
     if not m:
         return None
-    per = m["per"].lower()
+    per = (m["per"] or "month").lower()
+    if per == "month":  # bills: "on the 12th of every month" (default: today's date)
+        d = DAY_OF_MONTH.search(text)
+        return f"monthly:{int(d['d']) if d else dt.date.today().day}"
     if m["n"]:
         return f"every:{int(m['n']) * (3600 if m['u'].lower().startswith('h') else 60)}"
     if per == "weekday":
@@ -60,7 +64,7 @@ def first_due(text, repeat, now):
     """First time a schedule fires: its time of day (default by morning/evening/night), on the right day."""
     if repeat.startswith("every:"):
         return now + dt.timedelta(seconds=int(repeat[6:]))
-    per = RECUR.search(text)["per"].lower()
+    per = (RECUR.search(text)["per"] or "month").lower()
     h, mi = {"morning": 8, "evening": 18, "night": 21}.get(per, 9), 0
     if at := AT.search(text):  # a schedule's "at 9" is 9:00 (one-off "at 5" said at 14:00 means 17:00; not here)
         h, mi, ap = int(at["h"]) % 24, int(at["m"] or 0), (at["ap"] or "").replace(".", "").lower()
@@ -72,6 +76,9 @@ def first_due(text, repeat, now):
 
 
 def _fits(d, repeat):
+    if repeat.startswith("monthly:"):  # the 31st in a 30-day month fires on the 30th
+        import calendar
+        return d.day == min(int(repeat[8:]), calendar.monthrange(d.year, d.month)[1])
     return repeat == "daily" or (repeat == "weekdays" and d.weekday() < 5) or (repeat.startswith("weekly:") and d.weekday() == int(repeat[7:]))
 
 
@@ -156,13 +163,16 @@ def run(text, session, now=None):
     if repeat := repeat_of(t):
         task = not re.search(r"\bremind\s+me\b", t, I)
         body = RECUR.sub("", AT.sub("", t)).strip(" ,.")
+        if repeat.startswith("monthly:"):
+            body = re.sub(r"\s*\b(?:on\s+)?(?:the\s+)?(?:[12]?\d|3[01])(?:st|nd|rd|th)(?:\s+of)?\b", "", body, flags=I).strip(" ,.")
         body = re.sub(r"^(?:please\s+)?(?:remind\s+me\s+)?(?:to\s+)?", "", body, flags=I).strip(" ,.") or "Reminder"
         due = first_due(t, repeat, now)
         with f.lock, f.db:
             f.db.execute("INSERT INTO reminders(due, text, created, repeat, task) VALUES(?,?,?,?,?)",
                          (due.timestamp(), body, time.time(), repeat, int(task)))
         every = {"daily": "every day", "weekdays": "every weekday"}.get(repeat) or (
-            f"every {DAYS[int(repeat[7:])].title()}" if repeat.startswith("weekly") else f"every {int(repeat[6:]) // 60} min")
+            f"every {DAYS[int(repeat[7:])].title()}" if repeat.startswith("weekly") else
+            f"on day {repeat[8:]} of every month" if repeat.startswith("monthly") else f"every {int(repeat[6:]) // 60} min")
         return {"reply": f"{'Scheduled' if task else 'Repeating reminder'} {every}"
                          + (f" at {due:%H:%M}" if not repeat.startswith("every:") else "")
                          + f": {body}. First: {_fmt(due.timestamp(), now)}." + (" I'll do it and tell you the result." if task else ""),
@@ -241,6 +251,13 @@ if __name__ == "__main__":
     heard = []
     assert fire_due(heard.append, now=(now + dt.timedelta(minutes=11)).timestamp()) == 1 and "Timer" in heard[0]
     assert run("list my reminders", {}, now)["reply"] == "No reminders set."
+    assert repeat_of("remind me to pay the electricity bill on the 12th of every month") == "monthly:12"
+    assert repeat_of("pay rent monthly on the 1st") == "monthly:1"
+    first = first_due("remind me to pay rent on the 31st of every month at 10", "monthly:31", dt.datetime(2026, 9, 5, 12))
+    assert first == dt.datetime(2026, 9, 30, 10), first  # September has 30 days: the last day
+    assert dt.datetime.fromtimestamp(next_due(first.timestamp(), "monthly:31", first.timestamp() + 60)) == dt.datetime(2026, 10, 31, 10)
+    r = run("remind me to pay the electricity bill on the 12th of every month", {}, now)["reply"]
+    assert "on day 12 of every month" in r and "pay the electricity bill" in r and "12th" not in r, r
     r = run("every weekday at 9 give me my brief", {}, now)["reply"]
     assert r.startswith("Scheduled every weekday at 09:00") and "give me my brief" in r, r
     ran = []

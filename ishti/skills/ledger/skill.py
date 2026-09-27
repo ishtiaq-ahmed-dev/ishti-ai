@@ -17,12 +17,18 @@ CATS = {"food": r"grocer|food|restaurant|lunch|dinner|breakfast|meal|pizza|burge
         "shopping": r"cloth|shoe|shirt|amazon|daraz|mall|shopping|gift|electronics|phone|laptop",
         "health": r"medicine|doctor|pharmacy|hospital|clinic|gym|test|lab",
         "education": r"book|course|fee|tuition|university|stationery|udemy|exam",
-        "entertainment": r"movie|cinema|netflix|game|spotify|subscription|youtube\s+premium|outing"}
+        "entertainment": r"movie|cinema|netflix|game|spotify|subscription|youtube\s+premium|outing",
+        "donations": r"zakat|donat|charity|sadqa|sadaqah|khairat|fitrana"}
+TAX_CATS = {"donations"}  # zakat and donations are deductible: tagged automatically
+TAX_SAID = re.compile(r"\b(?:tax[-\s]?deductible|for\s+tax(?:es)?|business\s+expense|deductible)\b", I)
 SPENT = re.compile(r"\b(?:i\s+)?(?:spent|paid|bought|gave|expense[d]?)\s+(?:rs\.?\s*|pkr\s*|\$)?(?P<amt>\d[\d,]*(?:\.\d+)?)\s*(?:k\b)?\s*"
                    r"(?:rs|rupees?|pkr|dollars?|usd)?\s*(?:on|for|at|in)?\s*(?P<what>[^.,;]*)", I)
 BOUGHT_STOCK = re.compile(r"\b(?:i\s+)?(?P<side>bought|sold)\s+(?P<qty>\d+(?:\.\d+)?)\s+(?:shares?\s+(?:of\s+)?|units?\s+of\s+)?"
                           r"(?P<sym>[A-Za-z.\-]{1,12})\s+(?:shares?\s+)?(?:at|@|for)\s+(?:rs\.?\s*|\$)?(?P<price>\d[\d,]*(?:\.\d+)?)", I)
 OPS = [
+    ("tax_tag", re.compile(r"\b(?:mark|tag|flag|set)\s+(?:my\s+|the\s+)?(?:(?P<last>last|latest|previous)|(?P<what>[\w ]+?))\s+expense\s+as\s+"
+                           r"(?P<undo>not\s+)?(?:tax[-\s]?deductible|deductible|tax|business)\b", I)),
+    ("tax_report", re.compile(r"\btax\s+(?:report|summary|deductions?|expenses?)\b|\b(?:tax[-\s]?)?deductible\s+expenses\b", I)),
     ("trade", BOUGHT_STOCK),
     ("portfolio", re.compile(r"\b(?:my\s+)?(?:portfolio|holdings|investments?)\b", I)),
     ("budget_set", re.compile(r"\b(?:set|make)\s+(?:a\s+|my\s+)?(?:monthly\s+)?budget\b|\bbudget\s+(?:of|for)\b.*\d", I)),
@@ -49,6 +55,8 @@ def db():
     c.executescript("""CREATE TABLE IF NOT EXISTS expenses(day TEXT, amount REAL, currency TEXT, category TEXT, note TEXT);
                        CREATE TABLE IF NOT EXISTS budgets(month TEXT, category TEXT, amount REAL, UNIQUE(month, category));
                        CREATE TABLE IF NOT EXISTS trades(day TEXT, symbol TEXT, qty REAL, price REAL);""")
+    if "tax" not in {r[1] for r in c.execute("PRAGMA table_info(expenses)")}:  # older databases: add the flag in place
+        c.execute("ALTER TABLE expenses ADD COLUMN tax INTEGER DEFAULT 0")
     return c
 
 
@@ -70,13 +78,45 @@ def op_spent(m, text, session):
     what = m.group("what").strip() or "misc"
     day = dt.date.today() - dt.timedelta(days=1 if re.search(r"\byesterday\b", text, I) else 0)
     cat = category(what)
+    tax = int(cat in TAX_CATS or bool(TAX_SAID.search(text)))
+    what = TAX_SAID.sub("", what).strip(" ,-") or what
     with db() as c:
-        c.execute("INSERT INTO expenses VALUES(?,?,?,?,?)", (day.isoformat(), amount, cur, cat, what[:80]))
+        c.execute("INSERT INTO expenses(day, amount, currency, category, note, tax) VALUES(?,?,?,?,?,?)",
+                  (day.isoformat(), amount, cur, cat, what[:80], tax))
         month = c.execute("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE day LIKE ? AND category=? AND currency=?",
                           (day.strftime("%Y-%m") + "%", cat, cur)).fetchone()[0]
         budget = c.execute("SELECT amount FROM budgets WHERE month=? AND category IN (?, 'all')", (day.strftime("%Y-%m"), cat)).fetchone()
     note = f" {cat.title()} this month: {cur} {month:,.0f}" + (f" of {budget[0]:,.0f} budget." if budget else ".")
-    return f"Logged {cur} {amount:,.0f} for {what} ({cat}).{note}"
+    return f"Logged {cur} {amount:,.0f} for {what} ({cat}{', tax-deductible' if tax else ''}).{note}"
+
+
+def op_tax_tag(m, text, session):
+    with db() as c:
+        if m["last"]:
+            row = c.execute("SELECT rowid, note, amount, currency FROM expenses ORDER BY rowid DESC LIMIT 1").fetchone()
+        else:
+            row = c.execute("SELECT rowid, note, amount, currency FROM expenses WHERE note LIKE ? ORDER BY rowid DESC LIMIT 1",
+                            (f"%{m['what'].strip()}%",)).fetchone()
+        if not row:
+            return "I couldn't find that expense."
+        c.execute("UPDATE expenses SET tax=? WHERE rowid=?", (0 if m["undo"] else 1, row[0]))
+    return f"{row[1]} ({row[3]} {row[2]:,.0f}) is {'no longer' if m['undo'] else 'now'} marked tax-deductible."
+
+
+def op_tax_report(m, text, session):
+    year = re.search(r"\b(20\d\d)\b", text)
+    year = year.group(1) if year else str(dt.date.today().year)
+    with db() as c:
+        rows = c.execute("SELECT day, note, amount, currency, category FROM expenses WHERE tax=1 AND day LIKE ? ORDER BY day",
+                         (year + "%",)).fetchall()
+    if not rows:
+        return f"No tax-deductible expenses logged for {year}. Say \"mark my last expense as tax deductible\" or add " \
+               "\"tax deductible\" when you log one (zakat and donations are tagged automatically)."
+    totals = {}
+    for _, _, amount, cur, _ in rows:
+        totals[cur] = totals.get(cur, 0) + amount
+    lines = [f"- {d}: {note} - {cur} {amount:,.0f} ({cat})" for d, note, amount, cur, cat in rows[-25:]]
+    return f"Tax-deductible expenses {year}: " + ", ".join(f"{c} {t:,.0f}" for c, t in totals.items()) + "\n" + "\n".join(lines)
 
 
 def _period(text):
@@ -176,4 +216,11 @@ if __name__ == "__main__":
     op_budget_set(None, "budget for food 3000", s)
     rep = op_report(None, "my expenses this month", s)
     assert "2,000" in rep and "67% of budget" in rep, rep
-    print("[self-check] ledger OK - routing, categories, budget, report")
+    assert "tax-deductible" in op_spent(SPENT.search("paid 5000 zakat"), "paid 5000 zakat", s)
+    assert "tax-deductible" not in op_spent(SPENT.search("spent 90000 on a laptop"), "spent 90000 on a laptop", s)
+    assert "now marked" in run("mark my last expense as tax deductible", s)["reply"]
+    assert "tax-deductible" in op_spent(SPENT.search("paid 12000 for a course"), "paid 12000 for a course, tax deductible", s)
+    assert "no longer" in run("tag the course expense as not tax deductible", s)["reply"]
+    rep = run("tax report", s)["reply"]
+    assert "95,000" in rep and "zakat" in rep and "laptop" in rep and "course" not in rep, rep
+    print("[self-check] ledger OK - routing, categories, budget, report, tax tags (auto zakat, last, by name, undo), tax report")
