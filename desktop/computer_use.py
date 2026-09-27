@@ -164,6 +164,10 @@ class ComputerUseAgent:
             "capcut": "CapCut.exe",
             "blender": "blender.exe",
             "obs": "obs64.exe",
+            "whatsapp": "whatsapp:",
+            "whatsapp desktop": "whatsapp:",
+            "whatsap": "whatsapp:",
+            "watsapp": "whatsapp:",
         }
 
         key = app_name.lower().strip()
@@ -423,6 +427,7 @@ class ComputerUseAgent:
                             "pid": pid,
                             "bounds": {"left": rect[0], "top": rect[1], "right": rect[2], "bottom": rect[3]},
                         })
+                return True
 
             try:
                 win32gui.EnumWindows(enum_cb, None)
@@ -445,6 +450,7 @@ class ComputerUseAgent:
                 title = win32gui.GetWindowText(hwnd)
                 if keyword_lower in title.lower():
                     target_hwnd = hwnd
+            return True
 
         try:
             win32gui.EnumWindows(enum_cb, None)

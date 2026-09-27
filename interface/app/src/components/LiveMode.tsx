@@ -105,34 +105,66 @@ export function LiveMode({ sessionId, onTurn, onClose }: {
   return (
     <motion.div role="dialog" aria-label="Live conversation" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }} onKeyDown={(e) => e.key === "Escape" && onClose()}
-      className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-8 bg-background/95 px-4 backdrop-blur-md">
+      className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-6 bg-background/98 px-4">
       <div className="relative flex items-center justify-center">
-        <div className="pointer-events-none absolute inset-0 -m-16 rounded-full bg-accent/15 blur-3xl" />
         <AgentOrb state={ORB[state]} size={Math.min(260, typeof window !== "undefined" ? window.innerWidth * 0.6 : 260)} />
       </div>
-      <div aria-live="polite" className="flex w-full max-w-xl flex-col items-center gap-3 text-center">
-        <div className="text-sm font-semibold uppercase tracking-[0.2em] text-accent">{error ? "Stopped" : LABEL[state]}</div>
-        {error && <p className="text-sm text-danger">{error}</p>}
-        {heard && <p className="text-lg text-muted-foreground">“{heard}”</p>}
+
+      <div
+        aria-live="polite"
+        className="flex w-full max-w-xl flex-col items-center gap-3.5 text-center rounded-2xl border border-border/80 bg-card/95 p-6 shadow-2xl"
+      >
+        <div className="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-accent">
+          <span className="h-2 w-2 rounded-full bg-accent animate-pulse" />
+          {error ? "Stopped" : LABEL[state]}
+        </div>
+
+        {error && (
+          <div className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-2 text-sm font-medium text-danger">
+            {error}
+          </div>
+        )}
+
+        {heard && (
+          <div className="rounded-xl border border-border bg-muted/60 px-4 py-2 text-sm text-foreground/90 font-medium max-w-lg shadow-sm">
+            “{heard}”
+          </div>
+        )}
+
         <AnimatePresence mode="wait">
           {step && state === "thinking" && (
-            <motion.p key={step} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-              className="text-sm font-medium">{step}</motion.p>
+            <motion.div
+              key={step}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="flex items-center gap-2.5 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2 text-xs font-semibold text-primary shadow-sm"
+            >
+              <span className="h-2 w-2 rounded-full bg-primary animate-ping" />
+              <span>{step}</span>
+            </motion.div>
           )}
         </AnimatePresence>
-        {reply && <p className="max-h-[30vh] overflow-y-auto text-base leading-relaxed">{reply}</p>}
+
+        {reply && (
+          <div className="w-full max-h-[30vh] overflow-y-auto text-left rounded-xl border border-border/70 bg-muted/40 p-4 text-sm leading-relaxed text-foreground whitespace-pre-wrap shadow-inner">
+            {reply}
+          </div>
+        )}
       </div>
+
       {background.length > 0 && (
         <ul aria-label="Working in the background" className="flex max-w-xl flex-wrap justify-center gap-2">
           {background.map((r, i) => (
-            <li key={`${i}-${r}`} className="flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-3 py-1 text-xs text-muted-foreground">
+            <li key={`${i}-${r}`} className="flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-3 py-1 text-xs text-muted-foreground shadow-sm">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" /> {r}
             </li>
           ))}
         </ul>
       )}
+
       <button type="button" onClick={onClose} autoFocus
-        className="flex items-center gap-2 rounded-full bg-danger px-6 py-3 text-sm font-semibold text-white shadow-lg transition-transform active:scale-95 cursor-pointer">
+        className="flex items-center gap-2 rounded-full bg-danger px-6 py-3 text-sm font-semibold text-white shadow-lg transition-transform active:scale-95 cursor-pointer hover:bg-danger/90">
         <PhoneOff className="h-4 w-4" /> End Live
       </button>
       <p className="text-xs text-muted-foreground">Just talk. Speak over ISHTI to interrupt.</p>

@@ -3,18 +3,21 @@ import re
 
 from orchestrator.intent_detector import IntentDetector
 
-VERB = re.compile(r"^.*?\b(open|launch|start|run|switch\s+to|focus)\s+(?:the\s+|my\s+)?(?P<app>.+?)(?:\s+app)?[.!]?$", re.I)
+VERB = re.compile(r"^\s*(?:please\s+)?(?:open|launch|start|run|switch\s+to|focus)\s+(?:the\s+|my\s+)?(?P<app>[a-z0-9 _.-]+?)(?:\s+app)?\s*[.!]?$", re.I)
+MESSAGING_VERBS = re.compile(r"\b(?:send|message\s+to|write\s+to|text\s+to|reply)\b", re.I)
 
 
 def match(text):
     if re.search(r"\b(?:memory|facts?|profile|reminders?|notes?)\b", text, re.I):
+        return False
+    if MESSAGING_VERBS.search(text):
         return False
     return (IntentDetector.classify(re.sub(r"\b(?:the|a|an|my)\s+", "", text, flags=re.I))["mode"] == "APP_CONTROL"
             and bool(VERB.match(text)))
 
 
 def run(text, session):
-    if re.search(r"\b(?:memory|facts?|profile|reminders?|notes?)\b", text, re.I):
+    if re.search(r"\b(?:memory|facts?|profile|reminders?|notes?)\b", text, re.I) or MESSAGING_VERBS.search(text):
         return None
     from desktop.computer_use import get_computer_use_agent
     m = VERB.match(text)

@@ -48,6 +48,8 @@ def candidate(text, skills=None, session=None):
     several = len(kinds - {"chat"}) >= 2 or (bool(GATE.search(text)) and len(kinds) >= 2)
     if several and kinds <= READS and skills.get("browser") and skills["browser"].matches(text):
         several = False  # one browser task that also reads the page
+    if several and kinds <= {"apps", "whatsapp"}:
+        several = False  # opening whatsapp and sending a message is one unified whatsapp task
     if several and session is not None and session.get("trace"):
         session["trace"](type="tool", name="split", label="several tasks: " + ", ".join(f"{k} ({c[:40]})" for c, k in found))
     return several

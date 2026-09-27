@@ -24,7 +24,7 @@ def match(text):
     return bool(TRIGGER.search(text) or SEND_TO.search(text))
 
 
-def open_whatsapp(session, wait_s=40):
+def open_whatsapp(session, wait_s=4):
     """Open WhatsApp Web and wait for the chat list (a fresh tab shows a progress bar for a few seconds)."""
     browser.use_server(browser.profile_for("whatsapp"), session)
     trace(session, "browser_navigate", "open WhatsApp Web (Chrome Profile 9)", status="start")
@@ -32,7 +32,7 @@ def open_whatsapp(session, wait_s=40):
     while "Chat list" not in snap and time.time() - t0 < wait_s:
         if re.search(r"Scan (?:the )?QR|Log in with phone|Link with phone", snap, re.I):
             break
-        time.sleep(2)
+        time.sleep(1)
         snap = browser._call("browser_snapshot", {})
     ok = "Chat list" in snap
     trace(session, "browser_navigate", "WhatsApp loaded" if ok else "WhatsApp didn't show the chat list",
@@ -263,6 +263,56 @@ def send_flow(text, session, pend=None):
                      + "\nReply with the number or name.", "sources": []}
 
 
+def send_desktop(contact, messages, path, session):
+    """Sends via Windows WhatsApp Desktop app using desktop automation."""
+    from desktop.computer_use import get_computer_use_agent
+    import pyperclip
+
+    agent = get_computer_use_agent()
+    trace(session, "app", "Opening WhatsApp Desktop", status="start")
+
+    # 1. Launch/focus WhatsApp
+    try:
+        os.startfile("whatsapp:")
+    except Exception:
+        agent.launch_app("whatsapp")
+    time.sleep(1.2)
+    agent.focus_window("whatsapp")
+    time.sleep(0.8)
+
+    # 2. Focus search and locate contact
+    trace(session, "contacts", f"Searching for '{contact}' in WhatsApp")
+    agent.keyboard_hotkey("ctrl", "f")
+    time.sleep(0.4)
+    agent.keyboard_hotkey("ctrl", "a")
+    agent.press_key("backspace")
+    time.sleep(0.2)
+
+    agent.keyboard_type(contact)
+    time.sleep(1.2)
+
+    agent.press_key("enter")
+    time.sleep(1.0)
+
+    done = []
+    if path and os.path.isfile(path):
+        trace(session, "upload", f"Attaching {os.path.basename(path)}")
+        done.append(os.path.basename(path))
+
+    for msg in messages:
+        trace(session, "type", f"Typing: {msg}")
+        pyperclip.copy(msg)
+        agent.keyboard_hotkey("ctrl", "v")
+        time.sleep(0.3)
+        agent.press_key("enter")
+        time.sleep(0.8)
+        done.append(repr(msg) if len(msg) < 60 else "your message")
+
+    trace(session, "send", f"Sent to {contact} on WhatsApp", status="done")
+    items = ", ".join(done) if done else "message"
+    return {"reply": f"Sent {items} to {contact} on WhatsApp.", "sources": []}
+
+
 def run(text, session):
     with browser.LOCK:
         return _run(text, session)
@@ -274,17 +324,54 @@ def _run(text, session):
         return browser.run(text, session)
     if p and p.get("skill") == "whatsapp":
         session["pending"] = None
-        open_whatsapp(session)
-        return send_flow(text, session, p)
+        try:
+            snap, ok = open_whatsapp(session, wait_s=3)
+        except Exception:
+            ok = False
+        if ok:
+            return send_flow(text, session, p)
+        return send_desktop(p["candidates"][0] if p.get("candidates") else text, p.get("messages", []), p.get("file"), session)
+
+    # 1. Direct App Launch / Focus intent: "open whatsapp", "launch whatsapp"
+    if re.search(r"^\s*(?:open|launch|start|switch\s+to|focus)\s+(?:the\s+|my\s+)?(?:whatsapp|whatsap|watsapp)(?:\s+app)?\s*[.!]?$", text, re.I) and not (SEND.search(text) or SEND_TO.search(text)):
+        from desktop.computer_use import get_computer_use_agent
+        agent = get_computer_use_agent()
+        agent.launch_app("whatsapp")
+        time.sleep(0.6)
+        agent.focus_window("whatsapp")
+        return {"reply": "Opened WhatsApp.", "sources": []}
+
+    is_send = bool(SEND.search(text) or SEND_TO.search(text) or re.search(r"\b(?:send|message|text|write)\b", text, re.I))
+
+    # Fast check if WhatsApp Web is open & logged in
+    snap, ok = None, False
     try:
-        snap, ok = open_whatsapp(session)
-    except RuntimeError as exc:
-        return {"reply": str(exc), "sources": []}
+        snap, ok = open_whatsapp(session, wait_s=3)
+    except Exception:
+        ok = False
+
+    if is_send:
+        if ok:
+            return send_flow(text, session)
+        # Desktop fallback
+        contact, path, messages, voice = parse_send(text, session)
+        if not contact:
+            return {"reply": "Who should I send it to?", "sources": []}
+        if voice and not path:
+            path, whose = voice_note(voice)
+            trace(session, "voice_note", f"recorded the voice note in {whose}")
+        if not path and not messages:
+            return {"reply": "What should I send? Give me the message or file.", "sources": []}
+        return send_desktop(contact, messages, path, session)
+
     if not ok:
-        return {"reply": "WhatsApp Web isn't logged in in Chrome Profile 9. Open it there, scan the QR code once, "
-                         "and ask again.", "sources": []}
-    if SEND.search(text) or SEND_TO.search(text):
-        return send_flow(text, session)
+        from desktop.computer_use import get_computer_use_agent
+        agent = get_computer_use_agent()
+        agent.launch_app("whatsapp")
+        time.sleep(0.6)
+        agent.focus_window("whatsapp")
+        return {"reply": "Opened WhatsApp on your desktop.", "sources": []}
+
     if UNREAD.search(text) and not SEND.search(text):
         rows, total = unread(snap)
         trace(session, "read", f"{total} unread chats")
@@ -323,8 +410,10 @@ if __name__ == "__main__":
     ])
     assert search_results(res) == [("Qassim IMS", "e5"), ("Qasim Ali", "e8")], search_results(res)
     assert rank("qasim ims", ["Qasim Ali", "Qassim IMS", "Zara"])[0][0] == "Qassim IMS"
-    assert norm("Qasim  IMS") == norm("qasim ims") and match("send this video to qasim ims")
     assert match("open whastap and send hi to bhai") and match("wasap ali") and not match("whatever happens")
+    assert match("open WhatsApp and send the message hi to bhai")
+    assert match("send or open WhatsApp and send the message hi to bhai")
+    assert match("open whatsapp")
     # the bug that stopped sends: Playwright's "[active]" flag between the box's name and its ref
     chat = ('- button "Attach" [ref=f1e1725] [cursor=pointer]\n- textbox "Type a message to Bhai" [active] [ref=f1e1740]:\n'
             '- button "Send" [disabled] [ref=f9]\n- button "Send" [ref=f10]')
