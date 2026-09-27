@@ -53,12 +53,19 @@ def check_ollama(router: ModelRouter) -> bool:
         pass
 
     print(" [OFFLINE] -> Launching Ollama daemon...", end="", flush=True)
+    flags = (
+        subprocess.CREATE_NO_WINDOW
+        | subprocess.DETACHED_PROCESS
+        | subprocess.CREATE_NEW_PROCESS_GROUP
+        if os.name == "nt"
+        else 0
+    )
     try:
         subprocess.Popen(
             ["ollama", "serve"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            creationflags=flags,
         )
         for _ in range(8):
             time.sleep(1.0)
@@ -108,13 +115,22 @@ def check_web_ui() -> bool:
         pass
 
     print(" [STARTING]...", end="", flush=True)
-    python_exe = os.path.join(ROOT_DIR, "venv", "Scripts", "python.exe")
+    pythonw_exe = os.path.join(ROOT_DIR, "venv", "Scripts", "pythonw.exe")
+    python_exe = pythonw_exe if os.path.exists(pythonw_exe) else os.path.join(ROOT_DIR, "venv", "Scripts", "python.exe")
+    flags = (
+        subprocess.CREATE_NO_WINDOW
+        | subprocess.DETACHED_PROCESS
+        | subprocess.CREATE_NEW_PROCESS_GROUP
+        if os.name == "nt"
+        else 0
+    )
     # the watchdog runs the server: restarts it after a crash or hang, and owns the kill-switch hotkey
     subprocess.Popen(
-        [python_exe, "-m", "ishti.watchdog", "8888"], cwd=ROOT_DIR,
+        [python_exe, "-m", "ishti.watchdog", "8888"],
+        cwd=ROOT_DIR,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        creationflags=flags,
     )
     for _ in range(60):  # models load first: allow up to a minute
         time.sleep(1.0)
@@ -131,18 +147,41 @@ def check_web_ui() -> bool:
 
 def launch_browser():
     print("  [4/6] Launching Isolated Chrome Window...", end="", flush=True)
+    flags = (
+        subprocess.DETACHED_PROCESS
+        | subprocess.CREATE_NEW_PROCESS_GROUP
+        if os.name == "nt"
+        else 0
+    )
     if os.path.exists(CHROME_EXE):
-        subprocess.Popen([
-            CHROME_EXE,
-            f"--user-data-dir={PROFILE_DIR}",
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--app=http://127.0.0.1:8888",
-        ])
+        subprocess.Popen(
+            [
+                CHROME_EXE,
+                f"--user-data-dir={PROFILE_DIR}",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--app=http://127.0.0.1:8888",
+            ],
+            creationflags=flags,
+        )
         print(" [LAUNCHED]")
     else:
-        webbrowser.open("http://127.0.0.1:8888")
-        print(" [DEFAULT BROWSER]")
+        edge_exe = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+        if os.name == "nt" and os.path.exists(edge_exe):
+            subprocess.Popen(
+                [
+                    edge_exe,
+                    f"--user-data-dir={PROFILE_DIR}",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--app=http://127.0.0.1:8888",
+                ],
+                creationflags=flags,
+            )
+            print(" [LAUNCHED (EDGE)]")
+        else:
+            webbrowser.open("http://127.0.0.1:8888")
+            print(" [DEFAULT BROWSER]")
 
 
 def announce_readiness(model: str):
@@ -187,8 +226,21 @@ def main():
     for name, problem in broken.items():
         print(f"        - {name}: {problem[:70]}")
 
+    cli_mode = "--cli" in sys.argv or "-c" in sys.argv or "cli" in sys.argv
+
+    if not cli_mode:
+        print("\n" + "=" * 72)
+        print("  ISHTI DESKTOP APPLICATION IS ACTIVE & RUNNING")
+        print("  Web HUD: http://127.0.0.1:8888")
+        print("  Desktop application opened successfully.")
+        print("  All services running in background. Stop anytime with stop.bat.")
+        print("  Closing console in 2 seconds...")
+        print("=" * 72 + "\n")
+        time.sleep(2.0)
+        return
+
     print("\n" + "=" * 72)
-    print("  ISHTI IS READY FOR INSTRUCTIONS")
+    print("  ISHTI IS READY FOR INSTRUCTIONS (CLI MODE)")
     print("  Web HUD: http://127.0.0.1:8888")
     print("  Type commands below, or speak into your microphone.")
     print("  Press Ctrl+C to stop.")

@@ -53,11 +53,20 @@ if "%1"=="server" (
     exit /b %errorlevel%
 )
 
+if "%1"=="cli" (
+    "%~dp0venv\Scripts\python.exe" "%~dp0orchestrator\startup.py" --cli
+    exit /b %errorlevel%
+)
+
 :: 3. Launch Default Startup Sequence & Health-Checks
-"%~dp0venv\Scripts\python.exe" "%~dp0orchestrator\startup.py"
+"%~dp0venv\Scripts\python.exe" "%~dp0orchestrator\startup.py" %*
 
 if errorlevel 1 (
     echo.
     echo [ISHTI EXITED WITH ERROR] Press any key to close.
     pause >nul
+    exit /b 1
 )
+
+:: Auto-close CMD console window so desktop application runs seamlessly
+exit

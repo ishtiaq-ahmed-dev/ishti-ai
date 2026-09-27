@@ -48,7 +48,21 @@ class Watchdog:
 
     def start(self):
         env = {**os.environ, "ISHTI_WATCHDOG": "1", "PYTHONUNBUFFERED": "1"}
-        self.proc = subprocess.Popen(self.cmd, cwd=ROOT, env=env)
+        flags = 0
+        if os.name == "nt":
+            flags = (
+                subprocess.CREATE_NO_WINDOW
+                | subprocess.DETACHED_PROCESS
+                | subprocess.CREATE_NEW_PROCESS_GROUP
+            )
+        self.proc = subprocess.Popen(
+            self.cmd,
+            cwd=ROOT,
+            env=env,
+            creationflags=flags,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         self.started = time.time()
         log(f"server started (pid {self.proc.pid}) on port {self.port}")
 
