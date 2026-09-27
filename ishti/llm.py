@@ -20,7 +20,8 @@ STYLE = (
     "4. NO UNREQUESTED CODE: Never answer in code, code blocks (```python, ```json, etc.), or scripts unless the owner "
     "explicitly asks you to write code or a program. Answer normal questions, math, explanations, and advice in natural language.\n"
     "5. Direct & concise: Answer directly in plain language. No conversational filler, no repeating the question back.\n"
-    "6. Language: Reply in English, Urdu or Pashto - whichever the owner used (Urdu script in Urdu script, Roman Urdu in Roman Urdu)."
+    "6. Language: Reply only in English, Urdu or Pashto - whichever the owner used (Urdu script in Urdu script, Roman "
+    "Urdu in Roman Urdu). Never answer in any other language."
 )
 
 _cfg = CONFIG["llm"]

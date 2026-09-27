@@ -46,8 +46,17 @@ class Watchdog:
     def url(self, path):
         return f"http://127.0.0.1:{self.port}{path}"
 
+    @staticmethod
+    def _out():
+        """The server's console output (no window any more): data/logs/server.log, the last run kept as .1."""
+        path = os.path.join(DATA, "logs", "server.log")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        if os.path.isfile(path) and os.path.getsize(path) > 5_000_000:
+            os.replace(path, path + ".1")
+        return open(path, "a", encoding="utf-8", buffering=1)
+
     def start(self):
-        env = {**os.environ, "ISHTI_WATCHDOG": "1", "PYTHONUNBUFFERED": "1"}
+        env = {**os.environ, "ISHTI_WATCHDOG": "1", "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}  # a file, not cp1252
         flags = 0
         if os.name == "nt":
             flags = (
@@ -55,14 +64,16 @@ class Watchdog:
                 | subprocess.DETACHED_PROCESS
                 | subprocess.CREATE_NEW_PROCESS_GROUP
             )
+        out = self._out()
         self.proc = subprocess.Popen(
             self.cmd,
             cwd=ROOT,
             env=env,
             creationflags=flags,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=out,
+            stderr=subprocess.STDOUT,
         )
+        out.close()  # the server holds its own handle
         self.started = time.time()
         log(f"server started (pid {self.proc.pid}) on port {self.port}")
 
