@@ -8,6 +8,7 @@ admin: then Windows' own UAC prompt asks the owner (ISHTI never elevates silentl
 import os
 import re
 import subprocess
+import time
 
 I = re.I
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -15,6 +16,8 @@ SCAFFOLD = re.compile(r"\b(?:create|make|start|scaffold|set\s*up|init(?:iali[sz]
                       r"(?P<kind>python|fastapi|flask|cli|react|vue|svelte|next(?:\.?js)?|node|vanilla|javascript|typescript)\s+"
                       r"(?:js\s+)?(?:project|app|api|boilerplate|starter|template)\b(?:\s+(?:called|named)\s+[\"']?(?P<name>[\w.-]+)[\"']?)?"
                       r"(?:\s+(?:in|at|under)\s+[\"']?(?P<where>[a-z]:[\\/][^\"'\n]*?)[\"']?)?\s*$", I)
+RUN_SCRIPT = re.compile(r"\b(?:run|execute|start|launch)\s+(?:the\s+|my\s+)?(?:deploy(?:ment)?\s+|build\s+|release\s+)?(?:script\s+)?"
+                        r"[\"']?(?P<path>[a-z]:[\\/][^\"'\n]+?\.(?:ps1|bat|cmd|sh))[\"']?\s*$", I)
 SERVICE = re.compile(r"\b(?P<act>status\s+of|restart|start|stop|is)\s+(?:the\s+)?(?P<name>[\w .-]+?)\s+service\b(?:\s+running)?", I)
 DEFAULT_ROOT = "D:\\Projects"
 
@@ -74,6 +77,27 @@ def _run(args, cwd):
     if p.returncode:
         raise RuntimeError((p.stderr or p.stdout).strip()[-300:])
     return p.stdout
+
+
+def op_run_script(m, text, session, ask_first):
+    """Deploy/build scripts: run after a yes (they change things), output tail shown."""
+    import shlex
+    path = m["path"].strip()
+    if not os.path.isfile(path):
+        return f"I can't find {path}."
+    ext = os.path.splitext(path)[1].lower()
+    cmd = {"ps1": ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path], "sh": ["bash", path]}.get(
+        ext[1:], ["cmd", "/c", path])
+
+    def go():
+        t0 = time.time()
+        p = subprocess.run(cmd, cwd=os.path.dirname(path), capture_output=True, text=True, timeout=1800,
+                           encoding="utf-8", errors="replace", creationflags=NO_WINDOW)
+        out = ((p.stdout or "") + ("\n" + p.stderr if p.stderr else "")).strip()
+        tail = "\n".join(out.splitlines()[-25:])
+        return (f"{os.path.basename(path)} {'finished' if p.returncode == 0 else f'FAILED (exit {p.returncode})'} in "
+                f"{time.time() - t0:.0f} s.\n```\n{tail or '(no output)'}\n```")
+    return ask_first(session, "dev", f"Run {os.path.basename(path)} (in {os.path.dirname(path)}) - scripts can change things", go)
 
 
 def op_scaffold(m, text, session):
@@ -144,6 +168,13 @@ if __name__ == "__main__":
         raise AssertionError("overwrote an existing folder")
     except FileExistsError:
         pass
+    m = RUN_SCRIPT.search(r"run the deploy script D:\\proj\\deploy.ps1")
+    assert m and m["path"].endswith("deploy.ps1")
+    script = os.path.join(root, "build.bat")
+    open(script, "w").write("@echo building...\n@echo done")
+    s = {}
+    q = op_run_script(RUN_SCRIPT.search(f"run {script}"), "", s, lambda sess, sk, question, action: (sess.update(action=action), question)[1])
+    assert "Run build.bat" in q and "finished" in s["action"]() and "done" in s["action"]()
     m = SERVICE.search("what's the status of the print spooler service")
     assert m and m["name"].strip() == "print spooler"
     assert find_service("spooler")[0] == "Spooler" and find_service("no such thing 123") is None

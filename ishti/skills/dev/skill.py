@@ -20,6 +20,7 @@ SANDBOX = os.path.join(ROOT, "data", "sandbox")
 CODE = re.compile(r"```(?:python|py)?\s*\n(?P<code>.+?)```", I | re.S)
 OPS = [
     ("scaffold", scaffold.SCAFFOLD),
+    ("run_script", scaffold.RUN_SCRIPT),
     ("service", scaffold.SERVICE),
     ("run_code", re.compile(r"\b(?:run|execute)\s+(?:this|the\s+following|my)?\s*(?:python\s+)?(?:code|script|snippet)\b.*```", I | re.S)),
     ("run_file", re.compile(r"\b(?:run|execute)\s+(?P<path>[A-Za-z]:\\[^\s\"']+\.py)\b", I)),
@@ -40,6 +41,10 @@ def match(text):
 
 def op_scaffold(m, text, session):
     return scaffold.op_scaffold(m, text, session)
+
+
+def op_run_script(m, text, session):
+    return scaffold.op_run_script(m, text, session, ask_first)
 
 
 def op_service(m, text, session):

@@ -31,6 +31,9 @@ EXT = {"pdf": ".pdf", "pdfs": ".pdf", "image": (".png", ".jpg", ".jpeg", ".webp"
 def parse_condition(cond):
     """{"kind", ...} or None."""
     c = cond.strip()  # original case: folder paths keep theirs
+    if m := re.search(r"^(?:the\s+)?(?:log\s+(?:file\s+)?)?[\"']?(?P<path>[a-z]:[\\/][^\"']+?\.\w{2,5})[\"']?\s+(?:contains|shows|has|logs|gets)\s+"
+                      r"(?:an?\s+)?[\"']?(?P<text>[^\"']+?)[\"']?$", c, I):
+        return {"kind": "log", "path": m["path"], "text": m["text"].strip()}  # log monitor: new matching lines
     if m := re.search(r"\b(?:a|any|new)?\s*(?:new\s+)?(?P<type>\w+)?\s*(?:file|download)?s?\s+(?:appears?|is\s+(?:added|saved|downloaded)|"
                       r"arrives?|lands?|comes?)\s+(?:in|to|into)\s+(?:my\s+|the\s+)?(?P<where>.+)$", c, I):
         from ishti.skills.folders.skill import folder_in
@@ -55,7 +58,8 @@ def parse_condition(cond):
 
 def describe(cond):
     k = cond["kind"]
-    return {"file": lambda: f"a new {'/'.join(cond['ext']) or ''} file appears in {cond.get('folder')}".replace("new  file", "new file"),
+    return {"log": lambda: f"{cond['path']} shows \"{cond['text']}\"",
+            "file": lambda: f"a new {'/'.join(cond['ext']) or ''} file appears in {cond.get('folder')}".replace("new  file", "new file"),
             "battery": lambda: f"battery is below {cond['below']}% (unplugged)",
             "disk": lambda: f"{cond['drive']} has less than {cond['below']} GB free",
             "cpu": lambda: f"CPU is above {cond['above']}%", "memory": lambda: f"memory is above {cond['above']}%",
@@ -80,6 +84,19 @@ def check(cond, state):
         state["seen"] = sorted(now)
         new = sorted(now - seen)
         return bool(new), new
+    if k == "log":  # read only what was appended since the last look; the first look just remembers the end
+        path, size = cond["path"], os.path.getsize(cond["path"]) if os.path.isfile(cond["path"]) else 0
+        start = state.get("offset", size)
+        if size < start:  # rotated / truncated: start over
+            start = 0
+        new = ""
+        if size > start:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                f.seek(start)
+                new = f.read(1_000_000)
+        state["offset"] = size
+        hits = [l.strip() for l in new.splitlines() if cond["text"].lower() in l.lower()]
+        return bool(hits), (f"{len(hits)} new line(s): " + " | ".join(hits[:3])[:300]) if hits else None
     if k == "battery":
         b = psutil.sensors_battery()
         return bool(b and not b.power_plugged and b.percent < cond["below"]), f"{b.percent:.0f}%" if b else None
@@ -137,6 +154,11 @@ def tick(announce, run_task):
                 action = re.sub(r"\b(?:it|the\s+file|that\s+file|this\s+file)\b", lambda _, p=path: f'"{p}"', rule["action"], flags=I)
                 started.append(action)
             rule["fired"] += len(detail or [])
+        elif rule["cond"]["kind"] == "log":
+            if true:  # every new batch of matching lines is news (a log doesn't "stay" true)
+                started.append(rule["action"])
+                rule["fired"] += 1
+                announce(f"Automation #{rule['id']}: {describe(rule['cond'])} - {detail}")
         elif true and rule["armed"]:
             started.append(rule["action"])
             rule["armed"], rule["fired"] = 0, rule["fired"] + 1
@@ -211,6 +233,15 @@ if __name__ == "__main__":
     assert parse_condition("memory goes above 90%") == {"kind": "memory", "above": 90}
     assert parse_condition("I open spotify") == {"kind": "app_start", "app": "spotify"}
     assert parse_condition("chrome closes") == {"kind": "app_stop", "app": "chrome"}
+    logf = os.path.join(folder, "server.log")
+    open(logf, "w").write("start ok\n")
+    assert parse_condition(f"{logf} contains ERROR") == {"kind": "log", "path": logf, "text": "ERROR"}
+    st = {}
+    assert check({"kind": "log", "path": logf, "text": "error"}, st) == (False, None)  # first look: remembers the end
+    open(logf, "a").write("request ok\nERROR database timeout\n")
+    got = check({"kind": "log", "path": logf, "text": "error"}, st)
+    assert got[0] and "database timeout" in got[1], got
+    assert check({"kind": "log", "path": logf, "text": "error"}, st)[0] is False  # old lines don't fire again
     assert match(f"when a pdf appears in {folder}, summarize it") and match("list my automations")
     assert not match("when is my exam") and not match("if it rains tomorrow")
     s = {}
