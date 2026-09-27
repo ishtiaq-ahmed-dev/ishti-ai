@@ -51,6 +51,7 @@ LABELLED = [
     ("latest news about pakistan", "utilities"), ("generate a strong password", "utilities"),
     ("I spent 500 on groceries", "ledger"), ("show my portfolio", "ledger"), ("how much did I spend this month", "ledger"),
     ("I drank 3 glasses of water", "lifelog"), ("screen time today", "lifelog"), ("check your skills", "meta"), ("what's the status of my tasks", "meta"), ("use the deep male voice", "owner"),
+    ("find duplicate contacts", "contacts"),
     ("when D:/app/server.log contains ERROR, tell me", "automation"), ("run the deploy script D:/proj/deploy.ps1", "dev"),
     ("who said what in D:/calls/meeting.mp3", "media"),
     ("extract the book titles and prices from https://books.toscrape.com into a spreadsheet", "extract"),
