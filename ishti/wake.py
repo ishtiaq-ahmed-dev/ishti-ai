@@ -203,6 +203,8 @@ class Listener:
 
     def _wake_ack(self):
         """A short chime and the listening state - not a sentence."""
+        from ishti import duck
+        duck.brief(2.0)  # B5: music dips while the owner gives the command
         self.oww.reset()
         self.state("listening")
         self.on_event("wake", {})
@@ -254,6 +256,8 @@ class Listener:
             if self._was_speaking or STOP.match(verdict):
                 self.interrupted = {"request": getattr(self, "request", ""), "rest": talker.stop()}
                 self.cancel.set()
+                from ishti import duck
+                duck.brief(2.0)  # B5: a clean hand-over to the owner's voice
                 self.on_event("barge_in", {"heard": verdict})
             else:  # ISHTI was only thinking: that task carries on in the background, the new words are a new command
                 talker.resume()

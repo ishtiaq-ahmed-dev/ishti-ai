@@ -24,6 +24,7 @@ class Talker:
         self.said = []                         # sentences fully played (for echo checks and "continue")
         self.pending = 0                       # sentences still being synthesised
         self.first_audio = 0.0                 # set to None to time the next audio start (perf_counter)
+        self.duck = True                       # lower other apps' sound while speaking (B5)
         self.lock = threading.Lock()
         self.stream = None
         self.idle = threading.Event()
@@ -36,6 +37,9 @@ class Talker:
         text = text.strip()
         if not text:
             return
+        if self.idle.is_set() and self.duck:  # B5: other apps go quiet while ISHTI talks
+            from ishti import duck
+            duck.start()
         with self.lock:
             self.pending += 1
             self.generation_texts.put((self.generation, text))
@@ -111,11 +115,19 @@ class Talker:
         if n < frames:
             self._check_idle()
 
+    def _went_idle(self):
+        """Idle now; if it was talking, other apps get their volume back."""
+        if not self.idle.is_set():
+            self.idle.set()
+            if self.duck:
+                from ishti import duck
+                duck.stop()
+
     def _check_idle(self):
         with self.lock:
             done = self.current is None and not self.queue and self.pending == 0
         if done:
-            self.idle.set()
+            self._went_idle()
 
     # ---- control ----
     @property
@@ -137,7 +149,7 @@ class Talker:
             self.queue.clear()
             self.current, self.text, self.paused = None, "", False
             self.generation += 1  # sentences still being synthesised are dropped when they finish
-        self._check_idle() if self.pending else self.idle.set()
+        self._check_idle() if self.pending else self._went_idle()
         return " ".join(rest)
 
     def recent_words(self):
@@ -280,5 +292,7 @@ if __name__ == "__main__":
     mute._ensure_stream = lambda rate: False
     mute.say("Nobody can hear this.")
     assert mute.wait(15) and mute.said[-1] == "Nobody can hear this."
+    from ishti import duck
+    assert duck._holders == 0, duck._holders  # every duck from speaking was released (B5)
     print(f"[self-check] talk OK - sentence split, echo filter, play/pause/stop (stopped with left: {rest!r}), "
-          f"browser voice streams and stops, no speaker never hangs")
+          f"browser voice streams and stops, no speaker never hangs, ducking released")
