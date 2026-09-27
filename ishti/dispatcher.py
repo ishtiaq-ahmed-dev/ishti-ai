@@ -526,6 +526,16 @@ def initiator_of(dec, s, tried):
     return "instructed"
 
 
+def main_sources(reply, sources):
+    """C3: when the answer cites [n], list only the sources it actually cites - not every page opened on the way.
+    Uncited answers keep their sources (they can't be told apart)."""
+    sources = sources or []
+    cited = {int(n) for n in re.findall(r"\[(\d{1,2})\]", reply or "")}
+    if not cited or not any(isinstance(x, dict) and x.get("id") in cited for x in sources):
+        return sources
+    return [x for x in sources if isinstance(x, dict) and x.get("id") in cited]
+
+
 def mask(value, secrets):
     """value with every secret in secrets (a string or a list) replaced by dots."""
     for secret in ([secrets] if isinstance(secrets, str) else secrets or []):
@@ -537,6 +547,7 @@ def mask(value, secrets):
 def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
     """Close a request: trace, history, persistence, background memory, and the response dict."""
     reply = out["reply"]
+    out["sources"] = main_sources(reply, out.get("sources"))
     if RECOVER and not s.get("recovered"):  # ISHTI restarted mid-task last time: say what didn't finish
         s["recovered"] = True
         lost = "; ".join(f"\"{r['text'][:80]}\"" for r in RECOVER[:3])

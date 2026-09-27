@@ -51,6 +51,7 @@ LABELLED = [
     ("latest news about pakistan", "utilities"), ("generate a strong password", "utilities"),
     ("I spent 500 on groceries", "ledger"), ("show my portfolio", "ledger"), ("how much did I spend this month", "ledger"),
     ("I drank 3 glasses of water", "lifelog"), ("screen time today", "lifelog"), ("check your skills", "meta"), ("what's the status of my tasks", "meta"), ("use the deep male voice", "owner"),
+   
     ("find flights from Peshawar to Dubai on 15 October", "travel"), ("search hotels in Istanbul from 5 to 8 October", "travel"), ("I studied machine learning for 2 hours", "lifelog"), ("show my learning progress", "lifelog"), ("add a meeting with Ali tomorrow at 3pm to my google calendar", "calendar"), ("check ishti's python packages for updates", "meta"),
     ("when a pdf appears in downloads, summarize it", "automation"), ("list my automations", "automation"), ("create a new fastapi project called shop-api", "dev"), ("restart the print spooler service", "dev"),
     ("make an invoice for Ali: logo design 15000", "docs"), ("fill D:/forms/admission.pdf with my details", "docs"), ("remind me to pay the electricity bill on the 12th of every month", "reminders"), ("mark my last expense as tax deductible", "ledger"), ("tax report", "ledger"),
@@ -81,6 +82,10 @@ LABELLED = [
 def main():
     bad = [n for n, s in d.SKILLS.items() if s.status == "broken"]
     assert not bad, f"broken skills: {[(n, d.SKILLS[n].problem) for n in bad]}"
+    # C3: only the sources the answer actually cites are listed
+    src = [{"id": i, "url": f"https://s{i}.com"} for i in range(1, 6)]
+    assert [x["id"] for x in d.main_sources("Rs 314,990 at PriceOye [2]; Daraz lists it [4].", src)] == [2, 4]
+    assert len(d.main_sources("No citations here.", src)) == 5 and len(d.main_sources("A fact [9].", src)) == 5
     # parallel requests of one chat: own trace/stream, shared history and pending question
     shared = {"history": [], "pending": None}
     a, b = d.View(shared, trace="A"), d.View(shared, trace="B", on_token=print)
