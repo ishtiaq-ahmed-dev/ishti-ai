@@ -68,7 +68,10 @@ export default function App() {
     });
   }, []);
 
-  const onBusy = useCallback((b: boolean) => setBusy(b), []);
+  const onBusy = useCallback((b: boolean) => {
+    setBusy(b);
+    if (!b) setLive(null);
+  }, []);
 
   useEffect(() => {
     initChatFontSize();
@@ -140,13 +143,16 @@ export default function App() {
             const msg = JSON.parse(m.data);
             if (msg.type === "voice_state") {
               const v = msg.data?.state as VoiceState;
-              if (v === "idle") setTimeout(() => setLive((l) => (l?.voice === "idle" ? null : l)), 1500);
-              setLive((l) => ({
-                text: v === "listening" ? "" : l?.text ?? "",
-                step: v === "listening" ? "Say your command" : l?.step ?? "",
-                done: v === "idle",
-                voice: v,
-              }));
+              if (v === "idle") {
+                setLive(null);
+              } else {
+                setLive((l) => ({
+                  text: v === "listening" ? "" : l?.text ?? "",
+                  step: v === "listening" ? "Say your command" : l?.step ?? "",
+                  done: false,
+                  voice: v,
+                }));
+              }
             }
             if (msg.type === "stt_partial" || msg.type === "stt_final") {
               setLive((l) => ({
@@ -157,13 +163,17 @@ export default function App() {
             if (msg.type === "barge_in") {
               setLive((l) => ({ ...(l ?? { text: "", done: false }), step: "Stopped - listening to you", voice: "listening" }));
             }
-            if (msg.type === "trace" && msg.data?.channel === "voice") {
+            if (msg.type === "trace") {
               const e = msg.data;
-              if (e.type === "received") {
-                setLive((l) => ({ text: String(e.text ?? ""), step: "Understanding…", done: false, voice: l?.voice ?? "thinking" }));
-              } else if (e.type !== "done") {
-                const step = e.type === "route" ? `Using ${e.skill}` : e.type === "escalate" ? `Trying ${e.to} instead` : e.label ?? (e.type === "step" ? e.skill : null);
-                if (step) setLive((l) => ({ text: l?.text ?? "", step: String(step), done: false, voice: l?.voice ?? "thinking" }));
+              if (e.type === "done") {
+                setLive(null);
+              } else if (e.channel === "voice") {
+                if (e.type === "received") {
+                  setLive((l) => ({ text: String(e.text ?? ""), step: "Understanding…", done: false, voice: l?.voice ?? "thinking" }));
+                } else {
+                  const step = e.type === "route" ? `Using ${e.skill}` : e.type === "escalate" ? `Trying ${e.to} instead` : e.label ?? (e.type === "step" ? e.skill : null);
+                  if (step) setLive((l) => ({ text: l?.text ?? "", step: String(step), done: false, voice: l?.voice ?? "thinking" }));
+                }
               }
             }
             if (msg.type === "assistant_message" && String(msg.data?.reply ?? "").startsWith("⏰")) {
@@ -202,8 +212,12 @@ export default function App() {
       Notification.requestPermission();
     }
 
+    const onChatDone = () => setLive(null);
+    window.addEventListener("ishti-chat-finished", onChatDone);
+
     return () => {
       isMounted = false;
+      window.removeEventListener("ishti-chat-finished", onChatDone);
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (ws) ws.close();
     };
@@ -324,7 +338,7 @@ export default function App() {
           </AnimatePresence>
         </main>
       </div>
-      <LiveNarration live={live} />
+      <LiveNarration live={live} onDismiss={() => setLive(null)} />
     </div>
   );
 }

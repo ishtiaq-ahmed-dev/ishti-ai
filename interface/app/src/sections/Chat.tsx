@@ -160,6 +160,16 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   const isInitialLoad = useRef(true);
   const running = msgs.filter((m) => m.live).length;
   const busy = running > 0;
+
+  useEffect(() => {
+    onBusy?.(busy);
+    if (!busy) {
+      try {
+        window.dispatchEvent(new CustomEvent("ishti-chat-finished"));
+      } catch {}
+    }
+  }, [busy, onBusy]);
+
   // Up to 10 messages run at once (the server runs independent ones side by side; a follow-up waits for the
   // answer it is about). More wait here in order. A new chat's first message runs alone so all share its session.
   const canStart = running < 10 && (!!sessionId || running === 0);
@@ -344,8 +354,10 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
       } catch {}
       patch(reply.id, (m) => ({ ...m, text: res.final_answer, sources: res.sources ?? [], live: false }));
       loadSessions();
+      try { window.dispatchEvent(new CustomEvent("ishti-chat-finished")); } catch {}
     } catch (err) {
       patch(reply.id, (m) => ({ ...m, text: `Couldn't reach ISHTI: ${(err as Error).message}`, live: false }));
+      try { window.dispatchEvent(new CustomEvent("ishti-chat-finished")); } catch {}
     }
   }
 
