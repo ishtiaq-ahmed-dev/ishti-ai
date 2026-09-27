@@ -163,8 +163,14 @@ def op_denoise(m, text, session):
     dst = out_path(src, "denoised")
     vf = ["-vf", "hqdn3d=3:3:6:6", *venc()] if has_video(src) and re.search(r"\bvideo|picture|grain\b", text, I) else \
          (["-c:v", "copy"] if has_video(src) else [])
-    ff("-i", src, "-af", "afftdn=nf=-25,highpass=f=70", *vf, dst)
-    return f"Background noise reduced: {dst}"
+    if os.path.isfile(RNNOISE):  # RNNoise (a neural speech denoiser, FFmpeg arnndn) + a gentle FFT pass after it
+        ff("-i", os.path.abspath(src), "-af", "highpass=f=70,arnndn=m=sh.rnnn,afftdn=nf=-30", *vf, os.path.abspath(dst),
+           cwd=os.path.dirname(RNNOISE))  # the model is given by name from its own folder: no path escaping
+        how = "RNNoise"
+    else:
+        ff("-i", src, "-af", "afftdn=nf=-25,highpass=f=70", *vf, dst)
+        how = "FFT denoise"
+    return f"Background noise reduced ({how}): {dst}"
 
 
 def op_silence(m, text, session):
@@ -418,6 +424,7 @@ def _images(text):
 
 
 ESRGAN = os.path.join(ROOT, "data", "bin", "realesrgan", "realesrgan-ncnn-vulkan.exe")
+RNNOISE = os.path.join(ROOT, "data", "bin", "rnnoise", "sh.rnnn")  # GregorR/rnnoise-models "somnolent-hogwash" (speech + noise)
 _rembg = None
 
 
