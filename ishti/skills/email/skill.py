@@ -17,6 +17,8 @@ OPS = [
     ("send", re.compile(r"\b(?:send|write|compose|draft)\s+(?:an?\s+)?(?:e-?mail|mail)\b|\be-?mail\s+(?!me\b)(?P<to>[\w.+-]+@[\w.-]+|\w+)\s+(?:saying|about|that)\b", I)),
     ("open", re.compile(r"\b(?:read|open|show)\s+(?:me\s+)?(?:the\s+)?(?:latest\s+|last\s+|first\s+)?e-?mail\s+from\s+(?P<who>[\w .@-]{2,40})", I)),
     ("search", re.compile(r"\bsearch\s+(?:my\s+)?(?:e-?mails?|mail|gmail|inbox)\s+for\s+(?P<q>.+)$|\b(?:e-?mails?|mail)\s+from\s+(?P<who>[\w .@-]{2,40}?)\s*$", I)),
+    ("orders", re.compile(r"\b(?:where\s+(?:is|are)|track|status\s+of|check)\s+(?:my\s+)?(?:online\s+)?(?:orders?|packages?|parcels?|"
+                          r"deliver(?:y|ies)|shipments?)\b|\bmy\s+(?:orders|deliveries|packages|parcels)\b|\border\s+(?:status|tracking)\b", I)),
     ("inbox", re.compile(r"\b(?:check|any|new|unread|read|show|summari[sz]e|what(?:'s| is)\s+in)\s+(?:my\s+)?(?:new\s+|unread\s+)?(?:e-?mails?|mail|gmail|inbox)\b|\bdo\s+i\s+have\s+(?:any\s+)?(?:new\s+)?(?:e-?mails?|mail)\b", I)),
 ]
 
@@ -116,6 +118,33 @@ def op_search(m, text, session):
                                                    f"{r['subject']} ({r['date']})" for r in mail[:15])
 
 
+ORDER_QUERY = ('(order OR shipped OR dispatched OR "out for delivery" OR delivered OR tracking OR "on its way" OR courier) '
+               'newer_than:45d')
+STATUS = [("delivered", r"\bdelivered\b"), ("out for delivery", r"out for delivery"), ("shipped", r"\b(?:shipped|dispatched|on its way|"
+          r"in transit|handed (?:over )?to (?:the )?courier)\b"), ("confirmed", r"\b(?:confirmed|received your order|order placed|thank you for your order)\b"),
+          ("cancelled", r"\b(?:cancel+ed|refund)")]
+
+
+def order_status(subject):
+    return next((st for st, rx in STATUS if re.search(rx, subject, I)), "update")
+
+
+def op_orders(m, text, session):
+    """Orders from Gmail: the latest order/shipping email per store with its status (read-only)."""
+    from ishti.skills import md_table
+    snap = _open(f"https://mail.google.com/mail/u/0/#search/{quote(ORDER_QUERY)}", wait_for="Search")
+    mail = rows(snap)
+    if not mail:
+        return "No order or delivery emails in the last 45 days."
+    latest = {}
+    for r in mail:  # newest first in Gmail's list: the first one per store is its latest news
+        latest.setdefault(r["sender"], r)
+    table = md_table(("Store", "Status", "Latest email", "Date"),
+                     [(r["sender"], order_status(r["subject"]), r["subject"][:70], r["date"]) for r in list(latest.values())[:12]])
+    open_ones = sum(order_status(r["subject"]) in ("shipped", "out for delivery", "confirmed") for r in latest.values())
+    return f"{len(latest)} store(s) with order emails in the last 45 days - {open_ones} still on the way:\n\n{table}"
+
+
 def op_send(m, text, session):
     to = EMAIL.search(text)
     if not to:
@@ -152,4 +181,7 @@ if __name__ == "__main__":
     got = rows(snap)
     assert got[0]["unread"] and got[0]["sender"] == "GitHub" and got[0]["subject"] == "[ishti] New issue" and got[0]["date"] == "10:45 am"
     assert not got[1]["unread"] and got[1]["date"] == "24 Sep"
-    print("[self-check] email OK - routing, inbox row parsing")
+    assert next(n for n, rx in OPS if rx.search("where is my order")) == "orders" and next(n for n, rx in OPS if rx.search("track my packages")) == "orders"
+    assert order_status("Your Daraz order has been shipped") == "shipped" and order_status("Delivered: your parcel") == "delivered"
+    assert order_status("Thank you for your order #123") == "confirmed" and order_status("Weekly newsletter") == "update"
+    print("[self-check] email OK - routing, inbox row parsing, order tracking")
