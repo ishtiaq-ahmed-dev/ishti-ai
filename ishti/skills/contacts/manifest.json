@@ -5,8 +5,25 @@
   "route": "find and merge duplicate contacts, clean up the contact list",
   "priority": 19,
   "laya": false,
-  "needs": {"python": ["mcp"], "models": [], "mcp": ["login"], "apis": []},
+  "needs": {
+    "python": [
+      "mcp"
+    ],
+    "models": [],
+    "mcp": [
+      "login"
+    ],
+    "apis": []
+  },
   "status": "working",
   "tier": "T2",
-  "scope": {"write": ["data"], "net": [], "apps": false}
+  "scope": {
+    "write": [
+      "data"
+    ],
+    "net": [],
+    "apps": false
+  },
+  "category": "Communication & Social",
+  "path": "ishti/skills/contacts"
 }

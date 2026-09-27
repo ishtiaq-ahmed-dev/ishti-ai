@@ -57,6 +57,12 @@ def scope_of(skill):
     if skill not in _scopes:
         import json
         path = os.path.join(ROOT, "ishti", "skills", skill, "manifest.json")
+        if not os.path.isfile(path):
+            skills_dir = os.path.join(ROOT, "ishti", "skills")
+            for r, _, fs in os.walk(skills_dir):
+                if "manifest.json" in fs and os.path.basename(r) == skill:
+                    path = os.path.join(r, "manifest.json")
+                    break
         try:
             with open_unchecked(path, encoding="utf-8") as f:
                 _scopes[skill] = json.load(f).get("scope") or {}

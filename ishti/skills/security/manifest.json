@@ -27,5 +27,7 @@
       "api.pwnedpasswords.com"
     ],
     "apps": false
-  }
+  },
+  "category": "System & Desktop",
+  "path": "ishti/skills/security"
 }

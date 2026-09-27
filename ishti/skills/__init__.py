@@ -40,11 +40,84 @@ def install_missing(skill, modules, runner=None):
     return still
 
 
+SKILL_CATEGORIES = {
+    # System & Desktop
+    "apps": "System & Desktop",
+    "automation": "System & Desktop",
+    "desktop": "System & Desktop",
+    "system": "System & Desktop",
+    "security": "System & Desktop",
+    "meta": "System & Desktop",
+
+    # Files & Storage
+    "files": "Files & Storage",
+    "folders": "Files & Storage",
+    "fileops": "Files & Storage",
+
+    # Web & Internet
+    "browser": "Web & Internet",
+    "web_search": "Web & Internet",
+    "web_fetch": "Web & Internet",
+    "webtools": "Web & Internet",
+    "online_fallback": "Web & Internet",
+
+    # Communication & Social
+    "chat": "Communication & Social",
+    "whatsapp": "Communication & Social",
+    "email": "Communication & Social",
+    "contacts": "Communication & Social",
+
+    # Productivity & Planning
+    "calendar": "Productivity & Planning",
+    "reminders": "Productivity & Planning",
+    "docs": "Productivity & Planning",
+    "planners": "Productivity & Planning",
+    "workflows": "Productivity & Planning",
+    "digest": "Productivity & Planning",
+    "lifelog": "Productivity & Planning",
+
+    # Knowledge & Intelligence
+    "memory": "Knowledge & Intelligence",
+    "deep_research": "Knowledge & Intelligence",
+    "gemini": "Knowledge & Intelligence",
+    "owner": "Knowledge & Intelligence",
+
+    # Development & Tools
+    "dev": "Development & Code",
+    "skillsmith": "Development & Code",
+
+    # Media & Creative
+    "media": "Media & Creative",
+    "video": "Media & Creative",
+    "extract": "Media & Creative",
+
+    # Finance & Commerce
+    "markets": "Finance & Commerce",
+    "shopping": "Finance & Commerce",
+    "ledger": "Finance & Commerce",
+
+    # Utilities & Daily
+    "weather": "Utilities & Daily",
+    "travel": "Utilities & Daily",
+    "utilities": "Utilities & Daily",
+    "legacy": "Utilities & Daily",
+}
+
+
 class Skill:
-    def __init__(self, folder):
-        with open(os.path.join(HERE, folder, "manifest.json"), encoding="utf-8") as f:
+    def __init__(self, folder, rel_dir=None):
+        rel_dir = rel_dir or folder
+        self.folder = folder
+        self.rel_dir = rel_dir
+        self.path = f"ishti/skills/{rel_dir}".replace("\\", "/")
+        manifest_path = os.path.join(HERE, rel_dir, "manifest.json")
+        with open(manifest_path, encoding="utf-8") as f:
             self.manifest = json.load(f)
         self.name = self.manifest["name"]
+        self.category = self.manifest.get("category") or SKILL_CATEGORIES.get(self.name, "General")
+        self.manifest["category"] = self.category
+        self.manifest["path"] = self.path
+        self.manifest["folder"] = folder
         self.module = None
         self.problem = ""
         missing = [m for m in self.manifest.get("needs", {}).get("python", [])
@@ -54,10 +127,15 @@ class Skill:
         if missing:
             self.problem = f"missing python packages: {', '.join(missing)} (auto-install failed - see NEEDS.md)"
         else:
+            clean_rel = rel_dir.replace("/", ".").replace("\\", ".")
+            mod_path = f"ishti.skills.{clean_rel}.skill"
             try:
-                self.module = importlib.import_module(f"ishti.skills.{folder}.skill")
-            except Exception as exc:
-                self.problem = f"{type(exc).__name__}: {exc}"
+                self.module = importlib.import_module(mod_path)
+            except Exception:
+                try:
+                    self.module = importlib.import_module(f"ishti.skills.{folder}.skill")
+                except Exception as exc:
+                    self.problem = f"{type(exc).__name__}: {exc}"
 
     @property
     def status(self):
@@ -71,12 +149,36 @@ class Skill:
         return self.module.run(text, session)
 
     def info(self):
-        return {**self.manifest, "status": self.status, "problem": self.problem}
+        return {
+            **self.manifest,
+            "category": self.category,
+            "path": self.path,
+            "folder": self.folder,
+            "status": self.status,
+            "problem": self.problem,
+        }
 
 
 def load_skills() -> dict:
-    return {s.name: s for s in (Skill(d) for d in sorted(os.listdir(HERE))
-                                if os.path.isfile(os.path.join(HERE, d, "manifest.json")))}
+    skills = {}
+    # 1. Direct skills under HERE
+    for d in sorted(os.listdir(HERE)):
+        manifest_path = os.path.join(HERE, d, "manifest.json")
+        if os.path.isfile(manifest_path):
+            s = Skill(d)
+            skills[s.name] = s
+
+    # 2. Category subfolders (if any)
+    for d in sorted(os.listdir(HERE)):
+        cat_dir = os.path.join(HERE, d)
+        if os.path.isdir(cat_dir) and not os.path.isfile(os.path.join(cat_dir, "manifest.json")) and not d.startswith((".", "_")):
+            for sub in sorted(os.listdir(cat_dir)):
+                sub_manifest = os.path.join(cat_dir, sub, "manifest.json")
+                if os.path.isfile(sub_manifest):
+                    s = Skill(sub, rel_dir=f"{d}/{sub}")
+                    if s.name not in skills:
+                        skills[s.name] = s
+    return skills
 
 
 def md_table(headers, rows):

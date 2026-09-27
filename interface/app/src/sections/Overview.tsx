@@ -26,7 +26,7 @@ type Overview = {
   requests: number; by_source: Record<string, number>; by_skill: Record<string, number>;
   laya: { loaded: boolean; error: string; model: string }; models: Record<string, string>;
   voice: Record<string, string>; reminders: number; memories: number;
-  skills: { name: string; version: string; route: string; status: string; uses: number; problem?: string }[];
+  skills: { name: string; version: string; route: string; status: string; uses: number; problem?: string; category?: string; path?: string; folder?: string }[];
   owner: { attr: string; value: string }[]; facts: { entity: string; attr: string; value: string }[];
   prefs: { audio_output: boolean; response_length: string };
 };
@@ -361,8 +361,13 @@ export function Overview({ onToggleNav }: { onToggleNav?: () => void }) {
                     />
                     <span className="truncate">{s.name}</span>
                   </div>
-                  <div className="truncate text-xs text-muted-foreground" title={s.problem || s.route}>
-                    {s.problem || s.route}
+                  <div className="truncate text-xs text-muted-foreground flex items-center gap-1.5" title={`${s.category ? `[${s.category}] ` : ""}${s.path || `ishti/skills/${s.name}`}: ${s.problem || s.route}`}>
+                    {s.category && (
+                      <span className="rounded bg-muted px-1.5 py-0.2 text-[9px] font-mono text-muted-foreground shrink-0">
+                        {s.category}
+                      </span>
+                    )}
+                    <span className="truncate">{s.problem || s.route}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">

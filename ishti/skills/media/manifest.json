@@ -26,5 +26,7 @@
       "huggingface.co"
     ],
     "apps": false
-  }
+  },
+  "category": "Media & Creative",
+  "path": "ishti/skills/media"
 }

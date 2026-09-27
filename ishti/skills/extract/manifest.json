@@ -5,8 +5,29 @@
   "route": "extract / scrape / collect a list of items (names, prices, titles...) from a web page into a spreadsheet, note or memory",
   "priority": 17,
   "laya": false,
-  "needs": {"python": ["mcp", "openpyxl"], "models": ["planner"], "mcp": ["main"], "apis": []},
+  "needs": {
+    "python": [
+      "mcp",
+      "openpyxl"
+    ],
+    "models": [
+      "planner"
+    ],
+    "mcp": [
+      "main"
+    ],
+    "apis": []
+  },
   "status": "working",
   "tier": "T1",
-  "scope": {"write": ["data", "~/Documents"], "net": [], "apps": false}
+  "scope": {
+    "write": [
+      "data",
+      "~/Documents"
+    ],
+    "net": [],
+    "apps": false
+  },
+  "category": "Media & Creative",
+  "path": "ishti/skills/extract"
 }

@@ -1,12 +1,17 @@
 import { AnimatePresence, motion } from "motion/react";
 import {
+  ArrowLeft,
   Check,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Copy,
   Cpu,
   Database,
+  FileCode,
+  Folder,
   FolderKanban,
+  FolderOpen,
   History,
   Lock,
   Monitor,
@@ -834,15 +839,112 @@ export function Memory({ onToggleNav }: { onToggleNav?: () => void }) {
 }
 
 // ---------------------------------------------------------------- Skills
-type SkillInfo = { name: string; version: string; description: string; route: string; status: string; problem?: string };
+type SkillInfo = {
+  name: string;
+  version: string;
+  description: string;
+  route: string;
+  status: string;
+  category?: string;
+  path?: string;
+  folder?: string;
+  problem?: string;
+};
+
+const CATEGORY_METAS: Record<
+  string,
+  { label: string; desc: string; color: string; bg: string; border: string }
+> = {
+  "System & Desktop": {
+    label: "System & Desktop",
+    desc: "OS control, automation, system diagnostics, and shell tools",
+    color: "text-purple-500",
+    bg: "bg-purple-500/10",
+    border: "border-purple-500/25",
+  },
+  "Files & Storage": {
+    label: "Files & Storage",
+    desc: "Local file system operations, directories, and folder indexing",
+    color: "text-amber-500",
+    bg: "bg-amber-500/10",
+    border: "border-amber-500/25",
+  },
+  "Web & Internet": {
+    label: "Web & Internet",
+    desc: "Browser automation, web search, web tools, and live data fetching",
+    color: "text-sky-500",
+    bg: "bg-sky-500/10",
+    border: "border-sky-500/25",
+  },
+  "Communication & Social": {
+    label: "Communication & Social",
+    desc: "Chatting, WhatsApp, email drafting, and contact records",
+    color: "text-emerald-500",
+    bg: "bg-emerald-500/10",
+    border: "border-emerald-500/25",
+  },
+  "Productivity & Planning": {
+    label: "Productivity & Planning",
+    desc: "Calendars, reminders, multi-step workflows, and document handling",
+    color: "text-violet-500",
+    bg: "bg-violet-500/10",
+    border: "border-violet-500/25",
+  },
+  "Knowledge & Intelligence": {
+    label: "Knowledge & Intelligence",
+    desc: "Personal facts, long-term memory, deep research, and AI reasoning",
+    color: "text-indigo-500",
+    bg: "bg-indigo-500/10",
+    border: "border-indigo-500/25",
+  },
+  "Development & Code": {
+    label: "Development & Code",
+    desc: "Code execution, developer scripts, and dynamic skill synthesis",
+    color: "text-cyan-500",
+    bg: "bg-cyan-500/10",
+    border: "border-cyan-500/25",
+  },
+  "Media & Creative": {
+    label: "Media & Creative",
+    desc: "Video manipulation, audio extraction, and media processing",
+    color: "text-rose-500",
+    bg: "bg-rose-500/10",
+    border: "border-rose-500/25",
+  },
+  "Finance & Commerce": {
+    label: "Finance & Commerce",
+    desc: "Stock/crypto markets, financial tracking, and shopping lookups",
+    color: "text-orange-500",
+    bg: "bg-orange-500/10",
+    border: "border-orange-500/25",
+  },
+  "Utilities & Daily": {
+    label: "Utilities & Daily",
+    desc: "Weather forecasts, travel calculations, and everyday helper tools",
+    color: "text-teal-500",
+    bg: "bg-teal-500/10",
+    border: "border-teal-500/25",
+  },
+};
+
 export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [search, setSearch] = useState("");
-  const [openWorking, setOpenWorking] = useState(true);
-  const [openIssues, setOpenIssues] = useState(true);
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"folders" | "tree">("folders");
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    getJSON<{ skills: SkillInfo[] }>("/api/skills").then((d) => setSkills(d.skills));
+    getJSON<{ skills: SkillInfo[] }>("/api/skills").then((d) => {
+      setSkills(d.skills);
+      // Initialize all folders expanded in tree view
+      const initialExp: Record<string, boolean> = {};
+      d.skills.forEach((s) => {
+        const cat = s.category || "General";
+        initialExp[cat] = true;
+      });
+      setExpandedFolders(initialExp);
+    });
   }, []);
 
   const tone = (s: string) =>
@@ -852,203 +954,609 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
       ? "bg-red-500/10 text-red-500 border border-red-500/20"
       : "bg-amber-500/10 text-amber-500 border border-amber-500/20";
 
-  const filtered = skills.filter(
-    (s) =>
-      s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.description.toLowerCase().includes(search.toLowerCase()) ||
-      (s.route && s.route.toLowerCase().includes(search.toLowerCase()))
-  );
+  // Group skills by category
+  const categories = Array.from(
+    new Set(skills.map((s) => s.category || "General"))
+  ).sort();
 
-  const working = filtered.filter((s) => s.status === "working");
-  const issues = filtered.filter((s) => s.status !== "working");
+  const skillsByCategory: Record<string, SkillInfo[]> = {};
+  categories.forEach((cat) => {
+    skillsByCategory[cat] = skills.filter((s) => (s.category || "General") === cat);
+  });
+
+  // Filter skills by search query
+  const searchFilter = (s: SkillInfo) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return (
+      s.name.toLowerCase().includes(q) ||
+      s.description.toLowerCase().includes(q) ||
+      (s.category && s.category.toLowerCase().includes(q)) ||
+      (s.path && s.path.toLowerCase().includes(q)) ||
+      (s.route && s.route.toLowerCase().includes(q))
+    );
+  };
+
+  const filteredSkills = skills.filter(searchFilter);
+
+  const toggleFolderExpand = (cat: string) => {
+    setExpandedFolders((prev) => ({ ...prev, [cat]: !prev[cat] }));
+  };
+
+  const toggleAllFolders = (expand: boolean) => {
+    const next: Record<string, boolean> = {};
+    categories.forEach((c) => {
+      next[c] = expand;
+    });
+    setExpandedFolders(next);
+  };
 
   return (
     <Page
       title="Skills"
-      subtitle="Each skill is a self-contained capability; broken or missing skills are skipped without affecting the system."
+      subtitle="Folder-based modular skill system. Each skill is isolated under ishti/skills with manifest routing."
       onToggleNav={onToggleNav}
       action={
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              const next = !(openWorking && openIssues);
-              setOpenWorking(next);
-              setOpenIssues(next);
-            }}
-            className="rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/40 transition-colors cursor-pointer shadow-xs"
-          >
-            {openWorking && openIssues ? "Collapse All" : "Expand All"}
-          </button>
+          {/* Toggle between Folder Cards and Tree Accordion */}
+          <div className="flex items-center rounded-xl border border-border bg-card p-1 shadow-xs">
+            <button
+              type="button"
+              onClick={() => {
+                setViewMode("folders");
+                setSelectedFolder(null);
+              }}
+              className={cn(
+                "flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer",
+                viewMode === "folders"
+                  ? "bg-accent text-white shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              title="Folder view"
+            >
+              <Folder className="h-3.5 w-3.5" />
+              <span>Folders</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("tree")}
+              className={cn(
+                "flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer",
+                viewMode === "tree"
+                  ? "bg-accent text-white shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              title="Directory tree view"
+            >
+              <FolderKanban className="h-3.5 w-3.5" />
+              <span>Tree View</span>
+            </button>
+          </div>
+
+          {viewMode === "tree" && (
+            <button
+              type="button"
+              onClick={() => {
+                const anyOpen = Object.values(expandedFolders).some(Boolean);
+                toggleAllFolders(!anyOpen);
+              }}
+              className="rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/40 transition-colors cursor-pointer shadow-xs"
+            >
+              {Object.values(expandedFolders).some(Boolean) ? "Collapse All" : "Expand All"}
+            </button>
+          )}
         </div>
       }
     >
-      <div className="space-y-6">
-        {/* Search bar & summary */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-2xl border border-border bg-card/40 p-3 shadow-xs">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      <div className="space-y-5">
+        {/* Breadcrumb Path & Search Bar */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-2xl border border-border bg-card/40 p-3.5 shadow-xs">
+          {/* Breadcrumb Navigation */}
+          <div className="flex items-center gap-2 text-xs font-mono min-w-0">
+            <button
+              type="button"
+              onClick={() => setSelectedFolder(null)}
+              className="flex items-center gap-1.5 text-muted-foreground hover:text-accent font-semibold transition-colors cursor-pointer shrink-0"
+            >
+              <Folder className="h-4 w-4 text-accent" />
+              <span>ishti/skills</span>
+            </button>
+
+            {selectedFolder && (
+              <>
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
+                <span className="flex items-center gap-1 font-semibold text-foreground truncate bg-accent-soft px-2 py-0.5 rounded-md">
+                  <FolderOpen className="h-3.5 w-3.5 text-accent shrink-0" />
+                  <span className="truncate">{selectedFolder}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedFolder(null)}
+                  className="flex items-center gap-1 rounded-lg border border-border bg-background px-2 py-0.5 text-[11px] font-sans font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer ml-1"
+                >
+                  <ArrowLeft className="h-3 w-3" />
+                  <span>All Folders</span>
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Search Bar */}
+          <div className="relative flex-1 sm:max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search skills by name, description, keywords..."
+              placeholder="Search skills, folders, paths..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-xl border border-border bg-background py-2 pl-9 pr-4 text-xs text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-hidden"
+              className="w-full rounded-xl border border-border bg-background py-1.5 pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-hidden"
             />
-          </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0 px-1">
-            <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-emerald-500 font-medium border border-emerald-500/20">
-              {skills.filter((s) => s.status === "working").length} working
-            </span>
-            {skills.some((s) => s.status !== "working") && (
-              <span className="rounded-full bg-red-500/10 px-2.5 py-1 text-red-500 font-medium border border-red-500/20">
-                {skills.filter((s) => s.status !== "working").length} issues
-              </span>
-            )}
           </div>
         </div>
 
-        {/* Working Skills Section */}
-        {working.length > 0 && (
-          <div className="rounded-2xl border border-border bg-card/30 overflow-hidden shadow-xs">
-            <button
-              type="button"
-              onClick={() => setOpenWorking(!openWorking)}
-              className="w-full flex items-center justify-between p-4 text-left hover:bg-muted/20 transition-colors cursor-pointer select-none group"
-            >
-              <div className="flex items-center gap-2.5">
-                <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
-                <span className="text-sm font-semibold text-foreground tracking-tight">Active Skills</span>
-                <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                  {working.length}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-medium text-muted-foreground hidden sm:inline">
-                  {openWorking ? "Collapse" : "Expand"}
-                </span>
-                <span
-                  className={`grid h-6 w-6 place-items-center rounded-lg bg-muted text-muted-foreground transition-transform duration-200 ${
-                    openWorking ? "rotate-180" : ""
-                  }`}
-                >
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </span>
-              </div>
-            </button>
+        {/* Category Pills Bar (Quick Switcher) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scroll-thin">
+          <button
+            type="button"
+            onClick={() => setSelectedFolder(null)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium shrink-0 transition-all cursor-pointer shadow-xs",
+              selectedFolder === null && !search
+                ? "bg-accent text-white font-semibold"
+                : "border border-border bg-card/60 text-muted-foreground hover:text-foreground hover:bg-muted/40"
+            )}
+          >
+            <Folder className="h-3.5 w-3.5" />
+            <span>All Categories</span>
+            <span className="rounded-full bg-white/20 px-1.5 py-0.2 text-[10px] font-mono">
+              {skills.length}
+            </span>
+          </button>
 
-            <AnimatePresence initial={false}>
-              {openWorking && (
+          {categories.map((cat) => {
+            const meta = CATEGORY_METAS[cat] || {
+              color: "text-foreground",
+              bg: "bg-muted",
+              border: "border-border",
+            };
+            const count = skillsByCategory[cat]?.length || 0;
+            const isSelected = selectedFolder === cat;
+
+            return (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => {
+                  setSelectedFolder(isSelected ? null : cat);
+                  if (viewMode === "tree") {
+                    setExpandedFolders((prev) => ({ ...prev, [cat]: true }));
+                  }
+                }}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium shrink-0 transition-all cursor-pointer shadow-xs",
+                  isSelected
+                    ? "bg-accent text-white font-semibold"
+                    : "border border-border bg-card/60 text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                )}
+              >
+                <span className={cn("h-2 w-2 rounded-full", meta.bg)} />
+                <span>{cat}</span>
+                <span className="rounded-full bg-muted/80 px-1.5 py-0.2 text-[10px] font-mono text-muted-foreground">
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ========================================================
+             MODE 1: FOLDER CARDS VIEW (DEFAULT)
+             ======================================================== */}
+        {viewMode === "folders" && !search && selectedFolder === null && (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {categories.map((cat, i) => {
+              const catSkills = skillsByCategory[cat] || [];
+              const meta = CATEGORY_METAS[cat] || {
+                label: cat,
+                desc: "Skill module category",
+                color: "text-accent",
+                bg: "bg-accent-soft",
+                border: "border-border",
+              };
+              const workingCount = catSkills.filter((s) => s.status === "working").length;
+              const issueCount = catSkills.length - workingCount;
+
+              return (
                 <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.22, ease: "easeInOut" }}
-                  className="overflow-hidden border-t border-border"
+                  key={cat}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.02 }}
                 >
-                  <div className="p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                    {working.map((s, i) => (
-                      <motion.div
-                        key={s.name}
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: i * 0.02 }}
-                      >
-                        <Card className="h-full flex flex-col justify-between hover:border-accent/40 transition-colors">
-                          <div>
-                            <div className="mb-1.5 flex items-center justify-between gap-2 min-w-0">
-                              <span className="font-semibold text-foreground text-sm truncate">{s.name}</span>
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium shrink-0 ${tone(s.status)}`}>
-                                v{s.version}
-                              </span>
-                            </div>
-                            <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3" title={s.description}>
-                              {s.description}
-                            </p>
-                          </div>
-                          {s.problem && <p className="mt-2 text-xs text-danger break-words">{s.problem}</p>}
-                        </Card>
-                      </motion.div>
-                    ))}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedFolder(cat)}
+                    className="group relative flex flex-col justify-between rounded-2xl border border-border bg-card/50 p-4 shadow-xs hover:border-accent/50 hover:bg-card/80 transition-all cursor-pointer h-full"
+                  >
+                    <div>
+                      {/* Folder Top Row: Icon + Count */}
+                      <div className="flex items-center justify-between gap-2 mb-3">
+                        <div
+                          className={cn(
+                            "grid h-10 w-10 place-items-center rounded-xl border group-hover:scale-105 transition-transform",
+                            meta.bg,
+                            meta.border,
+                            meta.color
+                          )}
+                        >
+                          <Folder className="h-5 w-5 fill-current/20" />
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-mono font-medium text-muted-foreground">
+                            {catSkills.length} skills
+                          </span>
+                          {issueCount > 0 && (
+                            <span className="rounded-md bg-red-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-red-500 border border-red-500/20">
+                              {issueCount} issue
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Folder Name & Path */}
+                      <h3 className="font-semibold text-foreground text-sm group-hover:text-accent transition-colors flex items-center gap-1.5">
+                        <span>{cat}</span>
+                        <ChevronRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all text-accent" />
+                      </h3>
+                      <div className="text-[11px] font-mono text-muted-foreground/80 mt-0.5">
+                        ishti/skills/{cat.toLowerCase().replace(/[^a-z0-9]+/g, "_")}/
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2 line-clamp-2 leading-relaxed">
+                        {meta.desc}
+                      </p>
+                    </div>
+
+                    {/* Preview of skills inside folder */}
+                    <div className="mt-4 pt-3 border-t border-border/60">
+                      <div className="flex flex-wrap gap-1">
+                        {catSkills.slice(0, 4).map((s) => (
+                          <span
+                            key={s.name}
+                            className="rounded-md bg-background px-2 py-0.5 text-[10px] font-mono text-foreground/80 border border-border/60"
+                          >
+                            {s.name}
+                          </span>
+                        ))}
+                        {catSkills.length > 4 && (
+                          <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+                            +{catSkills.length - 4} more
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </motion.div>
-              )}
-            </AnimatePresence>
+              );
+            })}
           </div>
         )}
 
-        {/* Issues / Needs Setup Section */}
-        {issues.length > 0 && (
-          <div className="rounded-2xl border border-red-500/20 bg-red-500/5 overflow-hidden shadow-xs">
-            <button
-              type="button"
-              onClick={() => setOpenIssues(!openIssues)}
-              className="w-full flex items-center justify-between p-4 text-left hover:bg-red-500/10 transition-colors cursor-pointer select-none group"
-            >
-              <div className="flex items-center gap-2.5">
-                <span className="h-2 w-2 rounded-full bg-red-500 shrink-0" />
-                <span className="text-sm font-semibold text-foreground tracking-tight">Requires Attention</span>
-                <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-[11px] font-medium text-red-400">
-                  {issues.length}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-medium text-muted-foreground hidden sm:inline">
-                  {openIssues ? "Collapse" : "Expand"}
-                </span>
-                <span
-                  className={`grid h-6 w-6 place-items-center rounded-lg bg-muted text-muted-foreground transition-transform duration-200 ${
-                    openIssues ? "rotate-180" : ""
-                  }`}
-                >
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </span>
-              </div>
-            </button>
-
-            <AnimatePresence initial={false}>
-              {openIssues && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.22, ease: "easeInOut" }}
-                  className="overflow-hidden border-t border-red-500/20"
-                >
-                  <div className="p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                    {issues.map((s, i) => (
-                      <motion.div
-                        key={s.name}
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: i * 0.02 }}
-                      >
-                        <Card className="h-full flex flex-col justify-between border-red-500/30">
-                          <div>
-                            <div className="mb-1.5 flex items-center justify-between gap-2 min-w-0">
-                              <span className="font-semibold text-foreground text-sm truncate">{s.name}</span>
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium shrink-0 ${tone(s.status)}`}>
-                                {s.status} · v{s.version}
-                              </span>
-                            </div>
-                            <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3" title={s.description}>
-                              {s.description}
-                            </p>
-                          </div>
-                          {s.problem && <p className="mt-2 text-xs text-danger break-words">{s.problem}</p>}
-                        </Card>
-                      </motion.div>
-                    ))}
+        {/* ========================================================
+             MODE 2: SPECIFIC FOLDER CONTENTS VIEW
+             ======================================================== */}
+        {viewMode === "folders" && !search && selectedFolder !== null && (
+          <div className="space-y-4">
+            {/* Folder Header Banner */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl border border-accent/30 bg-accent/5 p-4 shadow-xs">
+              <div className="flex items-center gap-3">
+                <div className="grid h-11 w-11 place-items-center rounded-xl bg-accent text-white shadow-xs">
+                  <FolderOpen className="h-6 w-6 fill-current/30" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-base font-bold text-foreground tracking-tight">
+                      {selectedFolder}
+                    </h2>
+                    <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-[11px] font-semibold text-accent font-mono">
+                      {skillsByCategory[selectedFolder]?.length || 0} skills in folder
+                    </span>
                   </div>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    {CATEGORY_METAS[selectedFolder]?.desc || "Folder containing registered skills"}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedFolder(null)}
+                className="flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted/40 transition-colors cursor-pointer shadow-xs self-end sm:self-auto"
+              >
+                <ArrowLeft className="h-3.5 w-3.5 text-accent" />
+                <span>Back to All Folders</span>
+              </button>
+            </div>
+
+            {/* Skills Grid inside this Folder */}
+            <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {(skillsByCategory[selectedFolder] || []).map((s, i) => (
+                <motion.div
+                  key={s.name}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.02 }}
+                >
+                  <Card className="h-full flex flex-col justify-between hover:border-accent/40 transition-colors shadow-xs">
+                    <div>
+                      {/* Name & Version */}
+                      <div className="mb-2 flex items-center justify-between gap-2 min-w-0">
+                        <span className="font-semibold text-foreground text-sm truncate">
+                          {s.name}
+                        </span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-medium shrink-0 ${tone(
+                            s.status
+                          )}`}
+                        >
+                          v{s.version}
+                        </span>
+                      </div>
+
+                      {/* Code Path Tag */}
+                      <div className="mb-2 flex items-center gap-1 text-[10px] font-mono text-muted-foreground bg-muted/60 px-2 py-1 rounded-md overflow-hidden" title={s.path || `ishti/skills/${s.name}`}>
+                        <FileCode className="h-3 w-3 text-accent shrink-0" />
+                        <span className="truncate">{s.path || `ishti/skills/${s.name}`}</span>
+                      </div>
+
+                      {/* Description */}
+                      <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3" title={s.description}>
+                        {s.description}
+                      </p>
+
+                      {/* Route Trigger */}
+                      {s.route && (
+                        <div className="mt-2 text-[10px] text-muted-foreground/90 bg-card border border-border/70 rounded-md p-1.5">
+                          <span className="font-semibold text-foreground/80">Route: </span>
+                          <span className="italic">{s.route}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {s.problem && (
+                      <p className="mt-2 text-xs text-danger break-words bg-danger/10 border border-danger/20 rounded-md p-1.5">
+                        {s.problem}
+                      </p>
+                    )}
+                  </Card>
                 </motion.div>
-              )}
-            </AnimatePresence>
+              ))}
+            </div>
           </div>
         )}
 
-        {filtered.length === 0 && (
-          <div className="rounded-2xl border border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
-            No skills found matching "{search}".
+        {/* ========================================================
+             MODE 3: DIRECTORY TREE ACCORDION VIEW
+             ======================================================== */}
+        {viewMode === "tree" && !search && (
+          <div className="space-y-4">
+            {categories.map((cat) => {
+              const catSkills = skillsByCategory[cat] || [];
+              const isOpen = expandedFolders[cat] !== false;
+              const meta = CATEGORY_METAS[cat] || {
+                color: "text-accent",
+                bg: "bg-accent-soft",
+                border: "border-border",
+              };
+
+              return (
+                <div
+                  key={cat}
+                  className="rounded-2xl border border-border bg-card/40 overflow-hidden shadow-xs"
+                >
+                  {/* Folder Accordion Header */}
+                  <button
+                    type="button"
+                    onClick={() => toggleFolderExpand(cat)}
+                    className="w-full flex items-center justify-between p-4 text-left hover:bg-muted/20 transition-colors cursor-pointer select-none group"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className={cn(
+                          "grid h-8 w-8 shrink-0 place-items-center rounded-xl border group-hover:scale-105 transition-transform",
+                          meta.bg,
+                          meta.border,
+                          meta.color
+                        )}
+                      >
+                        {isOpen ? (
+                          <FolderOpen className="h-4 w-4 fill-current/20" />
+                        ) : (
+                          <Folder className="h-4 w-4 fill-current/20" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-foreground text-sm tracking-tight">
+                            {cat}
+                          </span>
+                          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground font-mono">
+                            {catSkills.length} skills
+                          </span>
+                        </div>
+                        <div className="text-[11px] font-mono text-muted-foreground truncate">
+                          ishti/skills/{cat.toLowerCase().replace(/[^a-z0-9]+/g, "_")}/
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-medium text-muted-foreground hidden sm:inline">
+                        {isOpen ? "Collapse" : "Expand"}
+                      </span>
+                      <span
+                        className={cn(
+                          "grid h-6 w-6 place-items-center rounded-lg bg-muted text-muted-foreground transition-transform duration-200",
+                          isOpen ? "rotate-180" : ""
+                        )}
+                      >
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </span>
+                    </div>
+                  </button>
+
+                  {/* Skills Grid inside this Drawer */}
+                  <AnimatePresence initial={false}>
+                    {isOpen && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.22, ease: "easeInOut" }}
+                        className="overflow-hidden border-t border-border"
+                      >
+                        <div className="p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                          {catSkills.map((s, i) => (
+                            <motion.div
+                              key={s.name}
+                              initial={{ opacity: 0, y: 6 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: i * 0.015 }}
+                            >
+                              <Card className="h-full flex flex-col justify-between hover:border-accent/40 transition-colors shadow-xs">
+                                <div>
+                                  <div className="mb-2 flex items-center justify-between gap-2 min-w-0">
+                                    <span className="font-semibold text-foreground text-sm truncate">
+                                      {s.name}
+                                    </span>
+                                    <span
+                                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium shrink-0 ${tone(
+                                        s.status
+                                      )}`}
+                                    >
+                                      v{s.version}
+                                    </span>
+                                  </div>
+
+                                  <div
+                                    className="mb-2 flex items-center gap-1 text-[10px] font-mono text-muted-foreground bg-muted/60 px-2 py-1 rounded-md overflow-hidden"
+                                    title={s.path || `ishti/skills/${s.name}`}
+                                  >
+                                    <FileCode className="h-3 w-3 text-accent shrink-0" />
+                                    <span className="truncate">
+                                      {s.path || `ishti/skills/${s.name}`}
+                                    </span>
+                                  </div>
+
+                                  <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3" title={s.description}>
+                                    {s.description}
+                                  </p>
+
+                                  {s.route && (
+                                    <div className="mt-2 text-[10px] text-muted-foreground/90 bg-card border border-border/70 rounded-md p-1.5">
+                                      <span className="font-semibold text-foreground/80">Route: </span>
+                                      <span className="italic">{s.route}</span>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {s.problem && (
+                                  <p className="mt-2 text-xs text-danger break-words bg-danger/10 border border-danger/20 rounded-md p-1.5">
+                                    {s.problem}
+                                  </p>
+                                )}
+                              </Card>
+                            </motion.div>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ========================================================
+             SEARCH RESULTS VIEW
+             ======================================================== */}
+        {search && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-2 px-1">
+              <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Search Results ({filteredSkills.length} matches)
+              </div>
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="text-xs text-accent hover:underline cursor-pointer"
+              >
+                Clear Search
+              </button>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {filteredSkills.map((s, i) => (
+                <motion.div
+                  key={s.name}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.015 }}
+                >
+                  <Card className="h-full flex flex-col justify-between hover:border-accent/40 transition-colors shadow-xs">
+                    <div>
+                      <div className="mb-1.5 flex items-center justify-between gap-2 min-w-0">
+                        <span className="font-semibold text-foreground text-sm truncate">
+                          {s.name}
+                        </span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-medium shrink-0 ${tone(
+                            s.status
+                          )}`}
+                        >
+                          v{s.version}
+                        </span>
+                      </div>
+
+                      {/* Folder Category Badge + Code Path */}
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="rounded-md bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold text-accent flex items-center gap-1">
+                          <Folder className="h-2.5 w-2.5" />
+                          <span>{s.category || "General"}</span>
+                        </span>
+                        <span className="text-[10px] font-mono text-muted-foreground truncate">
+                          {s.path || `ishti/skills/${s.name}`}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3" title={s.description}>
+                        {s.description}
+                      </p>
+
+                      {s.route && (
+                        <div className="mt-2 text-[10px] text-muted-foreground/90 bg-card border border-border/70 rounded-md p-1.5">
+                          <span className="font-semibold text-foreground/80">Route: </span>
+                          <span className="italic">{s.route}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {s.problem && (
+                      <p className="mt-2 text-xs text-danger break-words bg-danger/10 border border-danger/20 rounded-md p-1.5">
+                        {s.problem}
+                      </p>
+                    )}
+                  </Card>
+                </motion.div>
+              ))}
+            </div>
+
+            {filteredSkills.length === 0 && (
+              <div className="rounded-2xl border border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
+                No skills found matching "{search}".
+              </div>
+            )}
           </div>
         )}
       </div>

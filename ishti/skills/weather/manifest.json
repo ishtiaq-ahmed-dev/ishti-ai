@@ -24,5 +24,7 @@
       "open-meteo.com"
     ],
     "apps": false
-  }
+  },
+  "category": "Utilities & Daily",
+  "path": "ishti/skills/weather"
 }
