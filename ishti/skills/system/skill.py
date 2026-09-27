@@ -19,9 +19,13 @@ def run(text, session):
     from desktop.computer_use import get_computer_use_agent
     d = get_computer_use_agent().get_system_telemetry()
     g = d.get("gpu") if isinstance(d.get("gpu"), dict) else {}
-    lines = [f"CPU {d.get('cpu_percent', 0)}% ({d.get('cpu_count', 0)} cores)",
-             f"RAM {d.get('ram_used_gb', 0)} / {d.get('ram_total_gb', 0)} GB ({d.get('ram_percent', 0)}%)"]
+    from ishti.skills import md_table
+    rows = [("CPU", f"{d.get('cpu_percent', 0)}%", f"{d.get('cpu_count', 0)} cores"),
+            ("RAM", f"{d.get('ram_percent', 0)}%", f"{d.get('ram_used_gb', 0)} of {d.get('ram_total_gb', 0)} GB")]
     if g:
-        lines.append(f"GPU {g.get('name', '')}: {g.get('used_vram_mb', 0)} / {g.get('total_vram_mb', 0)} MB VRAM, {g.get('temp_c', '?')}°C")
-    lines += [f"Disk {k} {v.get('free_gb', 0)} GB free of {v.get('total_gb', 0)} GB" for k, v in d.get("disks", {}).items()]
-    return {"reply": "\n".join(f"- {line}" for line in lines), "sources": [], "telemetry": d}
+        pct = round(100 * g.get("used_vram_mb", 0) / max(1, g.get("total_vram_mb", 1)))
+        rows.append((f"GPU ({g.get('name', '').replace('NVIDIA GeForce ', '')})", f"{pct}%",
+                     f"{g.get('used_vram_mb', 0)} of {g.get('total_vram_mb', 0)} MB VRAM, {g.get('temp_c', '?')}°C"))
+    rows += [(f"Disk {k}", f"{100 - round(100 * v.get('free_gb', 0) / max(1, v.get('total_gb', 1)))}% used",
+              f"{v.get('free_gb', 0)} GB free of {v.get('total_gb', 0)} GB") for k, v in d.get("disks", {}).items()]
+    return {"reply": md_table(("", "Use", "Details"), rows), "sources": [], "telemetry": d}

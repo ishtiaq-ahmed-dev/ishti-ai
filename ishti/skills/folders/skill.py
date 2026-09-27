@@ -242,12 +242,23 @@ def run(text, session):
     if not files:
         return {"reply": f"No {label} in {name}.", "sources": []}
     total = sum(e.stat().st_size for e in files)
+    from ishti.skills import md_table
+    if re.search(r"\b(?:by\s+(?:type|kind|category)|types?\s+of\s+files|breakdown)\b", t, I):  # D1: counts per kind
+        kinds = {}
+        for e in files:
+            n, b = kinds.get(kind_of(e.name) or "other", (0, 0))
+            kinds[kind_of(e.name) or "other"] = (n + 1, b + e.stat().st_size)
+        rows = [(k, n, size(b)) for k, (n, b) in sorted(kinds.items(), key=lambda kv: -kv[1][0])]
+        return {"reply": f"{name}: {len(files)} files, {size(total)}.\n\n" + md_table(("Type", "Files", "Size"), rows),
+                "sources": []}
     if re.search(r"\b(?:largest|biggest)\b", t, I):
         top, how = sorted(files, key=lambda e: -e.stat().st_size), "largest"
     else:
         top, how = sorted(files, key=lambda e: -e.stat().st_mtime), "newest"
-    listing = "\n".join(f"- {e.name} ({size(e.stat().st_size)})" for e in top[:5])
-    return {"reply": f"{name}: {len(files)} {label}, {size(total)}. {how.capitalize()}:\n{listing}", "sources": []}
+    import datetime as _dt
+    listing = md_table(("Name", "Size", "Modified"), [(e.name, size(e.stat().st_size),
+                                                       f"{_dt.datetime.fromtimestamp(e.stat().st_mtime):%d %b %Y}") for e in top[:5]])
+    return {"reply": f"{name}: {len(files)} {label}, {size(total)}. {how.capitalize()}:\n\n{listing}", "sources": []}
 
 
 if __name__ == "__main__":

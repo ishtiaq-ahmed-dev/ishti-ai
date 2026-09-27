@@ -48,6 +48,13 @@ def load_skills() -> dict:
                                 if os.path.isfile(os.path.join(HERE, d, "manifest.json")))}
 
 
+def md_table(headers, rows):
+    """A Markdown table (the dashboard renders it; voice reads a summary of the first rows, see voice/tts.speakable)."""
+    esc = lambda v: str(v).replace("|", "/").replace("\n", " ")
+    return "\n".join(["| " + " | ".join(map(esc, headers)) + " |", "|" + "|".join("---" for _ in headers) + "|"]
+                     + ["| " + " | ".join(map(esc, r)) + " |" for r in rows])
+
+
 def trace(session, name, label, status="done", **detail):
     """Report a tool-level action to the live Thinking panel / graph. No-op outside a traced request."""
     fn = session.get("trace") if isinstance(session, dict) else None

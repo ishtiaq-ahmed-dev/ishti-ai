@@ -229,7 +229,12 @@ def run(text, session):
             if chart:
                 charts.append(chart)
     trace(session, "markets", f"{len(lines)} live quotes", status="done")
-    reply = "\n\n".join(lines) if deep or any("\n" in l for l in lines) else "\n".join(f"- {l}" for l in lines)
+    if not deep and len(lines) >= 2 and not any("\n" in l for l in lines):  # D1: several quotes -> a table
+        from ishti.skills import md_table
+        rows = [(m.group(1), m.group(2)) if (m := re.match(r"\*\*(.+?)\*\*:?\s*(.*)", l)) else ("", l) for l in lines]
+        reply = md_table(("Asset", "Price"), rows)
+    else:
+        reply = "\n\n".join(lines) if deep or any("\n" in l for l in lines) else "\n".join(f"- {l}" for l in lines)
     if deep:
         reply += "\n\n_Signals from price history, not financial advice._"
     return {"reply": reply, "sources": sources, "charts": charts}

@@ -87,12 +87,37 @@ class TTSEngine:
         return self._is_speaking
 
 
+def _tables_aloud(text: str, rows_spoken: int = 3) -> str:
+    """Markdown tables become sentences: "Bitcoin: $84,513. Ethereum: $2,702. And 3 more." (D1: voice summarises
+    the key rows instead of reading every cell)."""
+    out, block = [], []
+
+    def flush():
+        if not block:
+            return
+        rows = [[c.strip() for c in r.strip().strip("|").split("|")] for r in block]
+        body = [r for r in rows[1:] if not all(set(c) <= set("-: ") for c in r)]  # skip the header and --- line
+        said = [", ".join(c for c in r if c) + "." for r in body[:rows_spoken]]
+        more = len(body) - rows_spoken
+        out.append(" ".join(said) + (f" And {more} more." if more > 0 else ""))
+        block.clear()
+    for line in text.split("\n"):
+        if line.strip().startswith("|") and line.strip().endswith("|"):
+            block.append(line)
+        else:
+            flush()
+            out.append(line)
+    flush()
+    return "\n".join(out)
+
+
 def speakable(text: str, max_chars: int = 900) -> str:
     """
     Markdown reads terribly aloud. Strip the syntax, drop bare URLs and citation brackets,
     and cut on a sentence boundary so audio never ends mid-word.
     """
     t = re.sub(r"```.*?```", " ", text or "", flags=re.S)          # code blocks
+    t = _tables_aloud(t)                                           # tables -> a short spoken summary
     t = re.sub(r"https?://\S+", "", t)                              # URLs
     t = re.sub(r"\[\d+\]", "", t)                                   # [1] citations
     t = re.sub(r"[*#`_>|]", "", t)                                  # markdown syntax
