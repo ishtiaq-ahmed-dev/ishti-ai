@@ -82,25 +82,59 @@ def recent_videos(text, n=8):
 
 def pick(answer, choices):
     """The owner's reply to "which video?": a number, part of a name, or latest/first."""
+    if not choices:
+        return None
     m = re.search(r"\b(\d{1,2})\b", answer)
     if m and 1 <= int(m.group(1)) <= len(choices):
         return choices[int(m.group(1)) - 1]
-    if NEWEST.search(answer) or re.search(r"\btop\b", answer, re.I):
+    if NEWEST.search(answer) or OLDEST.search(answer) or re.search(r"\b(?:top|first|1st)\b", answer, re.I):
         return choices[0]
-    filler = {"the", "one", "this", "that", "video", "file", "named", "called", "please", "edit", "open", "mp4"}
-    words = [w for w in re.findall(r"[a-z0-9]+", answer.lower()) if len(w) > 2 and w not in filler]
-    return next((c for c in choices if words and all(w in os.path.basename(c).lower() for w in words)), None)
+    if re.search(r"\b(?:last|bottom)\b", answer, re.I):
+        return choices[-1]
+    filler = {"the", "a", "an", "one", "this", "that", "video", "videos", "file", "files", "named", "called",
+              "please", "edit", "open", "play", "show", "mp4", "mov", "mkv", "webm"}
+    words = [w for w in re.findall(r"[a-z0-9]+", answer.lower()) if w not in filler and len(w) >= 2]
+    if not words:
+        words = [w for w in re.findall(r"[a-z0-9]+", answer.lower()) if w not in filler]
+    if not words:
+        return None
+    # 1. Exact or all-token match against clean basename
+    for c in choices:
+        base_clean = re.sub(r"[\W_]+", " ", os.path.splitext(os.path.basename(c))[0].lower())
+        if all(w in base_clean for w in words):
+            return c
+    # 2. Overlap scoring for typos or partial names
+    scored = []
+    for c in choices:
+        base_clean = re.sub(r"[\W_]+", " ", os.path.splitext(os.path.basename(c))[0].lower())
+        c_tokens = set(base_clean.split())
+        score = sum(2 if w in c_tokens else 1 if any(w in tok or tok in w for tok in c_tokens) else 0 for w in words)
+        if score > 0:
+            scored.append((score, c))
+    if scored:
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return scored[0][1]
+    return None
 
 
 def run(text, session):
     pend = session.get("pending")
     if pend and pend.get("skill") == "video":
-        session["pending"] = None
         if pend.get("choices"):  # answer to "which video?"
             src = pick(text, pend["choices"])
             if not src:
-                return None  # not an answer: route the message normally
+                # If they cancelled
+                if re.search(r"\b(?:cancel|stop|nevermind|forget\s+it|no)\b", text, re.I):
+                    session["pending"] = None
+                    return {"reply": "Cancelled video edit.", "sources": []}
+                # Check if it's an explicit path or a new file search on PC
+                src = find_video(text)
+                if not src:
+                    # Keep choices pending and ask clearly instead of falling through to web search
+                    return {"reply": f"I couldn't match '{text}' to a video. Please reply with a number (1-{len(pend['choices'])}) or video name, or say cancel.", "sources": []}
+            session["pending"] = None
             return edit(pend["request"], session, src)
+        session["pending"] = None
         if NEWEST.search(text) or OLDEST.search(text) or VIDEO_FILE.search(text) or PATH.search(text):
             return edit(text, session)  # a new video request, not the answer to "what edit?"
         if not (EDIT_VERB.search(text) or ANSWER_EDIT.search(text) or PRO.search(text)):
@@ -117,6 +151,10 @@ def edit(text, session, src=None):
     if not named and VIDEO_FILE.fullmatch(str(p.get("input_file") or "")):
         named = p["input_file"]  # only a real file name: the model's "videos" would start a whole-PC search
     src = src or find_video(named)
+    # If no source was found by name/path, check if we can reuse the previous video from this session
+    if not src and not named and session.get("last_video") and os.path.isfile(session["last_video"]):
+        src = session["last_video"]
+        trace(session, "reuse", f"reusing previous video: {os.path.basename(src)}")
     if not src:
         vids = recent_videos(text)
         if vids and (NEWEST.search(text) or OLDEST.search(text)):
@@ -130,6 +168,8 @@ def edit(text, session, src=None):
         else:
             return {"reply": "I didn't find any videos in Downloads, Videos or Desktop. Give me the file's name or path.",
                     "sources": []}
+    if src:
+        session["last_video"] = src
     if PRO.search(text):
         from ishti.skills.video import pro
         trace(session, "plan", f"editor's pass on {os.path.basename(src)}: copy, grade, cards, captions, CapCut, checks")

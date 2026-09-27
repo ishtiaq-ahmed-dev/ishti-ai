@@ -21,5 +21,14 @@
   },
   "priority": 16,
   "status": "working",
-  "tier": "T0"
+  "tier": "T0",
+  "scope": {
+    "write": [
+      "data"
+    ],
+    "net": [
+      "*"
+    ],
+    "apps": false
+  }
 }

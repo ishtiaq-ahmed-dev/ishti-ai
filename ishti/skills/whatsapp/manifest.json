@@ -18,5 +18,12 @@
     "apis": []
   },
   "status": "working",
-  "tier": "T2"
+  "tier": "T2",
+  "scope": {
+    "write": [
+      "data"
+    ],
+    "net": [],
+    "apps": false
+  }
 }

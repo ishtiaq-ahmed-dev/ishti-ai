@@ -26,6 +26,11 @@ PATH = re.compile(r"[A-Za-z]:[\\/][^\"'<>|?*\n]+?\.(?:" + "|".join(e[1:] for e i
 QUOTED = re.compile(r"[\"“']([^\"”']{1,120})[\"”']")
 RECORDING = {}
 
+
+def _stop_recordings():
+    """Kill switch: finish any screen/webcam recording now (the file is kept)."""
+    return op_stop_record(None, "", {}) if RECORDING else ""
+
 OPS = [
     ("stop_record", re.compile(r"\bstop\s+(?:the\s+)?(?:screen\s+|webcam\s+)?recording\b", I)),
     ("screen_record", re.compile(r"\brecord\s+(?:my\s+|the\s+)?screen\b|\bscreen\s+record", I)),
@@ -553,6 +558,10 @@ def op_ocr(m, text, session):
         from ishti.skills.video.pro import look
         found = look(src, "Read ALL the text in this image exactly, keeping line breaks.").get("text", "")
     return f"Text in {os.path.basename(src)}:\n```\n{found}\n```" if found.strip() else f"I found no text in {os.path.basename(src)}."
+
+
+from ishti import killswitch as _ks  # noqa: E402
+_ks.on_kill(_stop_recordings)
 
 
 if __name__ == "__main__":

@@ -3,9 +3,30 @@
   "version": "1.0.0",
   "description": "Documents, PDF and Office: merge/split/compress PDFs, extract PDF tables to Excel, Word<->PDF through Microsoft Word, summarise any PDF/Word/Excel/PowerPoint/text file, compare Word documents, clean an Excel sheet, chart a column, write a Word document or a PowerPoint deck on a topic, take and search notes.",
   "route": "work with documents: PDF merge/split/compress/tables, convert Word and PDF, summarise a document, compare documents, clean or chart a spreadsheet, create a Word doc or presentation, notes",
-  "needs": {"python": ["pikepdf", "pdfplumber", "pypdfium2", "docx", "pptx", "pandas", "openpyxl", "matplotlib"], "models": [], "mcp": [], "apis": []},
+  "needs": {
+    "python": [
+      "pikepdf",
+      "pdfplumber",
+      "pypdfium2",
+      "docx",
+      "pptx",
+      "pandas",
+      "openpyxl",
+      "matplotlib"
+    ],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
   "priority": 23,
   "status": "working",
   "tier": "T1",
-  "laya": false
+  "laya": false,
+  "scope": {
+    "write": [
+      "user"
+    ],
+    "net": [],
+    "apps": false
+  }
 }

@@ -5,7 +5,25 @@
   "route": "search for flights or hotels: prices, times, airlines, places to stay for given dates",
   "priority": 22,
   "laya": false,
-  "needs": {"python": ["mcp"], "models": ["planner"], "mcp": ["main"], "apis": []},
+  "needs": {
+    "python": [
+      "mcp"
+    ],
+    "models": [
+      "planner"
+    ],
+    "mcp": [
+      "main"
+    ],
+    "apis": []
+  },
   "status": "working",
-  "tier": "T1"
+  "tier": "T1",
+  "scope": {
+    "write": [
+      "data"
+    ],
+    "net": [],
+    "apps": false
+  }
 }

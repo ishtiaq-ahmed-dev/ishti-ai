@@ -25,6 +25,7 @@ if ROOT_DIR not in sys.path:
 from tools.web.search import get_search_manager, WebSearchResult
 from tools.web.fetch import WebFetcher
 from orchestrator.model_router import ModelRouter
+from ishti.untrusted import fence, guard
 from tools.web.relevance import filter_sources
 from orchestrator.memory.user_profile import get_user_memory
 
@@ -150,7 +151,7 @@ class DeepResearchEngine:
         from ishti import llm
         verdict = llm.ask(
             f"Today is {time.strftime('%d %B %Y')}. Question: {question}\nPage title: {page['title']}\nURL: {page['url']}\n"
-            f"Page text: {page['content'][:1400]}\n\nDoes this page contain information that answers the question, about "
+            f"Page text: {fence(page['content'][:1400], page['url'])}\n\nDoes this page contain information that answers the question, about "
             "the right thing (same product, person, place, event)? Partly is enough. Reply 'yes' or 'no: <reason in "
             "3-6 words, e.g. wrong product, different person, outdated, only a homepage>'.",
             system=None, temperature=0, max_tokens=16).strip().lower()
@@ -359,7 +360,7 @@ class DeepResearchEngine:
                                  depth: str = "SIMPLE") -> str:
         today = time.strftime("%A %d %B %Y")
         answer = self.model_router.generate(
-            f"Today is {today}. Live sources fetched seconds ago:\n" + "\n\n".join(context)
+            f"Today is {today}. Live sources fetched seconds ago:\n" + "\n\n".join(guard(c, "a search result") for c in context)
             + f"\n\nOwner's question: {prompt}\n\nUse the most recent information in the sources; if a source is "
               "about an earlier year than the question asks for, say so instead of presenting it as current.",
             depth=depth, tools_used=["web_search", "web_fetch"], evidence_is_live=True,
@@ -376,7 +377,7 @@ class DeepResearchEngine:
                     f"The searches returned results, but none were relevant, so there is nothing to report.")
 
         evidence_str = "\n\n".join([
-            f"Source [{e['citation_id']}] ({e['title']} - {e['domain']}):\n{e['excerpt']}"
+            f"Source [{e['citation_id']}] ({e['title']} - {e['domain']}):\n{guard(e['excerpt'], e['domain'])}"
             for e in evidence
         ])
 

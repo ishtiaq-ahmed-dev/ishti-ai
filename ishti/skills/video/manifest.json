@@ -13,5 +13,14 @@
     "apis": []
   },
   "status": "working",
-  "tier": "T1"
+  "tier": "T1",
+  "scope": {
+    "write": [
+      "data",
+      "user",
+      "~/AppData/Local/CapCut"
+    ],
+    "net": [],
+    "apps": true
+  }
 }

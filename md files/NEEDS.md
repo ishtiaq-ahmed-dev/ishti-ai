@@ -55,3 +55,7 @@ roster (engine + a 10-30 s royalty-free reference clip per voice) but is blocked
   PCM into `RemoteTalker`, fall back to Piper when free VRAM < ~4.5 GB.
 - VRAM reality: Qwen 14B (~10 GB) + Whisper large-v3 (~1.6 GB) leave ~4 GB of 16 GB, so S2 would mostly fall
   back unless Whisper moves to large-v3-turbo or the planner model gets smaller.
+
+- 2026-09-27 01:30 [error] chat: InternalServerError: Error code: 500 - {'error': {'message': 'llama-server process has terminated: exit status 1: cudaMalloc failed: out of m - asked: "what is 17 times 23? reply with just the number"
+- 2026-09-27 01:31 [error] chat: InternalServerError: Error code: 500 - {'error': {'message': 'llama-server reported out-of-memory during startup: cudaMalloc failed: out of m - asked: "what is 17 times 23? reply with just the number"
+- 2026-09-27 06:05 [gap] media: no webcam connected - asked: "record the webcam for 2 seconds"

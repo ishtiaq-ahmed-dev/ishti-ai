@@ -122,6 +122,8 @@ class Listener:
         self._was_speaking = False
         self.fg = None                        # the command in the foreground (the one that may speak as it streams)
         self._say_lock = threading.Lock()     # background answers are spoken one at a time
+        from ishti import killswitch
+        killswitch.on_kill(self._killed)
 
     # ---------------------------------------------------------------- wake word + command capture
     def feed(self, frame: np.ndarray):
@@ -349,6 +351,19 @@ class Listener:
                 self.busy = False
                 if not cancel.is_set():
                     self.state("listening" if self.live else "idle")
+
+    def _killed(self):
+        """Kill switch: stop speaking and thinking, drop what was interrupted, back to listening/idle."""
+        self.cancel.set()
+        self.interrupted = None
+        tk = self.talker
+        if tk is not None:
+            tk.stop()
+        if self.busy:
+            self.busy = False
+            self.state("listening" if self.live else "idle")
+            return "voice turn"
+        return ""
 
     def _announce(self, request, reply, talker):
         """A background task finished: say its answer at the next natural pause - nothing playing and no command

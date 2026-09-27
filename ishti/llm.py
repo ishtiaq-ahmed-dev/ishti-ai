@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from openai import OpenAI
 
+from ishti import killswitch
 from ishti import CONFIG
 
 STYLE = (
@@ -93,6 +94,9 @@ def chat(messages, role="planner", system=STYLE, tools=None, temperature=0.3, ma
     on_token(str) streams the reply as it is generated (plain replies only, not tool calls)."""
     if system is STYLE:
         system = style()
+    if any("<<EXTERNAL" in str(m.get("content", "")) for m in messages):  # outside text is data, never instructions
+        from ishti.untrusted import RULE
+        system = f"{system}\n\n{RULE}" if system else RULE
     msgs = ([{"role": "system", "content": system}] if system else []) + list(messages)
     args = dict(model=model_for(role), messages=msgs, temperature=temperature, max_tokens=max_tokens, **kw)
     context = " ".join(str(m.get("content", "")) for m in messages if m.get("role") == "user")
@@ -100,13 +104,24 @@ def chat(messages, role="planner", system=STYLE, tools=None, temperature=0.3, ma
         args["tools"] = tools
     elif on_token:
         text = ""
+        killswitch.check()
         for chunk in _create(**args, stream=True):
+            killswitch.check()  # the kill switch stops generation mid-sentence
             delta = chunk.choices[0].delta.content if chunk.choices else None
             if delta:
                 text += delta
                 on_token(delta)
         return SimpleNamespace(content=clean(text, context), tool_calls=None)
+    killswitch.check()
+    if not tools:  # stream even when nobody listens: the kill switch can stop it at the next token
+        text = ""
+        for chunk in _create(**args, stream=True):
+            killswitch.check()
+            if chunk.choices and chunk.choices[0].delta.content:
+                text += chunk.choices[0].delta.content
+        return SimpleNamespace(content=clean(text, context), tool_calls=None)
     msg = _create(**args).choices[0].message
+    killswitch.check()
     msg.content = clean(msg.content, context)
     return msg
 

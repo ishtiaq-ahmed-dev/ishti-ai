@@ -3,9 +3,23 @@
   "version": "1.0.0",
   "description": "The daily brief: weather, next prayer, today's reminders, markets watchlist, top headlines and screen time, gathered in parallel. Can be scheduled (\"every morning at 8 give me my brief\").",
   "route": "my daily or morning brief, digest, brief me",
-  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
   "priority": 12,
   "status": "working",
   "tier": "T0",
-  "laya": false
+  "laya": false,
+  "scope": {
+    "write": [
+      "data"
+    ],
+    "net": [
+      "*"
+    ],
+    "apps": false
+  }
 }

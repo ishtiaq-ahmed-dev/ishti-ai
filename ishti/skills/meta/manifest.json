@@ -3,9 +3,21 @@
   "version": "1.0.0",
   "description": "About ISHTI itself: skill health (runs every skill's self-check), what it logged as missing in NEEDS.md, a permission audit of what it accessed or did recently, and which skills get used most.",
   "route": "check ISHTI's own skills, what is missing or flagged, what ISHTI accessed recently, skill usage statistics",
-  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
   "priority": 4,
   "status": "working",
   "tier": "T0",
-  "laya": false
+  "laya": false,
+  "scope": {
+    "write": [
+      "data"
+    ],
+    "net": [],
+    "apps": false
+  }
 }

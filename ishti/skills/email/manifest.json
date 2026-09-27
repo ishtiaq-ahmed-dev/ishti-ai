@@ -3,9 +3,24 @@
   "version": "1.0.0",
   "description": "Gmail in the owner's Chrome Profile 10 (signed in to Google): list or summarise unread mail, read one email, search mail, and draft + send an email (shown first, sent only after a yes).",
   "route": "check or summarise my email, read an email from someone, search my mail, send an email",
-  "needs": {"python": [], "models": [], "mcp": ["browser"], "apis": []},
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [
+      "browser"
+    ],
+    "apis": []
+  },
   "priority": 17,
   "status": "working",
   "tier": "T2",
-  "laya": false
+  "laya": false,
+  "scope": {
+    "write": [
+      "data",
+      "~/Downloads"
+    ],
+    "net": [],
+    "apps": false
+  }
 }

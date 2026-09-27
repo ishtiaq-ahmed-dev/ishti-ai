@@ -17,7 +17,9 @@ NEEDS = os.path.join(ROOT, "md files", "NEEDS.md")
 OPS = [
     ("health", re.compile(r"\b(?:skill\s+health|check\s+(?:your|all|the)\s+skills|are\s+(?:all\s+)?(?:your|the)\s+skills\s+(?:ok|working)|self[-\s]?test|diagnose\s+(?:your|the)\s+skills)\b", I)),
     ("needs", re.compile(r"\b(?:what\s+(?:have\s+you|did\s+you)\s+(?:flag|log)(?:ged)?|what(?:'s| is)\s+missing|needs\.md|capability\s+gaps?|what\s+can'?t\s+you\s+do)\b", I)),
-    ("audit", re.compile(r"\b(?:what\s+have\s+you\s+(?:accessed|done|touched)|permission\s+audit|activity\s+log|what\s+did\s+you\s+do\s+(?:today|recently))\b", I)),
+    ("audit", re.compile(r"\b(?:what\s+have\s+you\s+(?:accessed|done|touched)|permission\s+audit|activity\s+log|action\s+log|audit\s+log|"
+                         r"what\s+did\s+you\s+do\s+(?:today|recently|yesterday|while\s+i\s+was\s+(?:away|gone|out|asleep))|"
+                         r"(?:show|list)\s+(?:me\s+)?(?:today'?s|yesterday'?s|your|all)\s+actions|what\s+(?:actions|things)\s+did\s+you\s+(?:do|take))\b", I)),
     ("tasks", re.compile(r"\b(?:status\s+of\s+(?:my|the|all|your)\s+(?:tasks?|requests?|jobs?)|(?:tasks?|jobs?)\s+status|"
                          r"what\s+are\s+you\s+(?:still\s+)?(?:working\s+on|doing)|how\s+are\s+my\s+(?:tasks?|requests?)|"
                          r"(?:are|is)\s+(?:my|the)\s+(?:tasks?|requests?)\s+(?:done|finished|ready))\b", I)),
@@ -161,12 +163,9 @@ def _routes(days):
 
 
 def op_audit(text, session):
-    from ishti.dispatcher import SKILLS
-    rows = _routes(1 if re.search(r"\btoday\b", text, I) else 7)
-    sensitive = [r for r in rows if r[2] in SKILLS and SKILLS[r[2]].manifest.get("tier") in ("T2", "T3")]
-    shown = (sensitive or rows)[:25]
-    head = f"{len(rows)} requests handled; {len(sensitive)} used sensitive (T2) skills" + (" - listed:" if sensitive else " - latest:")
-    return head + "\n" + "\n".join(f"- {dt.datetime.fromtimestamp(t):%d %b %H:%M} {skill or 'none'}: {q[:80]}" for t, q, skill, _ in shown)
+    """The action audit log (ishti/audit.py): every action with who initiated it and when T2 ones were confirmed."""
+    from ishti.audit import report
+    return report(text)
 
 
 def op_usage(text, session):
@@ -180,7 +179,8 @@ def op_usage(text, session):
 
 
 if __name__ == "__main__":
-    for t, want in {"check your skills": "health", "what have you flagged as missing": "needs", "what have you accessed recently": "audit",
+    for t, want in {"check your skills": "health", "what have you flagged as missing": "needs", "what have you accessed recently": "audit", "what did you do while I was away": "audit",
+                    "show me today's actions": "audit",
                     "which skills do I use the most": "usage", "what's the status of my tasks": "tasks",
                     "what are you working on": "tasks", "check ishti's python packages for updates": "pkg_outdated",
                     "any outdated python packages": "pkg_outdated", "update ishti package requests": "pkg_update",

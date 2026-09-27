@@ -5,7 +5,21 @@
   "route": "set up an automation rule: when something happens on this PC (file appears, battery low, app opens), do something",
   "priority": 13,
   "laya": false,
-  "needs": {"python": ["psutil"], "models": [], "mcp": [], "apis": []},
+  "needs": {
+    "python": [
+      "psutil"
+    ],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
   "status": "working",
-  "tier": "T1"
+  "tier": "T1",
+  "scope": {
+    "write": [
+      "data"
+    ],
+    "net": [],
+    "apps": false
+  }
 }

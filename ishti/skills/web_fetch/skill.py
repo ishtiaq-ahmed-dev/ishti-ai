@@ -9,6 +9,7 @@ from urllib.parse import urljoin, urlparse
 import requests
 
 from ishti import llm
+from ishti.untrusted import fence, guard
 from ishti.skills import trace
 from ishti.skills.browser.skill import TRIGGER as BROWSER_TRIGGER
 
@@ -128,7 +129,7 @@ def links(url, goal):
 
 
 def answers(goal, title, body):
-    v = llm.ask(f"Does this page contain {goal}? Page: {title}\n{focus(body, goal, 2500)}\nReply yes or no.", system=None,
+    v = llm.ask(f"Does this page contain {goal}? Page: {title}\n{fence(focus(body, goal, 2500), title)}\nReply yes or no.", system=None,
                 temperature=0, max_tokens=3).lower()
     return v.startswith("yes")
 
@@ -175,7 +176,8 @@ def run(text, session):
             return {"reply": f"I looked through {host} (its pages, their PDFs and a site search) and couldn't find {goal} - "
                              "it doesn't seem to be published there (or it's behind the student login). Closest pages I checked:\n"
                              + near, "sources": [], "no_escalate": True}
-    context = "\n\n".join(f"[{i}] {t} ({u})\n{outline(b)}{focus(b, goal or text)}" for i, (u, t, b) in enumerate(pages, 1))
+    context = "\n\n".join(f"[{i}] {t} ({u})\n" + guard(outline(b) + focus(b, goal or text), u, session)
+                        for i, (u, t, b) in enumerate(pages, 1))
     answer = llm.ask(f"Owner's request: {text}\n\n{context}\n\nAnswer from these pages only, citing [n]. Use only the section "
                      "whose heading matches what was asked (programme, semester, group). If no heading matches, don't "
                      "answer from a different one: say plainly it isn't published and list the closest sections that are.",

@@ -116,9 +116,12 @@ def test_F(engine):
     print(f"    > {r['final_answer'][:200]}")
     ok = check("F: routed to the browser skill", r.get("skill") == "browser", r.get("skill"))
     ok &= check("F: read the live page", "example domain" in r["final_answer"].lower())
-    ok &= check("F: used the isolated profile", os.path.isdir(r"D:\ISHTI\data\mcp_browser_profile"))
+    from ishti import CONFIG
     from ishti.mcp_client import get_hub
-    get_hub().call("browser", "browser_close")
+    from ishti.skills.browser import skill as browser
+    # the owner's main Chrome profile when its extension is connected, else ISHTI's isolated one
+    ok &= check("F: used a configured browser profile", browser.SERVER in CONFIG["mcp_servers"], browser.SERVER)
+    get_hub().call(browser.SERVER, "browser_close")
     return ok
 
 

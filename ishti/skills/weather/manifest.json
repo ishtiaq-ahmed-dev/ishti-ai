@@ -15,5 +15,14 @@
   },
   "priority": 20,
   "status": "working",
-  "tier": "T0"
+  "tier": "T0",
+  "scope": {
+    "write": [
+      "data"
+    ],
+    "net": [
+      "open-meteo.com"
+    ],
+    "apps": false
+  }
 }

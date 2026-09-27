@@ -37,26 +37,83 @@ def metal(symbol="XAU"):
         requests.get(f"https://api.gold-api.com/price/{symbol}", timeout=10).json()["price"]))
 
 
+COIN_SYMS = {
+    "bitcoin": "BTC", "btc": "BTC", "ethereum": "ETH", "eth": "ETH", "solana": "SOL", "sol": "SOL",
+    "dogecoin": "DOGE", "doge": "DOGE", "ripple": "XRP", "xrp": "XRP", "binancecoin": "BNB", "bnb": "BNB",
+    "cardano": "ADA", "ada": "ADA", "tether": "USDT", "usdt": "USDT", "litecoin": "LTC", "ltc": "LTC",
+    "avalanche": "AVAX", "avax": "AVAX", "polkadot": "DOT", "dot": "DOT", "chainlink": "LINK", "tron": "TRX"
+}
+
+
 def crypto_id(name):
     def find():
-        coins = requests.get("https://api.coingecko.com/api/v3/search", params={"query": name}, timeout=10).json()["coins"]
-        return coins[0]["id"] if coins else None
+        clean = name.lower().strip()
+        if clean in COIN_SYMS:
+            return clean if clean in ("bitcoin", "ethereum", "solana", "dogecoin", "ripple", "cardano", "tether", "litecoin") else {v: k for k, v in COIN_SYMS.items()}.get(COIN_SYMS[clean], clean)
+        try:
+            r = requests.get("https://api.coingecko.com/api/v3/search", params={"query": name}, timeout=8)
+            if r.ok:
+                coins = r.json().get("coins", [])
+                if coins:
+                    return coins[0]["id"]
+        except Exception:
+            pass
+        return COIN_SYMS.get(clean, clean)
     return cached(f"cgid:{name.lower()}", 86400, find)
 
 
 def crypto(coin_id, vs="usd"):
     """{'price', 'change_24h'} in vs currency."""
-    d = cached(f"cg:{coin_id}:{vs}", 60, lambda: requests.get(
-        "https://api.coingecko.com/api/v3/simple/price",
-        params={"ids": coin_id, "vs_currencies": vs, "include_24hr_change": "true"}, timeout=10).json()[coin_id])
-    return {"price": d[vs], "change_24h": d.get(f"{vs}_24h_change")}
+    def fetch():
+        # 1. Try CoinGecko
+        try:
+            r = requests.get("https://api.coingecko.com/api/v3/simple/price",
+                             params={"ids": coin_id, "vs_currencies": vs, "include_24hr_change": "true"}, timeout=8)
+            if r.ok and coin_id in r.json():
+                d = r.json()[coin_id]
+                return {"price": float(d[vs]), "change_24h": float(d.get(f"{vs}_24h_change") or 0.0)}
+        except Exception:
+            pass
+        # 2. Fast Fallback: Binance
+        sym = COIN_SYMS.get(coin_id.lower(), coin_id.upper())
+        try:
+            r = requests.get(f"https://api.binance.com/api/v3/ticker/24hr?symbol={sym}USDT", timeout=5)
+            if r.ok:
+                d = r.json()
+                return {"price": float(d["lastPrice"]), "change_24h": float(d.get("priceChangePercent") or 0.0)}
+        except Exception:
+            pass
+        # 3. Fallback: Coinbase
+        try:
+            r = requests.get(f"https://api.coinbase.com/v2/prices/{sym}-USD/spot", timeout=5)
+            if r.ok:
+                d = r.json().get("data", {})
+                return {"price": float(d.get("amount", 0.0)), "change_24h": 0.0}
+        except Exception:
+            pass
+        raise RuntimeError(f"Could not fetch crypto price for {coin_id}")
+    return cached(f"cg:{coin_id}:{vs}", 60, fetch)
 
 
 def crypto_history(coin_id, days=365):
-    d = cached(f"cgh:{coin_id}:{days}", 900, lambda: requests.get(
-        f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart",
-        params={"vs_currency": "usd", "days": days, "interval": "daily"}, timeout=15).json())
-    return [p[1] for p in d.get("prices", [])]
+    def fetch():
+        try:
+            r = requests.get(f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart",
+                             params={"vs_currency": "usd", "days": days, "interval": "daily"}, timeout=10)
+            if r.ok:
+                return [p[1] for p in r.json().get("prices", [])]
+        except Exception:
+            pass
+        # Fallback to Binance klines
+        sym = COIN_SYMS.get(coin_id.lower(), coin_id.upper())
+        try:
+            r = requests.get(f"https://api.binance.com/api/v3/klines?symbol={sym}USDT&interval=1d&limit={min(days, 365)}", timeout=8)
+            if r.ok:
+                return [float(k[4]) for k in r.json()]
+        except Exception:
+            pass
+        return []
+    return cached(f"cgh:{coin_id}:{days}", 900, fetch)
 
 
 def psx(symbol):

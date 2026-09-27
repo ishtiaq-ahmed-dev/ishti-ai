@@ -42,7 +42,8 @@ OPS = [
     ("time_in", re.compile(r"\b(?:what(?:'s| is)\s+the\s+)?time\s+(?:is\s+it\s+)?(?:now\s+)?in\s+(?P<city>[a-z .'-]{3,30})\??$", I)),
     ("translate", re.compile(r"^\s*(?:please\s+)?translate\s+(?P<body>.+?)\s+(?:to|into|in)\s+(?P<lang>[a-z ]{3,20})\s*$|^\s*(?:how\s+do\s+(?:you|i)\s+say|what\s+is)\s+(?P<body2>.+?)\s+in\s+(?P<lang2>urdu|english|arabic|pashto|hindi|chinese|french|german|spanish|turkish|persian)\s*\??$", I)),
     ("define", re.compile(r"^\s*(?:define|meaning\s+of|what\s+does\s+(?P<w2>[a-z'-]+)\s+mean)\b\s*(?P<w>[a-z'-]*)", I)),
-    ("news", re.compile(r"\b(?:news|headlines)\b", I)),
+    # "research the latest AI news" is deep research (read + synthesise with sources), not a headline list
+    ("news", re.compile(r"^(?!.*\b(?:research|investigat\w*|analy[sz]e|deep\s+dive|report\s+on)\b).*\b(?:news|headlines)\b", I)),
 ]
 
 
@@ -162,8 +163,12 @@ def op_news(m, text, session):
     items = feed.entries[:8]
     if not items:
         return f"No news found{' about ' + topic if topic else ''}."
-    lines = [f"- [{html.unescape(e.title)}]({e.link})" + (f" · {e.get('published', '')[:16]}" if e.get("published") else "") for e in items]
-    return f"Latest{' on ' + topic if topic else ' headlines'}:\n" + "\n".join(lines)
+    lines = [f"- {html.unescape(e.title)} [{i}]" + (f" · {e.get('published', '')[:16]}" if e.get("published") else "")
+             for i, e in enumerate(items, 1)]
+    sources = [{"id": i, "title": html.unescape(e.title), "url": e.link, "domain": "news.google.com",
+                "snippet": html.unescape(e.get("source", {}).get("title", "")) if isinstance(e.get("source"), dict) else ""}
+               for i, e in enumerate(items, 1)]
+    return {"reply": f"Latest{' on ' + topic if topic else ' headlines'}:\n" + "\n".join(lines), "sources": sources}
 
 
 # ---------------------------------------------------------------- password, meeting

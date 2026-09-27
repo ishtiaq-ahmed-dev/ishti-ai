@@ -3,9 +3,24 @@
   "version": "1.0.0",
   "description": "File operations: batch rename with preview and undo, zip/7z make and extract (zip-slip safe), duplicate finder (extra copies to the Recycle Bin, never hard-deleted), compare two files or folders, file tags, search inside files, safe delete, empty the Recycle Bin. Destructive steps ask first.",
   "route": "rename many files, zip or unzip, find or delete duplicate files, compare files, tag files, search text inside files, delete a file, empty the recycle bin",
-  "needs": {"python": ["send2trash", "py7zr"], "models": [], "mcp": [], "apis": []},
+  "needs": {
+    "python": [
+      "send2trash",
+      "py7zr"
+    ],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
   "priority": 24,
   "status": "working",
   "tier": "T1",
-  "laya": false
+  "laya": false,
+  "scope": {
+    "write": [
+      "user"
+    ],
+    "net": [],
+    "apps": false
+  }
 }

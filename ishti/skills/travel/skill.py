@@ -7,6 +7,7 @@ import time
 import urllib.parse
 
 from ishti import llm
+from ishti.untrusted import guard
 from ishti.skills import ground_dates, trace
 from ishti.skills.browser import skill as browser
 
@@ -54,7 +55,7 @@ def run(text, session):
         return {"reply": f"Google {kind.title()} didn't show prices for that - check the dates and places. It's open in your "
                          f"Chrome: {url}", "sources": [{"id": 1, "title": f"Google {kind.title()}", "url": url}]}
     answer = llm.ask(f"The owner asked: {text}\nThis is the Google {kind.title()} results page, as text:\n"
-                     + "\n".join(lines)[:9000]
+                     + guard("\n".join(lines)[:9000], f"Google {kind.title()}", session)
                      + f"\n\nList the best 5 {kind} options (cheapest and best-rated first) with {'airline, times, stops, duration' if kind == 'flights' else 'name, rating, area'}"
                        " and price exactly as shown. Only what the page says. Then one line on the cheapest.",
                      temperature=0, max_tokens=500)

@@ -3,9 +3,26 @@
   "version": "1.0.0",
   "description": "Audio, video extras and images: transcribe and summarise recordings, normalise loudness, remove noise, cut silences, convert formats, text to speech; merge, reverse, burn and translate subtitles, background music with ducking, stabilise, GIF, watermark, screen and webcam recording; resize (batch), rotate/flip/B&W/blur/sharpen, strip metadata, memes, read text in images.",
   "route": "work on an audio file, video file or image the owner names by path: transcribe, clean up, convert, subtitles, music, stabilise, gif, watermark, resize, meme, OCR; record the screen",
-  "needs": {"python": ["PIL"], "models": [], "mcp": [], "apis": []},
+  "needs": {
+    "python": [
+      "PIL"
+    ],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
   "priority": 26,
   "status": "working",
   "tier": "T1",
-  "laya": false
+  "laya": false,
+  "scope": {
+    "write": [
+      "data"
+    ],
+    "net": [
+      "github.com",
+      "githubusercontent.com"
+    ],
+    "apps": false
+  }
 }

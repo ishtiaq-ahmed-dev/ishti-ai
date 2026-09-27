@@ -9,6 +9,11 @@ echo   STOPPING ISHTI ASSISTANT
 echo ========================================================================
 echo.
 
+:: tell the watchdog this stop is deliberate (it would otherwise restart the server)
+if not exist "%~dp0data" mkdir "%~dp0data"
+echo stop> "%~dp0data\stop.flag"
+timeout /t 12 >nul 2>&1
+
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "$stopped = 0;" ^
     "$ports = @(8888, 8899);" ^

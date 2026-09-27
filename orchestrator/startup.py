@@ -109,14 +109,14 @@ def check_web_ui() -> bool:
 
     print(" [STARTING]...", end="", flush=True)
     python_exe = os.path.join(ROOT_DIR, "venv", "Scripts", "python.exe")
-    server_script = os.path.join(ROOT_DIR, "interface", "web_ui", "server.py")
+    # the watchdog runs the server: restarts it after a crash or hang, and owns the kill-switch hotkey
     subprocess.Popen(
-        [python_exe, server_script],
+        [python_exe, "-m", "ishti.watchdog", "8888"], cwd=ROOT_DIR,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
     )
-    for _ in range(8):
+    for _ in range(60):  # models load first: allow up to a minute
         time.sleep(1.0)
         try:
             r = requests.get("http://127.0.0.1:8888/api/status", timeout=2)

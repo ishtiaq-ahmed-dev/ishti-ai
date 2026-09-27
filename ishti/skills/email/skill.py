@@ -6,6 +6,7 @@ import time
 from urllib.parse import quote
 
 from ishti import llm
+from ishti.untrusted import guard
 from ishti.skills import ask_first, trace
 from ishti.skills.browser import skill as browser
 
@@ -101,7 +102,7 @@ def op_open(m, text, session):
     snap = browser._call("browser_snapshot", {})
     body = re.sub(r"\[ref=[^\]]+\]|^\s*- \w+( \"[^\"]*\")?:?\s*$", "", snap[snap.find(hit["subject"][:30]):][:9000], flags=re.M)
     body = "\n".join(l.strip(" -") for l in body.splitlines() if len(l.strip(" -")) > 2)[:6000]
-    return llm.ask(f"Email from {hit['sender']}, subject \"{hit['subject']}\". Page text:\n{body}\n\nTell the owner what this "
+    return llm.ask(f"Email from {hit['sender']}, subject \"{hit['subject']}\". Page text:\n{guard(body, 'an email from ' + hit['sender'], session)}\n\nTell the owner what this "
                    "email says in 2-4 sentences, and whether it needs a reply or action.", max_tokens=300)
 
 

@@ -113,6 +113,16 @@ async def _capture_loop():
     start_sampler()  # screen time: the foreground app once a minute, local only
     from ishti.skills.desktop.more import start_clipboard_history
     start_clipboard_history()  # "clipboard history": last 100 text copies, local SQLite, secrets skipped
+    from ishti import health, killswitch
+    from ishti.talk import talker as _pc_talker
+    health.start(announce)  # A1: degrading components are flagged before they fail
+    killswitch.on_kill(lambda: _pc_talker().stop() and "PC speech")  # A2: whatever the PC is saying stops
+    if not os.environ.get("ISHTI_WATCHDOG"):  # no watchdog process: the hotkey lives here (works unless this process hangs)
+        try:
+            from pynput import keyboard
+            keyboard.GlobalHotKeys({CONFIG.get("kill_hotkey", "<ctrl>+<alt>+q"): lambda: _kill("hotkey")}).start()
+        except Exception as exc:
+            print(f"[ISHTI] kill switch hotkey unavailable ({exc}); the Stop button still works")
     if CONFIG["voice"].get("wake_enabled"):
         from ishti import wake
 
@@ -199,6 +209,30 @@ async def hud():
         return HTMLResponse(f.read())
 
 
+def _kill(reason):
+    from ishti import killswitch
+    stopped = killswitch.kill(reason)
+    sync_event_callback("killed", {"reason": reason, "stopped": stopped})  # the dashboard marks running answers stopped
+    return stopped
+
+
+@app.post("/api/kill")
+async def kill_endpoint(req: Request):
+    """A2 kill switch: stop everything now (speech, generation, browser steps, tools, recordings, pending questions)."""
+    try:
+        reason = (await req.json()).get("reason", "stop button")
+    except Exception:
+        reason = "stop button"
+    return {"stopped": _kill(str(reason)[:40])}
+
+
+@app.get("/api/health")
+async def health_endpoint():
+    """Liveness for the watchdog (answering at all = not hung) + the latest health-loop snapshot."""
+    from ishti import health
+    return {"ok": True, **health.snapshot()}
+
+
 @app.get("/api/status")
 async def get_status():
     installed = model_router.get_installed_models()
@@ -276,13 +310,38 @@ async def execute_task(req: Request):
     return JSONResponse(result)
 
 
+def _until_killed(fn, prompt, session_id):
+    """Run a request; if the kill switch fires, answer "Stopped." at once - the abandoned work winds down in the
+    background (it stops at its next checkpoint and its result is discarded)."""
+    import concurrent.futures
+    from ishti import killswitch
+    gen = killswitch.generation()
+    box = concurrent.futures.Future()
+
+    def work():
+        try:
+            box.set_result(fn())
+        except BaseException as exc:
+            box.set_exception(exc)
+    import threading
+    threading.Thread(target=work, daemon=True, name="request").start()
+    while True:
+        try:
+            return box.result(timeout=0.05)
+        except concurrent.futures.TimeoutError:
+            if killswitch.generation() != gen:
+                return {"request": prompt, "final_answer": "Stopped.", "mode": "STOPPED", "skill": None, "sources": [],
+                        "session_id": session_id}
+
+
 def _execute(prompt, session_id, on_token=None, on_event=None) -> dict:
     """Dispatcher call shared by /api/execute and /api/execute_stream (runs in a worker thread)."""
     global last_execution_state, last_research_state
     try:
         # Typed (mode B) and recorded (mode A) messages get text replies only - ISHTI speaks only in Live mode
         # (/ws/live) and hands-free wake-word mode. It used to speak typed chats whenever audio was switched on.
-        res = ishti_handle(prompt, session_id=session_id, on_token=on_token, on_event=on_event)
+        res = _until_killed(lambda: ishti_handle(prompt, session_id=session_id, on_token=on_token, on_event=on_event),
+                            prompt, session_id)
     except Exception as exc:
         ErrorLogger.log_error(subsystem="SERVER", error=exc, user_prompt=prompt, context="execute endpoint")
         res = {"error": str(exc), "final_answer": f"Server error: {str(exc)[:200]}"}
@@ -439,6 +498,8 @@ async def live_ws(ws: WebSocket):
         coro = ws.send_bytes(msg) if isinstance(msg, bytes) else ws.send_text(json.dumps(msg))
         asyncio.run_coroutine_threadsafe(coro, loop)
     voice = RemoteTalker(send_audio)
+    from ishti import killswitch
+    killswitch.on_kill(lambda: voice.stop() and "Live voice")  # the browser stops talking too
 
     def on_command(text, on_token=None):
         res = ishti_handle(text, session_id=session_id, channel="voice", on_token=on_token,

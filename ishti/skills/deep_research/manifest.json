@@ -22,5 +22,14 @@
   },
   "status": "working",
   "laya": false,
-  "tier": "T0"
+  "tier": "T0",
+  "scope": {
+    "write": [
+      "data"
+    ],
+    "net": [
+      "*"
+    ],
+    "apps": false
+  }
 }

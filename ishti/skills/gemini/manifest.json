@@ -6,11 +6,23 @@
   "priority": 25,
   "laya": false,
   "needs": {
-    "python": ["mcp"],
+    "python": [
+      "mcp"
+    ],
     "models": [],
-    "mcp": ["main"],
+    "mcp": [
+      "main"
+    ],
     "apis": []
   },
   "status": "working",
-  "tier": "T1"
+  "tier": "T1",
+  "scope": {
+    "write": [
+      "data",
+      "~/Downloads"
+    ],
+    "net": [],
+    "apps": false
+  }
 }

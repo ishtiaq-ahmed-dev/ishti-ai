@@ -96,22 +96,39 @@ class ModelRouter:
             tools_used=tools_used,
             evidence_is_live=evidence_is_live,
         )
+        if "<<EXTERNAL" in user_content:  # fetched pages are data, never instructions
+            from ishti.untrusted import RULE
+            system = f"{system}\n\n{RULE}"
+        from ishti import killswitch
+        killswitch.check()
         try:
-            res = requests.post(
+            # streamed, so the kill switch can stop a long report at the next token (closing the stream ends it)
+            with requests.post(
                 f"{self.host}/api/generate",
                 json={
                     "model": self.get_model(role),
                     "system": system,
                     "prompt": user_content,
-                    "stream": False,
+                    "stream": True,
                     "options": {"temperature": temperature},
                 },
-                timeout=timeout,
-            )
-            if res.status_code == 200:
-                return res.json().get("response", "").strip()
-            print(f"[ModelRouter] generate HTTP {res.status_code}")
+                timeout=timeout, stream=True,
+            ) as res:
+                if res.status_code != 200:
+                    print(f"[ModelRouter] generate HTTP {res.status_code}")
+                    return ""
+                parts = []
+                for line in res.iter_lines():
+                    killswitch.check()
+                    if line:
+                        chunk = json.loads(line)
+                        parts.append(chunk.get("response", ""))
+                        if chunk.get("done"):
+                            break
+                return "".join(parts).strip()
         except Exception as exc:
+            if type(exc).__name__ == "Cancelled":
+                raise
             print(f"[ModelRouter] generate failed: {exc}")
         return ""
 

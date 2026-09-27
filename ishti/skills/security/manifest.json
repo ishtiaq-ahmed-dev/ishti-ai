@@ -5,7 +5,27 @@
   "route": "password strength, has a password been leaked in a breach, encrypt or decrypt a file with a password, save or read a login from the credential vault",
   "priority": 14,
   "laya": false,
-  "needs": {"python": ["zxcvbn", "keyring", "py7zr"], "models": [], "mcp": [], "apis": ["api.pwnedpasswords.com"]},
+  "needs": {
+    "python": [
+      "zxcvbn",
+      "keyring",
+      "py7zr"
+    ],
+    "models": [],
+    "mcp": [],
+    "apis": [
+      "api.pwnedpasswords.com"
+    ]
+  },
   "status": "working",
-  "tier": "T2"
+  "tier": "T2",
+  "scope": {
+    "write": [
+      "user"
+    ],
+    "net": [
+      "api.pwnedpasswords.com"
+    ],
+    "apps": false
+  }
 }

@@ -3,9 +3,24 @@
   "version": "1.0.0",
   "description": "ISHTI's own calendar (no Outlook account on this PC): add events (daily/weekly repeats) with a clash warning and a 15-minute heads-up, list a day or week, free slots, delete (asks first), export .ics for Google Calendar or Outlook.",
   "route": "add a meeting or event, what's on my calendar or schedule, when am I free, cancel an event, export the calendar",
-  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
   "priority": 14,
   "status": "working",
   "tier": "T1",
-  "laya": false
+  "laya": false,
+  "scope": {
+    "write": [
+      "data",
+      "~/Desktop",
+      "~/Documents",
+      "~/Downloads"
+    ],
+    "net": [],
+    "apps": false
+  }
 }

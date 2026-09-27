@@ -10,6 +10,13 @@ import time
 from fastapi import APIRouter, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
 
+from ishti import audit, killswitch
+from ishti.scope import ScopeError, install as _install_scope
+from ishti.untrusted import clean_reply, note_for_owner
+
+_install_scope()  # per-skill file/network/app limits (A5)
+killswitch.propagate()  # a request's context (kill switch, skill scope, who initiated) follows it into worker threads
+
 from ishti import CONFIG, ROOT
 from ishti.facts import get_facts
 from ishti import planner, router as router_mod
@@ -63,7 +70,7 @@ class View(dict):
     """One request's view of a chat session. Its live trace, token stream and route are its own; everything
     else (history, pending question, last entity...) reads and writes through to the shared session. Lets
     several requests of one chat, and the parallel steps of one plan, run at once without mixing streams."""
-    OWN = ("trace", "on_token", "route")
+    OWN = ("trace", "on_token", "route", "injections", "injected")
 
     def __init__(self, shared, **own):
         super().__init__({k: own.get(k) for k in self.OWN})
@@ -168,7 +175,12 @@ def fell_short(question, reply, skill, s) -> bool:
     ~0.4 s on the already-loaded planner model."""
     if FELL_SHORT.search(reply):
         return True
-    if skill not in ("web_search", "browser", "web_fetch"):
+    # the browser engine already re-checks the request against the actions that really ran (its CHECK loop and
+    # grounded summary); the one-word judge rejected its correct answers ("main heading ... Example Domain" -> no)
+    if skill not in ("web_search", "web_fetch"):
+        return False
+    # a summary isn't "a concrete value, name, number or fact": the judge said no to good summaries (a recipe page)
+    if re.match(r"^\s*(?:please\s+)?(?:summari[sz]e|read|explain|describe|what(?:'s|\s+is)\s+(?:on|in))\b", question, re.I):
         return False
     from ishti import llm
     s["trace"](type="tool", name="verify", label="check the answer really answers the question", status="start")
@@ -258,6 +270,15 @@ def _recover():
         return []
 
 
+
+@killswitch.on_kill
+def _drop_questions():
+    """A kill also drops every waiting yes/no question, so a later "yes" can't run a half-forgotten action."""
+    n = sum(1 for sh in SESSIONS.values() if sh.get("pending"))
+    for sh in SESSIONS.values():
+        sh["pending"] = None
+    return f"{n} pending question(s)" if n else ""
+
 RECOVER = _recover()  # what the previous run was still doing when it stopped
 
 
@@ -278,7 +299,10 @@ def _run(text, s, dec):
                 out = ask_first(s, name, "You asked for exactly this a moment ago - do it again",
                                 lambda n=name, t=text: SKILLS[n].run(t, s) or {"reply": "Nothing to do."})
             else:
-                out = SKILLS[name].run(text, s)
+                with audit.context(skill=name, initiator=initiator_of(dec, s, tried), tier=tier, view=s):
+                    audit.record(f"run {name}", why(dec))
+                    out = SKILLS[name].run(text, s)
+                    killswitch.check()  # killed mid-skill: whatever it returned (often a swallowed error) is dropped
                 gate = s.get("pending")
                 if gate and gate.get("action") and "request" not in gate:
                     gate["request"] = text  # so a "yes" can record the action that ran
@@ -290,7 +314,11 @@ def _run(text, s, dec):
             ErrorLogger.log_error(subsystem=f"SKILL_{name.upper()}", error=exc, user_prompt=text,
                                   context="dispatcher.handle")
             log_need("error", name, text, f"{type(exc).__name__}: {str(exc)[:120]}")
-            out = {"reply": f"The {name} skill failed: {type(exc).__name__}: {str(exc)[:160]}"}
+            audit.record(f"{name} failed", f"{type(exc).__name__}: {str(exc)[:200]}", skill=name)
+            if isinstance(exc, ScopeError):  # a permission boundary, not a bug: say it plainly
+                out = {"reply": f"I stopped: {exc}. If that should be allowed, widen the skill's \"scope\" in its manifest."}
+            else:
+                out = {"reply": f"The {name} skill failed: {type(exc).__name__}: {str(exc)[:160]}"}
         if out is not None:
             s["trace"](type="step", skill=name, status="done", summary=out["reply"][:160])
             break
@@ -309,6 +337,7 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
     on_event(dict): live trace (route, plan, steps, tool calls) for the UI's Thinking panel and graph.
     Skills add their own tool events with session["trace"](type="tool", ...)."""
     t0 = time.perf_counter()
+    killswitch.begin()
     conv = get_conversation_manager()
     sid = session_id or conv.active_session_id or conv.new_chat("New Session")
     shared = SESSIONS.setdefault(sid, {"id": sid, "history": [], "pending": None, "last_entity": None})
@@ -316,6 +345,9 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
 
     def trace(**ev):
         ev = {"t": round((time.perf_counter() - t0) * 1000), **ev}
+        if ev.get("type") == "tool" and ev.get("status") in ("done", "error") and ev.get("label"):
+            audit.record(f"{ev.get('name', 'tool')}: {ev['label']}", "failed" if ev["status"] == "error" else "",
+                         session=sid)
         events.append({k: v for k, v in ev.items() if k not in ("sample", "results")})
         if on_event:
             on_event(ev)
@@ -342,12 +374,27 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
         shared["tasks"] = (shared.get("tasks", []) + [task])[-10:]
     _inflight(sid, text)
     try:
-        res = _handle(text, sid, conv, s, events, t0, channel)
+        with audit.context(session=sid, channel=channel, request=text):
+            audit.record(f"request: {text[:150]}", initiator="standing" if channel == "scheduled" else "owner", skill="")
+            res = _handle(text, sid, conv, s, events, t0, channel)
         task.update(status="done", result=res["final_answer"][:200])
         return res
     except BaseException as exc:
         task.update(status="cancelled" if type(exc).__name__ == "Cancelled" else "failed", result=str(exc)[:200])
-        raise
+        if type(exc).__name__ == "Cancelled" and killswitch.killed():  # the kill switch: a clean stop, back to idle
+            s["trace"](type="done", skill=None, ms=round((time.perf_counter() - t0) * 1000))
+            return {"request": text, "final_answer": "Stopped.", "mode": "STOPPED", "skill": None, "sources": [],
+                    "session_id": sid, "channel": channel, "route": {}, "latency_ms": round((time.perf_counter() - t0) * 1000)}
+        if type(exc).__name__ == "Cancelled" or not isinstance(exc, Exception):
+            raise  # barge-in / shutdown: not a failure to report
+        ErrorLogger.log_error(subsystem="DISPATCHER", error=exc, user_prompt=text, context="dispatcher.handle")
+        log_need("error", "dispatcher", text, f"{type(exc).__name__}: {str(exc)[:120]}")
+        audit.record("request failed", f"{type(exc).__name__}: {str(exc)[:200]}", skill="dispatcher", session=sid)
+        reply = (f"Something went wrong inside me ({type(exc).__name__}: {str(exc)[:120]}). I logged it and I'm still "
+                 "running - try again, or rephrase.")
+        s["trace"](type="done", skill=None, ms=round((time.perf_counter() - t0) * 1000))
+        return {"request": text, "final_answer": reply, "mode": "ERROR", "skill": None, "sources": [], "session_id": sid,
+                "channel": channel, "route": {}, "latency_ms": round((time.perf_counter() - t0) * 1000)}
     finally:
         task["ended"] = time.time()
         _inflight(sid)
@@ -408,7 +455,12 @@ def _handle(text, sid, conv, s, events, t0, channel):
         dec = {"skill": wanted, "confidence": 1.0, "source": "correction", "was": s.get("last_skill")}
     elif pending and pending.get("action") and (ans := answer_of(text)):  # the universal T2 gate's yes/no
         s["pending"] = None
-        reply = pending["action"]() if ans == "yes" else "Cancelled - nothing was done."
+        tier = SKILLS[pending["skill"]].manifest.get("tier", "T1") if pending["skill"] in SKILLS else "T2"
+        audit.record(f"{'confirmed' if ans == 'yes' else 'declined'}: {pending.get('gate', '')[:150]}", text, skill=pending["skill"],
+                     initiator="owner", tier=tier, confirmed=time.time() if ans == "yes" else None, session=sid)
+        with audit.context(skill=pending["skill"], initiator="instructed", tier=tier, session=sid, channel=channel,
+                           request=pending.get("request", text), view=s):
+            reply = pending["action"]() if ans == "yes" else "Cancelled - nothing was done."
         if ans == "yes" and pending.get("request"):
             _did_t2(s, pending["skill"], pending["request"])
         out = reply if isinstance(reply, dict) else {"reply": reply, "sources": []}
@@ -448,10 +500,23 @@ def _handle(text, sid, conv, s, events, t0, channel):
                 name, out = n2, {**out2, "sources": out.get("sources", []) + out2.get("sources", [])}
                 break
 
+    if s.get("injected"):  # second layer: nothing from injected text survives into the answer
+        out["reply"] = clean_reply(out["reply"], s["injected"])
+    out["reply"] += note_for_owner(s)
     if lang and not already_in(out["reply"], lang):
         s["trace"](type="tool", name="translate", label=f"answer in {lang.split(' (')[0]}", status="done")
         out["reply"] = translate(out["reply"], lang)
     return _finish(text, sid, conv, s, events, t0, channel, name, out, dec)
+
+
+def initiator_of(dec, s, tried):
+    """Who started this skill run (A3): the owner's request routed straight to it, ISHTI's own judgment mid-task
+    (a plan step, an escalation, a fall-through after another skill passed), or a standing rule (schedule/automation)."""
+    if audit.current().get("channel") == "scheduled":
+        return "standing"
+    if tried or dec.get("source") in ("plan", "escalation"):
+        return "judgment"
+    return "instructed"
 
 
 def mask(value, secrets):

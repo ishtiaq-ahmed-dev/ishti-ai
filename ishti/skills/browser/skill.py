@@ -10,12 +10,14 @@ import uuid
 from ishti import CONFIG, llm
 from ishti.mcp_client import get_hub
 from ishti.skills import answer_of, trace
+from ishti.untrusted import guard, scan
 from orchestrator.intent_detector import IntentDetector
 
 ALLOWED = {"browser_navigate", "browser_navigate_back", "browser_snapshot", "browser_click", "browser_type",
            "browser_fill_form", "browser_press_key", "browser_select_option", "browser_hover",
            "browser_wait_for", "browser_tabs", "browser_find", "browser_handle_dialog", "browser_close",
            "browser_file_upload"}
+TAINTED = {"on": False}  # ponytail: one flag for the one browser task at a time (LOCK)
 # files the owner said yes to sending to a website (online_fallback's T2 question); any other upload asks first
 APPROVED_UPLOADS = set()
 DOWNLOADS = os.path.join(os.path.expanduser("~"), "Downloads")  # where the owner's Chrome saves files
@@ -107,6 +109,8 @@ def _tools():
 def _risky(name, args):
     """Description of a consequential action, or None. Enter counts when the page has a
     submit/order/pay-type control, since it submits the focused form."""
+    if TAINTED.get("on") and name not in ("browser_snapshot", "browser_navigate_back", "browser_wait_for", "browser_tabs", "browser_find"):
+        return f"{name.removeprefix('browser_').replace('_', ' ')} (a page in this task tried to give me instructions, so every action needs your yes)"
     if name == "browser_file_upload":
         paths = set(args.get("paths") or [])
         return None if paths and paths <= APPROVED_UPLOADS else f"upload {', '.join(sorted(paths)) or 'a file'} to this website"
@@ -142,6 +146,8 @@ def human(name, args):
 
 def _call(name, args):
     """MCP call; action results only link the page snapshot file, so inline it for the model."""
+    from ishti import killswitch
+    killswitch.check()  # the kill switch ends a browser task between steps
     out = get_hub().call(SERVER, name, args)
     m = re.search(r"\[Snapshot\]\(([^)]+\.yml)\)", out)
     if m and os.path.isfile(m.group(1)):
@@ -230,11 +236,15 @@ def _loop(session, msgs, log, steps_left):
                 return {"reply": "This page is showing a CAPTCHA. I don't solve those - please solve it in the browser "
                                  "window, then say \"done\" and I'll carry on from there.", "sources": []}
         log.append(f"{name.removeprefix('browser_')} {raw}" + (" -> ERROR" if out.startswith("ERROR") else ""))
-        msgs.append({"role": "tool", "tool_call_id": cid, "content": out[:8000]})
+        if scan(out[:8000]):
+            TAINTED["on"] = True  # flag, don't comply: from here on the owner confirms each action
+        msgs.append({"role": "tool", "tool_call_id": cid, "content": guard(out[:8000], "the web page", session)})
     return {"reply": "Stopped after too many browser steps. " + _summary(msgs, log), "sources": []}
 
 
 def run(text, session, server=None, start_url=None, hint="", start_snapshot=None):
+    if not (session.get("pending") or {}).get("skill") == "browser":
+        TAINTED["on"] = False  # a new task starts clean; a resumed one keeps its state
     with LOCK:
         return _run_locked(text, session, server or profile_for("browser"), start_url, hint, start_snapshot)
 

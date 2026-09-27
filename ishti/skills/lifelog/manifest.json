@@ -3,9 +3,24 @@
   "version": "1.0.0",
   "description": "Personal logs (tracking only, never medical advice): water, sleep, exercise, habits with streaks, and screen time from a local once-a-minute foreground-app sampler. Local SQLite only.",
   "route": "log water, sleep, exercise or a habit; my habits or sleep this week; screen time",
-  "needs": {"python": ["psutil", "win32gui"], "models": [], "mcp": [], "apis": []},
+  "needs": {
+    "python": [
+      "psutil",
+      "win32gui"
+    ],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
   "priority": 15,
   "status": "working",
   "tier": "T1",
-  "laya": false
+  "laya": false,
+  "scope": {
+    "write": [
+      "data"
+    ],
+    "net": [],
+    "apps": false
+  }
 }

@@ -14,6 +14,7 @@ import re
 import time
 
 from ishti import llm
+from ishti.untrusted import guard
 from ishti.skills import trace
 
 I = re.I
@@ -108,7 +109,7 @@ def op_summarize(m, text, session):
     if len(body.strip()) < 40:
         return f"{os.path.basename(got[0])} has no readable text, even with OCR."
     focus = re.sub(PATH, "", text)
-    return llm.ask(f"Document: {os.path.basename(got[0])}\n\n{body[:14000]}\n\nThe owner asks: {focus}\n"
+    return llm.ask(f"Document: {os.path.basename(got[0])}\n\n{guard(body[:14000], os.path.basename(got[0]), session)}\n\nThe owner asks: {focus}\n"
                    "Summarise it for them: what it is, the key points, numbers, dates and anything they need to act on. "
                    "Short sections.", max_tokens=700)
 

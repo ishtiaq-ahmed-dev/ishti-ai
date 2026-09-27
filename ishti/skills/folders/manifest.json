@@ -12,5 +12,12 @@
   },
   "status": "working",
   "laya": false,
-  "tier": "T1"
+  "tier": "T1",
+  "scope": {
+    "write": [
+      "user"
+    ],
+    "net": [],
+    "apps": false
+  }
 }

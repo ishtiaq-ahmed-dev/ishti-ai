@@ -9,6 +9,7 @@ import os
 import re
 
 from ishti import llm
+from ishti.untrusted import guard
 from ishti.skills import trace
 
 I = re.I
@@ -68,7 +69,7 @@ def topic_of(text, kind_words):
 def op_flashcards(text, session):
     topic, src = topic_of(text, "flash\\s*cards?"), source(text)
     n = int((re.search(r"(\d{1,2})\s*(?:flash\s*)?cards?", text, I) or [0, 15])[1])
-    raw = llm.ask(f"Make {n} flashcards " + (f"from this material:\n{src[:9000]}" if src else f"about: {topic}")
+    raw = llm.ask(f"Make {n} flashcards " + (f"from this material:\n{guard(src[:9000], 'study material')}" if src else f"about: {topic}")
                   + '\nReturn JSON {"cards": [{"front": "<question>", "back": "<short answer>"}]}.',
                   system=None, temperature=0.3, max_tokens=1800, response_format={"type": "json_object"})
     cards = [c for c in json.loads(raw).get("cards", []) if c.get("front") and c.get("back")]
@@ -82,7 +83,7 @@ def op_flashcards(text, session):
 def op_quiz(text, session):
     topic, src = topic_of(text, "quiz|test\\s+me|mcqs?|practice\\s+questions"), source(text)
     n = int((re.search(r"(\d{1,2})\s*(?:questions|mcqs?)", text, I) or [0, 8])[1])
-    body = llm.ask(f"Write a {n}-question multiple-choice quiz " + (f"on this material:\n{src[:9000]}" if src else f"about {topic}")
+    body = llm.ask(f"Write a {n}-question multiple-choice quiz " + (f"on this material:\n{guard(src[:9000], 'study material')}" if src else f"about {topic}")
                    + "\nNumber the questions, options A-D on separate lines, and put an 'Answers' section with short "
                      "explanations at the very end.", max_tokens=1800)
     path = save("Quiz", topic, body)
@@ -114,7 +115,7 @@ def op_lecture(text, session):
         from ishti.voice import stt_model
         segs, _ = stt_model().transcribe(audio, beam_size=1, vad_filter=True, temperature=0.0, condition_on_previous_text=False)
         transcript = " ".join(s.text.strip() for s in segs)
-    notes = llm.ask(f"Lecture: {info.get('title')}\nTranscript:\n{transcript[:14000]}\n\nWrite study notes: summary, key "
+    notes = llm.ask(f"Lecture: {info.get('title')}\nTranscript:\n{guard(transcript[:14000], 'the lecture transcript', session)}\n\nWrite study notes: summary, key "
                     "concepts with short explanations, and 5 review questions.", max_tokens=1600)
     path = save("Lecture notes", info.get("title", "lecture"), f"# {info.get('title')}\n{url}\n\n{notes}\n\n---\n## Transcript\n{transcript}")
     return f"Notes on **{info.get('title')}** saved: {path}\n\n{notes[:2500]}"
