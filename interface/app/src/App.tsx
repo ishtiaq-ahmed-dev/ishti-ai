@@ -47,7 +47,7 @@ function getInitialPage(): Key {
 
 export default function App() {
   const [page, setPageState] = useState<Key>(getInitialPage);
-  const [owner, setOwner] = useState("there");
+  const [owner, setOwner] = useState("Ishtiaq Ahmed");
   const [projects, setProjects] = useState<Fact[]>([]);
   const [alerts, setAlerts] = useState<string[]>([]);
   const [live, setLive] = useState<Live>(null);
@@ -112,39 +112,102 @@ export default function App() {
   }, [page]);
 
   useEffect(() => {
-    getJSON<{ facts: Fact[] }>("/api/facts").then(({ facts }) => {
-      setOwner(facts.find((f) => f.entity === "owner" && f.attr === "name")?.value.split(" ")[0] ?? "there");
-      setProjects(facts.filter((f) => f.attr === "location" && f.entity !== "owner").slice(0, 6));
-    });
-    // reminders and hands-free voice replies arrive over the websocket
-    const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
-    ws.onmessage = (m) => {
-      const msg = JSON.parse(m.data);
-      if (msg.type === "voice_state") {  // hands-free voice: idle / listening / thinking / speaking
-        const v = msg.data?.state as VoiceState;
-        if (v === "idle") setTimeout(() => setLive((l) => (l?.voice === "idle" ? null : l)), 1500);
-        setLive((l) => ({ text: v === "listening" ? "" : l?.text ?? "", step: v === "listening" ? "Say your command" : l?.step ?? "",
-                          done: v === "idle", voice: v }));
-      }
-      if (msg.type === "stt_partial" || msg.type === "stt_final")  // what ISHTI hears, as the owner talks
-        setLive((l) => ({ ...(l ?? { step: "", done: false, voice: "listening" as VoiceState }), text: String(msg.data?.text ?? "") }));
-      if (msg.type === "barge_in") setLive((l) => ({ ...(l ?? { text: "", done: false }), step: "Stopped - listening to you", voice: "listening" }));
-      if (msg.type === "trace" && msg.data?.channel === "voice") {  // live steps of a spoken request
-        const e = msg.data;
-        if (e.type === "received") setLive((l) => ({ text: String(e.text ?? ""), step: "Understanding…", done: false, voice: l?.voice ?? "thinking" }));
-        else if (e.type !== "done") {
-          const step = e.type === "route" ? `Using ${e.skill}` : e.type === "escalate" ? `Trying ${e.to} instead` : e.label ?? (e.type === "step" ? e.skill : null);
-          if (step) setLive((l) => ({ text: l?.text ?? "", step: String(step), done: false, voice: l?.voice ?? "thinking" }));
+    getJSON<{ facts: Fact[] }>("/api/facts")
+      .then((data) => {
+        const facts = data?.facts ?? [];
+        setOwner(facts.find((f) => f.entity === "owner" && f.attr === "name")?.value.trim() ?? "Ishtiaq Ahmed");
+        setProjects(facts.filter((f) => f.attr === "location" && f.entity !== "owner").slice(0, 6));
+      })
+      .catch((err) => console.warn("[App] Failed to load initial facts:", err));
+
+    let ws: WebSocket | null = null;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let backoff = 1000;
+    let isMounted = true;
+
+    function connect() {
+      if (!isMounted) return;
+      try {
+        const proto = location.protocol === "https:" ? "wss" : "ws";
+        ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+        ws.onopen = () => {
+          backoff = 1000;
+        };
+
+        ws.onmessage = (m) => {
+          try {
+            const msg = JSON.parse(m.data);
+            if (msg.type === "voice_state") {
+              const v = msg.data?.state as VoiceState;
+              if (v === "idle") setTimeout(() => setLive((l) => (l?.voice === "idle" ? null : l)), 1500);
+              setLive((l) => ({
+                text: v === "listening" ? "" : l?.text ?? "",
+                step: v === "listening" ? "Say your command" : l?.step ?? "",
+                done: v === "idle",
+                voice: v,
+              }));
+            }
+            if (msg.type === "stt_partial" || msg.type === "stt_final") {
+              setLive((l) => ({
+                ...(l ?? { step: "", done: false, voice: "listening" as VoiceState }),
+                text: String(msg.data?.text ?? ""),
+              }));
+            }
+            if (msg.type === "barge_in") {
+              setLive((l) => ({ ...(l ?? { text: "", done: false }), step: "Stopped - listening to you", voice: "listening" }));
+            }
+            if (msg.type === "trace" && msg.data?.channel === "voice") {
+              const e = msg.data;
+              if (e.type === "received") {
+                setLive((l) => ({ text: String(e.text ?? ""), step: "Understanding…", done: false, voice: l?.voice ?? "thinking" }));
+              } else if (e.type !== "done") {
+                const step = e.type === "route" ? `Using ${e.skill}` : e.type === "escalate" ? `Trying ${e.to} instead` : e.label ?? (e.type === "step" ? e.skill : null);
+                if (step) setLive((l) => ({ text: l?.text ?? "", step: String(step), done: false, voice: l?.voice ?? "thinking" }));
+              }
+            }
+            if (msg.type === "assistant_message" && String(msg.data?.reply ?? "").startsWith("⏰")) {
+              setAlerts((a) => [msg.data.reply, ...a].slice(0, 20));
+              if (typeof Notification !== "undefined" && Notification?.permission === "granted") {
+                new Notification("ISHTI", { body: msg.data.reply });
+              }
+            }
+          } catch (err) {
+            console.warn("[App WS] Error parsing message:", err);
+          }
+        };
+
+        ws.onclose = () => {
+          if (!isMounted) return;
+          reconnectTimeout = setTimeout(() => {
+            backoff = Math.min(backoff * 1.5, 15000);
+            connect();
+          }, backoff);
+        };
+
+        ws.onerror = () => {
+          if (ws) ws.close();
+        };
+      } catch (e) {
+        console.warn("[App WS] Connection attempt failed:", e);
+        if (isMounted) {
+          reconnectTimeout = setTimeout(connect, 3000);
         }
       }
-      if (msg.type === "assistant_message" && String(msg.data?.reply ?? "").startsWith("⏰")) {
-        setAlerts((a) => [msg.data.reply, ...a].slice(0, 20));
-        if (Notification?.permission === "granted") new Notification("ISHTI", { body: msg.data.reply });
-      }
+    }
+
+    connect();
+
+    if (typeof Notification !== "undefined" && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+
+    return () => {
+      isMounted = false;
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (ws) ws.close();
     };
-    if (typeof Notification !== "undefined" && Notification.permission === "default") Notification.requestPermission();
-    return () => ws.close();
-  }, [busy]);
+  }, []);
 
   const handleLogoClick = useCallback(() => {
     setPage("chat");
@@ -163,7 +226,7 @@ export default function App() {
               animate={{ width: 240, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
               transition={{ duration: 0.2, ease: "easeOut" }}
-              className="flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-card/75"
+              className="flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-card/75 max-sm:absolute max-sm:inset-y-0 max-sm:left-0 max-sm:z-40 max-sm:bg-background/95 max-sm:backdrop-blur-md max-sm:shadow-2xl"
             >
               <div className="flex h-full w-[240px] flex-col min-h-0 px-3 py-4">
                 {/* Official Brand Header */}
@@ -196,10 +259,11 @@ export default function App() {
 
                 {/* User profile row */}
                 <div className="mb-4 flex items-center gap-2.5 rounded-xl bg-muted/30 border border-border/40 px-2.5 py-2">
-                  <div className="grid h-7 w-7 place-items-center rounded-full bg-gradient-to-br from-violet-400 to-indigo-600 text-xs font-bold text-white shadow-xs">
-                    {owner[0]?.toUpperCase()}</div>
-                  <div>
-                    <div className="text-xs font-semibold leading-tight">{owner === "there" ? "Owner" : owner}</div>
+                  <div className="grid h-7 w-7 place-items-center rounded-full bg-gradient-to-br from-violet-400 to-indigo-600 text-xs font-bold text-white shadow-xs shrink-0">
+                    {owner.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "IA"}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-semibold leading-tight truncate">{owner === "there" ? "Ishtiaq Ahmed" : owner}</div>
                     <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
                       <span className={`h-1.5 w-1.5 rounded-full ${busy ? "animate-pulse bg-accent" : "bg-emerald-500"}`} />
                       {busy ? "ISHTI is working" : "Online"}</div>

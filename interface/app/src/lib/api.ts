@@ -51,18 +51,34 @@ export async function streamChat(
     buffer = lines.pop() ?? "";
     for (const line of lines) {
       if (!line.trim()) continue;
-      const msg = JSON.parse(line);
-      if (msg.event) on.event(msg.event);
-      else if (typeof msg.token === "string") on.token(msg.token);
-      else if (msg.done) result = msg.result;
+      try {
+        const msg = JSON.parse(line);
+        if (msg.event) on.event(msg.event);
+        else if (typeof msg.token === "string") on.token(msg.token);
+        else if (msg.done) result = msg.result;
+      } catch (parseErr) {
+        console.warn("[streamChat] invalid JSON line:", line, parseErr);
+      }
     }
   }
   if (!result) throw new Error("The stream ended without a result.");
   return result;
 }
 
-export const getJSON = <T,>(url: string): Promise<T> => fetch(url).then((r) => r.json());
+async function checkResponse(r: Response) {
+  if (!r.ok) {
+    let errorDetail = `Server error (${r.status} ${r.statusText})`;
+    try {
+      const data = await r.json();
+      if (data && data.error) errorDetail = String(data.error);
+    } catch {}
+    throw new Error(errorDetail);
+  }
+  return r.json();
+}
+
+export const getJSON = <T,>(url: string): Promise<T> => fetch(url).then(checkResponse);
 export const postJSON = <T,>(url: string, body?: unknown): Promise<T> =>
   fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) })
-    .then((r) => r.json());
-export const del = (url: string) => fetch(url, { method: "DELETE" }).then((r) => r.json());
+    .then(checkResponse);
+export const del = (url: string) => fetch(url, { method: "DELETE" }).then(checkResponse);

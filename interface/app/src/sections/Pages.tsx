@@ -8,7 +8,6 @@ import {
   FolderKanban,
   History,
   Lock,
-  Mic,
   Monitor,
   Moon,
   PanelLeft,
@@ -23,7 +22,6 @@ import {
   Trash2,
   Type,
   User,
-  Volume2,
   X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -34,7 +32,7 @@ import { AnimatedCounter } from "@/components/rare/animated-counter";
 import { ThemeSwitch } from "@/components/ThemeToggle";
 import { CHAT_FONT_SIZES, getChatFontSize, setChatFontSize, type ChatFontSize } from "@/lib/font-size";
 import { cn } from "@/lib/utils";
-import { ModelsVoices } from "@/components/ModelsVoices";
+import { ModelsCard, VoiceCard, WhisperCard } from "@/components/ModelsVoices";
 
 export function Page({
   title,
@@ -1122,14 +1120,15 @@ export function Settings({ onToggleNav }: { onToggleNav?: () => void }) {
     return 240;
   });
 
-  // Track expanded cards
+  // Track expanded cards (default collapsed as requested)
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({
-    appearance: true,
-    chatSize: true,
-    sideChats: true,
-    voice: true,
-    chrome: true,
-    models: true,
+    appearance: false,
+    chatSize: false,
+    sideChats: false,
+    chrome: false,
+    models: false,
+    voice: false,
+    whisper: false,
   });
 
   const toggleCard = (key: string) => {
@@ -1141,9 +1140,10 @@ export function Settings({ onToggleNav }: { onToggleNav?: () => void }) {
       appearance: expand,
       chatSize: expand,
       sideChats: expand,
-      voice: expand,
       chrome: expand,
       models: expand,
+      voice: expand,
+      whisper: expand,
     });
   };
 
@@ -1511,140 +1511,41 @@ export function Settings({ onToggleNav }: { onToggleNav?: () => void }) {
               )}
             </AnimatePresence>
           </Card>
-        </div>
-
-        {/* ========================================================
-             COLUMN 2: Voice & Speech, Chrome Profiles, Models
-             ======================================================== */}
-        <div className="space-y-4">
-          {/* 4. Voice & Speech Card */}
-          <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
-            <div
-              className="flex items-center justify-between gap-3 p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
-              onClick={() => toggleCard("voice")}
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-purple-500/15 text-purple-500">
-                  <Volume2 className="h-4 w-4" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-foreground text-sm">Voice & Speech</span>
-                    <span
-                      className={cn(
-                        "rounded-md px-2 py-0.5 text-[10px] font-semibold font-mono",
-                        p.audio_output ? "bg-accent-soft text-accent" : "bg-muted text-muted-foreground"
-                      )}
-                    >
-                      {p.audio_output ? "TTS Active" : "Muted"}
-                    </span>
-                  </div>
-                  <div className="text-xs text-muted-foreground truncate">
-                    Local text-to-speech audio readout & hands-free wake word.
-                  </div>
-                </div>
-              </div>
-
-              <div
-                className="flex items-center gap-2 shrink-0"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <button
-                  type="button"
-                  onClick={() =>
-                    postJSON<typeof p>("/api/prefs", {
-                      audio_output: !p.audio_output,
-                    }).then(setP)
-                  }
-                  className={cn(
-                    "relative h-6 w-11 rounded-full transition-colors cursor-pointer",
-                    p.audio_output ? "bg-accent" : "bg-muted"
-                  )}
-                  aria-pressed={p.audio_output}
-                >
-                  <motion.span
-                    layout
-                    transition={{ type: "spring", stiffness: 600, damping: 32 }}
-                    className={cn(
-                      "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-xs",
-                      p.audio_output ? "right-0.5" : "left-0.5"
-                    )}
-                  />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => toggleCard("voice")}
-                  className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                >
-                  <ChevronDown
-                    className={cn(
-                      "h-4 w-4 transition-transform duration-200",
-                      expandedCards.voice ? "rotate-180 text-accent" : ""
-                    )}
-                  />
-                </button>
-              </div>
-            </div>
-
-            <AnimatePresence initial={false}>
-              {expandedCards.voice && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="overflow-hidden border-t border-border/60 p-4 space-y-3 bg-background/50"
-                >
-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/60 p-3">
-                    <div>
-                      <div className="text-xs font-semibold text-foreground">
-                        Read answers aloud (local voice)
-                      </div>
-                      <div className="text-[11px] text-muted-foreground">
-                        Zero external API calls. Same as saying “mute” or “read that” in chat.
-                      </div>
-                    </div>
-                    <span className="text-xs font-mono font-medium text-accent">
-                      {p.audio_output ? "Enabled" : "Disabled"}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/60 p-3">
-                    <div className="flex items-center gap-2.5">
-                      <Mic className="h-4 w-4 text-accent" />
-                      <div>
-                        <div className="text-xs font-semibold text-foreground">
-                          Hands-Free Wake Word (“hey ishti”)
-                        </div>
-                        <div className="text-[11px] text-muted-foreground">
-                          {p.wake_enabled ? "Continuous listening active via microphone" : "Disabled"}
-                        </div>
-                      </div>
-                    </div>
-                    <span
-                      className={cn(
-                        "rounded-md px-2 py-0.5 text-[10px] font-mono font-semibold",
-                        p.wake_enabled
-                          ? "bg-success/15 text-success"
-                          : "bg-muted text-muted-foreground"
-                      )}
-                    >
-                      {p.wake_enabled ? "ACTIVE" : "OFF"}
-                    </span>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </Card>
-
-          {/* 5. Chrome Profiles Card */}
+          {/* 4. Chrome Profiles Card */}
           <ChromeProfiles
             isOpen={expandedCards.chrome}
             onToggle={() => toggleCard("chrome")}
           />
+        </div>
 
-          {/* 6. Models & voices: choose, delete to free space, download again */}
-          <ModelsVoices isOpen={expandedCards.models} onToggle={() => toggleCard("models")} />
+        {/* ========================================================
+             COLUMN 2: AI Models, Voice Roster, Whisper STT
+             ======================================================== */}
+        <div className="space-y-4">
+          {/* 1. Language Models (LLMs) */}
+          <ModelsCard
+            isOpen={expandedCards.models}
+            onToggle={() => toggleCard("models")}
+          />
+
+          {/* 2. Voice & Speech Synthesis (TTS & Wake Word) */}
+          <VoiceCard
+            isOpen={expandedCards.voice}
+            onToggle={() => toggleCard("voice")}
+            audioOutput={p.audio_output}
+            wakeEnabled={p.wake_enabled}
+            onToggleAudioOutput={() =>
+              postJSON<typeof p>("/api/prefs", {
+                audio_output: !p.audio_output,
+              }).then(setP)
+            }
+          />
+
+          {/* 3. Speech Recognition (Whisper STT) */}
+          <WhisperCard
+            isOpen={expandedCards.whisper}
+            onToggle={() => toggleCard("whisper")}
+          />
         </div>
       </div>
     </Page>

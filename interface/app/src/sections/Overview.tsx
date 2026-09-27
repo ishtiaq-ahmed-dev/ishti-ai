@@ -52,7 +52,35 @@ function Stage({ icon, orbState, title, lines, count, label, i }:
 export function Overview({ onToggleNav }: { onToggleNav?: () => void }) {
   const [o, setO] = useState<Overview>();
   useEffect(() => { const load = () => getJSON<Overview>("/api/overview").then(setO); load(); const t = setInterval(load, 10000); return () => clearInterval(t); }, []);
-  if (!o) return null;
+  if (!o) {
+    return (
+      <Page
+        title="Overview"
+        subtitle="How ISHTI works, what it can do, and what it knows about you - live."
+        onToggleNav={onToggleNav}
+      >
+        <div className="space-y-6">
+          <div className="h-20 w-full rounded-2xl border border-border bg-card/40 animate-pulse" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="h-36 rounded-2xl border border-border bg-card/40 p-4 animate-pulse flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <div className="h-8 w-8 rounded-xl bg-muted" />
+                  <div className="h-4 w-6 rounded bg-muted" />
+                </div>
+                <div className="space-y-2">
+                  <div className="h-3 w-3/4 rounded bg-muted" />
+                  <div className="h-2.5 w-1/2 rounded bg-muted" />
+                </div>
+                <div className="h-4 w-1/3 rounded bg-muted" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </Page>
+    );
+  }
+
   const src = (k: string) => o.by_source[k] ?? 0;
   const max = Math.max(1, ...o.skills.map((s) => s.uses));
   const stages = [

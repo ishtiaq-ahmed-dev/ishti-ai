@@ -198,6 +198,8 @@ class ComputerUseAgent:
             creation_flags = 0
             if sys.platform == "win32":
                 creation_flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+                if resolved.lower().endswith((".cmd", ".bat")):
+                    args = [os.environ.get("COMSPEC", "cmd.exe"), "/c", resolved] + (args[1:] if len(args) > 1 else [])
 
             proc = subprocess.Popen(args, creationflags=creation_flags)
             print(f"[ComputerUse] Successfully launched '{app_name}' (PID: {proc.pid})")

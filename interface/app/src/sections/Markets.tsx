@@ -106,9 +106,20 @@ export function Markets({ onToggleNav }: { onToggleNav?: () => void }) {
       action={<button type="button" onClick={load} title="Refresh" className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs cursor-pointer hover:bg-muted">
         <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh</button>}>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <AnimatePresence initial={false}>
-          {(items ?? []).map((it, i) => {
-            const up = (it.change_pct ?? 0) >= 0;
+        {items === null ? (
+          Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-28 rounded-2xl border border-border bg-card/40 p-3.5 animate-pulse flex flex-col justify-between">
+              <div className="space-y-1.5">
+                <div className="h-3 w-1/2 rounded bg-muted" />
+                <div className="h-2 w-1/3 rounded bg-muted" />
+              </div>
+              <div className="h-5 w-2/3 rounded bg-muted" />
+            </div>
+          ))
+        ) : (
+          <AnimatePresence initial={false}>
+            {items.map((it, i) => {
+              const up = (it.change_pct ?? 0) >= 0;
             return (
               <motion.div key={`${it.kind}:${it.id}`} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95 }} transition={{ delay: i * 0.03 }}
@@ -137,7 +148,7 @@ export function Markets({ onToggleNav }: { onToggleNav?: () => void }) {
             );
           })}
         </AnimatePresence>
-        {!items && Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-32 animate-pulse rounded-2xl bg-muted/60" />)}
+        )}
       </div>
 
       <form className="mt-3 flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); addItem(); }}>

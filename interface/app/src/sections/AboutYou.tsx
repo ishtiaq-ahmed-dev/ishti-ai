@@ -117,7 +117,16 @@ export function AboutYou({ onToggleNav }: { onToggleNav?: () => void }) {
       onToggleNav={onToggleNav}
     >
       {!about ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          <div className="lg:col-span-7 space-y-4">
+            <div className="h-64 rounded-2xl border border-border bg-card/40 animate-pulse p-4" />
+            <div className="h-20 rounded-2xl border border-border bg-card/40 animate-pulse p-4" />
+          </div>
+          <div className="lg:col-span-5 space-y-4">
+            <div className="h-44 rounded-2xl border border-border bg-card/40 animate-pulse p-4" />
+            <div className="h-44 rounded-2xl border border-border bg-card/40 animate-pulse p-4" />
+          </div>
+        </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
           {/* Left Column: Custom Instructions & Live Prompt Context */}

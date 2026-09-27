@@ -61,8 +61,19 @@ export function Markdown({ text }: { text: string }) {
       flush();
     }
     if (parts[i + 2] !== undefined && parts[i + 2].trim()) {
-      blocks.push(<CodeBlock key={`c${i}`} code={parts[i + 2].trimEnd()} language={parts[i + 1] || "text"}
-        accent="#6e56cf" className="my-2" />);
+      const lang = parts[i + 1]?.trim() || "text";
+      blocks.push(
+        <CodeBlock
+          key={`c${i}`}
+          code={parts[i + 2].trimEnd()}
+          language={lang}
+          filename={lang.toUpperCase()}
+          showHeader={true}
+          showCopyButton={true}
+          accent="#6e56cf"
+          className="my-3 rounded-2xl overflow-hidden border border-border shadow-xs"
+        />
+      );
     }
   }
   return <div className="text-sm leading-relaxed break-words min-w-0 max-w-full overflow-hidden">{blocks.map((b, i) => <Fragment key={i}>{b}</Fragment>)}</div>;
