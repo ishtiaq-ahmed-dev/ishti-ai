@@ -27,13 +27,13 @@ export const ORB_THEME_PALETTES: Record<
   OrbState,
   { color: string; glow: string; dotSize: number }
 > = {
-  // Thinking / Reasoning -> Luminous Royal Brand Violet
+  // Thinking / Reasoning -> Electric Sapphire Blue
   solving: {
-    color: "#a78bfa",
-    glow: "rgba(167, 139, 250, 0.45)",
+    color: "#38bdf8",
+    glow: "rgba(56, 189, 248, 0.55)",
     dotSize: 1.35,
   },
-  // Ready / Standby (Breathing) -> Brand Amber Gold (matching the ISHTI gold sparkle star!)
+  // Ready / Standby (Breathing) -> Brand Amber Gold
   breathing: {
     color: "#f59e0b",
     glow: "rgba(245, 158, 11, 0.4)",
@@ -47,38 +47,38 @@ export const ORB_THEME_PALETTES: Record<
   },
   // Web Search / Browsing -> Electric Sky Cyan
   searching: {
-    color: "#38bdf8",
-    glow: "rgba(56, 189, 248, 0.45)",
+    color: "#06b6d4",
+    glow: "rgba(6, 182, 212, 0.5)",
     dotSize: 1.3,
   },
   // Memory / Databases / Tools -> Mint Emerald Green
   connecting: {
-    color: "#34d399",
-    glow: "rgba(52, 211, 153, 0.45)",
+    color: "#10b981",
+    glow: "rgba(16, 185, 129, 0.55)",
     dotSize: 1.3,
   },
-  // Files / Folders -> Coral Orange
+  // Files / Folders -> Vibrant Teal / Aquamarine
   shaping: {
-    color: "#fb923c",
-    glow: "rgba(251, 146, 60, 0.45)",
+    color: "#14b8a6",
+    glow: "rgba(20, 184, 166, 0.5)",
     dotSize: 1.35,
   },
-  // Multi-step Plans -> Radiant Fuchsia
+  // Multi-step Plans -> Radiant Royal Violet
   weaving: {
-    color: "#e879f9",
-    glow: "rgba(232, 121, 249, 0.45)",
+    color: "#8b5cf6",
+    glow: "rgba(139, 92, 246, 0.45)",
     dotSize: 1.3,
   },
-  // Synthesizing / Replying -> Luminous Indigo
+  // Synthesizing / Replying -> Spring Emerald Green (completed verified answer)
   composing: {
-    color: "#818cf8",
-    glow: "rgba(129, 140, 248, 0.45)",
+    color: "#22c55e",
+    glow: "rgba(34, 197, 94, 0.55)",
     dotSize: 1.35,
   },
-  // General active work -> Brand Iris Purple
+  // General active work -> Vibrant Royal Blue
   working: {
-    color: "#a78bfa",
-    glow: "rgba(167, 139, 250, 0.45)",
+    color: "#2563eb",
+    glow: "rgba(37, 99, 235, 0.55)",
     dotSize: 1.3,
   },
 };

@@ -6,9 +6,18 @@ import StepPlayer from "@/components/rare/step-player";
 import { AgentOrb } from "@/components/AgentOrb";
 import { resolveAgentState, resolveToolState } from "@/lib/agent-state";
 
+const SCORE_BAR_COLORS = [
+  "bg-sky-500",
+  "bg-emerald-500",
+  "bg-blue-600",
+  "bg-teal-500",
+  "bg-amber-500",
+  "bg-indigo-500",
+];
+
 const ICON = {
-  start: <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />,
-  done: <CheckCircle2 className="h-3.5 w-3.5 text-success" />,
+  start: <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-500" />,
+  done: <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />,
   error: <XCircle className="h-3.5 w-3.5 text-danger" />,
   waiting: <PauseCircle className="h-3.5 w-3.5 text-warning" />,
   skip: <CircleDashed className="h-3.5 w-3.5 text-muted-foreground" />,
@@ -55,7 +64,7 @@ export function Thinking({ events, live }: { events: TraceEvent[]; live: boolean
         {live ? (
           <AgentOrb events={events} live={live} size={24} className="shrink-0 -my-0.5" />
         ) : (
-          <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
+          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
         )}
         <span className={live ? "font-medium text-foreground transition-colors" : ""}>
           {live
@@ -68,18 +77,18 @@ export function Thinking({ events, live }: { events: TraceEvent[]; live: boolean
         {expanded && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25, ease: "easeOut" }} className="overflow-hidden">
-            <div className="mt-1.5 space-y-2 border-l-2 border-accent-soft pl-3">
+            <div className="mt-1.5 space-y-2 border-l-2 border-sky-500/30 pl-3">
               {route?.why && <p className="text-muted-foreground break-words">{route.why}</p>}
               {route?.scores && route.scores.length > 0 && (
                 <div className="space-y-1">
-                  {route.scores.map(([name, v]) => (
+                  {route.scores.map(([name, v], i) => (
                     <div key={name} className="flex items-center gap-2 text-[11px] text-muted-foreground">
                       <span className="w-20 truncate">{name}</span>
                       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-                        <motion.div className="h-full rounded-full bg-accent" initial={{ width: 0 }}
+                        <motion.div className={`h-full rounded-full ${SCORE_BAR_COLORS[i % SCORE_BAR_COLORS.length]}`} initial={{ width: 0 }}
                           animate={{ width: `${Math.round(v * 100)}%` }} transition={{ duration: 0.4, ease: "easeOut" }} />
                       </div>
-                      <span className="w-8 text-right tabular-nums">{Math.round(v * 100)}%</span>
+                      <span className="w-8 text-right tabular-nums font-mono">{Math.round(v * 100)}%</span>
                     </div>
                   ))}
                 </div>

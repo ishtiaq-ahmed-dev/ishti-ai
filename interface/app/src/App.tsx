@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { Bell, Bot, Brain, CandlestickChart, UserRound, Cpu, FolderKanban, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, Settings as SettingsIcon } from "lucide-react";
+import { Bot, Brain, CandlestickChart, UserRound, Cpu, FolderKanban, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, Settings as SettingsIcon, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { getJSON } from "@/lib/api";
 import { Chat } from "@/sections/Chat";
@@ -293,9 +293,14 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="mt-3 shrink-0 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 p-3 text-white">
-                  <div className="flex items-center gap-1.5 text-sm font-semibold"><Bell className="h-3.5 w-3.5" /> Local-first</div>
-                  <p className="mt-1 text-[11px] leading-snug text-white/85">Models, memory and voice run on this PC. Nothing leaves it.</p>
+                <div className="mt-3 shrink-0 rounded-2xl bg-gradient-to-br from-indigo-600 via-blue-600 to-emerald-600 p-3.5 text-white shadow-sm">
+                  <div className="flex items-center gap-1.5 text-xs font-bold leading-tight tracking-wide">
+                    <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+                    <span>Built and designed by ishtiaq ahmed</span>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-snug text-white/85">
+                    Personal AI Assistant · 100% Local Inference & Neural Privacy
+                  </p>
                 </div>
               </div>
             </motion.aside>

@@ -6,9 +6,45 @@ import type { TraceEvent } from "@/lib/api";
 type Status = "active" | "done" | "error" | "waiting" | "skipped";
 type GNode = { id: string; depth: number; parent?: string; label: string; sub?: string; status: Status; group?: string };
 
-const COLOR: Record<Status, string> = {
-  active: "#8b75ff", done: "#22b07d", error: "#ef4444", waiting: "#f59e0b", skipped: "#94a3b8",
+export const COLOR: Record<Status, string> = {
+  active: "#38bdf8", // Electric Sky Blue
+  done: "#10b981",   // Vibrant Emerald Green
+  error: "#ef4444",  // Coral Red
+  waiting: "#f59e0b",// Amber Gold
+  skipped: "#94a3b8",// Cool Slate
 };
+
+function getNodeColor(n: GNode): string {
+  if (n.status === "error") return COLOR.error;
+  if (n.status === "waiting") return COLOR.waiting;
+  if (n.status === "skipped") return COLOR.skipped;
+
+  // Depth 0: You -> Electric Azure Blue
+  if (n.depth === 0) return "#3b82f6";
+
+  // Depth 1: Understand / Router / Planner
+  if (n.id === "understand") return "#06b6d4"; // Cyan
+  if (n.id === "router") {
+    return n.label === "Planner" ? COLOR.waiting : "#6366f1"; // Amber for planner, Indigo for router
+  }
+
+  // Depth 2: Skills (Groups)
+  if (n.depth === 2) {
+    if (n.status === "active") return COLOR.active; // Electric Blue when running
+    return COLOR.done; // Emerald Green when completed
+  }
+
+  // Depth 3: Tool calls
+  if (n.depth === 3) {
+    if (n.status === "active") return "#0ea5e9"; // Sky Cyan active
+    return "#22c55e"; // Fresh Green
+  }
+
+  // Depth 4: Answer
+  if (n.id === "answer") return COLOR.done; // Emerald Green
+
+  return n.status === "active" ? COLOR.active : COLOR.done;
+}
 
 /** Trace -> tree: You -> (understood as) -> Router/Planner -> skills (groups) -> their tool calls -> Answer. */
 export function buildGraph(events: TraceEvent[], request: string): GNode[] {
@@ -97,11 +133,12 @@ export function ActivityGraph({ events, request, live, full = false }:
       {nodes.filter((n) => n.parent && pos.get(n.parent)).map((n) => {
         const a = pos.get(n.parent!)!, b = pos.get(n.id)!;
         const d = `M${a.x + 8} ${a.y} C${a.x + 60} ${a.y}, ${b.x - 60} ${b.y}, ${b.x - 8} ${b.y}`;
+        const strokeColor = getNodeColor(n);
         return (
           <g key={`e-${n.id}`}>
-            <motion.path d={d} fill="none" stroke={COLOR[n.status]} strokeOpacity={0.4} strokeWidth={1.4}
+            <motion.path d={d} fill="none" stroke={strokeColor} strokeOpacity={0.4} strokeWidth={1.4}
               initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.35, ease: "easeOut" }} />
-            {live && n.status === "active" && <path d={d} fill="none" stroke={COLOR.active} strokeWidth={1.6} className="edge-flow" />}
+            {live && n.status === "active" && <path d={d} fill="none" stroke="#38bdf8" strokeWidth={1.8} className="edge-flow" />}
           </g>
         );
       })}
@@ -110,6 +147,7 @@ export function ActivityGraph({ events, request, live, full = false }:
           const p = pos.get(n.id)!;
           const big = n.depth === 0;
           const count = n.depth === 2 ? hidden(n.id) : 0;
+          const color = getNodeColor(n);
           return (
             <motion.g key={n.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
               transition={{ duration: 0.2, ease: "easeOut" }}
@@ -117,15 +155,17 @@ export function ActivityGraph({ events, request, live, full = false }:
               onClick={() => count && setToggled((t) => ({ ...t, [n.id]: !isOpen(n) }))}
               style={{ cursor: count ? "pointer" : "default" }}>
               {n.status === "active" && live && (
-                <motion.circle cx={p.x} cy={p.y} r={big ? 18 : 9} fill="none" stroke={COLOR.active}
-                  initial={{ opacity: 0.6, scale: 1 }} animate={{ opacity: 0, scale: 2.2 }}
+                <motion.circle cx={p.x} cy={p.y} r={big ? 18 : 9} fill="none" stroke="#38bdf8"
+                  initial={{ opacity: 0.7, scale: 1 }} animate={{ opacity: 0, scale: 2.3 }}
                   transition={{ duration: 1.2, repeat: Infinity }} style={{ transformOrigin: `${p.x}px ${p.y}px` }} />
               )}
-              {n.depth === 2 && (  // skills are groups: a soft container behind the node and its label
-                <rect x={p.x - 12} y={p.y - 17} width={140} height={34} rx={12} className="fill-accent-soft stroke-border" strokeWidth={1} />
+              {n.depth === 2 && (  // skills are groups: colorful soft container behind the node and its label
+                <rect x={p.x - 12} y={p.y - 17} width={140} height={34} rx={12}
+                  className={n.status === "active" ? "fill-sky-500/10 stroke-sky-500/35" : "fill-emerald-500/10 stroke-emerald-500/25"}
+                  strokeWidth={1} />
               )}
-              <circle cx={p.x} cy={p.y} r={big ? 14 : 6} fill={big ? "#8b75ff" : COLOR[n.status]}
-                style={{ filter: `drop-shadow(0 0 ${big ? 10 : 4}px ${big ? "#8b75ff" : COLOR[n.status]})` }} />
+              <circle cx={p.x} cy={p.y} r={big ? 14 : 6} fill={color}
+                style={{ filter: `drop-shadow(0 0 ${big ? 10 : 5}px ${color})` }} />
               <text x={p.x + (big ? 0 : 12)} y={big ? p.y + 30 : p.y - 2} textAnchor={big ? "middle" : "start"}
                 className="fill-foreground text-[12px] font-medium">{trunc(n.label, n.depth === 3 ? 34 : 18)}</text>
               {(n.sub || count > 0) && !big && (
@@ -142,12 +182,15 @@ export function ActivityGraph({ events, request, live, full = false }:
 
   return (
     <div className={`relative overflow-hidden rounded-2xl border border-border bg-graph ${full ? "h-full" : ""}`}
-      style={{ backgroundImage: "radial-gradient(circle at 8% 50%, rgba(139,117,255,0.12), transparent 55%)" }}>
+      style={{
+        backgroundImage:
+          "radial-gradient(circle at 10% 45%, rgba(56,189,248,0.14), transparent 45%), radial-gradient(circle at 85% 55%, rgba(16,185,129,0.12), transparent 45%)",
+      }}>
       {full ? <Zoomable height={H}>{content}</Zoomable>
             : <svg viewBox={`0 0 760 ${H}`} className="block max-h-[60vh] w-full" role="img" aria-label="Live activity graph">{content}</svg>}
       <div className="pointer-events-none absolute left-3 top-2 flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground">
-        <span className={`h-1.5 w-1.5 rounded-full ${live ? "animate-pulse bg-violet-400" : "bg-emerald-400"}`} />
-        {live ? "Live activity" : "Completed"}
+        <span className={`h-1.5 w-1.5 rounded-full ${live ? "animate-pulse bg-sky-400" : "bg-emerald-400"}`} />
+        <span className="font-semibold">{live ? "Live Pipeline Activity" : "Completed"}</span>
       </div>
     </div>
   );
@@ -167,25 +210,25 @@ export function ConversationGraph({ turns, full = false }: { turns: Turn[]; full
         const b = s.get(t.skill ?? "none")!;
         return (
           <g key={`e${i}`}>
-            <motion.path d={`M76 ${H / 2} C150 ${H / 2}, 150 ${t.y}, ${t.x - 8} ${t.y}`} fill="none" stroke="#8b75ff"
-              strokeOpacity={0.35} initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ delay: i * 0.04 }} />
+            <motion.path d={`M76 ${H / 2} C150 ${H / 2}, 150 ${t.y}, ${t.x - 8} ${t.y}`} fill="none" stroke="#3b82f6"
+              strokeOpacity={0.4} initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ delay: i * 0.04 }} />
             <motion.path d={`M${t.x + 8} ${t.y} C${t.x + 150} ${t.y}, ${b.x - 150} ${b.y}, ${b.x - 8} ${b.y}`} fill="none"
-              stroke="#22b07d" strokeOpacity={0.35} initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ delay: 0.1 + i * 0.04 }} />
+              stroke="#10b981" strokeOpacity={0.4} initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ delay: 0.1 + i * 0.04 }} />
           </g>
         );
       })}
-      <circle cx={60} cy={H / 2} r={16} fill="#8b75ff" style={{ filter: "drop-shadow(0 0 10px #8b75ff)" }} />
+      <circle cx={60} cy={H / 2} r={16} fill="#3b82f6" style={{ filter: "drop-shadow(0 0 12px rgba(59,130,246,0.6))" }} />
       <text x={60} y={H / 2 + 32} textAnchor="middle" className="fill-foreground text-[12px] font-medium">This chat</text>
       {q.map((t, i) => (
         <g key={`q${i}`}>
-          <circle cx={t.x} cy={t.y} r={6} fill="#8b75ff" />
+          <circle cx={t.x} cy={t.y} r={6} fill="#38bdf8" />
           <text x={t.x + 12} y={t.y + 4} className="fill-foreground text-[11px]">{i + 1}. {trunc(t.question, 34)}</text>
         </g>
       ))}
       {[...s.entries()].map(([k, p]) => (
         <g key={`s${k}`}>
-          <rect x={p.x - 12} y={p.y - 17} width={150} height={34} rx={12} className="fill-accent-soft stroke-border" />
-          <circle cx={p.x} cy={p.y} r={7} fill="#22b07d" />
+          <rect x={p.x - 12} y={p.y - 17} width={150} height={34} rx={12} className="fill-emerald-500/10 stroke-emerald-500/25" />
+          <circle cx={p.x} cy={p.y} r={7} fill="#10b981" />
           <text x={p.x + 14} y={p.y + 4} className="fill-foreground text-[12px] font-medium">
             {k} · {turns.filter((t) => (t.skill ?? "none") === k).length}×</text>
         </g>

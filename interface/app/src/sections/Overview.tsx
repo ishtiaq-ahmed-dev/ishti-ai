@@ -31,19 +31,71 @@ type Overview = {
   prefs: { audio_output: boolean; response_length: string };
 };
 
+const STAGE_THEMES = [
+  {
+    iconBg: "bg-sky-500/10 dark:bg-sky-500/15 text-sky-500",
+    borderHover: "hover:border-sky-500/50 hover:shadow-[0_0_15px_rgba(56,189,248,0.15)]",
+    pill: "bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20",
+    countColor: "text-sky-500",
+  },
+  {
+    iconBg: "bg-blue-500/10 dark:bg-blue-500/15 text-blue-500",
+    borderHover: "hover:border-blue-500/50 hover:shadow-[0_0_15px_rgba(59,130,246,0.15)]",
+    pill: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20",
+    countColor: "text-blue-500",
+  },
+  {
+    iconBg: "bg-indigo-500/10 dark:bg-indigo-500/15 text-indigo-500",
+    borderHover: "hover:border-indigo-500/50 hover:shadow-[0_0_15px_rgba(99,102,241,0.15)]",
+    pill: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20",
+    countColor: "text-indigo-500",
+  },
+  {
+    iconBg: "bg-amber-500/10 dark:bg-amber-500/15 text-amber-500",
+    borderHover: "hover:border-amber-500/50 hover:shadow-[0_0_15px_rgba(245,158,11,0.15)]",
+    pill: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20",
+    countColor: "text-amber-500",
+  },
+  {
+    iconBg: "bg-emerald-500/10 dark:bg-emerald-500/15 text-emerald-500",
+    borderHover: "hover:border-emerald-500/50 hover:shadow-[0_0_15px_rgba(16,185,129,0.15)]",
+    pill: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20",
+    countColor: "text-emerald-500",
+  },
+  {
+    iconBg: "bg-teal-500/10 dark:bg-teal-500/15 text-teal-500",
+    borderHover: "hover:border-teal-500/50 hover:shadow-[0_0_15px_rgba(20,184,166,0.15)]",
+    pill: "bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20",
+    countColor: "text-teal-500",
+  },
+  {
+    iconBg: "bg-green-500/10 dark:bg-green-500/15 text-green-500",
+    borderHover: "hover:border-green-500/50 hover:shadow-[0_0_15px_rgba(34,197,94,0.15)]",
+    pill: "bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20",
+    countColor: "text-green-500",
+  },
+  {
+    iconBg: "bg-rose-500/10 dark:bg-rose-500/15 text-rose-500",
+    borderHover: "hover:border-rose-500/50 hover:shadow-[0_0_15px_rgba(244,63,94,0.15)]",
+    pill: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20",
+    countColor: "text-rose-500",
+  },
+];
+
 function Stage({ icon, orbState, title, lines, count, label, i }:
   { icon: ReactNode; orbState?: OrbState; title: string; lines: string[]; count?: number; label?: string; i: number }) {
+  const theme = STAGE_THEMES[i % STAGE_THEMES.length];
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04, duration: 0.25 }}
-      className="group relative flex min-w-0 flex-1 flex-col gap-2 rounded-2xl border border-border bg-card/40 p-4 shadow-xs hover:border-accent/40 transition-colors">
+      className={`group relative flex min-w-0 flex-1 flex-col gap-2 rounded-2xl border border-border bg-card/40 p-4 shadow-xs transition-all duration-300 ${theme.borderHover}`}>
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2.5 min-w-0">
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent overflow-hidden">
+          <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl overflow-hidden shadow-xs ${theme.iconBg}`}>
             {orbState ? <AgentOrb state={orbState} size={20} className="shrink-0" /> : icon}
           </span>
           <span className="text-sm font-semibold tracking-tight truncate">{title}</span>
         </div>
-        <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-mono font-medium text-muted-foreground shrink-0">
+        <span className={`rounded-md px-2 py-0.5 text-[11px] font-mono font-medium shrink-0 ${theme.pill}`}>
           0{i + 1}
         </span>
       </div>
