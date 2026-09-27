@@ -53,6 +53,9 @@ OPS = [
     ("watermark", re.compile(r"\bwatermark\b", I)),
     ("meme", re.compile(r"\bmeme\b", I)),
     ("strip_meta", re.compile(r"\b(?:remove|strip|clean)\s+(?:the\s+|all\s+)?(?:metadata|exif|location\s+data|gps)\b", I)),
+    ("diarize", re.compile(r"\bwho\s+(?:said|says|spoke)\s+what\b|\b(?:split|separate|divide)\b.+\bby\s+speakers?\b|"
+                           r"\bdiari[sz]"
+                           r"(?:e|ation)\b|\b(?:identify|separate|label)\s+(?:the\s+)?speakers\b", I)),
     ("remove_bg", re.compile(r"\b(?:remove|delete|cut\s+out|erase|strip)\s+(?:the\s+)?(?:background|bg)\b|\bbackground\s+remov", I)),
     ("upscale", re.compile(r"\b(?:upscale|enhance|super[-\s]?resolution|increase\s+(?:the\s+)?resolution|make\s+(?:it|this|the\s+\w+)\s+(?:hd|sharper|higher\s+res))\b", I)),
     ("resize", re.compile(r"\b(?:resize|scale|shrink)\b", I)),
@@ -458,6 +461,25 @@ def upscale(src, scale=4, dest=None, anime=False):
     return dest
 
 
+def op_diarize(m, text, session):
+    src = next((p for p in paths(text) if p.lower().endswith(AUDIO + VIDEO)), None)
+    if not src:
+        return "Which recording? Give me its full path."
+    from ishti import diarize
+    n = re.search(r"\b(\d|two|three|four|five)\s+(?:speakers|people|persons)\b", text, I)
+    count = {"two": 2, "three": 3, "four": 4, "five": 5}.get(n.group(1).lower(), None) if n and not n.group(1).isdigit() \
+        else (int(n.group(1)) if n else None)
+    trace(session, "diarize", "who is speaking when (speaker voices + Whisper)", status="start")
+    turns = diarize.diarize(src, speakers=count)
+    if not turns:
+        return f"I heard no speech in {os.path.basename(src)}."
+    files = diarize.split(src, turns, OUT)
+    speakers = sorted({t["speaker"] for t in turns})
+    trace(session, "diarize", f"{len(speakers)} speaker(s)", status="done")
+    return (f"{len(speakers)} speaker(s) in {os.path.basename(src)}:\n\n{diarize.transcript(turns)}\n\nEach speaker on their own:\n"
+            + "\n".join(f"- Speaker {k}: {v}" for k, v in sorted(files.items())))
+
+
 def op_remove_bg(m, text, session):
     imgs = _images(text)
     if not imgs:
@@ -585,7 +607,8 @@ if __name__ == "__main__":
              r"resize D:\a\p.jpg to 800 px wide": "resize", r"rotate D:\a\p.jpg 90": "image_edit",
              r"remove the metadata from D:\a\p.jpg": "strip_meta", r"read the text from D:\a\p.png": "ocr",
              'save "hello there" as audio': "tts", r"remove the background from D:\a\p.jpg": "remove_bg",
-             r"upscale D:\a\p.jpg 2x": "upscale", r"enhance D:\a\p.jpg": "upscale"}
+             r"upscale D:\a\p.jpg 2x": "upscale", r"enhance D:\a\p.jpg": "upscale",
+             r"who said what in D:\a\meeting.mp3": "diarize", r"split D:\a\call.wav by speaker": "diarize"}
     for t, want in cases.items():
         got = next((n for n, rx in OPS if rx.search(t) and (n in ("stop_record", "screen_record", "webcam_record", "tts") or PATH.search(t))), None)
         assert got == want, (t, got, want)

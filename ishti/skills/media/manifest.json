@@ -21,7 +21,9 @@
     ],
     "net": [
       "github.com",
-      "githubusercontent.com"
+      "githubusercontent.com",
+      "hf.co",
+      "huggingface.co"
     ],
     "apps": false
   }
