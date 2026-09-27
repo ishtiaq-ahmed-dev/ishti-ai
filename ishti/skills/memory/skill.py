@@ -33,7 +33,9 @@ RX = {
                            r"abandoned|shipped|deployed)\s+(?:working\s+on\s+)?(?P<e>.+?)[.!]?$", I),
     # requires "now": keeps "my code is broken, help me" out of the store
     "status_is": re.compile(rf"^(?P<e>.+?)\s+is\s+now\s+(?P<s>{_SW})[.!]?$", I),
-    "where": re.compile(r"^(?:where(?:'s|\s+is|\s+are)|where\s+did\s+i\s+(?:put|save|keep|store)|"
+    # "where is my order/package" is order tracking (email), not something the owner stored
+    "where": re.compile(r"^(?!where(?:'s|\s+is|\s+are)\s+(?:my\s+)?(?:online\s+)?(?:orders?|packages?|parcels?|deliver(?:y|ies)|shipments?)\b)"
+                        r"(?:where(?:'s|\s+is|\s+are)|where\s+did\s+i\s+(?:put|save|keep|store)|"
                         r"what(?:'s|\s+is)\s+the\s+(?:path|location)\s+(?:of|for|to)|"
                         r"(?:which|what)\s+(?:folder|directory|drive)\s+(?:did\s+i\s+)?(?:put|save|keep|store|is|are)(?:\s+(?:in|on))?)"
                         r"\s+(?P<e>.+?)(?:\s+(?:in|on))?\s*\??$", I),
