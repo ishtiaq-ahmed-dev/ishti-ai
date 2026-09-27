@@ -62,6 +62,19 @@ def wait_download(since, timeout=60, folder=DOWNLOADS):
     return None
 
 
+MY_DETAILS = re.compile(r"\b(?:my|the\s+owner'?s)\s+(?:details|info|information|data|profile)\b", re.I)
+
+
+def owner_details():
+    """The owner's saved facts, for filling forms: name, email, phone, city... (never secrets)."""
+    from ishti.facts import get_facts
+    o = get_facts().get("owner")
+    keep = {k: v for k, v in o.items() if k in ("name", "email", "phone", "city", "country", "address", "university",
+                                                 "role", "semester", "program", "company", "job") and v}
+    return ("Use these details of the owner where the form asks for them (leave other fields empty and never "
+            "submit without the owner's yes): " + "; ".join(f"{k}: {v}" for k, v in keep.items())) if keep else ""
+
+
 def profile_for(skill):
     """The Chrome profile (mcp_servers entry) a skill browses with: config "browser_profiles", else its default."""
     profiles = CONFIG.get("browser_profiles", {})
@@ -148,7 +161,11 @@ def _call(name, args):
     """MCP call; action results only link the page snapshot file, so inline it for the model."""
     from ishti import killswitch
     killswitch.check()  # the kill switch ends a browser task between steps
-    out = get_hub().call(SERVER, name, args)
+    try:
+        out = get_hub().call(SERVER, name, args)
+    except Exception:  # C4: one retry per step - a transient MCP/page error shouldn't sink a long flow
+        time.sleep(1.0)
+        out = get_hub().call(SERVER, name, args)
     m = re.search(r"\[Snapshot\]\(([^)]+\.yml)\)", out)
     if m and os.path.isfile(m.group(1)):
         with open(m.group(1), encoding="utf-8") as f:
@@ -268,6 +285,8 @@ def _run_locked(text, session, server, start_url, hint, start_snapshot):
         p["log"].append(f"{name.removeprefix('browser_')} {json.dumps(args)} (owner confirmed)")
         p["msgs"].append({"role": "tool", "tool_call_id": cid, "content": out[:8000]})
         return _loop(session, p["msgs"], p["log"], p["steps"] - 1)
+    if MY_DETAILS.search(text):  # C4: fill forms from what ISHTI already knows (submitting still needs a yes)
+        hint = (hint + "\n" if hint else "") + owner_details()
     msgs, log = [{"role": "user", "content": f"{hint}\n\n{text}" if hint else text}], []
     if start_snapshot:  # the caller already has the page open and loaded (WhatsApp Web takes seconds to load)
         msgs += [{"role": "assistant", "content": "", "tool_calls": [{"id": "snap0", "type": "function",

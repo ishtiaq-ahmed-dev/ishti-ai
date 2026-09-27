@@ -1,0 +1,12 @@
+{
+  "name": "extract",
+  "version": "1.0.0",
+  "description": "Full-page extraction: opens a page in the owner's main Chrome, scrolls until no new content loads (progress reported), reads it through the DOM (screenshot + vision as backup for visual pages), extracts the requested fields as structured JSON, and files the result durably - a spreadsheet, a note or ISHTI's memory (asks where if unclear).",
+  "route": "extract / scrape / collect a list of items (names, prices, titles...) from a web page into a spreadsheet, note or memory",
+  "priority": 17,
+  "laya": false,
+  "needs": {"python": ["mcp", "openpyxl"], "models": ["planner"], "mcp": ["main"], "apis": []},
+  "status": "working",
+  "tier": "T1",
+  "scope": {"write": ["data", "~/Documents"], "net": [], "apps": false}
+}

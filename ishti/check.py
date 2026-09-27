@@ -51,6 +51,7 @@ LABELLED = [
     ("latest news about pakistan", "utilities"), ("generate a strong password", "utilities"),
     ("I spent 500 on groceries", "ledger"), ("show my portfolio", "ledger"), ("how much did I spend this month", "ledger"),
     ("I drank 3 glasses of water", "lifelog"), ("screen time today", "lifelog"), ("check your skills", "meta"), ("what's the status of my tasks", "meta"), ("use the deep male voice", "owner"),
+    ("extract the book titles and prices from https://books.toscrape.com into a spreadsheet", "extract"),
    
     ("find flights from Peshawar to Dubai on 15 October", "travel"), ("search hotels in Istanbul from 5 to 8 October", "travel"), ("I studied machine learning for 2 hours", "lifelog"), ("show my learning progress", "lifelog"), ("add a meeting with Ali tomorrow at 3pm to my google calendar", "calendar"), ("check ishti's python packages for updates", "meta"),
     ("when a pdf appears in downloads, summarize it", "automation"), ("list my automations", "automation"), ("create a new fastapi project called shop-api", "dev"), ("restart the print spooler service", "dev"),
