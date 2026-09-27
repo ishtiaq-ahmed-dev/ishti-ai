@@ -22,7 +22,7 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 AUDIO = (".mp3", ".wav", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".wma")
 VIDEO = (".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v", ".wmv")
 IMAGE = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tiff")
-PATH = re.compile(r"[A-Za-z]:\\[^\"'<>|?*\n]+?\.(?:" + "|".join(e[1:] for e in AUDIO + VIDEO + IMAGE + (".srt",)) + r")\b", I)
+PATH = re.compile(r"[A-Za-z]:[\\/][^\"'<>|?*\n]+?\.(?:" + "|".join(e[1:] for e in AUDIO + VIDEO + IMAGE + (".srt",)) + r")\b", I)
 QUOTED = re.compile(r"[\"“']([^\"”']{1,120})[\"”']")
 RECORDING = {}
 
@@ -48,6 +48,8 @@ OPS = [
     ("watermark", re.compile(r"\bwatermark\b", I)),
     ("meme", re.compile(r"\bmeme\b", I)),
     ("strip_meta", re.compile(r"\b(?:remove|strip|clean)\s+(?:the\s+|all\s+)?(?:metadata|exif|location\s+data|gps)\b", I)),
+    ("remove_bg", re.compile(r"\b(?:remove|delete|cut\s+out|erase|strip)\s+(?:the\s+)?(?:background|bg)\b|\bbackground\s+remov", I)),
+    ("upscale", re.compile(r"\b(?:upscale|enhance|super[-\s]?resolution|increase\s+(?:the\s+)?resolution|make\s+(?:it|this|the\s+\w+)\s+(?:hd|sharper|higher\s+res))\b", I)),
     ("resize", re.compile(r"\b(?:resize|scale|shrink)\b", I)),
     ("image_edit", re.compile(r"\b(?:rotate|flip|mirror|grayscale|greyscale|black\s+and\s+white|blur|sharpen)\b", I)),
     ("convert", re.compile(r"\bconvert\b.+\bto\s+(?P<fmt>mp3|wav|m4a|aac|ogg|flac|mp4|mkv|webm|mov|png|jpe?g|webp)\b", I)),
@@ -409,6 +411,63 @@ def _images(text):
     return sorted(p for p in glob.glob(os.path.join(folder, "*")) if p.lower().endswith(IMAGE))[:200] if folder else []
 
 
+ESRGAN = os.path.join(ROOT, "data", "bin", "realesrgan", "realesrgan-ncnn-vulkan.exe")
+_rembg = None
+
+
+def remove_background(src, dest=None):
+    """Cut the subject out (rembg, u2net on ONNX Runtime; model downloads once, ~170 MB). -> transparent PNG."""
+    global _rembg
+    from PIL import Image
+    from rembg import new_session, remove
+    _rembg = _rembg or new_session("u2net")  # loading the model is the slow part: once per run
+    dest = dest or out_path(src, "nobg", ".png")
+    remove(Image.open(src), session=_rembg).save(dest)
+    return dest
+
+
+def upscale(src, scale=4, dest=None, anime=False):
+    """Real-ESRGAN (ncnn/Vulkan, on the GPU): 2x-4x with detail restored, not just stretched."""
+    dest = dest or out_path(src, f"x{scale}", ".png")
+    model = "realesrgan-x4plus-anime" if anime else "realesrgan-x4plus"
+    src, dest = os.path.abspath(src), os.path.abspath(dest)  # the tool runs from its own folder
+    args = [ESRGAN, "-i", src, "-o", dest, "-n", model, "-s", "4", "-f", "png"]
+    subprocess.run(args, check=True, capture_output=True, timeout=600, creationflags=NO_WINDOW,
+                   cwd=os.path.dirname(ESRGAN))
+    if not os.path.isfile(dest):
+        raise RuntimeError("the upscaler produced no image (no Vulkan GPU?)")
+    if scale != 4:  # the x4plus model only does 4x: scale the result down to what was asked (still sharper)
+        from PIL import Image
+        im, orig = Image.open(dest), Image.open(src)
+        im.resize((orig.width * scale, orig.height * scale), Image.LANCZOS).save(dest)
+    return dest
+
+
+def op_remove_bg(m, text, session):
+    imgs = _images(text)
+    if not imgs:
+        return "Which image? Give me its full path."
+    trace(session, "rembg", f"cutting out {len(imgs)} image(s)", status="start")
+    done = [remove_background(p) for p in imgs[:50]]
+    trace(session, "rembg", "done", status="done")
+    return "Background removed (transparent PNG):\n" + "\n".join(f"- {d}" for d in done)
+
+
+def op_upscale(m, text, session):
+    imgs = _images(text)
+    if not imgs:
+        return "Which image? Give me its full path."
+    if not os.path.isfile(ESRGAN):
+        return "The upscaler isn't installed (data/bin/realesrgan). Say \"use an online tool to upscale ...\" instead."
+    factor = re.search(r"\b([234])\s*x\b|\bx\s*([234])\b", text, I)
+    scale = int(factor.group(1) or factor.group(2)) if factor else 4
+    anime = bool(re.search(r"\b(?:anime|cartoon|drawing|illustration)\b", text, I))
+    trace(session, "realesrgan", f"upscaling {len(imgs)} image(s) {scale}x on the GPU", status="start")
+    done = [upscale(p, scale, anime=anime) for p in imgs[:20]]
+    trace(session, "realesrgan", "done", status="done")
+    return f"Upscaled {scale}x:\n" + "\n".join(f"- {d}" for d in done)
+
+
 def op_resize(m, text, session):
     from PIL import Image
     imgs = _images(text)
@@ -506,7 +565,8 @@ if __name__ == "__main__":
              "record my screen for 2 minutes": "screen_record", "stop recording": "stop_record",
              r"resize D:\a\p.jpg to 800 px wide": "resize", r"rotate D:\a\p.jpg 90": "image_edit",
              r"remove the metadata from D:\a\p.jpg": "strip_meta", r"read the text from D:\a\p.png": "ocr",
-             'save "hello there" as audio': "tts"}
+             'save "hello there" as audio': "tts", r"remove the background from D:\a\p.jpg": "remove_bg",
+             r"upscale D:\a\p.jpg 2x": "upscale", r"enhance D:\a\p.jpg": "upscale"}
     for t, want in cases.items():
         got = next((n for n, rx in OPS if rx.search(t) and (n in ("stop_record", "screen_record", "webcam_record", "tts") or PATH.search(t))), None)
         assert got == want, (t, got, want)
@@ -519,4 +579,11 @@ if __name__ == "__main__":
     assert "Resized 1" in op_resize(None, f"resize {src} to 50%", s)
     assert Image.open(out_path(src, "resized")).size == (200, 100)
     assert "Watermarked" in op_watermark(None, f"watermark {src} with 'ISHTI'", s)
-    print("[self-check] media OK - routing, resize, watermark")
+    from PIL import Image as _Img
+    sample = os.path.join(tempfile.mkdtemp(), "sample.png")
+    _Img.new("RGB", (64, 48), "white").save(sample)
+    if os.path.isfile(ESRGAN):  # Real-ESRGAN on the GPU: a real 2x
+        assert _Img.open(upscale(sample, 2)).size == (128, 96)
+    if os.path.isfile(os.path.expanduser("~/.u2net/u2net.onnx")):
+        assert _Img.open(remove_background(sample)).mode == "RGBA"
+    print("[self-check] media OK - routing, resize, watermark, background removal, upscale")
