@@ -149,7 +149,7 @@ class Talker:
             self.queue.clear()
             self.current, self.text, self.paused = None, "", False
             self.generation += 1  # sentences still being synthesised are dropped when they finish
-        self._check_idle() if self.pending else self._went_idle()
+        self._went_idle()  # stopped = idle now; sentences still being synthesised are dropped when they finish
         return " ".join(rest)
 
     def recent_words(self):

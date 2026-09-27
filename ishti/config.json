@@ -65,13 +65,21 @@
     "barge_in": {"enabled": true, "vad_threshold": 0.6, "min_ms": 120, "check_ms": 700, "echo_overlap": 0.5, "cooldown_s": 1.0,
                  "note": "Tune on the real room: raise vad_threshold/min_ms if speaker echo interrupts; lower echo_overlap if your own words get ignored"},
     "voices": [
-      {"name": "Male 1 - Deep/Calm", "piper_voice": "en_US-norman-medium", "length_scale": 1.08},
-      {"name": "Male 2 - Energetic", "piper_voice": "en_US-bryce-medium", "length_scale": 0.82},
-      {"name": "Male 3 - Clear", "piper_voice": "en_US-ryan-high", "length_scale": 1.0},
-      {"name": "Female 1 - Neutral", "piper_voice": "en_US-lessac-medium", "length_scale": 1.0}
+      {"name": "Male 1 - Deep/Calm", "engine": "kokoro", "voice": "am_onyx", "gender": "male", "speed": 0.95},
+      {"name": "Male 2 - Energetic", "engine": "kokoro", "voice": "am_puck", "gender": "male", "speed": 1.1},
+      {"name": "Male 3 - Clear", "engine": "kokoro", "voice": "am_michael", "gender": "male", "speed": 1.0},
+      {"name": "Male 4 - British", "engine": "kokoro", "voice": "bm_george", "gender": "male", "lang": "en-gb", "speed": 1.0},
+      {"name": "Female 1 - Neutral", "engine": "kokoro", "voice": "af_heart", "gender": "female", "speed": 1.0},
+      {"name": "Female 2 - British", "engine": "kokoro", "voice": "bf_emma", "gender": "female", "lang": "en-gb", "speed": 1.0},
+      {"name": "Classic Male - Deep (Piper)", "piper_voice": "en_US-norman-medium", "gender": "male", "length_scale": 1.08},
+      {"name": "Classic Male - Energetic (Piper)", "piper_voice": "en_US-bryce-medium", "gender": "male", "length_scale": 0.82},
+      {"name": "Classic Male - Clear (Piper)", "piper_voice": "en_US-ryan-high", "gender": "male", "length_scale": 1.0},
+      {"name": "Classic Female (Piper)", "piper_voice": "en_US-lessac-medium", "gender": "female", "length_scale": 1.0}
     ],
     "default_voice": "Female 1 - Neutral",
-    "voices_note": "Piper voices from rhasspy/piper-voices (synthetic, trained on open datasets - no real person cloned). The owner switches with 'use the deep male voice'; the choice is the fact owner.voice. Fish Audio S2 slots in here later (engine + reference clip per voice).",
+    "kokoro_dir": "D:\\ISHTI\\data\\kokoro",
+    "kokoro_model": "kokoro-v1.0.onnx",
+    "voices_note": "Kokoro-82M (Apache-2.0; synthetic voices, no real person cloned) is the live voice: CPU, no VRAM, ~4x faster than real time, speaks Urdu too. Piper voices are the classic fallback. Fish S2 was measured at 2.7x slower than real time and 15.2 of 16.3 GB VRAM next to Qwen - kept only as an optional download in Settings. The owner switches with 'use the deep male voice' or in Settings -> Models & voices.",
     "piper_voice": "en_US-lessac-medium",
     "piper_dir": "D:\\ISHTI\\data\\piper"
   }

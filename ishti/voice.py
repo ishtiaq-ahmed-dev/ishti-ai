@@ -7,6 +7,8 @@ import threading
 import time
 import wave
 
+import numpy as np
+
 from ishti import CONFIG
 from voice.tts import speakable
 
@@ -137,12 +139,31 @@ def roster():
     return _cfg.get("voices") or [{"name": "Default", "piper_voice": _cfg["piper_voice"]}]
 
 
+def voice_files(profile):
+    """The files a voice needs on disk (for "installed?", delete and download in Settings)."""
+    if profile.get("engine") == "kokoro":
+        d = _cfg.get("kokoro_dir", os.path.join(os.path.dirname(_cfg["piper_dir"]), "kokoro"))
+        return [os.path.join(d, _cfg.get("kokoro_model", "kokoro-v1.0.onnx")), os.path.join(d, "voices-v1.0.bin")]
+    if profile.get("engine") == "s2":
+        return [os.path.join(os.path.dirname(_cfg["piper_dir"]), "s2", "models", "s2-pro-q4_k_m.gguf")]
+    base = os.path.join(_cfg["piper_dir"], profile["piper_voice"])
+    return [base + ".onnx", base + ".onnx.json"]
+
+
+def installed(profile):
+    return all(os.path.isfile(f) for f in voice_files(profile))
+
+
 def current_voice():
-    """The owner's chosen voice (fact owner.voice, so it survives restarts), else default_voice, else the first."""
+    """The owner's chosen voice (fact owner.voice, so it survives restarts), else default_voice, else the first
+    installed one - a voice deleted in Settings never leaves ISHTI mute."""
     from ishti.facts import get_facts
     by_name = {v["name"].lower(): v for v in roster()}
     chosen = (get_facts().get("owner").get("voice") or _cfg.get("default_voice") or "").lower()
-    return by_name.get(chosen) or roster()[0]
+    pick = by_name.get(chosen) or by_name.get((_cfg.get("default_voice") or "").lower()) or roster()[0]
+    if installed(pick):
+        return pick
+    return next((v for v in roster() if installed(v) and v.get("live", True)), pick)
 
 
 def pick_voice(text):
@@ -156,10 +177,43 @@ def pick_voice(text):
         kind = [v for v in roster() if m.group(1) == "voice" or v["name"].lower().startswith(m.group(1) + " ")]
         return kind[int(m.group(2)) - 1] if 0 < int(m.group(2)) <= len(kind) else None
     words = set(re.findall(r"[a-z]+", t)) - {"voice", "the", "a", "to", "use", "your", "switch", "change", "male"}
-    for v in roster():  # a describing word: "deep", "calm", "energetic", "clear", "neutral", "female"
-        if words & set(re.findall(r"[a-z]+", v["name"].lower())):
-            return v
+    # describing words ("deep", "british", "female"...): the voice sharing the most of them ("british female" -> Female 2)
+    best = max(roster(), key=lambda v: len(words & set(re.findall(r"[a-z]+", v["name"].lower()))))
+    if words & set(re.findall(r"[a-z]+", best["name"].lower())):
+        return best
     return next((v for v in roster() if v["name"].lower().startswith("male ")), None) if re.search(r"\bmale\b", t) else None
+
+
+_kokoro_model = {}
+URDU_SCRIPT = re.compile(r"[\u0600-\u06FF]")
+PASHTO_LETTERS = re.compile(r"[ټځڅډړږښګڼۍې]")
+
+
+def kokoro(profile):
+    """The Kokoro model (82M params, ONNX on the CPU - no VRAM; ~4x faster than real time here), loaded once."""
+    from kokoro_onnx import Kokoro
+    model, voices = voice_files(profile)
+    with _load_lock:
+        if model not in _kokoro_model:
+            _kokoro_model.clear()  # one model build at a time (fp32 or int8, whichever Settings picked)
+            _kokoro_model[model] = Kokoro(model, voices)
+    return _kokoro_model[model]
+
+
+def _kokoro_pcm(words, profile):
+    """(int16 bytes, rate). Urdu/Pashto text is spoken with a Hindi-trained voice through the Urdu phonemizer
+    (Whisper hears it as correct Urdu); English with the profile's own voice."""
+    k = kokoro(profile)
+    if URDU_SCRIPT.search(words):
+        male = profile.get("gender", "female") == "male"
+        voice, lang = profile.get("urdu_voice") or ("hm_omega" if male else "hf_alpha"), "ur"
+    else:
+        voice, lang = profile["voice"], profile.get("lang", "en-us")
+    audio, rate = k.create(words, voice=voice, speed=profile.get("speed", 1.0), lang=lang)
+    loud = np.nonzero(np.abs(audio) > 0.01)[0]
+    if len(loud):  # Kokoro pads each piece with silence: keep 30 ms before and 80 ms after, so a [pause] stays subtle
+        audio = audio[max(0, loud[0] - int(0.03 * rate)):min(len(audio), loud[-1] + int(0.08 * rate))]
+    return (np.clip(audio, -1, 1) * 32767).astype(np.int16).tobytes(), rate
 
 
 def tts_voice(profile=None):
@@ -174,16 +228,24 @@ def tts_voice(profile=None):
 def synthesize(text: str, profile=None) -> bytes:
     """WAV bytes of the spoken reply in the owner's voice (markdown, URLs and citations stripped; [pause] tags
     become short silences, other style tags are dropped)."""
-    from piper import SynthesisConfig
     profile = profile or current_voice()
-    pv = tts_voice(profile)
-    cfg = SynthesisConfig(length_scale=profile.get("length_scale"), noise_scale=profile.get("noise_scale"))
-    rate, pcm = pv.config.sample_rate, []
+    engine = profile.get("engine", "piper")
+    if engine == "piper":
+        from piper import SynthesisConfig
+        pv = tts_voice(profile)
+        cfg = SynthesisConfig(length_scale=profile.get("length_scale"), noise_scale=profile.get("noise_scale"))
+        rate = pv.config.sample_rate
+    else:
+        rate = 24000  # Kokoro's rate
+    pcm = []
     for i, part in enumerate(TAG.split(text)):
         if i % 2:
             pcm.append(b"\0\0" * int(rate * PAUSES.get(part.lower().strip(), 0)))
         elif words := speakable(part):
-            pcm += [chunk.audio_int16_bytes for chunk in pv.synthesize(words, cfg)]
+            if engine == "kokoro":
+                pcm.append(_kokoro_pcm(words, profile)[0])
+            else:
+                pcm += [chunk.audio_int16_bytes for chunk in pv.synthesize(words, cfg)]
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wf:
         wf.setnchannels(1)
@@ -236,29 +298,52 @@ if __name__ == "__main__":
                     f0.append(r / k)
         return float(np.median(f0)), len(x) / r
 
+    def timbre(wav):
+        """Long-term average spectrum in log bands, normalised: the voice's tonal fingerprint."""
+        with wave.open(io.BytesIO(wav)) as wf:
+            x, r = np.frombuffer(wf.readframes(wf.getnframes()), np.int16).astype(float), wf.getframerate()
+        x = np.interp(np.arange(0, len(x) / r, 1 / 16000), np.arange(len(x)) / r, x)
+        frames = [x[i:i + 512] * np.hanning(512) for i in range(0, len(x) - 512, 256) if np.abs(x[i:i + 512]).mean() > 300]
+        spec = np.mean([np.abs(np.fft.rfft(f)) for f in frames], axis=0)
+        edges = np.unique(np.geomspace(3, 256, 41).astype(int))
+        bands = np.log([spec[a:b].mean() + 1e-6 for a, b in zip(edges[:-1], edges[1:])])
+        return (bands - bands.mean()) / (bands.std() + 1e-9)
+
     line = "Hello, I am ISHTI. Tomorrow in Peshawar it will be sunny and warm."
     measured = {}
     for v in roster():
         wav = synthesize(line, v)
-        measured[v["name"]] = pitch_and_length(wav)
+        measured[v["name"]] = (*pitch_and_length(wav), timbre(wav))
         heard = transcribe(io.BytesIO(wav)).lower()
         assert "peshawar" in heard and "sunny" in heard, (v["name"], heard)
     names = list(measured)
     for i, a in enumerate(names):
         for b in names[i + 1:]:
-            (pa, la), (pb, lb) = measured[a], measured[b]
-            assert max(pa, pb) / min(pa, pb) >= 1.08 or max(la, lb) / min(la, lb) >= 1.06, (a, b, measured)
+            (pa, la, ta), (pb, lb, tb) = measured[a], measured[b]
+            apart = float(np.mean((ta - tb) ** 2))  # pitch, pace or timbre: at least one clearly different
+            assert max(pa, pb) / min(pa, pb) >= 1.08 or max(la, lb) / min(la, lb) >= 1.06 or apart >= 0.04, (a, b, apart)
     assert pick_voice("use the deep male voice")["name"] == "Male 1 - Deep/Calm"
     assert pick_voice("switch to male 2")["name"] == "Male 2 - Energetic"
     assert pick_voice("change your voice to the female one")["name"] == "Female 1 - Neutral"
+    assert pick_voice("use the british female voice")["name"] == "Female 2 - British"
     assert pick_voice("use a nice voice") is None
     db = os.path.join(tempfile.mkdtemp(), "facts.db")
     ishti.facts._facts = ishti.facts.Facts(db)
     ishti.facts._facts.set("owner", "voice", "Male 2 - Energetic")
     ishti.facts._facts = ishti.facts.Facts(db)  # a restart: a fresh store on the same file
     assert current_voice()["name"] == "Male 2 - Energetic"
-    plain, paused = synthesize("Sure. Here it is.", current_voice()), synthesize("Sure. [pause] Here it is.", current_voice())
-    assert 0.25 < pitch_and_length(paused)[1] - pitch_and_length(plain)[1] < 0.5  # [pause] is a short silence, not words
+    urdu = synthesize("کل پشاور میں موسم اچھا ہوگا۔", current_voice())
+    assert "پشاور" in transcribe(io.BytesIO(urdu)) or "پشاوار" in transcribe(io.BytesIO(urdu))  # Kokoro speaks Urdu
+    def longest_silence(wav):
+        with wave.open(io.BytesIO(wav)) as wf:
+            x, r = np.abs(np.frombuffer(wf.readframes(wf.getnframes()), np.int16)), wf.getframerate()
+        best = run = 0
+        for q in x[int(0.2 * r):-int(0.2 * r)] < 300:
+            run = run + 1 if q else 0
+            best = max(best, run)
+        return best / r
+    gap = longest_silence(synthesize("Sure. [pause] Here it is.", current_voice()))
+    assert 0.3 < gap < 0.7 and longest_silence(synthesize("Sure. Here it is.", current_voice())) < 0.3, gap  # a subtle pause
     print("[self-check] voice OK - Piper TTS -> faster-whisper STT round trip; "
-          + ", ".join(f"{n.split(' - ')[0]} {p:.0f} Hz" for n, (p, _) in measured.items())
+          + ", ".join(f"{n.split(' - ')[0]} {p:.0f} Hz" for n, (p, _, _) in measured.items())
           + "; all distinct, understood, choice persists, [pause] works")
