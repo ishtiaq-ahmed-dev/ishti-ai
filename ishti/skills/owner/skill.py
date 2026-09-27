@@ -61,7 +61,12 @@ def asks_about_me(t):
 def match(text):
     t = text.strip()
     return (any(rx.match(t) for rx in (AUDIO_OFF, AUDIO_ON, WHO, KNOW, CAN, DOCTOR, VOICE_SET)) or bool(VOICE_LIST.search(t))
-            or bool(TELL.match(t) or SAVE_MEMORY.search(t) or SELF.search(t)) or asks_about_me(t))
+            or bool((TELL.match(t) or SAVE_MEMORY.search(t)) and not SCHEDULING.search(t))
+            or bool(SELF.search(t)) or asks_about_me(t))
+
+
+# "add a meeting to my calendar", "add a reminder": scheduling, not a fact about the owner
+SCHEDULING = re.compile(r"\b(?:calendar|meeting|appointment|event|reminder|alarm|timer|schedule|invoice|expense)\b", re.I)
 
 
 def tell(t, session):

@@ -107,7 +107,48 @@ def op_add(m, text, session):
         pass
     when = f"{start:%a %d %b, %H:%M}-{end:%H:%M}" + (f", {repeat}" if repeat else "")
     warn = ("\n⚠ Clashes with: " + ", ".join(f"{o[2]} ({o[0]:%H:%M}-{o[1]:%H:%M})" for o in clash)) if clash else ""
-    return f"Added **{title}** on {when}" + (f" at {place}" if place else "") + ". I'll remind you 15 minutes before." * (not repeat) + warn
+    reply = f"Added **{title}** on {when}" + (f" at {place}" if place else "") + ". I'll remind you 15 minutes before." * (not repeat) + warn
+    if GOOGLE.search(text):
+        return to_google(title, start, end, place, session, reply)
+    return reply
+
+
+GOOGLE = re.compile(r"\bgoogle\s+calendar\b|\bgcal\b", I)
+
+
+def google_url(title, start, end, place=""):
+    """Google Calendar's own "new event" page, prefilled (times in the PC's local zone)."""
+    from urllib.parse import urlencode
+    import time as _t
+    zone = {5 * 3600: "Asia/Karachi"}.get(-_t.timezone, "")
+    q = {"action": "TEMPLATE", "text": title, "dates": f"{start:%Y%m%dT%H%M%S}/{end:%Y%m%dT%H%M%S}"}
+    if place:
+        q["location"] = place
+    if zone:
+        q["ctz"] = zone
+    return "https://calendar.google.com/calendar/render?" + urlencode(q)
+
+
+def to_google(title, start, end, place, session, reply):
+    """Open the prefilled event in the Google-signed-in profile; Save only after the owner's yes."""
+    from ishti.skills import ask_first
+    from ishti.skills.browser import skill as browser
+    url = google_url(title, start, end, place)
+    with browser.LOCK:
+        try:
+            browser.use_server(browser.profile_for("calendar"), session)
+        except RuntimeError as exc:
+            return f"{reply}\n\nGoogle Calendar: {exc}"
+        page = browser._call("browser_navigate", {"url": url})
+        save = re.search(r'button "Save"[^\n]*\[ref=([^\]]+)\]', page)
+    if not save:
+        return f"{reply}\n\nI opened it in Google Calendar but couldn't find its Save button - it's open in your Chrome."
+
+    def go():
+        with browser.LOCK:
+            browser._call("browser_click", {"element": "Save", "ref": save.group(1)})
+        return f"Saved **{title}** to your Google Calendar too."
+    return ask_first(session, "calendar", reply + "\n\nIt's filled in on Google Calendar - save it there too", go)
 
 
 def _range(text):
@@ -193,4 +234,7 @@ if __name__ == "__main__":
     assert len(occurrences(base.date(), base.date() + dt.timedelta(days=8))) == 2  # weekly repeat expanded
     free = op_free(None, "when am I free tomorrow", {})
     assert "09:00-14:00" in free and "15:00-21:00" in free, free
-    print("[self-check] calendar OK - routing, weekly repeats, free slots")
+    u = google_url("Meeting with Ali", dt.datetime(2026, 10, 15, 15, 0), dt.datetime(2026, 10, 15, 16, 0), "IMSciences")
+    assert "action=TEMPLATE" in u and "dates=20261015T150000%2F20261015T160000" in u and "location=IMSciences" in u, u
+    assert GOOGLE.search("add a meeting with Ali tomorrow at 3pm to my google calendar")
+    print("[self-check] calendar OK - routing, weekly repeats, free slots, Google Calendar link")

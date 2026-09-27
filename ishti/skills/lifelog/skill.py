@@ -20,13 +20,46 @@ LOG = [
     ("sleep", re.compile(r"\b(?:slept|sleep\s+was|got)\s+(?P<n>\d+(?:\.\d+)?)\s*(?P<u>hours?|hrs?|h)\b", I)),
     ("exercise", re.compile(r"\b(?:ran|walked|jogged|cycled|swam|worked\s+out|exercised|did\s+(?:yoga|gym|cardio))\b(?:\s+for)?\s*(?P<n>\d+(?:\.\d+)?)?\s*(?P<u>km|kilometers?|minutes?|mins?|hours?|steps)?", I)),
 ]
+# learning: "I studied machine learning for 2 hours", "revised calculus for 45 minutes", "did 1.5h of DSA"
+STUDY = re.compile(r"\b(?:i\s+)?(?:studied|learned|learnt|revised|practi[cs]ed|read\s+up\s+on|worked\s+on)\s+(?P<topic>[\w .+#&-]{2,40}?)"
+                   r"\s+(?:for\s+)?(?P<n>\d+(?:\.\d+)?)\s*(?P<u>hours?|hrs?|h|minutes?|mins?|m)\b|"
+                   r"\b(?:did|spent)\s+(?P<n2>\d+(?:\.\d+)?)\s*(?P<u2>hours?|hrs?|h|minutes?|mins?)\s+(?:of|on|studying)\s+(?P<topic2>[\w .+#&-]{2,40})", I)
+PROGRESS = re.compile(r"\b(?:my\s+)?(?:learning|study|studying)\s+(?:progress|report|log|stats)\b|\bwhat\s+(?:have\s+i|did\s+i)\s+stud(?:y|ied)\b|"
+                      r"\bhow\s+much\s+(?:have\s+i|did\s+i)\s+stud(?:y|ied)\b", I)
 HABIT_DONE = re.compile(r"\b(?:did|done|completed|finished)\s+(?:my\s+)?(?P<h>[\w ]{2,30}?)\s+habit\b|\bhabit\s*[:,-]\s*(?P<h2>[\w ]{2,30})\s+done\b", I)
 REPORT = re.compile(r"\b(?:my\s+habits|habit\s+(?:streak|report)|how\s+much\s+(?:did\s+i\s+)?(?:sleep|slept|water|exercise)|"
                     r"(?:sleep|water|exercise|workout)\s+(?:this|last|report|log|today)|screen\s*time|which\s+apps\s+did\s+i\s+use)", I)
 
 
 def match(text):
-    return bool(REPORT.search(text) or HABIT_DONE.search(text) or any(rx.search(text) for _, rx in LOG))
+    return bool(PROGRESS.search(text) or STUDY.search(text) or REPORT.search(text) or HABIT_DONE.search(text) or any(rx.search(text) for _, rx in LOG))
+
+
+def study_streak(now=None):
+    """Consecutive days (ending today or yesterday) with any study logged."""
+    import datetime as _dt
+    with db() as c:
+        days = {_dt.date.fromtimestamp(t) for (t,) in c.execute("SELECT ts FROM logs WHERE kind='study'")}
+    day, n = _dt.date.fromtimestamp(now or time.time()), 0
+    if day not in days:
+        day -= _dt.timedelta(days=1)
+    while day in days:
+        n, day = n + 1, day - _dt.timedelta(days=1)
+    return n
+
+
+def learning_report(days=30):
+    since = time.time() - days * 86400
+    with db() as c:
+        rows = c.execute("SELECT note, SUM(amount), COUNT(*), MAX(ts) FROM logs WHERE kind='study' AND ts>=? GROUP BY note "
+                         "ORDER BY SUM(amount) DESC", (since,)).fetchall()
+        today = c.execute("SELECT COALESCE(SUM(amount),0) FROM logs WHERE kind='study' AND ts>=?", (_day_start(),)).fetchone()[0]
+    if not rows:
+        return "No study logged yet - say e.g. \"I studied machine learning for 2 hours\"."
+    total = sum(r[1] for r in rows)
+    lines = [f"- {topic}: {mins / 60:.1f} h over {n} session(s)" for topic, mins, n, _ in rows[:12]]
+    return (f"Learning, last {days} days: {total / 60:.1f} h across {len(rows)} topic(s); today {today:g} min; "
+            f"streak {study_streak()} day(s).\n" + "\n".join(lines))
 
 
 def db():
@@ -38,6 +71,18 @@ def db():
 
 
 def run(text, session):
+    if PROGRESS.search(text):
+        trace(session, "lifelog", "learning progress")
+        return {"reply": learning_report(), "sources": []}
+    if m := STUDY.search(text):
+        topic = (m["topic"] or m["topic2"]).strip(" .").lower()
+        n, u = float(m["n"] or m["n2"]), (m["u"] or m["u2"]).lower()
+        minutes = n * (60 if u.startswith("h") else 1)
+        with db() as c:
+            c.execute("INSERT INTO logs VALUES(?,?,?,?,?)", (time.time(), "study", minutes, "min", topic))
+            total = c.execute("SELECT SUM(amount) FROM logs WHERE kind='study' AND note=?", (topic,)).fetchone()[0]
+        return {"reply": f"Logged {minutes:g} min of {topic}. Total on {topic}: {total / 60:.1f} h; "
+                         f"study streak {study_streak()} day(s).", "sources": []}
     if REPORT.search(text):
         trace(session, "lifelog", "report")
         return {"reply": report(text), "sources": []}
@@ -151,4 +196,11 @@ if __name__ == "__main__":
     rep = report("my habits today")
     assert "Water: 7 glasses" in rep and "Habit 'reading'" in rep, rep
     assert not match("what's the weather") and not match("run the tests")
-    print("[self-check] lifelog OK - water/sleep/exercise/habit logging, report, streak")
+    assert STUDY.search("I studied machine learning for 2 hours") and STUDY.search("did 45 minutes of calculus")
+    r = run("I studied machine learning for 2 hours", {})["reply"]
+    assert "120 min of machine learning" in r and "streak 1" in r, r
+    run("revised calculus for 45 minutes", {})
+    run("did 30 mins of machine learning", {})
+    rep = run("show my learning progress", {})["reply"]
+    assert rep.startswith("Learning, last 30 days: 3.2 h across 2 topic(s)") and "machine learning: 2.5 h over 2" in rep, rep
+    print("[self-check] lifelog OK - water/sleep/exercise/habit logging, report, streak, learning log + progress")

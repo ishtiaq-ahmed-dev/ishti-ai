@@ -21,6 +21,10 @@ OPS = [
     ("tasks", re.compile(r"\b(?:status\s+of\s+(?:my|the|all|your)\s+(?:tasks?|requests?|jobs?)|(?:tasks?|jobs?)\s+status|"
                          r"what\s+are\s+you\s+(?:still\s+)?(?:working\s+on|doing)|how\s+are\s+my\s+(?:tasks?|requests?)|"
                          r"(?:are|is)\s+(?:my|the)\s+(?:tasks?|requests?)\s+(?:done|finished|ready))\b", I)),
+    ("pkg_update", re.compile(r"\b(?:update|upgrade)\s+(?:ishti(?:'s)?\s+)?(?:python\s+)?(?:package|pip\s+package|dependency)\s+(?P<pkg>[\w.-]+)|"
+                              r"\b(?:update|upgrade)\s+(?:all\s+)?(?:of\s+)?ishti(?:'s)?\s+(?:python\s+)?(?:packages|dependencies)\b", re.I)),
+    ("pkg_outdated", re.compile(r"\b(?:outdated|old)\s+(?:python\s+|pip\s+)?packages\b|\b(?:check|any)\s+(?:ishti(?:'s)?\s+)?(?:python\s+|pip\s+)"
+                                r"(?:packages?\s+)?(?:for\s+)?updates\b|\b(?:check\s+)?ishti(?:'s)?\s+(?:python\s+)?packages\s+for\s+updates\b", re.I)),
     ("usage", re.compile(r"\b(?:which|what)\s+skills?\s+(?:do\s+i|did\s+i)\s+use\s+(?:the\s+)?most\b|\bskill\s+usage\b", I)),
 ]
 
@@ -33,7 +37,8 @@ def run(text, session):
     for name, rx in OPS:
         if rx.search(text):
             trace(session, "meta", name)
-            return {"reply": globals()["op_" + name](text, session), "sources": []}
+            out = globals()["op_" + name](text, session)
+            return out if isinstance(out, dict) else {"reply": out, "sources": []}  # a yes/no question is already a reply
     return None
 
 
@@ -74,6 +79,61 @@ def op_tasks(text, session):
              else f"{t['status']}: {' '.join(t['result'].split())[:120]}") for t in tasks]
     busy = sum(t["status"] == "running" for t in tasks)
     return f"{busy} running, {len(tasks) - busy} finished:\n" + "\n".join(lines)
+
+
+# ---------------------------------------------------------------- self-update (ISHTI's own venv)
+def _pip(*args, timeout=900):
+    return subprocess.run([sys.executable, "-m", "pip", *args, "--disable-pip-version-check"], capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", timeout=timeout, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+
+def outdated():
+    """[(name, installed, latest)] in ISHTI's own environment."""
+    p = _pip("list", "--outdated", "--format", "json")
+    return [(d["name"], d["version"], d["latest_version"]) for d in json.loads(p.stdout or "[]")]
+
+
+def healthy():
+    """ISHTI's own full check (routing + core loop); (ok, last line)."""
+    p = subprocess.run([sys.executable, "-m", "ishti.check"], cwd=ROOT, capture_output=True, text=True, encoding="utf-8",
+                       errors="replace", timeout=1800, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    return p.returncode == 0 and "core loop OK" in p.stdout, (p.stdout.strip().splitlines() or [""])[-1][:160]
+
+
+def update(pkgs, check=healthy):
+    """Upgrade, verify with ISHTI's own checks, roll everything back if they fail. Returns the reply."""
+    before = {n: v for n, v, _ in outdated() if n.lower() in {p.lower() for p in pkgs}}
+    if not before:
+        return "Nothing to update - " + (", ".join(pkgs) if len(pkgs) < 6 else f"{len(pkgs)} packages") + " already current."
+    p = _pip("install", "--upgrade", *before)
+    if p.returncode:
+        return f"pip couldn't upgrade them: {(p.stderr or p.stdout).strip()[-200:]}"
+    ok, detail = check()
+    if ok:
+        return "Updated and verified (ISHTI's checks pass): " + ", ".join(f"{n} {v} -> new" for n, v in before.items())
+    _pip("install", *[f"{n}=={v}" for n, v in before.items()])
+    return f"The update broke ISHTI's checks ({detail}) - rolled back to " + ", ".join(f"{n} {v}" for n, v in before.items()) + "."
+
+
+def op_pkg_outdated(text, session):
+    trace(session, "pip", "checking ISHTI's packages", status="start")
+    rows = outdated()
+    trace(session, "pip", f"{len(rows)} outdated", status="done")
+    if not rows:
+        return "All of ISHTI's Python packages are up to date."
+    return (f"{len(rows)} of ISHTI's packages have updates:\n" + "\n".join(f"- {n}: {v} -> {l}" for n, v, l in rows[:30])
+            + "\nSay \"update ISHTI package <name>\" (I test ISHTI after and roll back if it breaks).")
+
+
+def op_pkg_update(text, session):
+    from ishti.skills import ask_first
+    m = dict(OPS)["pkg_update"].search(text)
+    pkgs = [m["pkg"]] if m["pkg"] else [n for n, _, _ in outdated()]
+    if not pkgs:
+        return "All of ISHTI's Python packages are up to date."
+    what = pkgs[0] if len(pkgs) == 1 else f"{len(pkgs)} packages"
+    return ask_first(session, "meta", f"Upgrade {what} in ISHTI's environment, then run ISHTI's checks (a few minutes) and "
+                                      "roll back if anything breaks", lambda: update(pkgs))
 
 
 def op_needs(text, session):
@@ -122,7 +182,9 @@ def op_usage(text, session):
 if __name__ == "__main__":
     for t, want in {"check your skills": "health", "what have you flagged as missing": "needs", "what have you accessed recently": "audit",
                     "which skills do I use the most": "usage", "what's the status of my tasks": "tasks",
-                    "what are you working on": "tasks"}.items():
+                    "what are you working on": "tasks", "check ishti's python packages for updates": "pkg_outdated",
+                    "any outdated python packages": "pkg_outdated", "update ishti package requests": "pkg_update",
+                    "update all of ishti's packages": "pkg_update"}.items():
         assert next((n for n, rx in OPS if rx.search(t)), None) == want, t
     assert not match("check the weather")
     now = time.time()
@@ -131,4 +193,15 @@ if __name__ == "__main__":
                          {"topic": "status of my tasks", "status": "running", "started": now, "result": ""}]}
     out = op_tasks("status of my tasks", tracked)
     assert out.startswith("1 running, 1 finished") and "compare laptops - running for 12 s" in out and "33°C, clear" in out, out
-    print("[self-check] meta OK - routing, task tracker")
+    calls = []
+    fake_rows = [("demo-pkg", "1.0", "2.0")]
+    real_outdated, real_pip = outdated, _pip
+    outdated = lambda: fake_rows
+    _pip = lambda *a, **k: calls.append(a) or type("P", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+    assert "rolled back to demo-pkg 1.0" in update(["demo-pkg"], check=lambda: (False, "routing: 90/125"))
+    assert calls[-1] == ("install", "demo-pkg==1.0")  # the old version went back
+    assert update(["demo-pkg"], check=lambda: (True, "ok")).startswith("Updated and verified")
+    assert update(["other"]).startswith("Nothing to update")
+    outdated, _pip = real_outdated, real_pip
+    assert isinstance(outdated(), list)  # the real pip query works
+    print("[self-check] meta OK - routing, task tracker, self-update with rollback")
