@@ -1,5 +1,19 @@
-import { motion } from "motion/react";
-import { AudioLines, Brain, CheckCheck, GitBranch, MessageSquareText, Route, Sparkles, Wrench } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
+import {
+  AudioLines,
+  Brain,
+  CheckCheck,
+  ChevronDown,
+  Cpu,
+  Database,
+  GitBranch,
+  MessageSquareText,
+  Route,
+  Search,
+  Sparkles,
+  User,
+  Wrench,
+} from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { getJSON } from "@/lib/api";
 import { AnimatedCounter } from "@/components/rare/animated-counter";
@@ -49,9 +63,111 @@ function Stage({ icon, orbState, title, lines, count, label, i }:
   );
 }
 
+function CollapsibleCard({
+  title,
+  icon,
+  badge,
+  preview,
+  isOpen,
+  onToggle,
+  children,
+  className = "",
+}: {
+  title: string;
+  icon: ReactNode;
+  badge?: ReactNode;
+  preview?: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`rounded-2xl border border-border bg-card/40 shadow-xs transition-colors hover:border-border/90 overflow-hidden ${className}`}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center justify-between p-4 text-left hover:bg-muted/20 transition-colors cursor-pointer select-none group"
+        aria-expanded={isOpen}
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent group-hover:scale-105 transition-transform">
+            {icon}
+          </span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-semibold text-foreground tracking-tight">{title}</span>
+              {badge}
+            </div>
+            {preview && !isOpen && (
+              <p className="text-xs text-muted-foreground truncate mt-0.5" title={preview}>
+                {preview}
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0 ml-3">
+          <span className="text-[11px] font-medium text-muted-foreground hidden sm:inline">
+            {isOpen ? "Collapse" : "Expand"}
+          </span>
+          <span
+            className={`grid h-7 w-7 place-items-center rounded-lg bg-muted text-muted-foreground transition-transform duration-200 ${
+              isOpen ? "rotate-180" : ""
+            }`}
+          >
+            <ChevronDown className="h-4 w-4" />
+          </span>
+        </div>
+      </button>
+
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: "easeInOut" }}
+            className="overflow-hidden border-t border-border"
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 export function Overview({ onToggleNav }: { onToggleNav?: () => void }) {
   const [o, setO] = useState<Overview>();
-  useEffect(() => { const load = () => getJSON<Overview>("/api/overview").then(setO); load(); const t = setInterval(load, 10000); return () => clearInterval(t); }, []);
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    skills: false,
+    you: false,
+    facts: false,
+    models: false,
+  });
+  const [skillSearch, setSkillSearch] = useState("");
+
+  useEffect(() => {
+    const load = () => getJSON<Overview>("/api/overview").then(setO);
+    load();
+    const t = setInterval(load, 10000);
+    return () => clearInterval(t);
+  }, []);
+
+  const toggleSection = (key: string) => {
+    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleExpandAll = () => {
+    setOpenSections({ skills: true, you: true, facts: true, models: true });
+  };
+
+  const handleCollapseAll = () => {
+    setOpenSections({ skills: false, you: false, facts: false, models: false });
+  };
+
   if (!o) {
     return (
       <Page
@@ -102,6 +218,17 @@ export function Overview({ onToggleNav }: { onToggleNav?: () => void }) {
     } catch {}
   };
 
+  const filteredSkills = o.skills
+    .filter(
+      (s) =>
+        s.name.toLowerCase().includes(skillSearch.toLowerCase()) ||
+        (s.route && s.route.toLowerCase().includes(skillSearch.toLowerCase())) ||
+        (s.problem && s.problem.toLowerCase().includes(skillSearch.toLowerCase()))
+    )
+    .sort((a, b) => b.uses - a.uses);
+
+  const ownerName = o.owner.find((f) => f.attr.toLowerCase().includes("name"))?.value || "Profile";
+
   return (
     <Page
       title="Overview"
@@ -150,6 +277,7 @@ export function Overview({ onToggleNav }: { onToggleNav?: () => void }) {
         </button>
       </div>
 
+      {/* Pipeline - Always visible / uncollapsed as requested */}
       <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pipeline</div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
         {stages.map((s, i) => (
@@ -159,69 +287,204 @@ export function Overview({ onToggleNav }: { onToggleNav?: () => void }) {
         ))}
       </div>
 
-      <div className="mt-7 grid gap-6 lg:grid-cols-12">
+      {/* Collapsible Section Controls */}
+      <div className="mt-8 mb-3 flex items-center justify-between flex-wrap gap-2">
+        <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          System Details & Status
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          <button
+            type="button"
+            onClick={handleExpandAll}
+            className="font-medium text-muted-foreground hover:text-foreground hover:underline transition-colors cursor-pointer"
+          >
+            Expand all
+          </button>
+          <span className="text-muted-foreground/40">•</span>
+          <button
+            type="button"
+            onClick={handleCollapseAll}
+            className="font-medium text-muted-foreground hover:text-foreground hover:underline transition-colors cursor-pointer"
+          >
+            Collapse all
+          </button>
+        </div>
+      </div>
+
+      {/* Collapsible Grid */}
+      <div className="grid gap-5 lg:grid-cols-12 items-start">
+        {/* Left Column: Skills */}
         <div className="lg:col-span-7">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Skills</div>
-          <div className="overflow-hidden rounded-2xl border border-border bg-card/40 shadow-xs">
-            {o.skills.sort((a, b) => b.uses - a.uses).map((s, i) => (
-              <motion.div key={s.name} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
-                className="grid grid-cols-[130px_1fr_100px] sm:grid-cols-[150px_1fr_120px] items-center gap-3 border-b border-border px-4 py-2.5 last:border-0 hover:bg-muted/30 transition-colors">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <span className={`h-2 w-2 shrink-0 rounded-full ${s.status === "broken" ? "bg-danger" : s.status === "working" ? "bg-success" : "bg-warning"}`} />
-                  <span className="truncate">{s.name}</span>
-                </div>
-                <div className="truncate text-xs text-muted-foreground" title={s.problem || s.route}>
-                  {s.problem || s.route}
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                    <motion.div className="h-full rounded-full bg-accent" initial={{ width: 0 }} animate={{ width: `${(s.uses / max) * 100}%` }} transition={{ duration: 0.5 }} />
+          <CollapsibleCard
+            title="Skills"
+            icon={<Wrench className="h-4 w-4" />}
+            isOpen={openSections.skills}
+            onToggle={() => toggleSection("skills")}
+            badge={
+              <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-semibold text-accent">
+                {o.skills.length} skills · {o.skills.filter((s) => s.status !== "broken").length} working
+              </span>
+            }
+            preview={`${o.skills.filter((s) => s.status !== "broken").length} working · Top: ${o.skills.slice(0, 3).map((s) => s.name).join(", ")}`}
+          >
+            <div className="p-3 border-b border-border bg-muted/20">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Search skills by name, route..."
+                  value={skillSearch}
+                  onChange={(e) => setSkillSearch(e.target.value)}
+                  className="w-full rounded-xl border border-border bg-background py-1.5 pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-hidden"
+                />
+              </div>
+            </div>
+
+            <div className="max-h-96 overflow-y-auto scroll-thin divide-y divide-border/60">
+              {filteredSkills.map((s, i) => (
+                <motion.div
+                  key={s.name}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: i * 0.015 }}
+                  className="grid grid-cols-[130px_1fr_100px] sm:grid-cols-[150px_1fr_120px] items-center gap-3 px-4 py-2.5 hover:bg-muted/30 transition-colors"
+                >
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <span
+                      className={`h-2 w-2 shrink-0 rounded-full ${
+                        s.status === "broken"
+                          ? "bg-danger"
+                          : s.status === "working"
+                          ? "bg-success"
+                          : "bg-warning"
+                      }`}
+                    />
+                    <span className="truncate">{s.name}</span>
                   </div>
-                  <span className="w-8 text-right text-xs tabular-nums text-muted-foreground">{s.uses}</span>
+                  <div className="truncate text-xs text-muted-foreground" title={s.problem || s.route}>
+                    {s.problem || s.route}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-accent"
+                        style={{ width: `${(s.uses / max) * 100}%` }}
+                      />
+                    </div>
+                    <span className="w-8 text-right text-xs tabular-nums text-muted-foreground">
+                      {s.uses}
+                    </span>
+                  </div>
+                </motion.div>
+              ))}
+              {filteredSkills.length === 0 && (
+                <div className="p-6 text-center text-xs text-muted-foreground">
+                  No skills matched "{skillSearch}".
                 </div>
-              </motion.div>
-            ))}
-          </div>
+              )}
+            </div>
+          </CollapsibleCard>
         </div>
 
+        {/* Right Column: You, Saved Facts, Models */}
         <div className="space-y-4 lg:col-span-5">
-          <div>
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">You</div>
-            <div className="rounded-2xl border border-border bg-card/40 p-4 text-sm shadow-xs">
+          {/* You */}
+          <CollapsibleCard
+            title="You"
+            icon={<User className="h-4 w-4" />}
+            isOpen={openSections.you}
+            onToggle={() => toggleSection("you")}
+            badge={
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                {ownerName}
+              </span>
+            }
+            preview={`${o.reminders} reminders · ${o.memories} memories · Length: ${o.prefs.response_length}`}
+          >
+            <div className="p-4 text-sm">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2.5">
                 {o.owner.map((f) => (
                   <div key={f.attr} className="flex flex-col gap-0.5 min-w-0 overflow-hidden">
-                    <span className="capitalize text-[11px] font-medium text-muted-foreground truncate" title={f.attr.replace(/_/g, " ")}>{f.attr.replace(/_/g, " ")}</span>
-                    <span className="font-semibold text-sm text-foreground truncate" title={f.value}>{f.value}</span>
+                    <span
+                      className="capitalize text-[11px] font-medium text-muted-foreground truncate"
+                      title={f.attr.replace(/_/g, " ")}
+                    >
+                      {f.attr.replace(/_/g, " ")}
+                    </span>
+                    <span className="font-semibold text-sm text-foreground truncate" title={f.value}>
+                      {f.value}
+                    </span>
                   </div>
                 ))}
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2.5 border-t border-border pt-3 text-xs text-muted-foreground">
-                <span><b className="text-foreground">{o.reminders}</b> reminders</span>
+                <span>
+                  <b className="text-foreground">{o.reminders}</b> reminders
+                </span>
                 <span>•</span>
-                <span><b className="text-foreground">{o.memories}</b> memories</span>
+                <span>
+                  <b className="text-foreground">{o.memories}</b> memories
+                </span>
                 <span>•</span>
-                <span>answers: <b className="text-foreground">{o.prefs.response_length}</b></span>
+                <span>
+                  answers: <b className="text-foreground">{o.prefs.response_length}</b>
+                </span>
               </div>
             </div>
-          </div>
+          </CollapsibleCard>
 
-          <div>
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Saved facts & projects</div>
-            <div className="scroll-thin max-h-72 space-y-2 overflow-y-auto rounded-2xl border border-border bg-card/40 p-4 text-sm shadow-xs">
-              {o.facts.length ? o.facts.map((f, i) => (
-                <div key={i} className="flex items-center gap-2.5 text-xs sm:text-sm py-0.5">
-                  <span className="min-w-[110px] shrink-0 font-medium capitalize text-foreground truncate">{f.entity}</span>
-                  <span className="shrink-0 rounded-md bg-muted px-2 py-0.5 text-[11px] font-mono text-muted-foreground">{f.attr}</span>
-                  <span className="truncate text-muted-foreground" title={f.value}>{f.value}</span>
-                </div>
-              )) : <div className="text-xs text-muted-foreground">Nothing saved yet.</div>}
+          {/* Saved Facts & Projects */}
+          <CollapsibleCard
+            title="Saved facts & projects"
+            icon={<Database className="h-4 w-4" />}
+            isOpen={openSections.facts}
+            onToggle={() => toggleSection("facts")}
+            badge={
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                {o.facts.length} facts
+              </span>
+            }
+            preview={
+              o.facts.length
+                ? `${o.facts.length} stored facts (${o.facts.slice(0, 2).map((f) => f.entity).join(", ")}...)`
+                : "Nothing saved yet"
+            }
+          >
+            <div className="scroll-thin max-h-72 space-y-2 overflow-y-auto p-4 text-sm">
+              {o.facts.length ? (
+                o.facts.map((f, i) => (
+                  <div key={i} className="flex items-center gap-2.5 text-xs sm:text-sm py-0.5">
+                    <span className="min-w-[110px] shrink-0 font-medium capitalize text-foreground truncate">
+                      {f.entity}
+                    </span>
+                    <span className="shrink-0 rounded-md bg-muted px-2 py-0.5 text-[11px] font-mono text-muted-foreground">
+                      {f.attr}
+                    </span>
+                    <span className="truncate text-muted-foreground" title={f.value}>
+                      {f.value}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="text-xs text-muted-foreground">Nothing saved yet.</div>
+              )}
             </div>
-          </div>
+          </CollapsibleCard>
 
-          <div>
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Models</div>
-            <div className="rounded-2xl border border-border bg-card/40 p-4 text-sm shadow-xs">
+          {/* Models */}
+          <CollapsibleCard
+            title="Models"
+            icon={<Cpu className="h-4 w-4" />}
+            isOpen={openSections.models}
+            onToggle={() => toggleSection("models")}
+            badge={
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                {Object.keys(o.models).length + 1} roles
+              </span>
+            }
+            preview={`Planner: ${o.models.planner || "configured"} · Router: Laya ${o.laya.model}`}
+          >
+            <div className="p-4 text-sm">
               <div className="space-y-2">
                 {Object.entries(o.models).map(([role, m]) => (
                   <div key={role} className="flex items-center justify-between text-xs sm:text-sm">
@@ -235,7 +498,7 @@ export function Overview({ onToggleNav }: { onToggleNav?: () => void }) {
                 </div>
               </div>
             </div>
-          </div>
+          </CollapsibleCard>
         </div>
       </div>
     </Page>

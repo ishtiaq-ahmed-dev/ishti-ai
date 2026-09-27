@@ -834,25 +834,220 @@ export function Memory({ onToggleNav }: { onToggleNav?: () => void }) {
 type SkillInfo = { name: string; version: string; description: string; route: string; status: string; problem?: string };
 export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
   const [skills, setSkills] = useState<SkillInfo[]>([]);
-  useEffect(() => { getJSON<{ skills: SkillInfo[] }>("/api/skills").then((d) => setSkills(d.skills)); }, []);
-  const tone = (s: string) => s === "working" ? "bg-emerald-50 text-emerald-700" : s === "broken" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700";
+  const [search, setSearch] = useState("");
+  const [openWorking, setOpenWorking] = useState(true);
+  const [openIssues, setOpenIssues] = useState(true);
+
+  useEffect(() => {
+    getJSON<{ skills: SkillInfo[] }>("/api/skills").then((d) => setSkills(d.skills));
+  }, []);
+
+  const tone = (s: string) =>
+    s === "working"
+      ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
+      : s === "broken"
+      ? "bg-red-500/10 text-red-500 border border-red-500/20"
+      : "bg-amber-500/10 text-amber-500 border border-amber-500/20";
+
+  const filtered = skills.filter(
+    (s) =>
+      s.name.toLowerCase().includes(search.toLowerCase()) ||
+      s.description.toLowerCase().includes(search.toLowerCase()) ||
+      (s.route && s.route.toLowerCase().includes(search.toLowerCase()))
+  );
+
+  const working = filtered.filter((s) => s.status === "working");
+  const issues = filtered.filter((s) => s.status !== "working");
+
   return (
-    <Page title="Skills" subtitle="Each skill is a folder with a manifest; a broken one is skipped without affecting the rest." onToggleNav={onToggleNav}>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {skills.map((s, i) => (
-          <motion.div key={s.name} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.025 }}>
-            <Card className="h-full flex flex-col justify-between">
-              <div>
-                <div className="mb-1.5 flex items-center justify-between gap-2 min-w-0">
-                  <span className="font-semibold truncate">{s.name}</span>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium shrink-0 ${tone(s.status)}`}>{s.status} · v{s.version}</span>
-                </div>
-                <p className="text-sm text-muted-foreground break-words">{s.description}</p>
+    <Page
+      title="Skills"
+      subtitle="Each skill is a self-contained capability; broken or missing skills are skipped without affecting the system."
+      onToggleNav={onToggleNav}
+      action={
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              const next = !(openWorking && openIssues);
+              setOpenWorking(next);
+              setOpenIssues(next);
+            }}
+            className="rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/40 transition-colors cursor-pointer shadow-xs"
+          >
+            {openWorking && openIssues ? "Collapse All" : "Expand All"}
+          </button>
+        </div>
+      }
+    >
+      <div className="space-y-6">
+        {/* Search bar & summary */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-2xl border border-border bg-card/40 p-3 shadow-xs">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search skills by name, description, keywords..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full rounded-xl border border-border bg-background py-2 pl-9 pr-4 text-xs text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-hidden"
+            />
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0 px-1">
+            <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-emerald-500 font-medium border border-emerald-500/20">
+              {skills.filter((s) => s.status === "working").length} working
+            </span>
+            {skills.some((s) => s.status !== "working") && (
+              <span className="rounded-full bg-red-500/10 px-2.5 py-1 text-red-500 font-medium border border-red-500/20">
+                {skills.filter((s) => s.status !== "working").length} issues
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Working Skills Section */}
+        {working.length > 0 && (
+          <div className="rounded-2xl border border-border bg-card/30 overflow-hidden shadow-xs">
+            <button
+              type="button"
+              onClick={() => setOpenWorking(!openWorking)}
+              className="w-full flex items-center justify-between p-4 text-left hover:bg-muted/20 transition-colors cursor-pointer select-none group"
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
+                <span className="text-sm font-semibold text-foreground tracking-tight">Active Skills</span>
+                <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  {working.length}
+                </span>
               </div>
-              {s.problem && <p className="mt-2 text-xs text-danger break-words">{s.problem}</p>}
-            </Card>
-          </motion.div>
-        ))}
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-medium text-muted-foreground hidden sm:inline">
+                  {openWorking ? "Collapse" : "Expand"}
+                </span>
+                <span
+                  className={`grid h-6 w-6 place-items-center rounded-lg bg-muted text-muted-foreground transition-transform duration-200 ${
+                    openWorking ? "rotate-180" : ""
+                  }`}
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </span>
+              </div>
+            </button>
+
+            <AnimatePresence initial={false}>
+              {openWorking && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.22, ease: "easeInOut" }}
+                  className="overflow-hidden border-t border-border"
+                >
+                  <div className="p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    {working.map((s, i) => (
+                      <motion.div
+                        key={s.name}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.02 }}
+                      >
+                        <Card className="h-full flex flex-col justify-between hover:border-accent/40 transition-colors">
+                          <div>
+                            <div className="mb-1.5 flex items-center justify-between gap-2 min-w-0">
+                              <span className="font-semibold text-foreground text-sm truncate">{s.name}</span>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium shrink-0 ${tone(s.status)}`}>
+                                v{s.version}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3" title={s.description}>
+                              {s.description}
+                            </p>
+                          </div>
+                          {s.problem && <p className="mt-2 text-xs text-danger break-words">{s.problem}</p>}
+                        </Card>
+                      </motion.div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+
+        {/* Issues / Needs Setup Section */}
+        {issues.length > 0 && (
+          <div className="rounded-2xl border border-red-500/20 bg-red-500/5 overflow-hidden shadow-xs">
+            <button
+              type="button"
+              onClick={() => setOpenIssues(!openIssues)}
+              className="w-full flex items-center justify-between p-4 text-left hover:bg-red-500/10 transition-colors cursor-pointer select-none group"
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="h-2 w-2 rounded-full bg-red-500 shrink-0" />
+                <span className="text-sm font-semibold text-foreground tracking-tight">Requires Attention</span>
+                <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-[11px] font-medium text-red-400">
+                  {issues.length}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-medium text-muted-foreground hidden sm:inline">
+                  {openIssues ? "Collapse" : "Expand"}
+                </span>
+                <span
+                  className={`grid h-6 w-6 place-items-center rounded-lg bg-muted text-muted-foreground transition-transform duration-200 ${
+                    openIssues ? "rotate-180" : ""
+                  }`}
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </span>
+              </div>
+            </button>
+
+            <AnimatePresence initial={false}>
+              {openIssues && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.22, ease: "easeInOut" }}
+                  className="overflow-hidden border-t border-red-500/20"
+                >
+                  <div className="p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    {issues.map((s, i) => (
+                      <motion.div
+                        key={s.name}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.02 }}
+                      >
+                        <Card className="h-full flex flex-col justify-between border-red-500/30">
+                          <div>
+                            <div className="mb-1.5 flex items-center justify-between gap-2 min-w-0">
+                              <span className="font-semibold text-foreground text-sm truncate">{s.name}</span>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium shrink-0 ${tone(s.status)}`}>
+                                {s.status} · v{s.version}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3" title={s.description}>
+                              {s.description}
+                            </p>
+                          </div>
+                          {s.problem && <p className="mt-2 text-xs text-danger break-words">{s.problem}</p>}
+                        </Card>
+                      </motion.div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+
+        {filtered.length === 0 && (
+          <div className="rounded-2xl border border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
+            No skills found matching "{search}".
+          </div>
+        )}
       </div>
     </Page>
   );
