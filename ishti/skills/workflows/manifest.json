@@ -1,0 +1,25 @@
+{
+  "name": "workflows",
+  "version": "1.0.0",
+  "description": "Named webhooks the owner saves (\"add webhook backup http://localhost:5678/webhook/backup\") and runs by name (\"run backup workflow\"): n8n workflows, Home Assistant automations, Make/Zapier - anything a webhook starts. Asks before every run; list and delete. Local hosts only unless a host is added to scope.net.",
+  "route": "run, add, list or delete a named webhook workflow (n8n, Home Assistant automation, Zapier)",
+  "priority": 14,
+  "laya": false,
+  "needs": {
+    "python": [
+      "requests"
+    ],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "status": "working",
+  "tier": "T2",
+  "scope": {
+    "write": [
+      "data"
+    ],
+    "net": [],
+    "apps": false
+  }
+}
