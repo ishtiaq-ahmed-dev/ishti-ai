@@ -10,7 +10,7 @@ import time
 from fastapi import APIRouter, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
 
-from ishti import audit, killswitch
+from ishti import audit, killswitch, reflex
 from ishti.scope import ScopeError, install as _install_scope
 from ishti.untrusted import clean_reply, note_for_owner
 
@@ -453,6 +453,13 @@ def _handle(text, sid, conv, s, events, t0, channel):
     if fix and wanted in SKILLS and s.get("last_request"):
         text = s["last_request"]
         dec = {"skill": wanted, "confidence": 1.0, "source": "correction", "was": s.get("last_skill")}
+    elif not pending and (rf := reflex.answer(text)):  # B7: an instant command - no routing, no model
+        s["trace"](type="route", skill="reflex", source="reflex", confidence=1.0, why=f"an instant command ({rf[1]})")
+        audit.record(f"reflex: {rf[1]}", rf[0][:120], skill="reflex", initiator="instructed", session=sid)
+        out = {"reply": rf[0], "sources": []}
+        if lang and not already_in(out["reply"], lang):
+            out["reply"] = translate(out["reply"], lang)
+        return _finish(text, sid, conv, s, events, t0, channel, "reflex", out, {"skill": "reflex", "source": "reflex", "confidence": 1.0})
     elif pending and pending.get("action") and (ans := answer_of(text)):  # the universal T2 gate's yes/no
         s["pending"] = None
         tier = SKILLS[pending["skill"]].manifest.get("tier", "T1") if pending["skill"] in SKILLS else "T2"

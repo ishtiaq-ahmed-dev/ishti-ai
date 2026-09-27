@@ -24,9 +24,11 @@ def stt_model():
             if torch_spec:  # CTranslate2 needs cuBLAS 12 / cuDNN 9; torch's CUDA build ships them
                 os.environ["PATH"] = os.path.join(os.path.dirname(torch_spec.origin), "lib") + os.pathsep + os.environ["PATH"]
             from faster_whisper import WhisperModel
+            from ishti import gpu
             try:
-                _stt = WhisperModel(_cfg["whisper_model"], device=_cfg["whisper_device"],
-                                    compute_type=_cfg["whisper_compute"])
+                with gpu.slot(1800, "load whisper"):  # ~1.6 GB next to the 14B model: wait for room, don't collide
+                    _stt = WhisperModel(_cfg["whisper_model"], device=_cfg["whisper_device"],
+                                        compute_type=_cfg["whisper_compute"])
             except Exception as exc:  # no CUDA / out of VRAM: slower, but still local
                 print(f"[voice] whisper on {_cfg['whisper_device']} failed ({exc}); using CPU int8")
                 _stt = WhisperModel(_cfg["whisper_model"], device="cpu", compute_type="int8")

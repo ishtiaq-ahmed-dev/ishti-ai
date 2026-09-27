@@ -438,8 +438,10 @@ def upscale(src, scale=4, dest=None, anime=False):
     model = "realesrgan-x4plus-anime" if anime else "realesrgan-x4plus"
     src, dest = os.path.abspath(src), os.path.abspath(dest)  # the tool runs from its own folder
     args = [ESRGAN, "-i", src, "-o", dest, "-n", model, "-s", "4", "-f", "png"]
-    subprocess.run(args, check=True, capture_output=True, timeout=600, creationflags=NO_WINDOW,
-                   cwd=os.path.dirname(ESRGAN))
+    from ishti import gpu
+    with gpu.slot(1500, "upscale"):  # Real-ESRGAN next to the 14B model once made Ollama run out of VRAM
+        subprocess.run(args, check=True, capture_output=True, timeout=600, creationflags=NO_WINDOW,
+                       cwd=os.path.dirname(ESRGAN))
     if not os.path.isfile(dest):
         raise RuntimeError("the upscaler produced no image (no Vulkan GPU?)")
     if scale != 4:  # the x4plus model only does 4x: scale the result down to what was asked (still sharper)

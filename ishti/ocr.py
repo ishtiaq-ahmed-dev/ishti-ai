@@ -102,8 +102,11 @@ def ocr(image):
 def ocr_pdf(path, pages=30, scale=2.0):
     """Scanned PDF -> text, page by page (pages separated by a form feed)."""
     import pypdfium2 as pdfium
-    doc = pdfium.PdfDocument(path)
-    return "\f".join(ocr(doc[i].render(scale=scale).to_pil()) for i in range(min(len(doc), pages)))
+    from ishti import PDFIUM_LOCK
+    with PDFIUM_LOCK:  # render the pages under the lock, OCR them after
+        doc = pdfium.PdfDocument(path)
+        images = [doc[i].render(scale=scale).to_pil() for i in range(min(len(doc), pages))]
+    return "\f".join(ocr(im) for im in images)
 
 
 def ocr_screen():

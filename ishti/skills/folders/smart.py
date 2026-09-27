@@ -37,9 +37,11 @@ def first_text(path, limit=300):
         return ""
     try:
         import pypdfium2 as pdfium
-        pdf = pdfium.PdfDocument(path)
-        text = pdf[0].get_textpage().get_text_range() if len(pdf) else ""
-        pdf.close()
+        from ishti import PDFIUM_LOCK
+        with PDFIUM_LOCK:
+            pdf = pdfium.PdfDocument(path)
+            text = pdf[0].get_textpage().get_text_range() if len(pdf) else ""
+            pdf.close()
         return re.sub(r"\s+", " ", text)[:limit]
     except Exception:
         return ""

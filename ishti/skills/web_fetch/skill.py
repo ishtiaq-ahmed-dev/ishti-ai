@@ -87,13 +87,20 @@ def goal_of(text, url):
     return " ".join(words)
 
 
+from ishti import PDFIUM_LOCK as PDF_LOCK  # noqa: E402
+
+
 def read(url):
     """(title, text) of a page or PDF."""
     r = requests.get(url, headers=UA, timeout=15)
     if url.lower().endswith(".pdf") or "pdf" in r.headers.get("content-type", ""):
         import pypdfium2 as pdfium
-        doc = pdfium.PdfDocument(io.BytesIO(r.content))
-        return url.rsplit("/", 1)[-1], "\f".join(doc[i].get_textpage().get_text_range() for i in range(min(len(doc), 60)))
+        with PDF_LOCK:  # pdfium is not thread-safe: downloads overlap, parsing takes turns (it crashed otherwise)
+            doc = pdfium.PdfDocument(io.BytesIO(r.content))
+            try:
+                return url.rsplit("/", 1)[-1], "\f".join(doc[i].get_textpage().get_text_range() for i in range(min(len(doc), 60)))
+            finally:
+                doc.close()
     from tools.web.fetch import WebFetcher
     page = WebFetcher(timeout=10).fetch(url)
     return page.get("title") or url, page.get("content") or re.sub(r"<[^>]+>", " ", r.text)
@@ -147,25 +154,33 @@ def run(text, session):
         from tools.web.search import SearxngSearchProvider
         host = urlparse(url).netloc.removeprefix("www.")
         trace(session, "site", f"the page doesn't have it - looking through {host} for: {goal}", status="start")
-        cands = links(url, goal) + [h.url for h in SearxngSearchProvider().search(f"site:{host} {goal}", 5)]
-        # one level deeper: the best pages' own matching links (a noticeboard / calendar page links the PDF)
-        for hub in cands[:2]:
-            try:
-                deeper = [u for u in links(hub, goal) if u not in cands][:3]
-            except requests.RequestException:
-                continue
-            cands[cands.index(hub) + 1:cands.index(hub) + 1] = deeper
-        pages, checked = [], []
-        for u in list(dict.fromkeys(cands))[:8]:
-            try:
-                t, b = read(u)
-            except Exception:
-                continue
-            checked.append((u, t, b))
-            if len(b.strip()) > 80 and answers(goal, t, b):
-                pages.append((u, t, b))
-            if len(pages) >= 2:
-                break
+        import concurrent.futures as cf
+        with cf.ThreadPoolExecutor(6) as pool:  # D2: network waits overlap; the checks below stay in order
+            site_links = pool.submit(links, url, goal)
+            searched = pool.submit(lambda: [h.url for h in SearxngSearchProvider().search(f"site:{host} {goal}", 5)])
+            cands = site_links.result() + searched.result()
+            # one level deeper: the best pages' own matching links (a noticeboard / calendar page links the PDF)
+            hubs = cands[:2]
+            deeper = {h: pool.submit(links, h, goal) for h in hubs}
+            for hub in hubs:
+                try:
+                    more = [u for u in deeper[hub].result() if u not in cands][:3]
+                except requests.RequestException:
+                    continue
+                cands[cands.index(hub) + 1:cands.index(hub) + 1] = more
+            order = list(dict.fromkeys(cands))[:8]
+            fetched = {u: pool.submit(read, u) for u in order}  # all candidate pages download at once
+            pages, checked = [], []
+            for u in order:  # ...but are judged in the same order as before, so the result is the same
+                try:
+                    t, b = fetched[u].result()
+                except Exception:
+                    continue
+                checked.append((u, t, b))
+                if len(b.strip()) > 80 and answers(goal, t, b):
+                    pages.append((u, t, b))
+                if len(pages) >= 2:
+                    break
         if not pages and checked:  # nothing is exactly it: answer from the closest document, saying what is there
             best = max(checked, key=lambda c: hits(c[2], goal))
             if hits(best[2], goal) >= 6:

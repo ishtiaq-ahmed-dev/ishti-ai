@@ -77,8 +77,10 @@ def text_of(path, limit=60000):
     ext = os.path.splitext(path)[1].lower()
     if ext == ".pdf":
         import pypdfium2 as pdfium
-        doc = pdfium.PdfDocument(path)
-        body = "\n".join(doc[i].get_textpage().get_text_range() for i in range(min(len(doc), 60)))
+        from ishti import PDFIUM_LOCK
+        with PDFIUM_LOCK:
+            doc = pdfium.PdfDocument(path)
+            body = "\n".join(doc[i].get_textpage().get_text_range() for i in range(min(len(doc), 60)))
         if len(body.strip()) < 40 * min(len(doc), 60):  # (almost) no text layer: a scan - read the page images
             from ishti.ocr import ocr_pdf
             body = ocr_pdf(path).replace("\f", "\n")

@@ -4,6 +4,8 @@ import os
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# pdfium (pypdfium2) is not thread-safe: every PDF parse in ISHTI takes this lock (parallel reads crashed without it)
+PDFIUM_LOCK = __import__("threading").RLock()
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)  # legacy packages (orchestrator/, tools/, voice/) import from the repo root
 
