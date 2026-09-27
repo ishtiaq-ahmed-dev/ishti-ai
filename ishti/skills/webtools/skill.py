@@ -22,7 +22,8 @@ URL = re.compile(r"https?://[^\s<>\"')\]]+", I)
 WATCHES = os.path.join(ROOT, "data", "watches.json")
 EVERY_S = 15 * 60
 RISKY_EXT = (".exe", ".msi", ".bat", ".cmd", ".ps1", ".scr", ".vbs", ".jar", ".apk", ".dll")
-BOOKMARKS = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Google", "Chrome", "User Data", "Profile 10", "Bookmarks")
+from ishti.skills.webtools import browser_data  # noqa: E402
+BOOKMARKS = os.path.join(browser_data.profile_dir(), "Bookmarks")  # the main profile's (Profile 9) - was hard-coded Profile 10
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0 Safari/537.36"}
 OPS = [
     ("watch_list", re.compile(r"\b(?:which|what|list)\s+(?:pages?|sites?)\s+(?:are\s+you\s+|am\s+i\s+)?watching\b|\bmy\s+watch(?:es|list)\b(?!.*\b(?:stock|share|crypto))", I)),
@@ -36,10 +37,15 @@ OPS = [
 
 
 def match(text):
-    return any(rx.search(text) for _, rx in OPS)
+    return browser_data.match(text) or any(rx.search(text) for _, rx in OPS)
 
 
 def run(text, session):
+    if browser_data.match(text):  # cache / cookies / bookmark edits first: "delete the X bookmark" isn't a search
+        from ishti.skills import ask_first
+        trace(session, "web", "browser data")
+        out = browser_data.run(text, session, ask_first)
+        return out if isinstance(out, dict) or out is None else {"reply": out, "sources": []}
     for name, rx in OPS:
         if rx.search(text):
             trace(session, "web", name.replace("_", " "))
@@ -222,7 +228,7 @@ def op_bookmarks(text, session):
         with open(BOOKMARKS, encoding="utf-8") as f:
             roots = json.load(f)["roots"]
     except (OSError, ValueError, KeyError):
-        return "I can't read the Chrome bookmarks of Profile 10."
+        return f"I can't read the Chrome bookmarks ({BOOKMARKS})."
     marks = []
 
     def walk(node, path):
