@@ -362,14 +362,19 @@ class DeepResearchEngine:
         answer = self.model_router.generate(
             f"Today is {today}. Live sources fetched seconds ago:\n" + "\n\n".join(guard(c, "a search result") for c in context)
             + f"\n\nOwner's question: {prompt}\n\nUse the most recent information in the sources; if a source is "
-              "about an earlier year than the question asks for, say so instead of presenting it as current.",
+              "about an earlier year than the question asks for, say so instead of presenting it as current.\n\n"
+              "Formatting requirements:\n"
+              "- Structure the response cleanly with clear section headings.\n"
+              "- When listing updates, news, or items, summarize each with a clear bold title and bullet point.\n"
+              "- If multiple items, models, or dates are mentioned, include a neat Markdown comparison table summarizing them.\n"
+              "- Do not output raw unformatted text lists or unrequested code blocks.",
             depth=depth, tools_used=["web_search", "web_fetch"], evidence_is_live=True,
             memory_query=prompt, timeout=45,
         )
         if answer:
             return answer
-        bullets = "\n".join([f"- {s['title']}: {s['snippet']} ({s['url']})" for s in sources[:3]])
-        return f"From live search:\n\n{bullets}"
+        bullets = "\n".join([f"- **{s['title']}**: {s['snippet']} ([Source]({s['url']}))" for s in sources[:4]])
+        return f"### Live Search Results\n\n{bullets}"
 
     def _synthesize_research_report(self, topic: str, evidence: List[Dict[str, Any]], sources: List[Dict[str, Any]]) -> str:
         if not evidence:
