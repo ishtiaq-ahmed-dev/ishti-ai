@@ -1,5 +1,18 @@
 """Voice channel: faster-whisper STT on the GPU and Piper TTS, both local.
-Voice is only another input channel: the transcript goes through dispatcher.handle like text."""
+Voice is only another input channel: the transcript goes through dispatcher.handle like text.
+
+How the STT is shaped, and why (measured - see tests/measure_stt.py):
+  * large-v3-turbo at float16, warm: 4 decoder layers instead of large-v3's 32 - the decoder was most of the
+    seconds per utterance (including a 20453 ms outlier in data/logs/server.log).
+  * one decode per utterance: the language is picked *once* and then handed to transcribe(). Passing
+    language=None costs a second encoder pass inside faster-whisper (detect_language encodes the audio, then
+    transcribe encodes it again), and so did the old pick_language() + transcribe() pair.
+  * the whisper encoder always runs one padded 30 s window, so a call costs roughly the same for 2 s and 25 s of
+    audio; only the decoder grows with the words. That is why live partials (Stream) decode a bounded tail and
+    why long audio goes through the batched pipeline, which encodes its 30 s chunks side by side.
+  * the model stays loaded (whisper_idle_unload_s): a warm decode is ~0.3 s, a cold load is seconds of disk plus
+    first-call kernel setup, and the wake loop needs it the moment the owner stops talking.
+"""
 import io
 import os
 import re
@@ -12,9 +25,31 @@ import numpy as np
 from ishti import CONFIG
 from voice.tts import speakable
 
+RATE = 16000                             # every caller feeds 16 kHz mono (wake.py, Live mode, /api/stt, voice notes)
 _cfg = CONFIG["voice"]
-_stt = _tts = None
+_stt = _batched = _tts = None
 _load_lock, _play_lock = threading.Lock(), threading.Lock()
+
+
+def model_source():
+    """(what WhisperModel loads, one-line report or None): the local turbo directory when it is on disk, otherwise
+    the configured fallback name - a missing download degrades to slow-but-working, it must never kill the voice
+    channel (and a fresh clone has no model directory at all)."""
+    ref = _cfg.get("whisper_model", "")
+    if ref and os.path.isdir(ref):
+        return ref, None
+    fallback = _cfg.get("whisper_model_fallback") or ref
+    return fallback, (f"[voice] {ref} is not on disk - falling back to '{fallback}' "
+                      f"(run tests/download_whisper_turbo.py for the fast one)")
+
+
+def _warm(model):
+    """The first decode on a fresh CTranslate2 model pays kernel/allocator setup. Do it here, at load time, instead
+    of inside the owner's first command."""
+    t = time.time()
+    " ".join(s.text for s in model.transcribe(np.zeros(RATE // 2, np.float32), language="en", beam_size=1,
+                                              vad_filter=False, without_timestamps=True, temperature=0.0)[0])
+    print(f"[voice] whisper warm ({time.time() - t:.1f}s)")
 
 
 def stt_model():
@@ -27,38 +62,82 @@ def stt_model():
                 os.environ["PATH"] = os.path.join(os.path.dirname(torch_spec.origin), "lib") + os.pathsep + os.environ["PATH"]
             from faster_whisper import WhisperModel
             from ishti import gpu
+            ref, note = model_source()
+            if note:
+                print(note)
             try:
-                with gpu.slot(1800, "load whisper"):  # ~1.6 GB next to the 14B model: wait for room, don't collide
-                    _stt = WhisperModel(_cfg["whisper_model"], device=_cfg["whisper_device"],
-                                        compute_type=_cfg["whisper_compute"])
+                # measured: turbo float16 holds ~1.1 GB (large-v3 int8_float16 held ~1.7 GB): ask for that much and
+                # wait for the 14B planner instead of making Ollama's allocation fail
+                with gpu.slot(1200, "load whisper"):
+                    _stt = WhisperModel(ref, device=_cfg["whisper_device"], compute_type=_cfg["whisper_compute"])
             except Exception as exc:  # no CUDA / out of VRAM: slower, but still local
                 print(f"[voice] whisper on {_cfg['whisper_device']} failed ({exc}); using CPU int8")
-                _stt = WhisperModel(_cfg["whisper_model"], device="cpu", compute_type="int8")
+                _stt = WhisperModel(ref, device="cpu", compute_type="int8")  # int8: the documented CPU fallback
+            _warm(_stt)
     return _stt
 
 
+def batched_model():
+    """BatchedInferencePipeline over the same model: its 30 s chunks are encoded and decoded in one batch per
+    batch_size chunks. Only worth it for audio far longer than one chunk (voice notes, recordings) - measured
+    below BATCH_OVER_S. Warms itself once (batched kernels differ from the single-chunk path)."""
+    global _batched
+    model = stt_model()
+    with _load_lock:
+        if _batched is None or _batched.model is not model:
+            from faster_whisper import BatchedInferencePipeline
+            _batched = BatchedInferencePipeline(model=model)
+            [s.text for s in _batched.transcribe(np.zeros(RATE // 2, np.float32), language="en", beam_size=1,
+                                                 batch_size=8)[0]]
+    return _batched
+
+
 _last_use = 0.0
-IDLE_UNLOAD_S = 600  # large-v3 holds ~1.6 GB of VRAM; next to the 14B LLM that spills memory and slows everything
+# Measured: a warm turbo decode is ~0.3 s, a cold load costs seconds of disk + kernel warm-up, and the wake loop
+# wants the model the moment the owner stops talking. Whisper's ~1.1 GB is VRAM the 14B planner would like back, so
+# the trade is: keep it while the owner is working with ISHTI, drop it when he walks away (config, in seconds).
+IDLE_UNLOAD_S = int(_cfg.get("whisper_idle_unload_s", 600))
 
 
-def transcribe(audio) -> str:
-    """audio: path or file-like in any format PyAV decodes (browser webm/opus, wav, mp3)."""
+_final_active = threading.Event()        # a final decode is running: partials must not queue GPU work behind it
+BATCH_OVER_S = float(_cfg.get("whisper_batch_over_s", 8))  # measured: batched wins clearly from ~2 chunks (60 s)
+
+
+def transcribe(audio, language: str | None = None) -> str:
+    """audio: path or file-like in any format PyAV decodes (browser webm/opus, wav, mp3), or 16 kHz pcm
+    (float32 in [-1, 1] or int16). language: the language when the caller already knows it (Stream detects it while
+    the owner is still speaking) - that saves the extra encoder pass the old code spent detecting first."""
     global _last_use
     _last_use = time.time()
     from ishti import models
     models.used("whisper")
-    import numpy as np
     from faster_whisper import decode_audio
-    pcm = audio if isinstance(audio, np.ndarray) else decode_audio(audio, sampling_rate=16000)
+    pcm = audio if isinstance(audio, np.ndarray) else decode_audio(audio, sampling_rate=RATE)
+    pcm = pcm.astype(np.float32) / 32768 if pcm.dtype == np.int16 else pcm.astype(np.float32)
+    lang = FOLD.get(language, language) if language else None
     model = stt_model()
-    lang = pick_language(model, pcm)
-    segments, _ = model.transcribe(pcm, beam_size=1, vad_filter=True, language=lang, initial_prompt=vocabulary() or None,
-                                   condition_on_previous_text=False)
-    # noise and very short sounds make whisper invent words ("Arabic", "Thank you."): keep only confident speech
-    kept = [s for s in segments if s.no_speech_prob < 0.6 and s.avg_logprob > -1.0]
-    text = " ".join(s.text.strip() for s in kept).strip()
+    if lang is None:
+        # one encoder pass over the first 30 s window; this is what maps hi->ur and fa->ps through FOLD (whisper
+        # hears spoken Hindi as Hindi and Pashto as Persian), and it is measured at ~0.2 s - it never shows up.
+        lang = pick_language(model, pcm)
+    beam = int(_cfg.get("whisper_beam", 1))
+    prompt = vocabulary() or None
+    _final_active.set()
+    try:
+        if len(pcm) > BATCH_OVER_S * RATE:  # long audio: 30 s chunks in parallel instead of one after the other
+            segments, _ = batched_model().transcribe(pcm, language=lang, beam_size=beam, batch_size=8,
+                                                     vad_filter=True, initial_prompt=prompt, temperature=0.0)
+        else:
+            segments, _ = model.transcribe(pcm, language=lang, beam_size=beam, vad_filter=True, initial_prompt=prompt,
+                                           without_timestamps=True, multilingual=False, temperature=0.0,
+                                           condition_on_previous_text=False)  # temperature=0: no 5-step retry loop
+        # noise and very short sounds make whisper invent words ("Arabic", "Thank you."): keep only confident speech
+        kept = [s for s in segments if s.no_speech_prob < 0.6 and s.avg_logprob > -1.0]
+        text = " ".join(s.text.strip() for s in kept).strip()
+    finally:
+        _final_active.clear()
     LAST.update(language=lang, confidence=(sum(s.avg_logprob for s in kept) / len(kept)) if kept else -9.0,
-                seconds=len(pcm) / 16000)
+                seconds=len(pcm) / RATE)
     _last_use = time.time()
     _schedule_unload()
     return text
@@ -101,6 +180,60 @@ def vocabulary():
         return ", ".join(seen.values()) + "."
     except Exception:
         return ""
+
+# ---- streaming: the live transcript while the owner is still speaking -----------------------------------------
+class Stream:
+    """Incremental transcript of one utterance: partial() for the dashboard's live text, final() for the command.
+
+    Why this shape: the old live path re-ran the *whole* accurate decode every ~1 s on the growing buffer, each
+    one paying VAD plus its own language detection - two encoder passes per partial, all queued behind each other
+    on the one GPU. Six partials for a six second command meant ~14 encoder passes before the final decode even
+    started, which is exactly how "[latency] stt 20453 ms" happens. So a partial here
+      * never runs while final() (or any final transcribe) owns the GPU - fast text beats queueing behind the answer,
+      * reuses the language detected once (the first partial), so the final decode needs a single encoder pass,
+      * decodes without VAD, without the vocabulary prompt and without timestamps,
+      * decodes only the last TAIL_S seconds (the encoder cost is fixed, the decoder's grows with the words).
+
+    MIN_S bounds the work for a stray quarter second of noise (the VAD hands partials over only after speech is
+    heard, but a cough reaches here): below it there is not enough audio to decode or to trust a language.
+    """
+
+    TAIL_S = float(_cfg.get("whisper_partial_tail_s", 12))
+    MIN_S = 0.5  # do not even try below half a second: too little audio decides the language at random
+
+    def __init__(self, language: str | None = None):
+        self.language = language
+        self.text = ""
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _pcm(pcm):
+        pcm = np.asarray(pcm)
+        return pcm.astype(np.float32) / 32768 if pcm.dtype == np.int16 else pcm.astype(np.float32)
+
+    def partial(self, pcm) -> str:
+        """The utterance so far -> its last TAIL_S seconds as text (empty when it is too short to say anything)."""
+        if _final_active.is_set():  # the accurate decode is using the GPU: stale text beats queueing behind it
+            return self.text
+        pcm = self._pcm(pcm)
+        if len(pcm) < self.MIN_S * RATE:
+            return self.text
+        tail, model = pcm[-int(self.TAIL_S * RATE):], stt_model()
+        if self.language is None:
+            self.language = pick_language(model, tail)  # once per utterance, while the owner is still speaking
+        segments, _ = model.transcribe(tail, language=self.language, beam_size=1, vad_filter=False,
+                                       without_timestamps=True, multilingual=False, temperature=0.0,
+                                       condition_on_previous_text=False)
+        kept = [s.text.strip() for s in segments if s.no_speech_prob < 0.6 and s.avg_logprob > -1.0]
+        with self._lock:
+            self.text = " ".join(kept).strip()
+        return self.text
+
+    def final(self, pcm) -> str:
+        """The finished utterance through the accurate path: VAD, vocabulary prompt, confidence filter, telemetry."""
+        return transcribe(pcm, language=self.language)
+
+
 
 
 _unload_timer = None
@@ -300,6 +433,24 @@ if __name__ == "__main__":
     import numpy as np
     import tempfile
     import ishti.facts
+
+    # streaming (issue 7): a partial must come from the growing buffer, pick the language once, and the final decode
+    # must then run with that language - one encoder pass instead of the two the old live path paid per second
+    with wave.open(io.BytesIO(wav)) as wf:
+        src, rate = np.frombuffer(wf.readframes(wf.getnframes()), np.int16), wf.getframerate()
+    pcm = np.interp(np.arange(0, len(src) / rate, 1 / RATE), np.arange(len(src)) / rate, src).astype(np.int16)
+    live = Stream()
+    t = time.time()
+    live.partial(pcm[: RATE])  # the first second: only there to pick the language
+    assert live.language in LANGUAGES, live.language
+    said = live.partial(pcm)
+    part_ms = (time.time() - t) * 1000
+    t = time.time()
+    streamed = live.final(pcm).lower()
+    final_ms = (time.time() - t) * 1000
+    assert "peshawar" in streamed and "clear" in streamed, streamed
+    assert live.language == "en" and LAST["language"] == "en", (live.language, LAST["language"])
+    print(f"stream: partial+final {part_ms:.0f}/{final_ms:.0f} ms -> {streamed!r} (language {live.language})")
 
     def pitch_and_length(wav):
         with wave.open(io.BytesIO(wav)) as wf:

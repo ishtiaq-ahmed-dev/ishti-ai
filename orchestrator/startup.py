@@ -193,6 +193,23 @@ def announce_readiness(model: str):
 
 def main():
     print_banner()
+
+    cli_mode = "--cli" in sys.argv or "-c" in sys.argv or "cli" in sys.argv
+    if not cli_mode:
+        try:
+            from desktop.focus_ishti import is_running, focus_window
+            if is_running():
+                print("  [INFO] ISHTI is already active on port 8888.")
+                if focus_window():
+                    print("  [INFO] Brought existing window to focus. Exiting duplicate launcher.")
+                    sys.exit(0)
+                else:
+                    print("  [INFO] Reopening app window...")
+                    launch_browser()
+                    sys.exit(0)
+        except Exception:
+            pass
+
     router = ModelRouter()
 
     # Step 1: Ollama

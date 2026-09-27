@@ -1,4 +1,5 @@
 """Browser skill: local LLM + Playwright MCP tools, programmatic (accessibility refs) only.
+A site already open in a tab is reused (browser_tabs select), never reopened from scratch.
 Screenshot/coordinate clicking needs a local vision model - logged in NEEDS.md."""
 import json
 import os
@@ -6,6 +7,7 @@ import re
 import threading
 import time
 import uuid
+from urllib.parse import urlsplit
 
 from ishti import CONFIG, llm
 from ishti.mcp_client import get_hub
@@ -35,7 +37,10 @@ TRIGGER = re.compile(rf"^(?:please\s+)?(?:go\s+to|navigate\s+to|visit|browse\s+t
                      r"\b(?:open|launch|start)\s+(?:google\s+)?chrome\s+and\b", re.I)
 SYSTEM = llm.STYLE + (
     " You control a real web browser through tools, one action at a time. Target elements only by "
-    "the ref values shown in the latest page snapshot; never guess selectors or XPath. Never invent "
+    "the ref values shown in the latest page snapshot; never guess selectors or XPath. A site that is "
+    "already open in a tab must be reused: check the open tabs (browser_tabs list) and select the tab "
+    "that already has the site instead of navigating to it again - never open a duplicate tab for a site "
+    "that is already open. Never invent "
     "page content or claim an action worked unless the page shows it. When done, answer the owner "
     "in 1-3 short sentences with what you found or did.")
 MAX_STEPS = 10
@@ -157,10 +162,143 @@ def human(name, args):
     return f"{verb} {what}".strip()[:90]
 
 
+# browser_tabs (playwright-mcp 0.0.82) renders one line per open tab:
+#   - 2: (current) [Page title](https://example.com/page) [crashed]
+# The number is the index select/close take; extension tabs and about:blank are listed too and are tolerated.
+TAB = re.compile(r"^\s*-\s*(\d+)\s*:\s*(?:\(current\)\s*)?\[(.*)\]\((.*?)\)\s*(?:\[crashed\])?\s*$")
+# two-part public suffixes seen in the owner's web: those hosts need three labels for the registrable domain
+TWO_PART = {"co.uk", "org.uk", "ac.uk", "gov.uk", "com.pk", "co.pk", "com.au", "net.au", "org.au", "co.nz",
+            "com.br", "co.in", "co.jp", "co.kr", "com.sg", "com.tr", "com.mx", "com.cn", "com.hk", "co.za"}
+
+
+def _domain(host):
+    """'gemini.google.com' and 'www.google.com' -> 'google.com': multi-host sites are still one site."""
+    parts = [p for p in (host or "").lower().split(".") if p]
+    if len(parts) >= 3 and ".".join(parts[-2:]) in TWO_PART:
+        return ".".join(parts[-3:])
+    return ".".join(parts[-2:]) if len(parts) >= 2 else (parts[0] if parts else "")
+
+
+def _where(url):
+    """(host, path, query, fragment) to compare pages with: scheme, 'www.' and a trailing slash don't matter.
+    None for a URL that isn't a site page (about:blank, data:...), which can never stand in for a site."""
+    s = (url or "").strip()
+    if not s:
+        return None
+    if "://" not in s and not re.match(r"^[a-z][a-z0-9+.-]*:", s, re.I):
+        s = "https://" + s  # "go to example.com" means the same page as "https://example.com/"
+    p = urlsplit(s)
+    host = (p.hostname or "").lower().removeprefix("www.")
+    if not host or p.scheme in ("about", "data", "blob"):
+        return None
+    return host, (p.path.rstrip("/") or "/"), p.query, p.fragment
+
+
+def _best_tab(url, urls):
+    """(index, url) of the best open tab for `url`, else (None, None). Tiers: the exact page first, then the
+    same host+path, then same host (for web apps where path mutates like /app, /#inbox), then the same
+    registrable domain+path (google.com/gemini.google.com) - so a site that is already open in some tab
+    (WhatsApp Web, Gemini, Gmail...) is reused instead of opened again."""
+    want = _where(url)
+    if not want:
+        return None, None
+    exact = same_host_path = same_host = same_domain = None
+    for i, tab in enumerate(urls or []):
+        got = _where(tab)
+        if not got:
+            continue
+        if got[:2] == want[:2]:  # same host and path
+            if got[2:] == want[2:] and exact is None:
+                exact = (i, tab)
+            elif same_host_path is None:
+                same_host_path = (i, tab)
+        elif got[0] == want[0] and same_host is None:
+            # Same host: if requested URL is opening the site (root path or no query), reuse active tab
+            if want[1] in ("/", "") and not want[2]:
+                same_host = (i, tab)
+        elif same_domain is None and got[1] == want[1] and _domain(got[0]) == _domain(want[0]):
+            same_domain = (i, tab)
+    return exact or same_host_path or same_host or same_domain or (None, None)
+
+
+def tabs(session=None):
+    """URLs of the open browser tabs, in index order (position = the index browser_tabs select/close take)."""
+    try:
+        out = get_hub().call(SERVER, "browser_tabs", {"action": "list"})
+    except Exception as exc:  # a tab call must never break a task: report it and behave as "no tabs open"
+        trace(session, "browser_tabs", f"couldn't read the open tabs ({type(exc).__name__})", status="error")
+        return []
+    return [m.group(3) for line in out.splitlines() if (m := TAB.match(line))]
+
+
+def find_tab(url, urls=None):
+    """Index of the open tab that already serves `url` (same page, else same host, else same domain), or None.
+    `urls` is for tests and callers that already have the list - the matching itself is pure."""
+    i, _ = _best_tab(url, tabs() if urls is None else urls)
+    return i
+
+
+def open_url(url, session=None, new_tab=False):
+    """Open `url`, reusing an already-open tab for that site. Returns a fresh page snapshot. Any trouble with
+    the tab path falls back to browser_navigate, so this never breaks a task that used to work."""
+    if not new_tab:
+        try:
+            i, tab = _best_tab(url, tabs())
+        except Exception:
+            i, tab = None, None
+        if i is not None:
+            host = (_where(tab) or ("",))[0]
+            try:
+                _call("browser_tabs", {"action": "select", "index": i})
+                snap = _call("browser_snapshot", {})
+                trace(session, "browser_tabs", f"reused the open {host} tab", status="done")
+                return f"reused the open {host} tab\n{snap}"
+            except Exception as exc:  # select/snapshot failed: open it the old way after all
+                trace(session, "browser_tabs", f"couldn't reuse the open {host} tab ({type(exc).__name__})"
+                                               " - opening it", status="error")
+    return _call("browser_navigate", {"url": url})
+
+
+def _same_page(a, b):
+    """True when showing tab `b` already is what loading `a` shows: the same URL (scheme/'www.'/trailing slash
+    aside), or the same host+path with no query/fragment on either side. A different ?query/#hash must load,
+    otherwise a search would "reuse" a tab showing stale results."""
+    wa, wb = _where(a), _where(b)
+    return bool(wa and wb and wa[:2] == wb[:2] and (wa[2:] == wb[2:] or not any(wa[2:] + wb[2:])))
+
+
+NAV_HELPERS = ("new_tab", "tab")  # our own flags on browser_navigate args; the MCP schema takes only url
+
+
+def _navigate_args(args):
+    """(MCP args, wanted a fresh tab?) for a browser_navigate call: our helper keys never reach the MCP tool
+    ('additionalProperties: false') and their presence means the caller asked for a new tab on purpose."""
+    return {k: v for k, v in args.items() if k == "url"}, any(k in args for k in NAV_HELPERS)
+
+
 def _call(name, args):
     """MCP call; action results only link the page snapshot file, so inline it for the model."""
     from ishti import killswitch
     killswitch.check()  # the kill switch ends a browser task between steps
+    if name == "browser_navigate" and isinstance(args, dict):
+        args, wanted_new = _navigate_args(args)
+        if not wanted_new and args.get("url"):
+            try:
+                i, tab = _best_tab(args["url"], tabs())
+            except Exception:
+                i = None
+            if i is not None and _same_page(args["url"], tab):
+                host = (_where(tab) or ("",))[0]
+                try:
+                    _call("browser_tabs", {"action": "select", "index": i})
+                    return f"reused the open {host} tab\n{_call('browser_snapshot', {})}"
+                except Exception:
+                    pass  # any tab trouble: navigate below, exactly like before
+    return _plain_call(name, args)
+
+
+def _plain_call(name, args):
+    """The MCP call itself: C4 retry, the linked page snapshot inlined, a login page moved to the login profile."""
     try:
         out = get_hub().call(SERVER, name, args)
     except Exception:  # C4: one retry per step - a transient MCP/page error shouldn't sink a long flow

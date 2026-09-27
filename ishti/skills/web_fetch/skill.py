@@ -142,7 +142,10 @@ def answers(goal, title, body):
 
 
 def run(text, session):
-    found = URL.search(text).group(0).rstrip(".,;")
+    m = URL.search(text)
+    if not m:
+        return None
+    found = m.group(0).rstrip(".,;")
     goal, url = goal_of(text, found), full_url(found)
     try:
         title, body = read(url)

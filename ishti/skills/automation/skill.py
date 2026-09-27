@@ -208,6 +208,8 @@ def run(text, session):
             f"{r['id']}. When {describe(r['cond'])} -> {r['action']}" + ("" if r["active"] else " (paused)")
             + (f" - ran {r['fired']}x" if r["fired"] else "") for r in rs), "sources": []}
     m = RULE.match(text)
+    if not m:
+        return None
     cond = parse_condition(m["cond"])
     action = m["action"].strip(" .")
     state = {}

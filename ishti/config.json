@@ -54,9 +54,10 @@
     "default": "main", "whatsapp": "main", "gemini": "main", "online_fallback": "main", "email": "login", "login": "login", "calendar": "main", "travel": "main", "extract": "main", "contacts": "main"
   },
   "voice": {
-    "whisper_model": "large-v3",
+    "whisper_model": "D:\\ISHTI\\data\\models\\whisper-large-v3-turbo",
+    "whisper_model_fallback": "large-v3",
     "whisper_device": "cuda",
-    "whisper_compute": "int8_float16",
+    "whisper_compute": "float16",
     "wake_enabled": true,
     "wake_model": "hey_jarvis",
     "wake_phrases": ["hey ishti", "hey jarvis", "hey my assistant"],

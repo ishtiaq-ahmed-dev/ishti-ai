@@ -226,6 +226,24 @@ async def kill_endpoint(req: Request):
     return {"stopped": _kill(str(reason)[:40])}
 
 
+@app.post("/api/shutdown")
+async def shutdown_endpoint():
+    """Full clean shutdown: kill process tree, release GPU VRAM, terminate browser automation sessions."""
+    import threading
+    import time
+
+    def _do_shutdown():
+        time.sleep(0.5)
+        try:
+            from desktop.shutdown import shutdown
+            shutdown()
+        except Exception as exc:
+            print(f"[shutdown] Error during shutdown: {exc}", file=sys.stderr)
+
+    threading.Thread(target=_do_shutdown, daemon=True).start()
+    return {"status": "shutting_down", "message": "ISHTI full shutdown initiated."}
+
+
 @app.get("/api/health")
 async def health_endpoint():
     """Liveness for the watchdog (answering at all = not hung) + the latest health-loop snapshot."""

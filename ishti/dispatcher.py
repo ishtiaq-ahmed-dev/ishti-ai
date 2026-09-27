@@ -136,16 +136,46 @@ def _learn(text):
 URDU = re.compile("[؀-ۿ]")  # Arabic-script letters (Urdu)
 DEVANAGARI = re.compile("[ऀ-ॿ]")  # Hindi script
 PASHTO = re.compile("[ټځڅډړږښګڼۍې]")  # Pashto-only letters
+# The owner's language lock: "talk to me in English", "answer in urdu", "switch your language to Pashto".
+# It is a standing preference (fact owner.prefers_language), not a question to research - the owner asked for
+# exactly this after ISHTI answered Urdu replies with an English research report.
+LANGUAGE_CMD = re.compile(
+    r"\b(?:talk|speak|reply|answer|respond|write|message|chat)\s+(?:to\s+me\s+)?(?:only\s+|always\s+)?in\s+"
+    r"(?P<lang>english|urdu|pashto|roman\s+urdu)\b|"
+    r"\b(?:switch|change|set)\s+(?:your\s+)?(?:reply\s+|response\s+)?language\s+to\s+(?P<lang2>english|urdu|pashto|roman\s+urdu)\b|"
+    r"\b(?:talk|speak|reply|answer)\s+to\s+me\s+in\s+my\s+(?:own\s+)?language\b", re.I)
+LANGS = {"english": "English", "urdu": "Urdu", "pashto": "Pashto", "roman urdu": "Roman Urdu"}
+LANG_TARGET = {"English": "English", "Urdu": "Urdu", "Pashto": "Pashto",
+               "Roman Urdu": "Roman Urdu (Urdu written in English letters)"}
+LANG_CONFIRM = {"English": "Got it - I'll answer in English from now on.",
+                "Urdu": "ٹھیک ہے - اب میں اردو میں جواب دوں گا۔",
+                "Pashto": "ښه - له اوس څخه به په پښتو ځواب وایم.",
+                "Roman Urdu": "Theek hai - ab main Roman Urdu mein jawab dunga."}
+
+
+def preferred_language():
+    """The owner's locked answer language, or None (mirror whatever the owner speaks). Stored as a fact so it
+    survives restarts and reaches the LLM style prompt (llm.style() lists prefers_* facts)."""
+    try:
+        return (get_facts().get("owner").get("prefers_language") or "").strip() or None
+    except Exception:
+        return None
 FOLLOW_UP = re.compile(
     r"^\s*(?:why\s+(?:did|didn'?t|did\s*not|didnot|don'?t|won'?t)\s+you|(?:no[,.!]?\s+)?i\s+(?:asked|meant|said|wanted)|"
     r"(?:search|look|check|try|do)\s+(?:it\s+|that\s+|this\s+)?(?:now|again|instead|properly|online)|"
-    r"(?:and\s+)?(?:now|then|also)\s+(?:do|search|check|try|make|use)|what\s+about|same\s+(?:for|with)|"
+    r"(?:and\s+)?(?:now|then|also)\s+(?:send|message|say|tell|do|search|check|try|make|use)|what\s+about|same\s+(?:for|with)|"
     r"(?:not|no)\s+(?:that|this|my)\b)"
     r"|\b(?:do\s+it|redo|again|instead|like\s+(?:that|before)|the\s+(?:first|second|third|last|previous)\s+one|"
     r"you\s+(?:added|moved|put|did|made|said|gave)|you\s+(?:didn'?t|didnot|did\s+not)\s+(?:even\s+)?\w+|"
     r"(?:add|save|put|store|update|write)\s+(?:it\s+|this\s+|that\s+)?(?:in|to|into)\s+(?:the\s+|your\s+|my\s+)?memory|"
     # "https://imsciences.edu.pk/ try here": the earlier question, on this site
-    r"(?:try|look|check|search|find\s+it)\s+(?:it\s+)?(?:here|there|on\s+this|in\s+this)|(?:on|use)\s+this\s+(?:site|website|page|link))\b", re.I)
+    r"(?:try|look|check|search|find\s+it)\s+(?:it\s+)?(?:here|there|on\s+this|in\s+this)|(?:on|use)\s+this\s+(?:site|website|page|link))\b|"
+    # sending/complaints after a send: "not sent yet send her now", "didn't send it", "resend that", "send it now"
+    r"\b(?:(?:not|wasn'?t|hasn'?t\s+been|isn'?t)\s+(?:really\s+)?(?:sent|delivered|posted|done)|"
+    r"(?:did|didn'?t|did\s+not)\s+(?:send|deliver|post)|you\s+(?:said|claimed)\s+you\s+(?:sent|did)|"
+    r"(?:re)?send\s+(?:it|that|this|them|him|her)(?:\s+(?:now|again|properly))?|"
+    r"send\s+(?:it|that|this)\s+(?:now|again)|"
+    r"now\s+send\b|send\s+(?:and\s+)?say\b|retry\b|resend\b)\b", re.I)
 
 
 def contextualize(text, s) -> str:
@@ -221,6 +251,12 @@ def why(dec) -> str:
 
 T2_ACTION = re.compile(r"\b(?:send|message|reply|delete|remove|erase|pay|buy|order|purchase|post|publish|submit|"
                        r"install|uninstall|kill|shut\s*down|restart|transfer|forward|empty)\b", re.I)
+# First-person claims that an action happened. Only trusted when the skill marks the run verified; a skill that
+# says it could not confirm the action gets the claim followed by an honest note (the owner's WhatsApp sends
+# were reported as done while nothing had gone out).
+CLAIM = re.compile(r"\b(?:i(?:'ve| have)?\s+(?:sent|shared|posted|published|uploaded|forwarded|moved|deleted|paid|"
+                   r"ordered|booked|installed|created|saved)|(?:sent|delivered|shared|posted)\s+"
+                   r"(?:it|that|this|the\s+\w+|['\"])|i\s+have\s+already\s+(?:sent|done))", re.I)
 
 
 def _repeat(s, name, text, window_s=20):
@@ -320,10 +356,17 @@ def _run(text, s, dec):
             else:
                 out = {"reply": f"The {name} skill failed: {type(exc).__name__}: {str(exc)[:160]}"}
         if out is not None:
+            if out.get("verified") is False and CLAIM.search(str(out.get("reply", ""))):
+                # tool honesty: a skill that knows it could not confirm an action must never sound like it did
+                out["reply"] = str(out["reply"]) + "\n\n(I couldn't confirm that actually went through - please check.)"
+                s["trace"](type="tool", name="verify", label="the action couldn't be confirmed, so I said so", status="error")
             s["trace"](type="step", skill=name, status="done", summary=out["reply"][:160])
             break
         s["trace"](type="step", skill=name, status="skip", summary=f"{name} passed it on")
         tried.add(name)
+        pend = s.get("pending")
+        if pend and pend.get("sticky") and pend.get("skill") == name:
+            s["pending"] = None  # it asked a question but this wasn't the answer: stop holding the message
         dec = route(text, SKILLS, exclude=tried)
     if out is None:
         log_need("gap", "none", text, "no skill could handle this request")
@@ -441,12 +484,33 @@ def _handle(text, sid, conv, s, events, t0, channel):
     # in the owner's own form of Urdu. Gemma does both directions (Qwen 2.5 writes poor Urdu).
     # Devanagari is spoken Urdu that whisper wrote in Hindi script: understood the same way, answered in Urdu script
     # only the owner's three languages: Pashto (its own letters ټ ډ ړ ښ ږ ځ څ ګ ڼ ې ۍ), Urdu, Roman Urdu; else English
-    lang = ("Pashto" if PASHTO.search(text) else "Urdu" if URDU.search(text) or DEVANAGARI.search(text)
-            else "Roman Urdu (Urdu written in English letters)" if roman_urdu(text) else None)
-    if lang:
-        s["trace"](type="tool", name="understand", label=f"{lang.split(' (')[0]} message: reading it in English", status="start")
+    spoken = ("Pashto" if PASHTO.search(text) else "Urdu" if URDU.search(text) or DEVANAGARI.search(text)
+              else "Roman Urdu (Urdu written in English letters)" if roman_urdu(text) else None)
+    if spoken:  # understanding always happens in English; the answer language comes from the lock below
+        s["trace"](type="tool", name="understand", label=f"{spoken.split(' (')[0]} message: reading it in English", status="start")
         text = translate(text, "English")
         s["trace"](type="tool", name="understand", label=f"understood as: {text[:120]}", status="done", rewritten=text)
+    lang = LANG_TARGET.get(preferred_language() or "", None) or spoken
+
+    # "talk to me in English": a standing preference that must be saved, not a request to research
+    cmd = LANGUAGE_CMD.search(text)
+    if cmd and not s.get("pending"):
+        f = get_facts()
+        picked = LANGS.get((cmd.group("lang") or "").strip().lower()) if cmd.group("lang") else None
+        if not picked and cmd.group("lang2"):
+            picked = LANGS.get(cmd.group("lang2").strip().lower())
+        if picked:  # keep the owner's choice; the LLM style prompt picks the fact up from here on
+            f.set("owner", "prefers_language", picked)
+            out = {"reply": LANG_CONFIRM[picked], "sources": []}
+            s["trace"](type="route", skill="owner", source="rule", confidence=1.0,
+                       why=f"You set the answer language to {picked}.")
+        else:  # "reply in my own language": drop the lock
+            f.forget("owner", "prefers_language")
+            out = {"reply": "Got it - I'll answer in whichever language you use.", "sources": []}
+            s["trace"](type="route", skill="owner", source="rule", confidence=1.0,
+                       why="You cleared the answer-language lock.")
+        dec = {"skill": "owner", "source": "rule", "confidence": 1.0}
+        return _finish(text, sid, conv, s, events, t0, channel, "owner", out, dec)
 
     pending, fix = s.get("pending"), CORRECTION.match(text.strip())
     wanted = fix and ALIASES.get(fix["skill"].lower(), fix["skill"].lower().replace(" ", "_"))
@@ -476,7 +540,11 @@ def _handle(text, sid, conv, s, events, t0, channel):
         s["trace"](type="route", skill=pending["skill"], source="pending", confidence=1.0, why="You answered the confirmation.")
         return _finish(text, sid, conv, s, events, t0, channel, pending["skill"], out,
                        {"skill": pending["skill"], "source": "pending", "confidence": 1.0})
-    elif pending and not pending.get("action") and not (FOLLOW_UP.search(text) and len(text.split()) > 3):
+    elif pending and not pending.get("action") and (pending.get("sticky")
+                                                    or not (FOLLOW_UP.search(text) and len(text.split()) > 3)):
+        # A skill asked the owner for something ("who should I send it to?"). Its pending slot is sticky while
+        # they answer, complain or correct about that same action ("No send it", "not sent yet send her now");
+        # the skill decides from the text whether it is still its question and returns None if the owner moved on.
         dec = {"skill": pending["skill"], "confidence": 1.0, "source": "pending"}
     else:
         if pending:  # a real follow-up, not an answer to the skill's question: drop the question

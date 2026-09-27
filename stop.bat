@@ -9,10 +9,16 @@ echo   STOPPING ISHTI ASSISTANT
 echo ========================================================================
 echo.
 
-:: tell the watchdog this stop is deliberate (it would otherwise restart the server)
-if not exist "%~dp0data" mkdir "%~dp0data"
-echo stop> "%~dp0data\stop.flag"
-timeout /t 12 >nul 2>&1
+:: Run full clean shutdown: release GPU VRAM, kill process tree, terminate automation sessions, verify 0 lingering processes
+if exist "%~dp0venv\Scripts\python.exe" (
+    "%~dp0venv\Scripts\python.exe" "%~dp0desktop\shutdown.py"
+    exit /b %errorlevel%
+)
+
+:: Fallback if venv is missing
+echo [WARN] Virtualenv python not found, falling back to system python or powershell...
+python "%~dp0desktop\shutdown.py"
+if %errorlevel% equ 0 exit /b 0
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "$stopped = 0;" ^

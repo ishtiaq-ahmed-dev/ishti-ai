@@ -1,12 +1,11 @@
 import { AnimatePresence, motion } from "motion/react";
-import { Bot, Brain, CandlestickChart, UserRound, Cpu, FolderKanban, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, Settings as SettingsIcon, Sparkles } from "lucide-react";
+import { Bot, Brain, CandlestickChart, UserRound, Cpu, FolderKanban, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, Power, Settings as SettingsIcon, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { getJSON } from "@/lib/api";
 import { Chat } from "@/sections/Chat";
 import { Memory, Settings, Skills, System, Tasks } from "@/sections/Pages";
 import { Overview } from "@/sections/Overview";
 import { AboutYou } from "@/sections/AboutYou";
-import { LiveNarration, type Live, type VoiceState } from "@/components/LiveNarration";
 import { Markets } from "@/sections/Markets";
 import { NotificationBell } from "@/components/rare/notification-bell";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -50,7 +49,6 @@ export default function App() {
   const [owner, setOwner] = useState("Ishtiaq Ahmed");
   const [projects, setProjects] = useState<Fact[]>([]);
   const [alerts, setAlerts] = useState<string[]>([]);
-  const [live, setLive] = useState<Live>(null);
   const [busy, setBusy] = useState(false);
   const [showNav, setShowNav] = useState(() => {
     try {
@@ -60,6 +58,9 @@ export default function App() {
     return true;
   });
 
+  const [showExitModal, setShowExitModal] = useState(false);
+  const [isExiting, setIsExiting] = useState(false);
+
   const toggleNav = useCallback(() => {
     setShowNav((prev) => {
       const next = !prev;
@@ -68,9 +69,33 @@ export default function App() {
     });
   }, []);
 
+  const handleConfirmExit = useCallback(async () => {
+    setIsExiting(true);
+    try {
+      await fetch("/api/shutdown", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch {}
+    setTimeout(() => {
+      window.close();
+    }, 1200);
+  }, []);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!isExiting) {
+        e.preventDefault();
+        e.returnValue = "Do you want to exit ISHTI?";
+        return "Do you want to exit ISHTI?";
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isExiting]);
+
   const onBusy = useCallback((b: boolean) => {
     setBusy(b);
-    if (!b) setLive(null);
   }, []);
 
   useEffect(() => {
@@ -141,41 +166,6 @@ export default function App() {
         ws.onmessage = (m) => {
           try {
             const msg = JSON.parse(m.data);
-            if (msg.type === "voice_state") {
-              const v = msg.data?.state as VoiceState;
-              if (v === "idle") {
-                setLive(null);
-              } else {
-                setLive((l) => ({
-                  text: v === "listening" ? "" : l?.text ?? "",
-                  step: v === "listening" ? "Say your command" : l?.step ?? "",
-                  done: false,
-                  voice: v,
-                }));
-              }
-            }
-            if (msg.type === "stt_partial" || msg.type === "stt_final") {
-              setLive((l) => ({
-                ...(l ?? { step: "", done: false, voice: "listening" as VoiceState }),
-                text: String(msg.data?.text ?? ""),
-              }));
-            }
-            if (msg.type === "barge_in") {
-              setLive((l) => ({ ...(l ?? { text: "", done: false }), step: "Stopped - listening to you", voice: "listening" }));
-            }
-            if (msg.type === "trace") {
-              const e = msg.data;
-              if (e.type === "done") {
-                setLive(null);
-              } else if (e.channel === "voice") {
-                if (e.type === "received") {
-                  setLive((l) => ({ text: String(e.text ?? ""), step: "Understanding…", done: false, voice: l?.voice ?? "thinking" }));
-                } else {
-                  const step = e.type === "route" ? `Using ${e.skill}` : e.type === "escalate" ? `Trying ${e.to} instead` : e.label ?? (e.type === "step" ? e.skill : null);
-                  if (step) setLive((l) => ({ text: l?.text ?? "", step: String(step), done: false, voice: l?.voice ?? "thinking" }));
-                }
-              }
-            }
             if (msg.type === "assistant_message" && String(msg.data?.reply ?? "").startsWith("⏰")) {
               setAlerts((a) => [msg.data.reply, ...a].slice(0, 20));
               if (typeof Notification !== "undefined" && Notification?.permission === "granted") {
@@ -212,12 +202,8 @@ export default function App() {
       Notification.requestPermission();
     }
 
-    const onChatDone = () => setLive(null);
-    window.addEventListener("ishti-chat-finished", onChatDone);
-
     return () => {
       isMounted = false;
-      window.removeEventListener("ishti-chat-finished", onChatDone);
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (ws) ws.close();
     };
@@ -295,6 +281,15 @@ export default function App() {
                         <span className="relative font-medium">{label}</span>
                       </button>
                     ))}
+                    <button
+                      type="button"
+                      onClick={() => setShowExitModal(true)}
+                      className="relative flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-destructive/80 hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer mt-1"
+                      title="Shut down ISHTI and release all resources"
+                    >
+                      <Power className="relative h-4 w-4 text-destructive" />
+                      <span className="relative font-medium">Exit ISHTI</span>
+                    </button>
                   </nav>
 
                   <div className="mt-5 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">My projects</div>
@@ -338,7 +333,48 @@ export default function App() {
           </AnimatePresence>
         </main>
       </div>
-      <LiveNarration live={live} onDismiss={() => setLive(null)} />
+
+      {showExitModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl border border-border/80 bg-background/95 p-6 shadow-2xl backdrop-blur-md">
+            <div className="flex items-center gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-destructive/15 text-destructive shrink-0">
+                <Power className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-foreground">Do you want to exit ISHTI?</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Clean shutdown & GPU memory release</p>
+              </div>
+            </div>
+            <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+              Exiting will cleanly terminate all background server processes, unload models to release GPU VRAM (RTX 5070 Ti), and close active browser sessions.
+            </p>
+            {isExiting ? (
+              <div className="mt-5 flex items-center justify-center gap-2.5 rounded-xl bg-muted/60 p-3 text-xs font-medium text-foreground">
+                <span className="h-2 w-2 animate-ping rounded-full bg-destructive" />
+                Shutting down ISHTI services...
+              </div>
+            ) : (
+              <div className="mt-6 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowExitModal(false)}
+                  className="rounded-xl border border-border px-4 py-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer transition-colors"
+                >
+                  No, keep running
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmExit}
+                  className="rounded-xl bg-destructive px-4 py-2 text-xs font-medium text-white hover:bg-destructive/90 cursor-pointer transition-colors shadow-xs"
+                >
+                  Yes, exit ISHTI
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -176,6 +176,8 @@ def run(text, session):
         saved = file_rows(job["rows"], job["fields"], where, job["url"], job["text"])
         return {"reply": f"Saved {len(job['rows'])} items to {saved}.", "sources": []}
     m = URL.search(text)
+    if not m:
+        return None
     url = m.group(0).rstrip(".,)")
     fields = fields_of(text)
     trace(session, "extract", f"fields: {', '.join(fields)}", status="done")

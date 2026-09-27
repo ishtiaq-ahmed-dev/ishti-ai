@@ -24,7 +24,16 @@ if not exist "%~dp0venv\Scripts\activate.bat" (
 
 call "%~dp0venv\Scripts\activate.bat"
 
-:: 2. CLI commands support
+:: 2. Singleton-instance check: if ISHTI is already running, focus existing window and exit
+if "%1"=="" (
+    "%~dp0venv\Scripts\python.exe" "%~dp0desktop\focus_ishti.py"
+    if !errorlevel! equ 0 (
+        echo [INFO] ISHTI is already running. Existing instance brought to focus.
+        exit /b 0
+    )
+)
+
+:: 3. CLI commands support
 if "%1"=="doctor" (
     python "orchestrator\doctor.py"
     exit /b %errorlevel%

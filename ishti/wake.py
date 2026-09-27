@@ -125,19 +125,28 @@ class Listener:
         self._run_len, self._check, self._decision, self._quiet_until = 0, None, None, 0.0
         self._partial_busy = False
         self._was_speaking = False
+        self.stream = None                    # the Stream of the utterance being recorded (live text + language)
+        self._turn_stream = None              # the finished turn's Stream (command_text runs on the handler thread)
         self.fg = None                        # the command in the foreground (the one that may speak as it streams)
         self._say_lock = threading.Lock()     # background answers are spoken one at a time
         from ishti import killswitch
         killswitch.on_kill(self._killed)
 
     # ---------------------------------------------------------------- wake word + command capture
+    def _record_from(self, frames, heard=False):
+        """Start recording a turn. A fresh Stream carries the live transcript and, more importantly, the language it
+        detects once during speech: command_text() then decodes the finished utterance in a single encoder pass."""
+        from ishti.voice import Stream
+        self.buf, self.heard, self.silent = frames, heard, 0
+        self.stream = Stream()
+
     def feed(self, frame: np.ndarray):
         """One 80 ms frame in. Returns the finished utterance (int16 audio, possibly empty) or None."""
         if self.buf is None:
             self.recent.append(frame)
             if self.live:  # Live mode: speech itself starts the turn
                 if self.vad.predict(frame, frame_size=640) >= 0.5:
-                    self.buf, self.heard, self.silent = list(self.recent), True, 0
+                    self._record_from(list(self.recent), heard=True)
                     self.state("listening")
                 return None
             if self._woken:  # the phrase spotter heard a wake phrase
@@ -146,11 +155,11 @@ class Listener:
                 if kind == "command":  # "Hey ISHTI, what's the weather" in one breath: that burst is the command
                     return audio
                 self._wake_ack()
-                self.buf, self.heard, self.silent = [], False, 0
+                self._record_from([])
                 return None
             if max(self.oww.predict(frame).values()) >= self.threshold:  # built-in model ("hey jarvis"), instant
                 self._wake_ack()
-                self.buf, self.heard, self.silent = list(self.recent), False, 0
+                self._record_from(list(self.recent))
                 return None
             self._spot(frame)
             return None
@@ -168,6 +177,7 @@ class Listener:
             self._last_partial = ""
             audio = np.concatenate(self.buf) if self.heard else np.zeros(0, np.int16)
             self.buf = None
+            self._turn_stream, self.stream = self.stream, None  # command_text() reads the language off it
             self.oww.reset()
             self.recent.clear()
             return audio
@@ -213,7 +223,10 @@ class Listener:
     def command_text(self, audio: np.ndarray) -> tuple[str, str | None]:
         """Returns (clean_command, wrong_name_or_None)."""
         from ishti.voice import transcribe
-        raw = transcribe(audio.astype(np.float32) / 32768) if len(audio) else ""
+        # the language the live Stream detected while the owner was still speaking: the decode then needs one
+        # encoder pass instead of two (it still detects on its own if no partial ever ran)
+        lang = getattr(self._turn_stream, "language", None)
+        raw = transcribe(audio, language=lang) if len(audio) else ""
         wrong = _WRONG_NAME.search(raw)
         wrong_name = wrong.group(0) if wrong else None
         return WAKE_TEXT.sub("", raw).strip(), wrong_name
@@ -227,15 +240,19 @@ class Listener:
         self.on_event("voice_state", {"state": name})
 
     def _partial(self, audio):
-        """Live 'what I'm hearing' for the dashboard; skipped if the previous one is still running."""
-        if self._partial_busy:
+        """Live 'what I'm hearing' for the dashboard; skipped if the previous one is still running.
+
+        Runs through the turn's Stream: no VAD pass, no language pass after the first one, no timestamps, and the
+        tail only. The old code decoded the whole growing buffer *accurately* every second, which is what left the
+        final decode waiting (and the dashboard showing nothing until it finished)."""
+        if self._partial_busy or self.stream is None:
             return
         self._partial_busy = True
+        stream = self.stream  # bound here: feed() may end this turn and start the next one while this runs
 
         def run():
             try:
-                from ishti.voice import transcribe
-                text = WAKE_TEXT.sub("", transcribe(audio.astype(np.float32) / 32768)).strip()
+                text = WAKE_TEXT.sub("", stream.partial(audio)).strip()
                 if text:
                     self._last_partial = text
                     self.on_event("stt_partial", {"text": text})
@@ -361,6 +378,7 @@ class Listener:
             self.on_event("latency", lat)
             print("[latency] " + " | ".join(f"{k} {v} ms" for k, v in lat.items()))
         finally:
+            self._turn_stream = None  # its language was already used: don't let a later turn inherit it
             if self.fg is task:  # a background task finishing must not reset the command in front of it
                 self.busy = False
                 if not cancel.is_set():
@@ -410,8 +428,7 @@ class Listener:
                     continue
                 # the interruption is the start of the next command: record the rest of it
                 joined = np.concatenate(start)
-                self.buf = [joined[i:i + FRAME] for i in range(0, len(joined) - FRAME + 1, FRAME)]
-                self.heard, self.silent = True, 0
+                self._record_from([joined[i:i + FRAME] for i in range(0, len(joined) - FRAME + 1, FRAME)], heard=True)
                 self.state("listening")
                 continue
             pair.append(block)

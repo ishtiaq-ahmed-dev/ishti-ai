@@ -50,6 +50,11 @@ def candidate(text, skills=None, session=None):
         several = False  # one browser task that also reads the page
     if several and kinds <= {"apps", "whatsapp"}:
         several = False  # opening whatsapp and sending a message is one unified whatsapp task
+    if several and "whatsapp" in kinds and kinds <= {"apps", "whatsapp", "chat"}:
+        # "open whatsapp and send message to bhai hi how are you in two different messages" is ONE messenger
+        # task ("chat" here is the clause router's fallback, not a second task) - splitting it made each step
+        # re-open the chat and answer "couldn't find the message box" twice.
+        several = False
     if several and session is not None and session.get("trace"):
         session["trace"](type="tool", name="split", label="several tasks: " + ", ".join(f"{k} ({c[:40]})" for c, k in found))
     return several
