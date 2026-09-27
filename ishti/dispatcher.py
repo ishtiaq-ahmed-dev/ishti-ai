@@ -750,11 +750,12 @@ def warm_up():
     """Load Laya now so the first real request doesn't pay ~4 s. Whisper is NOT preloaded: it would sit
     on ~1.6 GB of VRAM next to the 14B model and push it into slow shared memory; it loads on first use."""
     route("hello", SKILLS)
-    try:  # Piper is small and on the CPU: loaded now, the first spoken sentence starts in ~0.1 s, not ~1 s
-        from ishti.voice import tts_voice
-        tts_voice()
+    try:  # the voice engine is small and on the CPU: loaded now, the first spoken sentence starts at once
+        from ishti.voice import current_voice, kokoro, tts_voice
+        v = current_voice()
+        kokoro(v) if v.get("engine") == "kokoro" else tts_voice(v)
     except Exception as exc:
-        print(f"[dispatcher] Piper preload skipped: {exc}")
+        print(f"[dispatcher] voice preload skipped: {exc}")
     try:
         import torch
         torch.cuda.empty_cache()
@@ -886,6 +887,108 @@ async def overview_endpoint():
         "reminders": reminders, "memories": memories,
         "prefs": {"audio_output": prefs.audio_output, "response_length": prefs.response_length},
     }
+
+
+# ---- Settings -> Models & voices (ishti/manage.py): choose, delete to free space, download again ----
+async def _off(fn, *args):
+    import asyncio
+    return await asyncio.get_running_loop().run_in_executor(None, fn, *args)
+
+
+def _manage_error(exc):
+    return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@api.get("/api/manage")
+async def manage_state():
+    from ishti import manage
+    llm, whisper, voices = await _off(manage.llm_state), await _off(manage.whisper_state), await _off(manage.voices_state)
+    return {"llm": llm, "whisper": whisper, "voices": voices, "jobs": manage.JOBS}
+
+
+@api.post("/api/manage/role")
+async def manage_role(req: Request):
+    from ishti import manage
+    b = await req.json()
+    try:
+        await _off(manage.set_role, str(b.get("role", "")), str(b.get("model", "")))
+    except Exception as exc:
+        return _manage_error(exc)
+    return {"ok": True}
+
+
+@api.post("/api/manage/model")
+async def manage_model(req: Request):
+    """{name, action: delete | download}"""
+    from ishti import manage
+    b = await req.json()
+    name, action = str(b.get("name", "")), b.get("action")
+    try:
+        if action == "delete":
+            await _off(manage.delete_model, name)
+        elif action == "download":
+            manage.pull_model(name)
+        else:
+            raise ValueError("action must be delete or download")
+    except Exception as exc:
+        return _manage_error(exc)
+    return {"ok": True}
+
+
+@api.post("/api/manage/whisper")
+async def manage_whisper(req: Request):
+    """{name, action: select | delete | download}"""
+    from ishti import manage
+    b = await req.json()
+    name, action = str(b.get("name", "")), b.get("action")
+    try:
+        fn = {"select": manage.set_whisper, "delete": manage.delete_whisper, "download": manage.download_whisper}[action]
+        await _off(fn, name)
+    except Exception as exc:
+        return _manage_error(exc)
+    return {"ok": True}
+
+
+@api.post("/api/manage/voice")
+async def manage_voice(req: Request):
+    """{name, default: bool} - speak with this voice (and make it the default)."""
+    from ishti import manage
+    b = await req.json()
+    try:
+        await _off(manage.select_voice, str(b.get("name", "")), bool(b.get("default")))
+    except Exception as exc:
+        return _manage_error(exc)
+    return {"ok": True}
+
+
+@api.post("/api/manage/files")
+async def manage_files(req: Request):
+    """{key, action: delete | download} - a voice engine's files."""
+    from ishti import manage
+    b = await req.json()
+    key, action = str(b.get("key", "")), b.get("action")
+    try:
+        if key not in manage.engines():
+            raise ValueError(f"unknown package {key}")
+        if action == "delete":
+            await _off(manage.delete_files, key)
+        elif action == "download":
+            manage.download_files(key)
+        else:
+            raise ValueError("action must be delete or download")
+    except Exception as exc:
+        return _manage_error(exc)
+    return {"ok": True}
+
+
+@api.get("/api/manage/preview")
+async def manage_preview(name: str):
+    from fastapi.responses import Response
+    from ishti import manage
+    try:
+        return Response(await _off(manage.preview, name), media_type="audio/wav")
+    except Exception as exc:
+        return _manage_error(exc)
 
 
 @api.get("/api/chrome_profiles")
