@@ -83,6 +83,10 @@ LABELLED = [
 def main():
     bad = [n for n, s in d.SKILLS.items() if s.status == "broken"]
     assert not bad, f"broken skills: {[(n, d.SKILLS[n].problem) for n in bad]}"
+    # E conflict resolution: a near-tie between Laya's top two goes to the skill this chat used last
+    tie = {"skill": "web_search", "source": "laya", "scores": [("web_search", 0.51), ("weather", 0.49), ("chat", 0.2)]}
+    assert d.recency_tiebreak(tie, "weather")["skill"] == "weather" and d.recency_tiebreak(tie, "chat")["skill"] == "web_search"
+    assert d.recency_tiebreak({**tie, "scores": [("web_search", 0.7), ("weather", 0.4)]}, "weather")["skill"] == "web_search"
     # C3: only the sources the answer actually cites are listed
     src = [{"id": i, "url": f"https://s{i}.com"} for i in range(1, 6)]
     assert [x["id"] for x in d.main_sources("Rs 314,990 at PriceOye [2]; Daraz lists it [4].", src)] == [2, 4]

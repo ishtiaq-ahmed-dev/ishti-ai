@@ -485,7 +485,7 @@ def _handle(text, sid, conv, s, events, t0, channel):
         if planner.candidate(text, SKILLS, s) and (steps := planner.plan(text, SKILLS)):
             dec = {"skill": "plan", "confidence": 1.0, "source": "planner", "steps": steps}
         else:
-            dec = route(text, SKILLS)
+            dec = recency_tiebreak(route(text, SKILLS), s.get("last_skill"))
     s["trace"](type="route", skill=dec["skill"], source=dec.get("source"), confidence=dec.get("confidence"),
                why=why(dec), scores=dec.get("scores", []), steps=dec.get("steps", []))
     if dec["skill"] == "plan":
@@ -526,6 +526,16 @@ def initiator_of(dec, s, tried):
     if tried or dec.get("source") in ("plan", "escalation"):
         return "judgment"
     return "instructed"
+
+
+def recency_tiebreak(dec, last_skill, margin=0.05):
+    """Conflict resolution (E): when Laya's top two skills are within `margin`, the one this conversation used last
+    wins - "and the next one?" after a weather answer is weather, not a coin flip."""
+    scores = dec.get("scores") or []
+    if dec.get("source") == "laya" and len(scores) >= 2 and last_skill and scores[0][1] - scores[1][1] < margin \
+            and last_skill in (scores[0][0], scores[1][0]) and last_skill != dec["skill"]:
+        return {**dec, "skill": last_skill, "source": "laya+recency", "why_recency": f"{scores[0]} vs {scores[1]}"}
+    return dec
 
 
 def main_sources(reply, sources):
