@@ -261,10 +261,17 @@ def open_url(url, session=None, new_tab=False):
 
 def _same_page(a, b):
     """True when showing tab `b` already is what loading `a` shows: the same URL (scheme/'www.'/trailing slash
-    aside), or the same host+path with no query/fragment on either side. A different ?query/#hash must load,
+    aside), or the same host+path with no query/fragment on either side, or the same host when opening a site/app
+    at root (e.g. web.whatsapp.com, gemini.google.com/app). A different ?query/#hash must load,
     otherwise a search would "reuse" a tab showing stale results."""
     wa, wb = _where(a), _where(b)
-    return bool(wa and wb and wa[:2] == wb[:2] and (wa[2:] == wb[2:] or not any(wa[2:] + wb[2:])))
+    if not wa or not wb:
+        return False
+    if wa[:2] == wb[:2] and (wa[2:] == wb[2:] or not any(wa[2:] + wb[2:])):
+        return True
+    if wa[0] == wb[0] and wa[1] in ("/", "") and not wa[2]:
+        return True
+    return False
 
 
 NAV_HELPERS = ("new_tab", "tab")  # our own flags on browser_navigate args; the MCP schema takes only url
