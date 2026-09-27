@@ -225,6 +225,22 @@ def tts_voice(profile=None):
     return _voices[profile["piper_voice"]]
 
 
+OWNER_SAMPLE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "owner_voice", "sample.wav")
+
+
+def synthesize_as_owner(text):
+    """(WAV bytes, whose voice it is) for things sent in the owner's name (WhatsApp voice notes). His own voice when
+    he has recorded a sample (Settings -> Voices) and the voice converter is installed; else ISHTI's current voice."""
+    wav = synthesize(text)
+    if os.path.isfile(OWNER_SAMPLE):
+        try:
+            from ishti.clone import convert
+            return convert(wav, OWNER_SAMPLE), "your own voice"
+        except Exception as exc:  # converter missing/failed: still send, in ISHTI's voice, and say so
+            print(f"[voice] own-voice conversion failed: {type(exc).__name__}: {exc}")
+    return wav, f"ISHTI's voice ({current_voice()['name']}) - record your voice in Settings -> Voices to use your own"
+
+
 def synthesize(text: str, profile=None) -> bytes:
     """WAV bytes of the spoken reply in the owner's voice (markdown, URLs and citations stripped; [pause] tags
     become short silences, other style tags are dropped)."""

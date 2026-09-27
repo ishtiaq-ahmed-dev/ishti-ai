@@ -99,13 +99,13 @@ def read_all(url, session):
 
 def looked_at(session):
     """Screenshot + local vision model, for pages whose content isn't in the DOM text (charts, canvas)."""
-    out = _step("browser_take_screenshot", {"filename": f"extract_{int(time.time())}.png"})
-    path = re.search(r"([A-Za-z]:\\[^\s)]+\.png)", out)
+    from ishti.skills.browser.skill import screenshot
+    path = screenshot(f"extract_{int(time.time())}.png")
     if not path:
         return ""
     from ishti.skills.video.pro import look
     trace(session, "vision", "the page is mostly visual - reading a screenshot", status="done")
-    return look(path.group(1), "List every item visible on this page with its details, one per line.").get("text", "")
+    return look(path, "List every item visible on this page with its details, one per line.").get("text", "")
 
 
 def rows_from(chunks, fields, text, session):

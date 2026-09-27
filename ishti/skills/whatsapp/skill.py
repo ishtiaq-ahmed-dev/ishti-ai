@@ -10,7 +10,7 @@ import time
 from ishti.skills import trace
 from ishti.skills.browser import skill as browser
 
-TRIGGER = re.compile(r"\bw(?:h)?at(?:s\s?)?app?\b", re.I)  # typos: whatsap, watsapp, whats app; not "what app"
+TRIGGER = re.compile(r"\b(?:w+h?a+t*s+\s?a+p+|w(?:h)?at(?:s\s?)?app?|wh?as+t?a+p+)\b", re.I)  # whatsap, watsapp, whastap; not "what app"
 UNREAD = re.compile(r"\b(?:unread|unseen|new\s+messages?|who\s+(?:messaged|texted))\b", re.I)
 SEND = re.compile(r"\b(?:send|reply|message\s+to|write\s+to|tell\s+\w+\s+that)\b", re.I)
 URL = "https://web.whatsapp.com"
@@ -55,7 +55,7 @@ def unread(snap):
 
 # "send this video to qasim ims" names no app: WhatsApp is ISHTI's messenger.
 SEND_TO = re.compile(r"^(?!.*(?:\be-?mails?\b|\bgmail\b|@))\s*(?:please\s+)?(?:now\s+)?send\s+.{1,300}?\bto\s+\S+", re.I)  # email is the email skill's
-MEDIA_PATH = re.compile(r"[A-Za-z]:\\[^\n\"'<>|?*`]+?\.(?:mp4|webm|mov|mkv|png|jpe?g|gif|webp|mp3|wav|m4a|pdf|docx?|xlsx?|pptx?|zip)\b", re.I)
+MEDIA_PATH = re.compile(r"[A-Za-z]:\\[^\n\"'<>|?*`]+?\.(?:mp4|webm|mov|mkv|png|jpe?g|gif|webp|3gp|mp3|wav|ogg|opus|m4a|aac|pdf|docx?|xlsx?|pptx?|txt|csv|zip|rar|7z)\b", re.I)
 
 
 def norm(name):
@@ -93,11 +93,12 @@ def rank(wanted, names):
 def search(name, session):
     """Type the first letters (spelling and voice errors live in the rest) and read the result names."""
     snap = browser._call("browser_snapshot", {})
-    box = re.search(r'textbox "Search or start a new chat" \[ref=([^\]]+)\]', snap)
+    box = browser.locate(snap[:snap.find("Chat list")] if "Chat list" in snap else snap,
+                         "the search box above the chat list", "textbox", r"Search[^\"]*", session)
     if not box:
         return []
     probe = re.split(r"\s+", name.strip())[0][:3]
-    browser._call("browser_type", {"element": "WhatsApp search box", "target": box.group(1), "text": probe})
+    browser._call("browser_type", {"element": "WhatsApp search box", "target": box, "text": probe})
     time.sleep(2)
     found = search_results(browser._call("browser_snapshot", {}))
     trace(session, "contacts", f"searched '{probe}': {len(found)} chats/contacts")
@@ -105,17 +106,25 @@ def search(name, session):
 
 
 def parse_send(text, session):
-    """-> (contact, file path or None, message or None)."""
+    """-> (contact, file path or None, [messages], words for a voice note or None)."""
     from ishti import llm
     import json
-    raw = llm.ask('Extract from this request to send something on WhatsApp: {"contact": "<who to send to, as written>", '
-                  '"refers_to_file": true/false (sending a file, video, image, "this"/"it"), "message": "<text to send, '
-                  f'or null>"}}. Output only JSON.\n\n{text}', system=None, temperature=0, max_tokens=80,
+    raw = llm.ask('Extract from this request to send something on WhatsApp. JSON: {"contact": "<who to send to, every word exactly as written, e.g. qasim ims>", '
+                  '"refers_to_file": true/false (sending a file, video, image, audio, "this"/"it"), '
+                  '"messages": ["<each separate text message, in order; split only if the owner asks for separate '
+                  'messages; write emoji the owner names as the emoji characters, e.g. heart emoji -> ❤️>"], '
+                  '"voice_note": "<the words to say if the owner wants a voice note / voice message / audio of him '
+                  f'saying something, else null>"}}. Output only JSON.\n\n{text}', system=None, temperature=0, max_tokens=200,
                   response_format={"type": "json_object"})
     try:
         d = json.loads(raw)
     except ValueError:
         d = {}
+    msgs = d.get("messages") or ([d["message"]] if d.get("message") else [])
+    msgs = [str(m).strip() for m in (msgs if isinstance(msgs, list) else [msgs]) if str(m or "").strip()]
+    voice = str(d.get("voice_note") or "").strip() or None
+    if voice:
+        msgs = [m for m in msgs if m != voice]  # the spoken words aren't also typed
     path = MEDIA_PATH.search(text)
     if not path and d.get("refers_to_file"):  # "this video": the last file ISHTI showed in this chat
         for m in reversed(session.get("history", [])):
@@ -124,45 +133,99 @@ def parse_send(text, session):
                 break
     else:
         path = path and path.group(0)
-    return str(d.get("contact") or "").strip(), path if path and os.path.isfile(path) else None, d.get("message")
+    return str(d.get("contact") or "").strip(), path if path and os.path.isfile(path) else None, msgs, voice
 
 
-def deliver(ref, name, path, message, session):
-    """Open the chat and send the file (with the message as caption) or the message. The owner named the contact,
-    the file and asked to send, so an exact contact match sends without another question."""
+VISUAL = (".mp4", ".webm", ".mov", ".mkv", ".3gp", ".png", ".jpg", ".jpeg", ".gif", ".webp")
+AUDIO = (".mp3", ".wav", ".ogg", ".opus", ".m4a", ".aac", ".amr")
+
+
+def voice_note(words):
+    """The words spoken in the owner's voice (his cloned voice when he has recorded a sample, else ISHTI's voice),
+    as an Opus .ogg - WhatsApp's own voice-note format."""
+    import subprocess
+    import tempfile
+    from ishti import ROOT
+    from ishti.skills.media.skill import ff
+    from ishti.voice import synthesize_as_owner
+    wav, whose = synthesize_as_owner(words)
+    src = os.path.join(tempfile.mkdtemp(), "note.wav")
+    with open(src, "wb") as f:
+        f.write(wav)
+    out = os.path.join(ROOT, "data", "media_output", f"voice_note_{time.strftime('%Y%m%d_%H%M%S')}.ogg")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    try:
+        ff("-i", src, "-c:a", "libopus", "-b:a", "32k", "-ac", "1", "-ar", "48000", out)
+    except subprocess.CalledProcessError:
+        return src, whose  # no Opus encoder: WhatsApp takes the WAV too
+    return out, whose
+
+
+def _stuck(want, name, task, session):
+    """A step's element isn't on the page (WhatsApp changed, a popup is in the way): look at a screenshot, look up
+    how WhatsApp does it, and let the browser agent finish the task from there (it still asks before sending)."""
+    trace(session, "stuck", f"couldn't find {want} - looking at the screen and searching how it's done", status="error")
+    notes = browser.troubleshoot(want, "WhatsApp Web", session)
+    out = browser.run(f"In WhatsApp Web, in the open chat with {name}: {task}", session,
+                      server=browser.profile_for("whatsapp"), hint=HINT + "\n" + notes,
+                      start_snapshot=browser._call("browser_snapshot", {}))
+    return (out or {}).get("reply") or f"I couldn't find {want} in {name}'s chat."
+
+
+def _sent(snap, text):
+    """The last sent text is on the page (WhatsApp shows it in the chat once it has gone)."""
+    return text[:40].lower() in snap.lower()
+
+
+def deliver(ref, name, path, messages, session):
+    """Open the chat, send the file (the first message as its caption), then each text message in order. The owner
+    named the contact and what to send, so an exact contact match sends without another question."""
     browser._call("browser_click", {"element": f"chat with {name}", "target": ref})
     time.sleep(1.5)
     snap = browser._call("browser_snapshot", {})
+    messages, done = list(messages), []
     if path:
-        attach = re.search(r'button "Attach" \[ref=([^\]]+)\]', snap)
+        ext = os.path.splitext(path)[1].lower()
+        kind = "Photos & videos" if ext in VISUAL else "Audio" if ext in AUDIO else "Document"
+        task = f"attach the file {path} with the '{kind}' option and send it" + (f" with the caption {messages[0]!r}" if messages else "")
+        attach = browser.locate(snap, "the Attach button (paperclip or plus) of the chat", "button", "Attach", session)
         if not attach:
-            return f"Opened {name}'s chat but couldn't find the attach button."
-        snap = browser._call("browser_click", {"element": "Attach", "target": attach.group(1)})
-        media = path.lower().endswith((".mp4", ".webm", ".mov", ".mkv", ".png", ".jpg", ".jpeg", ".gif", ".webp"))
-        item = re.search(r'"(Photos (?:&|&amp;|and) videos)"[^\n]*\[ref=([^\]]+)\]' if media else r'"(Document)"[^\n]*\[ref=([^\]]+)\]', snap)
+            return _stuck("the attach button", name, task, session)
+        snap = browser._call("browser_click", {"element": "Attach", "target": attach})
+        item = browser.locate(snap, f"the '{kind}' option of the attach menu", "menuitem",
+                              re.escape(kind).replace("&", "(?:&|&amp;|and)"), session)
         if not item:
-            return "The attach menu didn't show the expected option."
-        browser._call("browser_click", {"element": item.group(1), "target": item.group(2)})
+            browser._call("browser_press_key", {"key": "Escape"})
+            return _stuck(f"the '{kind}' option", name, task, session)
+        browser._call("browser_click", {"element": kind, "target": item})
         browser._call("browser_file_upload", {"paths": [path]})
         time.sleep(3)  # WhatsApp builds the preview
         snap = browser._call("browser_snapshot", {})
-        if message:
-            cap = re.search(r'textbox "(?:Add a caption|Type a message)[^"]*" \[ref=([^\]]+)\]', snap)
-            if cap:
-                browser._call("browser_type", {"element": "caption", "target": cap.group(1), "text": message})
-                snap = browser._call("browser_snapshot", {})
-        send = re.findall(r'button "Send" \[ref=([^\]]+)\]', snap)
-        if not send:
-            return "The file preview opened but the Send button wasn't there."
+        if messages and kind != "Audio" and (cap := browser.locate(snap, "the caption box of the file preview", "textbox",
+                                                                     r"(?:Add a caption|Type a message)[^\"]*", session)):
+            browser._call("browser_type", {"element": "caption", "target": cap, "text": messages.pop(0)})
+            snap = browser._call("browser_snapshot", {})
+        send = browser.refs(snap, "button", "Send") or [browser.locate(snap, "the Send button of the file preview", session=session)]
+        if not send[-1]:
+            return _stuck("the Send button of the file preview", name, "send the file that is in the preview", session)
         browser._call("browser_click", {"element": "Send", "target": send[-1]})
-    else:
-        box = re.search(r'textbox "Type a message[^"]*" \[ref=([^\]]+)\]', snap)
+        time.sleep(2)
+        done.append(os.path.basename(path))
+    for i, msg in enumerate(messages):
+        snap = browser._call("browser_snapshot", {})
+        box = browser.locate(snap, f"the message box of the chat with {name}", "textbox", r"Type a message[^\"]*", session)
         if not box:
-            return f"Opened {name}'s chat but couldn't find the message box."
-        browser._call("browser_type", {"element": "message box", "target": box.group(1), "text": message, "submit": True})
-    time.sleep(2)
-    trace(session, "send", f"sent {'the file' if path else 'the message'} to {name}")
-    return f"Sent {os.path.basename(path) if path else 'your message'} to {name} on WhatsApp."
+            rest = " then ".join(repr(m) for m in messages[i:])
+            return ("Sent " + ", ".join(done) + ". " if done else "") + _stuck("the message box", name, f"send the messages {rest}", session)
+        browser._call("browser_type", {"element": "message box", "target": box, "text": msg, "submit": True})
+        time.sleep(1.2)
+        done.append(repr(msg) if len(msg) < 60 else "your message")
+    snap = browser._call("browser_snapshot", {})
+    if messages and not _sent(snap, messages[-1]):
+        trace(session, "verify", "the last message isn't visible in the chat yet", status="error")
+        return f"I typed it to {name}, but I can't see it in the chat - please check WhatsApp."
+    trace(session, "send", f"sent {len(done)} item(s) to {name}")
+    return f"Sent {', '.join(done)} to {name} on WhatsApp."
 
 
 def send_flow(text, session, pend=None):
@@ -173,13 +236,16 @@ def send_flow(text, session, pend=None):
             next((n for n in names if norm(text) and norm(text) in norm(n)), None)
         if not chosen:
             return None  # not an answer: route normally
-        contact, path, message, exact_name = chosen, pend["file"], pend["message"], chosen
+        contact, path, messages, exact_name = chosen, pend["file"], pend["messages"], chosen
     else:
-        contact, path, message = parse_send(text, session)
+        contact, path, messages, voice = parse_send(text, session)
         exact_name = None
         if not contact:
             return {"reply": "Who should I send it to?", "sources": []}
-        if not path and not message:
+        if voice and not path:
+            path, whose = voice_note(voice)
+            trace(session, "voice_note", f"recorded the voice note in {whose}")
+        if not path and not messages:
             return {"reply": "What should I send? Name the file or open it in the chat first, or give me the message.", "sources": []}
     found = search(contact, session)
     browser._call("browser_press_key", {"key": "Escape"}) if not found else None
@@ -187,12 +253,12 @@ def send_flow(text, session, pend=None):
     exact = [n for n, _ in ranked if norm(n) == norm(exact_name or contact)]
     if exact:
         ref = dict(found)[exact[0]]
-        return {"reply": deliver(ref, exact[0], path, message, session), "sources": []}
+        return {"reply": deliver(ref, exact[0], path, messages, session), "sources": []}
     browser._call("browser_press_key", {"key": "Escape"})
     if not ranked:
         return {"reply": f"I couldn't find anyone like '{contact}' on WhatsApp. Check the name?", "sources": []}
     names = [n for n, _ in ranked[:5]]
-    session["pending"] = {"skill": "whatsapp", "candidates": names, "file": path, "message": message}
+    session["pending"] = {"skill": "whatsapp", "candidates": names, "file": path, "messages": messages}
     return {"reply": f"I didn't find '{contact}' exactly. Did you mean:\n" + "\n".join(f"{i}. {n}" for i, n in enumerate(names, 1))
                      + "\nReply with the number or name.", "sources": []}
 
@@ -258,4 +324,10 @@ if __name__ == "__main__":
     assert search_results(res) == [("Qassim IMS", "e5"), ("Qasim Ali", "e8")], search_results(res)
     assert rank("qasim ims", ["Qasim Ali", "Qassim IMS", "Zara"])[0][0] == "Qassim IMS"
     assert norm("Qasim  IMS") == norm("qasim ims") and match("send this video to qasim ims")
+    assert match("open whastap and send hi to bhai") and match("wasap ali") and not match("whatever happens")
+    # the bug that stopped sends: Playwright's "[active]" flag between the box's name and its ref
+    chat = ('- button "Attach" [ref=f1e1725] [cursor=pointer]\n- textbox "Type a message to Bhai" [active] [ref=f1e1740]:\n'
+            '- button "Send" [disabled] [ref=f9]\n- button "Send" [ref=f10]')
+    assert browser.ref(chat, "textbox", r"Type a message[^\"]*") == "f1e1740" and browser.refs(chat, "button", "Send")[-1] == "f10"
+    assert browser.locate(chat, "attach", "button", "Attach") == "f1e1725"
     print("[self-check] whatsapp OK")

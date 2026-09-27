@@ -173,6 +173,79 @@ def _call(name, args):
     return out
 
 
+# Playwright puts state flags between an element's name and its ref ([active], [disabled], [cursor=pointer]...);
+# WhatsApp's message box broke on "[active]". These patterns skip them.
+FLAGS = r'(?: \[(?!ref=)[^\]]*\])*'
+
+
+def ref(snap, role, label=None):
+    """The ref of the first `role "label"` element; with no label, the first `role` element, named or not."""
+    name = rf'(?: "[^"]*")?' if label is None else rf' "(?:{label})"'
+    m = re.search(rf'\b{role}{name}{FLAGS} \[ref=([^\]]+)\]', snap, re.I)
+    return m.group(1) if m else None
+
+
+def refs(snap, role, label=r'[^"]*'):
+    return re.findall(rf'\b{role} "(?:{label})"{FLAGS} \[ref=([^\]]+)\]', snap, re.I)
+
+
+INTERACTIVE = re.compile(r"\b(?:button|textbox|link|combobox|menuitem|checkbox|radio|gridcell|option|tab|searchbox)\b"
+                         r"[^\n]*\[ref=([^\]]+)\]")
+
+
+def locate(snap, want, role=None, label=None, session=None):
+    """The ref of the element a task needs, even after the site renames it: the exact role/label first, else the
+    local model picks it from the page's interactive elements (a renamed label is still the same element)."""
+    if role and (r := ref(snap, role, label)):
+        return r
+    items = [line.strip()[:160] for line in snap.splitlines() if INTERACTIVE.search(line)]
+    if not items:
+        return None
+    raw = llm.ask("Page elements (one per line, each with its ref):\n" + "\n".join(items[:250])
+                  + f"\n\nWhich element is: {want}? Reply with only its ref (for example e123), or none.",
+                  system=None, temperature=0, max_tokens=16)
+    known = {m.group(1) for line in items if (m := INTERACTIVE.search(line))}
+    got = next((t for t in re.findall(r"\w+", raw or "") if t in known), None)
+    if got:
+        trace(session, "locate", f"found '{want}' by what it is (its label changed)")
+    return got
+
+
+def screenshot(name):
+    """Screenshot of the current page -> its absolute path, or None. A bare filename is saved relative to the MCP
+    server's working folder (the repo root), so it's given a full path under data/screenshots."""
+    from ishti import ROOT
+    path = os.path.join(ROOT, "data", "screenshots", name)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    _call("browser_take_screenshot", {"filename": path})
+    return path if os.path.isfile(path) else None
+
+
+def troubleshoot(want, site, session=None):
+    """When an element can't be found at all: what the screen shows (screenshot + local vision model: a popup, a
+    banner, a logged-out page) and how the site does it (web search). Returned as a hint for the browser agent."""
+    notes = []
+    try:
+        if path := screenshot(f"stuck_{int(time.time())}.png"):
+            from ishti.skills.video.pro import look
+            seen = look(path, f"I need to {want} on this {site} page. What is on screen? Is a popup, dialog, "
+                              "banner or login page in the way? Where is what I need?")
+            notes.append("The screen shows: " + str(seen.get("text") or "")[:600]
+                         + (f" Problem: {seen['problem']}" if seen.get("problem") else ""))
+            trace(session, "vision", "looked at a screenshot of the page", status="done")
+    except Exception as exc:
+        notes.append(f"(screenshot failed: {type(exc).__name__})")
+    try:
+        from tools.web.search import web_search
+        hits = web_search(f"how to {want} on {site}", max_results=3)
+        if hits:
+            notes.append("How it's done (web search): " + " | ".join(f"{h.title}: {h.snippet[:200]}" for h in hits))
+            trace(session, "web_search", f"looked up how to {want} on {site}", status="done")
+    except Exception as exc:
+        notes.append(f"(web search failed: {type(exc).__name__})")
+    return "\n".join(notes)
+
+
 def _text_calls(content):
     """qwen2.5 sometimes writes {"name": ..., "arguments": ...} as plain text instead of a tool call.
     Take only the first: later ones were planned without seeing the page."""
@@ -195,20 +268,23 @@ CHECK = ("Before answering, compare with the owner's request. If any part is not
 def _summary(msgs, log):
     """Final answer grounded in what actually ran, never in the model's own claims."""
     request = msgs[0]["content"]
-    page = next((m["content"] for m in reversed(msgs) if m["role"] == "tool"), "")[-3000:]
+    pages = [m["content"] for m in msgs if m["role"] == "tool"]
+    # the page before the last one too: the re-check sometimes clicks one link past the answer (example.com's
+    # heading, then "Learn more" -> IANA), and the answer must come from whichever page shows it
+    earlier = f"Previous page (excerpt):\n{pages[-2][:1500]}\n\n" if len(pages) > 1 else ""
     done = "\n".join(log) or "(no browser actions ran)"
-    return llm.ask(f"Owner's request: {request}\n\nBrowser actions that actually ran, in order:\n{done}\n\n"
-                   f"Current page (excerpt):\n{page}\n\nAnswer the owner in 1-3 short sentences. Report only "
-                   "what the actions and page show; if part of the request was not done, say which part.",
-                   temperature=0, max_tokens=200)
+    return llm.ask(f"Owner's request: {request}\n\nBrowser actions that actually ran, in order:\n{done}\n\n{earlier}"
+                   f"Current page (excerpt):\n{(pages or [''])[-1][-3000:]}\n\nAnswer the owner in 1-3 short sentences "
+                   "from whichever of these pages answers the request. Report only what the actions and pages show; if "
+                   "part of the request was not done, say which part.", temperature=0, max_tokens=200)
 
 
 def _loop(session, msgs, log, steps_left):
     tools, checks = _tools(), 0
     for step in range(steps_left):
-        for m in msgs[:-3]:  # keep only the latest page states in context
-            if m["role"] == "tool" and len(m["content"]) > 300:
-                m["content"] = "[older page state omitted]"
+        for m in msgs[:-3]:  # older page states shrink to their top (title, headings) - the latest stay whole
+            if m["role"] == "tool" and len(m["content"]) > 1500:
+                m["content"] = m["content"][:1500] + "\n[rest of this older page omitted]"
         msg = llm.chat(msgs, system=SYSTEM, tools=tools, temperature=0, max_tokens=400)
         # One action per step: the model must see each result before planning the next action,
         # otherwise it batches navigate+fill+submit against element targets it guessed.
