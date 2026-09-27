@@ -45,6 +45,7 @@ def run(text, session):
         time.sleep(4)
         page = browser._call("browser_evaluate", {"function": "() => (document.querySelector('[role=main]') || document.body).innerText"})
         snap = browser._call("browser_snapshot", {})
+        wanted = browser.SERVER  # Profile 10 if Profile 9 hit a login page: the merge clicks go where the page is
     kind, what = state(page, snap)
     trace(session, "contacts", {"none": "no duplicates", "merge_all": "duplicates found", "each": f"{len(what) if isinstance(what, list) else 0} to merge"}[kind],
           status="done")

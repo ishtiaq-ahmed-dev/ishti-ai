@@ -140,13 +140,15 @@ def to_google(title, start, end, place, session, reply):
         except RuntimeError as exc:
             return f"{reply}\n\nGoogle Calendar: {exc}"
         page = browser._call("browser_navigate", {"url": url})
-        save = re.search(r'button "Save"[^\n]*\[ref=([^\]]+)\]', page)
+        used = browser.SERVER  # Profile 10 if Profile 9 asked for a login: Save is clicked where the event is open
+        save = browser.ref(page, "button", "Save")
     if not save:
         return f"{reply}\n\nI opened it in Google Calendar but couldn't find its Save button - it's open in your Chrome."
 
     def go():
         with browser.LOCK:
-            browser._call("browser_click", {"element": "Save", "ref": save.group(1)})
+            browser.use_server(used, session)
+            browser._call("browser_click", {"element": "Save", "ref": save})
         return f"Saved **{title}** to your Google Calendar too."
     return ask_first(session, "calendar", reply + "\n\nIt's filled in on Google Calendar - save it there too", go)
 

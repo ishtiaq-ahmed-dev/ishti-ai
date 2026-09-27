@@ -170,7 +170,38 @@ def _call(name, args):
     if m and os.path.isfile(m.group(1)):
         with open(m.group(1), encoding="utf-8") as f:
             out = out.replace(m.group(0), "\n" + f.read())
+    if name == "browser_navigate" and login_wall(out) and (moved := _to_login(args["url"])):
+        return moved
     return out
+
+
+# A sign-in page instead of the site: Google/Microsoft account pages, /login-style URLs, a password box, a
+# "Sign in" heading. WhatsApp's QR page is its own kind of login (never in the login profile).
+LOGIN_WALL = re.compile(r"Page URL: https?://(?:accounts\.google\.com|login\.(?:live|microsoftonline)\.com|"
+                        r"[^\s/]+/(?:\S*/)?(?:log-?in|sign-?in|signin|auth/login)\b)|"
+                        r'textbox "[^"]*password[^"]*"|heading "(?:sign in|log ?in|sign in to [^"]*)"', re.I)
+
+
+def login_wall(out):
+    return bool(LOGIN_WALL.search(out[:8000])) and "web.whatsapp.com" not in out[:600]
+
+
+def _to_login(url):
+    """Everything browses in the main profile (Chrome Profile 9); a site that asks to sign in there is opened at
+    the same URL in the login profile (Profile 10, where the owner's logins are) and the task carries on there."""
+    global SERVER
+    if SERVER == "login" or "login" not in CONFIG["mcp_servers"] or get_hub().resolve("login") != "login":
+        return None
+    first, SERVER = SERVER, "login"
+    print(f"[browser] {url} asks for a login in '{first}' - opening it in the login profile")
+    out = get_hub().call(SERVER, "browser_navigate", {"url": url})
+    m = re.search(r"\[Snapshot\]\(([^)]+\.yml)\)", out)
+    if m and os.path.isfile(m.group(1)):
+        with open(m.group(1), encoding="utf-8") as f:
+            out = out.replace(m.group(0), "\n" + f.read())
+    note = ("This page asked for a login in Chrome Profile 9, so it was opened in Profile 10 (the login profile). "
+            + ("It asks for a login there too - the owner has to sign in once in Profile 10." if login_wall(out) else ""))
+    return f"{note}\n{out}"
 
 
 # Playwright puts state flags between an element's name and its ref ([active], [disabled], [cursor=pointer]...);
@@ -410,6 +441,10 @@ if __name__ == "__main__":
         [0][1:] == ("browser_navigate", '{"url": "x"}')
     assert _risky("browser_click", {"element": "Place order", "target": "e9"})
     assert not _risky("browser_click", {"element": "Next page", "target": "e3"})
+    assert login_wall("- Page URL: https://accounts.google.com/v3/signin/identifier?x") and login_wall("- Page URL: https://github.com/login?r=1")
+    assert login_wall('- Page URL: https://x.com/home\n- textbox "Password" [ref=e5]')
+    assert not login_wall('- Page URL: https://example.com/\n- heading "Example Domain"') and not login_wall("- Page URL: https://blog.com/how-to-login-faster")
+    assert not login_wall('- Page URL: https://web.whatsapp.com/\n- heading "Log in"')
     s = {}
     r = run("go to example.com and tell me the main heading", s)
     assert "Example Domain" in r["reply"] and not s.get("pending"), r
