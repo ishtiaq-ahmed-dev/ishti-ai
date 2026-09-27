@@ -224,7 +224,7 @@ export function ModelsCard({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="font-semibold text-foreground text-sm">
-                Language Models (LLM)
+                Language models
               </span>
               {activePlanner && (
                 <span className="rounded-md bg-accent-soft px-2 py-0.5 text-[10px] font-semibold text-accent font-mono truncate max-w-[140px]">
@@ -237,12 +237,17 @@ export function ModelsCard({
             </div>
           </div>
         </div>
-        <ChevronDown
-          className={cn(
-            "h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200",
-            isOpen && "rotate-180 text-accent"
-          )}
-        />
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[11px] font-medium text-muted-foreground hidden sm:inline">
+            {isOpen ? "Collapse" : "Expand"}
+          </span>
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200",
+              isOpen && "rotate-180 text-accent"
+            )}
+          />
+        </div>
       </div>
 
       <AnimatePresence initial={false}>
@@ -536,7 +541,7 @@ export function VoiceCard({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="font-semibold text-foreground text-sm">
-                Voice & Speech
+                Voices
               </span>
               <span
                 className={cn(
@@ -575,6 +580,9 @@ export function VoiceCard({
               />
             </button>
           )}
+          <span className="text-[11px] font-medium text-muted-foreground hidden sm:inline ml-1">
+            {isOpen ? "Collapse" : "Expand"}
+          </span>
           <button
             type="button"
             onClick={onToggle}
@@ -897,7 +905,7 @@ export function WhisperCard({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="font-semibold text-foreground text-sm">
-                Speech Recognition (Whisper STT)
+                Speech recognition (Whisper)
               </span>
               {selectedWhisper && (
                 <span className="rounded-md bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 font-mono">
@@ -910,12 +918,17 @@ export function WhisperCard({
             </div>
           </div>
         </div>
-        <ChevronDown
-          className={cn(
-            "h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200",
-            isOpen && "rotate-180 text-accent"
-          )}
-        />
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[11px] font-medium text-muted-foreground hidden sm:inline">
+            {isOpen ? "Collapse" : "Expand"}
+          </span>
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200",
+              isOpen && "rotate-180 text-accent"
+            )}
+          />
+        </div>
       </div>
 
       <AnimatePresence initial={false}>

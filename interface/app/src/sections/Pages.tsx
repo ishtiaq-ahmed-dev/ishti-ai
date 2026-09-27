@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronUp,
   Copy,
+  Cpu,
   Database,
   FolderKanban,
   History,
@@ -14,6 +15,7 @@ import {
   Pencil,
   Play,
   Plus,
+  Radio,
   RefreshCw,
   Search,
   Sliders,
@@ -22,6 +24,7 @@ import {
   Trash2,
   Type,
   User,
+  Volume2,
   X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -1404,326 +1407,39 @@ export function Settings({ onToggleNav }: { onToggleNav?: () => void }) {
         </button>
       }
     >
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+      <div className="space-y-6">
         {/* ========================================================
-             COLUMN 1: Appearance, Chat Text Size, Sidebar Width
+             SECTION 1: Language models
              ======================================================== */}
-        <div className="space-y-4">
-          {/* 1. Appearance Card */}
-          <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
-            <div
-              className="flex items-center justify-between gap-3 p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
-              onClick={() => toggleCard("appearance")}
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-500">
-                  <Sun className="h-4 w-4 dark:hidden" />
-                  <Moon className="h-4 w-4 hidden dark:block" />
-                </div>
-                <div className="min-w-0">
-                  <div className="font-semibold text-foreground text-sm">Appearance</div>
-                  <div className="text-xs text-muted-foreground truncate">
-                    Switch between pure white light mode and dark mode.
-                  </div>
-                </div>
-              </div>
-
-              <div
-                className="flex items-center gap-2 shrink-0"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <ThemeSwitch />
-                <button
-                  type="button"
-                  onClick={() => toggleCard("appearance")}
-                  className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                >
-                  <ChevronDown
-                    className={cn(
-                      "h-4 w-4 transition-transform duration-200",
-                      expandedCards.appearance ? "rotate-180 text-accent" : ""
-                    )}
-                  />
-                </button>
-              </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1">
+            <div className="flex items-center gap-2">
+              <Cpu className="h-4 w-4 text-accent" />
+              <span>Language models</span>
             </div>
-
-            <AnimatePresence initial={false}>
-              {expandedCards.appearance && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="overflow-hidden border-t border-border/60 p-4 bg-background/50"
-                >
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        try {
-                          localStorage.setItem("ishti-theme", "light");
-                          document.documentElement.classList.remove("dark");
-                        } catch {}
-                      }}
-                      className="flex flex-col items-center justify-center gap-2 rounded-xl border border-border p-3.5 hover:border-accent hover:bg-muted/30 transition-all cursor-pointer"
-                    >
-                      <Sun className="h-5 w-5 text-amber-500" />
-                      <span className="text-xs font-semibold">Light Mode</span>
-                      <span className="text-[10px] text-muted-foreground">Pure Crisp White</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        try {
-                          localStorage.setItem("ishti-theme", "dark");
-                          document.documentElement.classList.add("dark");
-                        } catch {}
-                      }}
-                      className="flex flex-col items-center justify-center gap-2 rounded-xl border border-border p-3.5 hover:border-accent hover:bg-muted/30 transition-all cursor-pointer"
-                    >
-                      <Moon className="h-5 w-5 text-sky-400" />
-                      <span className="text-xs font-semibold">Dark Mode</span>
-                      <span className="text-[10px] text-muted-foreground">Deep Pure Black</span>
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </Card>
-
-          {/* 2. Chat Text Size Card */}
-          <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
-            <div
-              className="flex items-center justify-between gap-3 p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
-              onClick={() => toggleCard("chatSize")}
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-emerald-500/15 text-emerald-500">
-                  <Type className="h-4 w-4" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-foreground text-sm">Chat Text Size</span>
-                    <span className="rounded-md bg-muted px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
-                      {chatSize.charAt(0).toUpperCase() + chatSize.slice(1)}
-                    </span>
-                  </div>
-                  <div className="text-xs text-muted-foreground truncate">
-                    Text size across messages, inputs, and code in conversations.
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleCard("chatSize");
-                }}
-                className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
-              >
-                <ChevronDown
-                  className={cn(
-                    "h-4 w-4 transition-transform duration-200",
-                    expandedCards.chatSize ? "rotate-180 text-accent" : ""
-                  )}
-                />
-              </button>
-            </div>
-
-            <AnimatePresence initial={false}>
-              {expandedCards.chatSize && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="overflow-hidden border-t border-border/60 p-4 space-y-3.5 bg-background/50"
-                >
-                  <div className="flex flex-wrap items-center rounded-xl bg-muted/60 p-1 gap-1">
-                    {CHAT_FONT_SIZES.map((fs) => (
-                      <button
-                        key={fs.key}
-                        type="button"
-                        onClick={() => handleSizeChange(fs.key)}
-                        className={cn(
-                          "flex-1 min-w-[70px] rounded-lg px-3 py-1.5 text-xs text-center transition-all cursor-pointer",
-                          chatSize === fs.key
-                            ? "bg-background text-foreground shadow-xs font-semibold"
-                            : "text-muted-foreground hover:text-foreground font-medium"
-                        )}
-                      >
-                        {fs.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Live Preview */}
-                  <div className="rounded-xl border border-border/70 bg-card/60 p-3.5 space-y-2">
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Live Chat Preview
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex justify-end">
-                        <div
-                          className="rounded-2xl rounded-br-md bg-accent px-3.5 py-1.5 text-white max-w-sm shadow-xs"
-                          style={{
-                            fontSize: "var(--chat-font-size)",
-                            lineHeight: "var(--chat-leading)",
-                          }}
-                        >
-                          Can you check the latest file updates on my PC?
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <div
-                          className="rounded-2xl bg-background border border-border px-3.5 py-1.5 text-foreground max-w-sm shadow-xs"
-                          style={{
-                            fontSize: "var(--chat-font-size)",
-                            lineHeight: "var(--chat-leading)",
-                          }}
-                        >
-                          Found 3 updated folders. Local and ready to execute anytime.
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </Card>
-
-          {/* 3. Side Chats Width Card */}
-          <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
-            <div
-              className="flex items-center justify-between gap-3 p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
-              onClick={() => toggleCard("sideChats")}
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-amber-500/15 text-amber-500">
-                  <Sliders className="h-4 w-4" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-foreground text-sm">
-                      Side Chats Panel Width
-                    </span>
-                    <span className="rounded-md bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent font-mono">
-                      {sideChatsWidth}px
-                    </span>
-                  </div>
-                  <div className="text-xs text-muted-foreground truncate">
-                    Set width for the recent conversations sidebar in Chat.
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleCard("sideChats");
-                }}
-                className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
-              >
-                <ChevronDown
-                  className={cn(
-                    "h-4 w-4 transition-transform duration-200",
-                    expandedCards.sideChats ? "rotate-180 text-accent" : ""
-                  )}
-                />
-              </button>
-            </div>
-
-            <AnimatePresence initial={false}>
-              {expandedCards.sideChats && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="overflow-hidden border-t border-border/60 p-4 space-y-3.5 bg-background/50"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center rounded-xl bg-muted/60 p-1 gap-1 flex-1">
-                      {[
-                        { label: "Compact", value: 200 },
-                        { label: "Default", value: 240 },
-                        { label: "Medium", value: 280 },
-                        { label: "Wide", value: 340 },
-                      ].map((preset) => (
-                        <button
-                          key={preset.value}
-                          type="button"
-                          onClick={() => handleSideChatsWidthChange(preset.value)}
-                          className={cn(
-                            "flex-1 rounded-lg px-2.5 py-1 text-xs text-center transition-all cursor-pointer",
-                            sideChatsWidth === preset.value
-                              ? "bg-background text-foreground shadow-xs font-semibold"
-                              : "text-muted-foreground hover:text-foreground font-medium"
-                          )}
-                        >
-                          {preset.label}
-                        </button>
-                      ))}
-                    </div>
-                    {sideChatsWidth !== 240 && (
-                      <button
-                        type="button"
-                        onClick={() => handleSideChatsWidthChange(240)}
-                        className="text-xs text-muted-foreground hover:text-accent underline transition-colors cursor-pointer shrink-0 px-2"
-                      >
-                        Reset 240px
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Smooth Range Slider */}
-                  <div className="flex items-center gap-3 pt-1">
-                    <span className="text-[11px] font-mono text-muted-foreground shrink-0">
-                      180px
-                    </span>
-                    <input
-                      type="range"
-                      min="180"
-                      max="500"
-                      step="10"
-                      value={sideChatsWidth}
-                      onChange={(e) =>
-                        handleSideChatsWidthChange(Number(e.target.value))
-                      }
-                      className="h-1.5 flex-1 cursor-pointer appearance-none rounded-lg bg-muted accent-accent"
-                    />
-                    <span className="text-[11px] font-mono text-muted-foreground shrink-0">
-                      500px
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    Tip: You can also drag the divider handle directly inside the Chat interface.
-                  </p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </Card>
-          {/* 4. Chrome Profiles Card */}
-          <ChromeProfiles
-            isOpen={expandedCards.chrome}
-            onToggle={() => toggleCard("chrome")}
-          />
-        </div>
-
-        {/* ========================================================
-             COLUMN 2: AI Models, Voice Roster, Whisper STT
-             ======================================================== */}
-        <div className="space-y-4">
-          {/* 1. Language Models (LLMs) */}
+            <span className="text-[11px] font-normal lowercase tracking-normal text-muted-foreground/80">
+              {expandedCards.models ? "Expanded" : "Default collapsed"}
+            </span>
+          </div>
           <ModelsCard
             isOpen={expandedCards.models}
             onToggle={() => toggleCard("models")}
           />
+        </div>
 
-          {/* 2. Voice & Speech Synthesis (TTS & Wake Word) */}
+        {/* ========================================================
+             SECTION 2: Voices
+             ======================================================== */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1">
+            <div className="flex items-center gap-2">
+              <Volume2 className="h-4 w-4 text-accent" />
+              <span>Voices</span>
+            </div>
+            <span className="text-[11px] font-normal lowercase tracking-normal text-muted-foreground/80">
+              {expandedCards.voice ? "Expanded" : "Default collapsed"}
+            </span>
+          </div>
           <VoiceCard
             isOpen={expandedCards.voice}
             onToggle={() => toggleCard("voice")}
@@ -1735,12 +1451,341 @@ export function Settings({ onToggleNav }: { onToggleNav?: () => void }) {
               }).then(setP)
             }
           />
+        </div>
 
-          {/* 3. Speech Recognition (Whisper STT) */}
+        {/* ========================================================
+             SECTION 3: Speech recognition (Whisper)
+             ======================================================== */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1">
+            <div className="flex items-center gap-2">
+              <Radio className="h-4 w-4 text-accent" />
+              <span>Speech recognition (Whisper)</span>
+            </div>
+            <span className="text-[11px] font-normal lowercase tracking-normal text-muted-foreground/80">
+              {expandedCards.whisper ? "Expanded" : "Default collapsed"}
+            </span>
+          </div>
           <WhisperCard
             isOpen={expandedCards.whisper}
             onToggle={() => toggleCard("whisper")}
           />
+        </div>
+
+        {/* ========================================================
+             SECTION 4: Interface & Display
+             ======================================================== */}
+        <div className="space-y-3 pt-3 border-t border-border/60">
+          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2 px-1">
+            <Sliders className="h-4 w-4 text-accent" />
+            <span>Interface & Display</span>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+            {/* 1. Appearance Card */}
+            <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
+              <div
+                className="flex items-center justify-between gap-3 p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+                onClick={() => toggleCard("appearance")}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-500">
+                    <Sun className="h-4 w-4 dark:hidden" />
+                    <Moon className="h-4 w-4 hidden dark:block" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-semibold text-foreground text-sm">Appearance</div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      Switch between pure white light mode and dark mode.
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  className="flex items-center gap-2 shrink-0"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <ThemeSwitch />
+                  <button
+                    type="button"
+                    onClick={() => toggleCard("appearance")}
+                    className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  >
+                    <ChevronDown
+                      className={cn(
+                        "h-4 w-4 transition-transform duration-200",
+                        expandedCards.appearance ? "rotate-180 text-accent" : ""
+                      )}
+                    />
+                  </button>
+                </div>
+              </div>
+
+              <AnimatePresence initial={false}>
+                {expandedCards.appearance && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="overflow-hidden border-t border-border/60 p-4 bg-background/50"
+                  >
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          try {
+                            localStorage.setItem("ishti-theme", "light");
+                            document.documentElement.classList.remove("dark");
+                          } catch {}
+                        }}
+                        className="flex flex-col items-center justify-center gap-2 rounded-xl border border-border p-3.5 hover:border-accent hover:bg-muted/30 transition-all cursor-pointer"
+                      >
+                        <Sun className="h-5 w-5 text-amber-500" />
+                        <span className="text-xs font-semibold">Light Mode</span>
+                        <span className="text-[10px] text-muted-foreground">Pure Crisp White</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          try {
+                            localStorage.setItem("ishti-theme", "dark");
+                            document.documentElement.classList.add("dark");
+                          } catch {}
+                        }}
+                        className="flex flex-col items-center justify-center gap-2 rounded-xl border border-border p-3.5 hover:border-accent hover:bg-muted/30 transition-all cursor-pointer"
+                      >
+                        <Moon className="h-5 w-5 text-sky-400" />
+                        <span className="text-xs font-semibold">Dark Mode</span>
+                        <span className="text-[10px] text-muted-foreground">Deep Pure Black</span>
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </Card>
+
+            {/* 2. Chat Text Size Card */}
+            <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
+              <div
+                className="flex items-center justify-between gap-3 p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+                onClick={() => toggleCard("chatSize")}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-emerald-500/15 text-emerald-500">
+                    <Type className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-foreground text-sm">Chat Text Size</span>
+                      <span className="rounded-md bg-muted px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
+                        {chatSize.charAt(0).toUpperCase() + chatSize.slice(1)}
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      Text size across messages, inputs, and code in conversations.
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleCard("chatSize");
+                  }}
+                  className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
+                >
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 transition-transform duration-200",
+                      expandedCards.chatSize ? "rotate-180 text-accent" : ""
+                    )}
+                  />
+                </button>
+              </div>
+
+              <AnimatePresence initial={false}>
+                {expandedCards.chatSize && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="overflow-hidden border-t border-border/60 p-4 space-y-3.5 bg-background/50"
+                  >
+                    <div className="flex flex-wrap items-center rounded-xl bg-muted/60 p-1 gap-1">
+                      {CHAT_FONT_SIZES.map((fs) => (
+                        <button
+                          key={fs.key}
+                          type="button"
+                          onClick={() => handleSizeChange(fs.key)}
+                          className={cn(
+                            "flex-1 min-w-[70px] rounded-lg px-3 py-1.5 text-xs text-center transition-all cursor-pointer",
+                            chatSize === fs.key
+                              ? "bg-background text-foreground shadow-xs font-semibold"
+                              : "text-muted-foreground hover:text-foreground font-medium"
+                          )}
+                        >
+                          {fs.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Live Preview */}
+                    <div className="rounded-xl border border-border/70 bg-card/60 p-3.5 space-y-2">
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        Live Chat Preview
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-end">
+                          <div
+                            className="rounded-2xl rounded-br-md bg-accent px-3.5 py-1.5 text-white max-w-sm shadow-xs"
+                            style={{
+                              fontSize: "var(--chat-font-size)",
+                              lineHeight: "var(--chat-leading)",
+                            }}
+                          >
+                            Can you check the latest file updates on my PC?
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <div
+                            className="rounded-2xl bg-background border border-border px-3.5 py-1.5 text-foreground max-w-sm shadow-xs"
+                            style={{
+                              fontSize: "var(--chat-font-size)",
+                              lineHeight: "var(--chat-leading)",
+                            }}
+                          >
+                            Found 3 updated folders. Local and ready to execute anytime.
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </Card>
+
+            {/* 3. Side Chats Width Card */}
+            <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
+              <div
+                className="flex items-center justify-between gap-3 p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+                onClick={() => toggleCard("sideChats")}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-amber-500/15 text-amber-500">
+                    <Sliders className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-foreground text-sm">
+                        Side Chats Panel Width
+                      </span>
+                      <span className="rounded-md bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent font-mono">
+                        {sideChatsWidth}px
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      Set width for the recent conversations sidebar in Chat.
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleCard("sideChats");
+                  }}
+                  className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
+                >
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 transition-transform duration-200",
+                      expandedCards.sideChats ? "rotate-180 text-accent" : ""
+                    )}
+                  />
+                </button>
+              </div>
+
+              <AnimatePresence initial={false}>
+                {expandedCards.sideChats && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="overflow-hidden border-t border-border/60 p-4 space-y-3.5 bg-background/50"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center rounded-xl bg-muted/60 p-1 gap-1 flex-1">
+                        {[
+                          { label: "Compact", value: 200 },
+                          { label: "Default", value: 240 },
+                          { label: "Medium", value: 280 },
+                          { label: "Wide", value: 340 },
+                        ].map((preset) => (
+                          <button
+                            key={preset.value}
+                            type="button"
+                            onClick={() => handleSideChatsWidthChange(preset.value)}
+                            className={cn(
+                              "flex-1 rounded-lg px-2.5 py-1 text-xs text-center transition-all cursor-pointer",
+                              sideChatsWidth === preset.value
+                                ? "bg-background text-foreground shadow-xs font-semibold"
+                                : "text-muted-foreground hover:text-foreground font-medium"
+                            )}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+                      {sideChatsWidth !== 240 && (
+                        <button
+                          type="button"
+                          onClick={() => handleSideChatsWidthChange(240)}
+                          className="text-xs text-muted-foreground hover:text-accent underline transition-colors cursor-pointer shrink-0 px-2"
+                        >
+                          Reset 240px
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Smooth Range Slider */}
+                    <div className="flex items-center gap-3 pt-1">
+                      <span className="text-[11px] font-mono text-muted-foreground shrink-0">
+                        180px
+                      </span>
+                      <input
+                        type="range"
+                        min="180"
+                        max="500"
+                        step="10"
+                        value={sideChatsWidth}
+                        onChange={(e) =>
+                          handleSideChatsWidthChange(Number(e.target.value))
+                        }
+                        className="h-1.5 flex-1 cursor-pointer appearance-none rounded-lg bg-muted accent-accent"
+                      />
+                      <span className="text-[11px] font-mono text-muted-foreground shrink-0">
+                        500px
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Tip: You can also drag the divider handle directly inside the Chat interface.
+                    </p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </Card>
+
+            {/* 4. Chrome Profiles Card */}
+            <ChromeProfiles
+              isOpen={expandedCards.chrome}
+              onToggle={() => toggleCard("chrome")}
+            />
+          </div>
         </div>
       </div>
     </Page>
