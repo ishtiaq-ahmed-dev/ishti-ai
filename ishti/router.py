@@ -47,6 +47,10 @@ def route(text, skills, exclude=()):
     done = lambda skill, conf, source, **kw: {"skill": skill, "confidence": round(conf, 3), "source": source,
                                               "ms": round((time.perf_counter() - t0) * 1000, 1), **kw}
 
+    from ishti import corrections  # D4: what the owner corrected before wins (exact request, or 2+ agreeing)
+    fixed = corrections.learned(text)
+    if fixed in live:
+        return done(fixed, 1.0, "learned")
     for s in sorted(live.values(), key=lambda s: s.manifest.get("priority", 50)):
         if s.matches(text):
             return done(s.name, 1.0, "rule")

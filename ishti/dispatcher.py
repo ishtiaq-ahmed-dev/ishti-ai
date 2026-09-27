@@ -453,6 +453,8 @@ def _handle(text, sid, conv, s, events, t0, channel):
     if fix and wanted in SKILLS and s.get("last_request"):
         text = s["last_request"]
         dec = {"skill": wanted, "confidence": 1.0, "source": "correction", "was": s.get("last_skill")}
+        from ishti import corrections  # D4: remembered - the same request goes there next time
+        corrections.record(text, s.get("last_skill"), wanted)
     elif not pending and (rf := reflex.answer(text)):  # B7: an instant command - no routing, no model
         s["trace"](type="route", skill="reflex", source="reflex", confidence=1.0, why=f"an instant command ({rf[1]})")
         audit.record(f"reflex: {rf[1]}", rf[0][:120], skill="reflex", initiator="instructed", session=sid)

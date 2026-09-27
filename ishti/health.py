@@ -82,6 +82,11 @@ def snapshot():
 
 
 def tick(announce=None):
+    try:  # D4: keep the correction log exported for the periodic fine-tune
+        from ishti import corrections
+        corrections.export()
+    except Exception:
+        pass
     prev = _state.get("checks", {})
     checks = run_checks()
     _state.update(at=time.time(), checks=checks, status="ok" if all(c["ok"] for c in checks.values()) else "degraded")

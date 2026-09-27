@@ -16,7 +16,7 @@
     "apis": []
   },
   "status": "working",
-  "tier": "T1",
+  "tier": "T2",
   "scope": {
     "write": [
       "data",
