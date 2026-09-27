@@ -13,11 +13,14 @@ import requests
 from ishti import ROOT
 from ishti.skills import ask_first, trace
 
+from ishti.skills.dev import scaffold
 I = re.I
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 SANDBOX = os.path.join(ROOT, "data", "sandbox")
 CODE = re.compile(r"```(?:python|py)?\s*\n(?P<code>.+?)```", I | re.S)
 OPS = [
+    ("scaffold", scaffold.SCAFFOLD),
+    ("service", scaffold.SERVICE),
     ("run_code", re.compile(r"\b(?:run|execute)\s+(?:this|the\s+following|my)?\s*(?:python\s+)?(?:code|script|snippet)\b.*```", I | re.S)),
     ("run_file", re.compile(r"\b(?:run|execute)\s+(?P<path>[A-Za-z]:\\[^\s\"']+\.py)\b", I)),
     ("git_push", re.compile(r"\bpush\s+(?:my\s+|the\s+)?(?:changes|code|commits?)?\b.*\b(?:to\s+github|git|remote|origin)?|\bgit\s+push\b", I)),
@@ -32,7 +35,15 @@ OPS = [
 
 
 def match(text):
-    return any(rx.search(text) for _, rx in OPS) and not (OPS[2][1].search(text) and not re.search(r"\b(?:git|github|commit|code|changes|repo)\b", text, I))
+    return any(rx.search(text) for _, rx in OPS) and not (dict(OPS)["git_push"].search(text) and not re.search(r"\b(?:git|github|commit|code|changes|repo)\b", text, I))
+
+
+def op_scaffold(m, text, session):
+    return scaffold.op_scaffold(m, text, session)
+
+
+def op_service(m, text, session):
+    return scaffold.op_service(m, text, session, ask_first)
 
 
 def run(text, session):

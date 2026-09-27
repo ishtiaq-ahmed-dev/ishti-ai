@@ -102,6 +102,9 @@ async def _capture_loop():
 
     # scheduled tasks ("every morning at 8 give me my brief") run through the dispatcher; the answer is announced
     start_reminders(announce, run_task=lambda t: ishti_handle(t, session_id="scheduled", channel="scheduled")["final_answer"])
+    from ishti.skills.automation.skill import start as start_automations
+    # "when a pdf appears in downloads, summarize it": the action runs like a scheduled task, its answer is announced
+    start_automations(announce, run_task=lambda t: ishti_handle(t, session_id="scheduled", channel="scheduled")["final_answer"])
     from ishti.skills.webtools.skill import _start as start_page_watch
     start_page_watch()  # pages the owner asked to watch keep being checked after a restart
     from ishti.skills.shopping.skill import start_price_watch

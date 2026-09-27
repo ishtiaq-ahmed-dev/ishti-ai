@@ -1,0 +1,11 @@
+{
+  "name": "automation",
+  "version": "1.0.0",
+  "description": "\"When X, do Y\" rules the owner sets in plain words: a new file in a folder, battery low, disk space low, CPU or memory high, an app starting or closing. The action is any request ISHTI can do (run like a scheduled task, result announced); \"it\" means the new file. Checked every 20 s; list, pause and delete rules.",
+  "route": "set up an automation rule: when something happens on this PC (file appears, battery low, app opens), do something",
+  "priority": 13,
+  "laya": false,
+  "needs": {"python": ["psutil"], "models": [], "mcp": [], "apis": []},
+  "status": "working",
+  "tier": "T1"
+}
