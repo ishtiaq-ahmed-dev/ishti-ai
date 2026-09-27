@@ -308,7 +308,8 @@ def op_stabilize(m, text, session):
     os.makedirs(work, exist_ok=True)
     ff("-i", src, "-vf", "vidstabdetect=shakiness=6:accuracy=12:result=transforms.trf", "-f", "null", "-", cwd=work)
     dst = out_path(src, "stabilized")
-    ff("-i", src, "-vf", "vidstabtransform=input=transforms.trf:smoothing=20:zoom=2,unsharp=5:5:0.6", *venc(), "-c:a", "copy", dst, cwd=work)
+    # sharpen BEFORE the transform: any filter after vidstabtransform segfaults FFmpeg 8.1.1 (Gyan full build)
+    ff("-i", src, "-vf", "unsharp=5:5:0.6,vidstabtransform=input=transforms.trf:smoothing=20:zoom=2", *venc(), "-c:a", "copy", dst, cwd=work)
     return f"Stabilised: {dst}"
 
 
