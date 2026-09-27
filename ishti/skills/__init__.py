@@ -11,6 +11,35 @@ import os
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+# import name -> pip package, where they differ (manifests list import names)
+PIP_NAME = {"PIL": "pillow", "docx": "python-docx", "pptx": "python-pptx", "cv2": "opencv-python", "yaml": "pyyaml",
+            "win32gui": "pywin32", "win32api": "pywin32", "bs4": "beautifulsoup4", "yt_dlp": "yt-dlp",
+            "screen_brightness_control": "screen-brightness-control", "faster_whisper": "faster-whisper",
+            "sklearn": "scikit-learn", "pypdfium2": "pypdfium2", "rapidocr_onnxruntime": "rapidocr_onnxruntime"}
+
+
+def install_missing(skill, modules, runner=None):
+    """pip-install the missing packages a skill's manifest declares (only those - never arbitrary names), into
+    ISHTI's own Python. Returns what is still missing afterwards (reported by the caller and in NEEDS.md)."""
+    import re
+    import subprocess
+    import sys
+    from ishti import CONFIG
+    if not CONFIG.get("auto_install", True):
+        return modules
+    pkgs = [PIP_NAME.get(m, m) for m in modules if re.fullmatch(r"[A-Za-z0-9_.-]{1,60}", m)]
+    run = runner or (lambda args: subprocess.run(args, capture_output=True, text=True, timeout=900,
+                                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)))
+    print(f"[skills] {skill}: installing missing {', '.join(pkgs)}")
+    p = run([sys.executable, "-m", "pip", "install", "--disable-pip-version-check", *pkgs])
+    importlib.invalidate_caches()
+    still = [m for m in modules if importlib.util.find_spec(m) is None]
+    if still:
+        log_need("error", skill, "auto-install", f"pip couldn't install {', '.join(still)}: "
+                 f"{((p.stderr or p.stdout) if hasattr(p, 'stderr') else '')[-160:]}")
+    return still
+
+
 class Skill:
     def __init__(self, folder):
         with open(os.path.join(HERE, folder, "manifest.json"), encoding="utf-8") as f:
@@ -20,8 +49,10 @@ class Skill:
         self.problem = ""
         missing = [m for m in self.manifest.get("needs", {}).get("python", [])
                    if importlib.util.find_spec(m) is None]
+        if missing:  # D6: install what ISHTI's own manifests declare, then look again
+            missing = install_missing(self.name, missing)
         if missing:
-            self.problem = f"missing python packages: {', '.join(missing)}"
+            self.problem = f"missing python packages: {', '.join(missing)} (auto-install failed - see NEEDS.md)"
         else:
             try:
                 self.module = importlib.import_module(f"ishti.skills.{folder}.skill")
