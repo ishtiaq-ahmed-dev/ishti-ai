@@ -55,7 +55,7 @@ Scope: every file under `D:\ISHTI` except `venv/` and `data/` (runtime data). Ea
 
 | # | What | Error / blocker | Owner action |
 |---|---|---|---|
-| O-1 | Fish Audio S2 (B4) | s2.cpp CUDA build compiled 96/180 files, then **Visual Studio Build Tools disappeared** (the `18\BuildTools` folder was emptied at 00:54 on 27 Sep); CUDA 13.4 needed an include fix (done). | Reinstall VS Build Tools (C++ workload) - or use the Python fish-speech route (in progress, no compiler needed) |
+| O-1 | ~~Fish Audio S2 (B4)~~ resolved | built in Docker instead (no MSVC needed) and measured: RTF 2.7, 15.2 of 16.3 GB VRAM - not live-usable next to the 14B planner. Live voice is **Kokoro-82M** (CPU, RTF 0.24, speaks Urdu). S2 stays an optional package in Settings > Models & voices | none |
 | O-2 | PC microphone/speakers | `Error querying device -1` - no input/output device (Bluetooth headset gone) | reconnect; Live mode works through the browser meanwhile |
 | O-3 | transient torch access violation | seen twice during GPU out-of-memory turmoil (01:32), not reproduced in 6+ runs since | watch; the watchdog restarts if it recurs |
 | O-4 | whole-drive content search | correct but ~3.5 min for D: (865k small files, disk/antivirus bound) | a content index is the planned fix |
@@ -64,7 +64,7 @@ Scope: every file under `D:\ISHTI` except `venv/` and `data/` (runtime data). Ea
 
 - `legacy` skill (old engine) - still the fallback for some PC tasks; broad scope (`user` writes, any network, apps) by design - flagged for retirement.
 - `browser/browser_agent.py` (Playwright, isolated) vs the MCP hub - kept only for e2e test E and search fallback.
-- `voice/tts.py` (SAPI) - kept as last-resort voice when Piper fails.
+- `voice/tts.py` (SAPI) - kept as last-resort voice when Kokoro and Piper fail.
 - `orchestrator/model_router.py` - second model client (`/api/generate`), used by deep research only; everything else uses `ishti/llm.py`.
 - Owner's own uncommitted UI edits (`App.tsx`, `api.ts`, `main.tsx`, `Markdown.tsx`, `AboutYou.tsx`, `Markets.tsx`, `Overview.tsx`, `vite.config.ts`, `desktop/computer_use.py`) - not touched, not committed.
 
@@ -79,23 +79,23 @@ Scope: every file under `D:\ISHTI` except `venv/` and `data/` (runtime data). Ea
 | A5 skill permission scoping | done - every manifest scoped, enforced (subprocess outputs checked where passed) |
 | B1 wake word (openWakeWord + phrase spotter, chime) | done (26 Sep) |
 | B2 latency probe + big animation | done (26 Sep); turn gap still 0.8 s -> see B3 |
-| B3 barge-in | done; open: 200-450 ms turn gap, back-channel ("uh-huh") hold, measured stop latency |
-| B4 Fish Speech S2 multi-voice | voice roster + switching + [pause] on Piper done; S2 engine open (O-1) |
-| B5 audio ducking | open |
+| B3 barge-in | done - 0.4 s turn gap (1 s when unfinished), back-channel hold, stop latency measured |
+| B4 multi-voice TTS | done - Kokoro roster (6 voices) + 4 classic Piper, switching, [pause]; S2 measured, optional (O-1) |
+| B5 audio ducking | done - other apps at 25% while ISHTI speaks |
 | B6 three interaction modes | done |
-| B7 reflex table | open |
+| B7 reflex table | done |
 | B8 live step narration | done |
 | B9 language lock (en/ur/ps) | done |
 | C1 confirmation-on-ambiguity, C2 self-verifying search | done |
-| C3 main-source-only citations | open |
-| C4 scroll / extract / file | open |
+| C3 main-source-only citations | done |
+| C4 scroll / extract / file | done - DOM text first, vision backup, JSON rows |
 | C5 screen vision (read) | done (vision + OCR) |
 | C6 Gemini generation | done (tier to review: T2) |
 | C7 online fallback, C8 Chrome profiles | done |
-| D1 tables | open |
-| D2 parallelism + GPU queue + benchmark | open |
-| D3 usage-based model loading | open |
-| D4 learning from corrections | partial (corrections re-route + are logged; few-shot + weighting open) |
+| D1 tables | done - status, quotes, listings, orders; voice summarises |
+| D2 parallelism + GPU queue + benchmark | done |
+| D3 usage-based model loading | done - planner resident, frequent 60 min, rare 2 min; Settings > Models & voices switches models per role, deletes unused ones (shared weights detected) and downloads them again |
+| D4 learning from corrections | done - learned corrections route first |
 | D5 multi-topic tasks | done |
-| D6 self-installing dependencies | open |
-| E situation handling | mostly done; degraded_mode / priority_queue to verify |
+| D6 self-installing dependencies | done - from each manifest's needs.python |
+| E situation handling | done - incl. near-tie recency tiebreak |
