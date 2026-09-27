@@ -41,6 +41,8 @@ def transcribe(audio) -> str:
     """audio: path or file-like in any format PyAV decodes (browser webm/opus, wav, mp3)."""
     global _last_use
     _last_use = time.time()
+    from ishti import models
+    models.used("whisper")
     import numpy as np
     from faster_whisper import decode_audio
     pcm = audio if isinstance(audio, np.ndarray) else decode_audio(audio, sampling_rate=16000)
@@ -107,14 +109,17 @@ def _schedule_unload():
         if _unload_timer is not None:
             _unload_timer.cancel()
 
+        from ishti import models
+        idle = {"frequent": 3600, "normal": IDLE_UNLOAD_S}.get(models.tier("whisper"), 300)  # D3: by real use
+
         def unload():
             global _stt
             with _load_lock:
-                if _stt is not None and time.time() - _last_use >= IDLE_UNLOAD_S:
+                if _stt is not None and time.time() - _last_use >= idle:
                     _stt = None  # CTranslate2 frees its VRAM when the model object goes away
                     print("[voice] whisper unloaded after idle")
 
-        _unload_timer = threading.Timer(IDLE_UNLOAD_S + 1, unload)
+        _unload_timer = threading.Timer(idle + 1, unload)
         _unload_timer.daemon = True
         _unload_timer.start()
 

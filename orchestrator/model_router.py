@@ -99,8 +99,9 @@ class ModelRouter:
         if "<<EXTERNAL" in user_content:  # fetched pages are data, never instructions
             from ishti.untrusted import RULE
             system = f"{system}\n\n{RULE}"
-        from ishti import killswitch
+        from ishti import killswitch, models
         killswitch.check()
+        models.used(self.get_model(role))
         try:
             # streamed, so the kill switch can stop a long report at the next token (closing the stream ends it)
             with requests.post(

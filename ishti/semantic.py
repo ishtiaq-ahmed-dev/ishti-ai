@@ -8,12 +8,18 @@ import requests
 
 from ishti import CONFIG
 
+import os
+import threading
+
 _cfg = CONFIG["memory"]
 
 
 def embed(texts):
-    r = requests.post(f"{_cfg['embed_url']}/api/embed",
-                      json={"model": _cfg["embed_model"], "input": texts}, timeout=60)
+    cfg = CONFIG["memory"]
+    from ishti import models
+    models.used(cfg["embed_model"])
+    r = requests.post(f"{cfg['embed_url']}/api/embed",
+                      json={"model": cfg["embed_model"], "input": texts}, timeout=60)
     r.raise_for_status()
     return r.json()["embeddings"]
 
@@ -21,28 +27,49 @@ def embed(texts):
 # nomic-embed-text is trained with these task prefixes; recall is noticeably sharper with them.
 class Semantic:
     def __init__(self, path: str = None):
-        client = chromadb.PersistentClient(path=path or _cfg["chroma_dir"])
-        # Embeddings are always passed in explicitly, so Chroma never loads its own model.
-        self.col = client.get_or_create_collection("memory", metadata={"hnsw:space": "cosine"})
+        self.path = path or CONFIG["memory"]["chroma_dir"]
+        self._lock = threading.RLock()
+        self._col = None
+
+    @property
+    def col(self):
+        with self._lock:
+            if self._col is not None:
+                return self._col
+            os.makedirs(self.path, exist_ok=True)
+            for attempt in range(3):
+                try:
+                    client = chromadb.PersistentClient(path=self.path, settings=chromadb.Settings(anonymized_telemetry=False, is_persistent=True))
+                    self._col = client.get_or_create_collection("memory", metadata={"hnsw:space": "cosine"})
+                    return self._col
+                except Exception:
+                    if attempt == 2:
+                        raise
+                    time.sleep(0.15)
 
     def add(self, text: str, **meta):
         meta = {"ts": time.time(), **meta}
-        self.col.add(ids=[uuid.uuid4().hex], documents=[text], embeddings=embed([f"search_document: {text}"]), metadatas=[meta])
+        with self._lock:
+            self.col.add(ids=[uuid.uuid4().hex], documents=[text], embeddings=embed([f"search_document: {text}"]), metadatas=[meta])
 
     def recall(self, query: str, k: int = 4, max_distance: float = 0.45) -> list:
-        if self.col.count() == 0:
+        col = self.col
+        if col.count() == 0:
             return []
-        res = self.col.query(query_embeddings=embed([f"search_query: {query}"]), n_results=min(k, self.col.count()))
+        res = col.query(query_embeddings=embed([f"search_query: {query}"]), n_results=min(k, col.count()))
         return [d for d, dist in zip(res["documents"][0], res["distances"][0]) if dist <= max_distance]
 
 
 _sem = None
+_sem_path = None
 
 
-def get_semantic() -> Semantic:
-    global _sem
-    if _sem is None:
-        _sem = Semantic()
+def get_semantic(path: str = None) -> Semantic:
+    global _sem, _sem_path
+    cur_path = path or CONFIG["memory"]["chroma_dir"]
+    if _sem is None or _sem_path != cur_path:
+        _sem = Semantic(cur_path)
+        _sem_path = cur_path
     return _sem
 
 

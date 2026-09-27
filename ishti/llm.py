@@ -50,6 +50,8 @@ def _create(**args):
     """Degraded mode: if Ollama isn't running (after a reboot, or stopped), start it and retry once; if it still
     can't be reached, say so plainly instead of a raw connection error."""
     import openai
+    from ishti import models
+    models.used(args["model"])  # D3: usage decides how long the model stays in VRAM
     try:
         return _client.chat.completions.create(**args)
     except openai.APIConnectionError:
