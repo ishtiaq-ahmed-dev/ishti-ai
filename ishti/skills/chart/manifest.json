@@ -1,0 +1,13 @@
+{
+  "name": "chart",
+  "version": "1.0.0",
+  "description": "Chart a CSV column as a PNG with matplotlib: bar, line or histogram, written to data/charts/ and returned as a local path. Exact axis values from the data — the LLM never invents a number.",
+  "route": "bar chart of sales.csv, line chart of, histogram of, chart the csv, plot column from",
+  "needs": {"python": ["matplotlib", "pandas"], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T1",
+  "laya": false,
+  "scope": {"write": ["data/charts"], "net": [], "apps": []},
+  "category": "Data"
+}

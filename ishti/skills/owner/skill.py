@@ -51,6 +51,10 @@ def asks_about_me(t):
     words = re.findall(r"[a-z']+", t.lower())
     if not words or not (t.rstrip().endswith("?") or words[0] in ("where", "what", "which", "when", "whats", "what's")):
         return False
+    # a request mentioning a file path / branch / repo is about that thing, not about the owner
+    # ("which branch am I on in D:/proj" is gitops'; "on" fuzzy-matching "born" must not win it)
+    if re.search(r"[A-Za-z]:[\\/]|\bbranch\b|\brepo\b|\bcommit\b|\bgit\b", t, re.I):
+        return False
     if ABOUT_ME.search(t) or ("i" in words and re.search(rf"\b(?:{ATTRS})\b", t, I)):  # "what semester am i in?"
         # "what should I get X for his birthday" is about X, not about the owner:
         # a third person's name/possessive in the question means it's a relationship question

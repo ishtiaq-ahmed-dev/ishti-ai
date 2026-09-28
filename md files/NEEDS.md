@@ -147,3 +147,7 @@ roster (engine + a 10-30 s royalty-free reference clip per voice) but is blocked
 - 2026-09-28 06:59 [error] health: 620 MB free of 16303 - asked: "gpu"
 - 2026-09-28 07:57 [error] screen_understand: pip couldn't install rapidocr-onnxruntime: ime>=1.7.0->rapidocr-onnxruntime) (7.36.2)
 Requirement already satisfied: colorama in d:\ishti\venv\lib\site-packages (from tqdm-> - asked: "auto-install"
+- 2026-09-28 23:25 [error] imgquality: pip couldn't install Pillow: Requirement already satisfied: Pillow in d:\ishti\venv\lib\site-packages (12.3.0)
+ - asked: "auto-install"
+- 2026-09-28 23:26 [error] palette: pip couldn't install Pillow: Requirement already satisfied: Pillow in d:\ishti\venv\lib\site-packages (12.3.0)
+ - asked: "auto-install"

@@ -181,11 +181,14 @@ def _learn_turn(text, reply, name, dec, sid, channel):
         #    a prompt; crediting/blaming a lesson for a browser turn where it was never shown
         #    would demote a rule because of a failure it had no part in. The set is a registry, not
         #    a hard-coded rule: as more skills inject lessons, they get added here.
-        domain = str((dec or {}).get("domain") or "") if isinstance(dec, dict) else ""
-        applied = [l["lesson_id"] for l in lessons.guidance_for(text, domain=domain, limit=6)]
-        if applied and (name or "") in lessons.CONTEXT_INJECTING_SKILLS and reward:
-            lessons.apply_turn_outcome(iid, reward, applied,
-                                       reason="turn outcome attributed to the guidance in context")
+        if reward and (name or "") in lessons.CONTEXT_INJECTING_SKILLS:
+            # `guidance_for()` is a pure function of the request, so this returns the same lessons
+            # `build_context()` just put in front of the model.
+            domain = str((dec or {}).get("domain") or "") if isinstance(dec, dict) else ""
+            applied = [l["lesson_id"] for l in lessons.guidance_for(text, domain=domain, limit=6)]
+            if applied:
+                lessons.apply_turn_outcome(iid, reward, applied,
+                                           reason="turn outcome attributed to the guidance in context")
 
         # 6. Reflection (Reflexion): a number cannot tell the next turn what went wrong, so write
         #    the sentence too. Only when there is a signal - a store full of "nothing happened"

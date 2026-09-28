@@ -48,7 +48,10 @@ CONTEXT_INJECTING_SKILLS = frozenset({"chat"})
 
 
 def thresholds():
-    return store.cfg()["thresholds"]
+    """Confidence bands. Reads the dashboard's runtime override, not just config.json - the
+    Settings tab writes `thresholds` to the `settings` table, and a value that is stored but
+    never read makes the whole panel decorative."""
+    return store.thresholds()
 
 
 def bucket(confidence):
@@ -436,7 +439,7 @@ def widen_scope(lesson_id, reason="repeated evidence", interaction_id=""):
     got = store.row("SELECT * FROM lessons WHERE lesson_id=?", (lesson_id,))
     if not got:
         return {}
-    need = int(store.cfg()["evidence"].get("widen_scope", 3))
+    need = int(store.evidence().get("widen_scope", 3))
     if got["kind"] == "temporary":
         return _out(got)  # a temporary instruction must never become general
     if int(got["occasions"] or 1) < need:

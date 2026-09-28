@@ -6,7 +6,7 @@ with the computed answer checked against hand-calculated ground truth.
 
 - DB writes (checklist) are pointed at a temp dir before import — owner data untouched.
 - LLM-backed skills (citation, mnemonic) run against the local pinned planner model only.
-- The full 61-skill roster is printed with tier/scope/status so nothing is skipped silently.
+- The full roster is printed with tier/scope/status so nothing is skipped silently.
 
     venv/Scripts/python.exe -X utf8 tools/smoke_reverify.py
 Exit 0 = every live case passed.
@@ -110,6 +110,59 @@ LIVE = {
         ("mood 2: stressful day", ("2/5", "was 4/5")),
         ("my mood this week", ("average", "Average")),
         ("i want to kill myself", ("1122",)),  # safety gate must fire, never a casual reply
+    ],
+    # ---- batch D (2026-09-28) ----
+    "redact": [
+        ("redact the text: email me at bob@corp.com about invoice 12345", ("[EMAIL-1]",)),
+        ("redact show D:/definitely/missing.txt", ("not found",)),  # preview path, safe live
+    ],
+    "devops": [
+        ("create a github actions workflow for a python app", ("actions/checkout@v4",)),
+        ("kubernetes deployment for orders", ("kind: Deployment",)),
+        ("terraform for aws s3", ("aws_s3_bucket",)),
+        ("dockerfile for python", ("FROM python:3.12-slim",)),
+    ],
+    "gitops": [
+        ("git status of the ishti project", ("branch", "clean", "modified", "On ")),
+        ("commit my changes in the ishti project", ("state-changing", "T2")),  # queued, never run
+        ("force push to origin", ("refuse",)),  # refusal owned in code
+    ],
+    "sendlater": [
+        ("send an email to smoke@test.com tomorrow at 9 saying hello there", ("Scheduled email", "tomorrow")),
+        ("list my scheduled emails", ("smoke@test.com",)),
+        ("cancel the scheduled email to smoke@test.com", ("Cancelled 1",)),
+    ],
+    "mailmerge": [
+        ("mailmerge D:/definitely/missing.csv: hi {name}", ("not found",)),
+        ("show my mailmerge drafts", ("drafts in", "No mailmerge drafts yet")),
+    ],
+    "pdftables": [
+        ("extract tables from D:/definitely/missing.pdf", ("not found",)),
+    ],
+    # ---- batch E (2026-09-28) ----
+    "forecast": [
+        ("forecast D:/definitely/missing.csv next 6 months", ("not found",)),
+        ("trend of D:/definitely/missing.csv", ("not found",)),
+    ],
+    "chart": [
+        ("bar chart of D:/definitely/missing.csv", ("not found",)),
+        ("show charts", ("No charts yet", "chart(s) in")),
+    ],
+    "palette": [
+        ("color palette of D:/definitely/missing.png", ("not found",)),
+    ],
+    "imgquality": [
+        ("image quality of D:/definitely/missing.jpg", ("not found",)),
+    ],
+    "abtest": [
+        # ground truth: 12.00% vs 9.31%, p = 0.0503 -> honestly not significant at alpha 0.05
+        ("ab test of 120 out of 1000 vs 95 out of 1020", ("Not significant", "12.00%", "9.31%")),
+        ("ab test of 1200 out of 10000 vs 950 out of 10200", ("Significant", "A wins")),
+    ],
+    "prioritize": [
+        ("add tasks: smoke test task urgent", ("Added 1", "DO NOW")),
+        ("prioritize my tasks", ("smoke test task",)),
+        ("clear my tasks", ("Cleared",)),
     ],
 }
 

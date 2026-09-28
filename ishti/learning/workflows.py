@@ -40,7 +40,7 @@ def record(task_id: str) -> Optional[Dict[str, Any]]:
 
 def scan(min_count: Optional[int] = None) -> List[Dict[str, Any]]:
     """Scan workflows that meet the minimum run count threshold."""
-    need = int(min_count or store.cfg().get("evidence", {}).get("workflow", 3))
+    need = int(min_count or store.evidence().get("workflow", 3))
     rows = store.rows("SELECT * FROM workflows WHERE count >= ? AND status='active'", (need,))
     out = []
     for r in rows:

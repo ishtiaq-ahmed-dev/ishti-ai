@@ -25,6 +25,8 @@ store-based (memory / lessons / dataset) and reversible from the dashboard.
 
 ```
 store.py      cfg() db_path() set_db_path(p) conn() reset() rows() row() add() ensure() now()
+              enabled() proactive() thresholds() evidence()      # config.json + runtime override
+              setting(key, default) set_setting(key, value)
 observe.py    begin(text, sid, channel, dec, memories=None, task_id=None, step_no=None) -> interaction_id
               end(iid, reply=None, skill=None, status="ok", result=None, reward=None) -> dict
               task_begin(goal, domain="", source="") -> task_id
@@ -42,13 +44,24 @@ errors.py     TAXONOMY  classify(text, decision=None, result=None, history=None)
               repeated(min_count=None) -> list[{error_type, wrong, right, count, signature, domain}]
 lessons.py    add(kind, statement, ...) -> dict
               adjust(lesson_id, delta, reason, interaction_id=None, evidence=None)
+              attribute(lesson_ids, reward, interaction_id=None, reason="") -> list[lesson_id]
+              apply_turn_outcome(interaction_id, reward, applied_lesson_ids=None, reason="") -> list
+              decay(days=None, floor=0.05) -> int           # AdMem pruning (un-confirmed only)
+              maybe_decay(force=False) -> int               # decay() at most once per interval
               confirm(lesson_id) reject(lesson_id) forget(lesson_id) delete(lesson_id) edit(lesson_id, **fields)
               active(context=None, kind=None, entity=None) -> list[dict]
               guidance_for(text, domain=None, limit=4) -> list[dict]         # priority ordered, spec 13/27
+              context_for(text, domain=None, limit=4) -> str                 # the prompt block
+              CONTEXT_INJECTING_SKILLS: frozenset          # skills whose prompt includes context_for()
               bucket(confidence) -> str  thresholds()
               detect_patterns(min_count=None) -> list[candidates]
               accept_candidate(candidate_id, keep, edits=None) -> dict
               stats() export(path=None) -> (path, n)
+reflect.py    reflect(interaction=None, reward=None, feedback=None, lesson=None) -> str
+              remember(text, interaction_id="", kind="reflection", context="", confidence=None) -> dict
+              for_turn(interaction, reward=None, feedback=None, keep=True) -> {text, lesson}
+              mine_insights(limit=50, min_words=4) -> list[{statement, context, provenance}]   # ExpeL
+              promote_insights(limit=50, confidence=0.3) -> list[lesson]                        # ExpeL
 policy.py     check(text, decision=None, session=None) -> {"overrides":[...], "skill":None|str, "why":str, "ask":str|None}
               apply_overrides(text, args) -> dict                            # parameter-level (application/entity)
               temporary_instruction(text) -> dict|None
@@ -66,6 +79,8 @@ dataset.py    add_example(instruction, correct="", ...) -> dict
               stats() rows(limit=200) delete(id)
 dashboard.py  overview() lessons(...) update_lesson(id, **f) delete_lesson(id) candidates(status) answer_candidate(id, keep, edits)
               feedback_list(limit) mistakes(limit) interactions(limit) tasks(limit) people()
+              reflections(limit=100) -> {reflections[], mined[], counts{reflections,insights,pending}}
+              promote_insights(limit=50) -> {promoted[]}
               workflows() dataset(limit) add_dataset(payload) delete_dataset(id) sources()
               settings() update_settings(**kw) export(what) ack_and_ask()   # HITL question slot
 ```
@@ -83,8 +98,25 @@ functions catch their own exceptions and return empty/falsey values, and every m
  "evidence": {"similar_request": 2, "widen_scope": 3, "candidate_rule": 3, "workflow": 3},
  "temporary_ttl_s": 3600, "entities": {"ambiguity_margin": 0.2, "min_confidence": 0.6},
  "dataset": {"min_quality": 0.6, "per_skill_cap": 0.4, "export_dir": "D:\\ISHTI\\data\\finetune"},
+ "decay_days": 30, "decay_interval_s": 86400,
  "export_dir": "D:\\ISHTI\\data\\learning\\export"}
 ```
+
+`decay_days` is the horizon after which an un-confirmed, un-re-earned lesson starts fading;
+`decay_interval_s` is how often `maybe_decay()` is allowed to run (`lessons.py`, called from the
+dispatcher's turn hook). Both are read through `store.cfg()`, i.e. they are **config-file** knobs
+in `ishti/config.json` - `POST /api/learning/settings` only whitelists `enabled`, `proactive`,
+`thresholds` and `evidence`.
+
+Note `decay()` moves the `decayed` watermark, never `updated` - `updated` means "evidence touched
+this" and the dashboard reads it.
+
+Runtime overrides (`enabled`, `proactive`, `thresholds`, `evidence`) are written to the `settings`
+table by `dashboard.update_settings()` and read back by `store.enabled()`, `store.proactive()`,
+`store.thresholds()` and `store.evidence()`. They are **not** read inside `store.cfg()`:
+`cfg()` feeds `db_path()` -> `conn()`, so a `cfg()` that queried the settings table would need the
+database in order to locate the database. A stored-but-never-read setting is the bug this split
+exists to prevent - it made the Enabled toggle and every threshold edit decorative.
 
 `enabled: false` disables all learning writes (reads still work). `proactive: false` means the
 assistant never volunteers a learned suggestion or a "should I remember that?" question unless the
@@ -118,10 +150,14 @@ owner asks (flipped in the dashboard or with "start learning proactively").
 | GET `/api/learning/settings` | – | `{settings, thresholds, evidence}` |
 | POST `/api/learning/settings` | `{enabled?, proactive?, thresholds?, evidence?}` | `{settings, thresholds, evidence}` |
 | GET `/api/learning/ask` | – | `{question, candidate_id}` or `{question:null}` |
+| GET `/api/learning/reflections` | `?limit=100` | `{reflections:[{lesson_id,statement,context,note,confidence,bucket,status,updated,kind_of:"reflection"\|"insight"}], mined:[{statement,context,provenance{interaction_id,request,skill,ts}}], counts{reflections,insights,pending}}` |
+| POST `/api/learning/reflections/mine` | `{limit?}` | `{promoted:[Lesson], error?}` |
 
 `Lesson` = `{lesson_id, created, updated, kind, scope, context, statement, incorrect, correct,
 evidence, positive, negative, confidence, bucket, status, source, priority, action, expires, entity,
-occasions, confirmed, note}` (`bucket` is one of weak/possible/probable/strong/confirmed).
+occasions, confirmed, note, decayed}` (`bucket` is one of weak/possible/probable/strong/confirmed;
+`decayed` is the last timestamp `decay()` faded this lesson and is `null` until it has faded once -
+`updated` stays the evidence time and is never touched by decay).
 
 ## 5. Dashboard page
 
@@ -129,9 +165,12 @@ occasions, confirmed, note}` (`bucket` is one of weak/possible/probable/strong/c
 `App.tsx` NAV between `memory` and `skills` with key `learning`, label `Learning`. Uses `Page`,
 `getJSON`/`postJSON`/`del` from the existing libs and the same Tailwind design tokens as the Memory
 page. Panels: Overview (three loops + confidence buckets + reward summary), Lessons
-(confirm/reject/pause/delete/edit + confidence bar + source + evidence), Candidates (answer
-yes/no), Corrections & feedback, Repeated mistakes, People, Workflows, Training data (stats +
-export + delete), Settings (enabled, proactive, thresholds, evidence minimums).
+(confirm/reject/pause/delete/edit + confidence bar + source + evidence), Reflections (the verbal
+one-per-sentence records plus mined-but-unpromoted insights, with a **Mine now** action),
+Candidates (answer yes/no), Corrections & feedback, Repeated mistakes, People, Workflows, Training
+data (stats + export + delete), Settings (enabled, proactive, thresholds, evidence minimums).
+Tab keys are `overview | lessons | reflections | candidates | feedback | mistakes | people |
+workflows | training | settings`.
 
 ## 6. Verification gates (must pass before "done")
 
@@ -140,8 +179,12 @@ export + delete), Settings (enabled, proactive, thresholds, evidence minimums).
 3. `tests/test_learning.py` — full cycle: correction → lesson → policy; repeated mistakes →
    candidate rule; HITL confirm/reject; entity separation; self-eval ambiguity; workflow mining;
    dataset curation (dedupe/contradiction/privacy); reward table; temporary-instruction expiry.
-4. `python -m ishti.check` — routing eval (labelled set) + core loop, unchanged or better.
-5. `python tools/check_skills.py` — the new skill's manifest matches its behaviour, no matcher steals.
-6. `python tools/verify_all.py --quick --only learning` then the full quick pass.
-7. `cd interface/app && npm run build` — TypeScript + Vite build clean.
-8. Live check: start the server, GET/POST each `/api/learning/*` endpoint against a temp DB.
+4. `tests/test_learning_wiring.py` — the cross-module loop: lessons reach `chat.build_context`,
+   the dispatcher turn hook runs, attribution is gated on `CONTEXT_INJECTING_SKILLS`, the
+   reflections payload, supersede + reflection recall, the confidence floor, `maybe_decay()`
+   throttling without touching `updated`, and `promote_insights()`.
+5. `python -m ishti.check` — routing eval (labelled set) + core loop, unchanged or better.
+6. `python tools/check_skills.py` — the new skill's manifest matches its behaviour, no matcher steals.
+7. `python tools/verify_all.py --quick --only learning` then the full quick pass.
+8. `cd interface/app && npm run build` — TypeScript + Vite build clean.
+9. Live check: start the server, GET/POST each `/api/learning/*` endpoint against a temp DB.

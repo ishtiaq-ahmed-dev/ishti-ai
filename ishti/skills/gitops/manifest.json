@@ -1,0 +1,13 @@
+{
+  "name": "gitops",
+  "version": "1.0.0",
+  "description": "Safe git subset: status/diff/log/branch reads run directly; add, commit, push, pull, checkout, stash, merge, reset and clean are state-changing and pass through ISHTI's T2 confirmation gate with the exact command shown. Never force-push, never hard-reset to a remote state without the gate.",
+  "route": "git status, git log, git diff, show branches, commit my changes, push to origin, pull the repo, stash my changes, which branch am I on",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T2",
+  "laya": false,
+  "scope": {"write": ["data/gitops"], "net": ["localhost"], "apps": []},
+  "category": "Development"
+}

@@ -264,5 +264,41 @@ if __name__ == "__main__":
     
     up = update_settings(proactive=True)
     assert up["settings"]["proactive"] is True
-    
-    print("[self-check] learning.dashboard OK - overview, endpoints support, settings override, export")
+
+    # A stored setting that nothing reads is a bug, not a feature: the Settings tab used to
+    # write `enabled`/`thresholds`/`evidence` into the settings table while `enabled()` and
+    # `thresholds()` kept reading config.json, so the toggle and every threshold edit were
+    # decorative. Assert the *effect*, not the round-trip.
+    assert store.enabled() is True
+    update_settings(enabled=False)
+    assert store.enabled() is False, "enabled must be honoured by store.enabled()"
+    update_settings(enabled=True)
+    assert store.enabled() is True
+
+    update_settings(thresholds={"weak": 0.7})
+    assert ls_module.thresholds()["weak"] == 0.7, ls_module.thresholds()
+    assert ls_module.thresholds()["strong"] == 0.95, "a partial override must keep the other bands"
+    store.write("DELETE FROM settings WHERE key=?", ("thresholds",))
+
+    update_settings(evidence={"candidate_rule": 9})
+    assert store.evidence()["candidate_rule"] == 9, store.evidence()
+    assert store.evidence()["workflow"] == 3, "a partial override must keep the other minimums"
+    store.write("DELETE FROM settings WHERE key=?", ("evidence",))
+
+    # and `enabled=False` must actually stop a write
+    update_settings(enabled=False)
+    blocked = ls_module.add("preference", "should not be written while learning is off",
+                            scope="session", context="selfcheck", source="repeated_observation",
+                            confidence=0.5)
+    assert not blocked, "learning must not write while enabled is false"
+    update_settings(enabled=True)
+
+    # reflections/promote_insights: the payloads /api/learning/reflections* serves
+    rp = reflections()
+    assert {"reflections", "mined", "counts"} <= set(rp), rp.keys()
+    assert isinstance(rp["reflections"], list) and isinstance(rp["mined"], list)
+    pr = promote_insights()
+    assert isinstance(pr.get("promoted"), list), pr
+
+    print("[self-check] learning.dashboard OK - overview, endpoints support, settings take effect, "
+          "reflections payload, export")

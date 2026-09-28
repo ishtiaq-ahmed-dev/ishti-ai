@@ -86,8 +86,8 @@ self-check + routing labels + check_skills, same as every existing skill).
 15. Product identification from photos — PARTIAL (batch C: Gemma3 + web search)
 16. Landmark & place recognition — BUILT (Gemma3 describe + search)
 17. Art style identification — BUILT (Gemma3)
-18. Color palette extraction — PARTIAL (batch B: `palette` PIL)
-19. Image quality assessment — PARTIAL (batch B: `imgquality` PIL stats)
+18. Color palette extraction — BUILT (batch E `palette`: exact hex + pixel shares + brightness)
+19. Image quality assessment — BUILT (batch E `imgquality`: resolution, Laplacian sharpness + blur verdict, brightness/contrast)
 20. Duplicate image detection — BUILT (media skill dedupe)
 21. Image captioning — BUILT (Gemma3)
 22. Visual question answering — BUILT (Gemma3 look())
@@ -199,8 +199,8 @@ self-check + routing labels + check_skills, same as every existing skill).
 28. Troubleshooting guides — BUILT (dev; health)
 29. Debugging assistance — BUILT (dev; coder)
 30. Diagnostic reasoning — PARTIAL (batch B: `mednote` structured only)
-31. Forecasting — PARTIAL (batch B: `forecast` simple trends)
-32. Trend extrapolation — PARTIAL (batch B: `forecast`)
+31. Forecasting — BUILT (batch E `forecast`: exact least-squares trend + N-period projection, R² reported)
+32. Trend extrapolation — BUILT (batch E `forecast`)
 33. Sensitivity analysis — PARTIAL (batch C)
 34. Monte Carlo guidance — PARTIAL (batch C)
 35. Bayesian reasoning — PARTIAL (batch C)
@@ -214,8 +214,8 @@ self-check + routing labels + check_skills, same as every existing skill).
 13. SQL generation & optimization — BUILT (coder)
 14. Regex creation — BUILT (coder)
 15. Shell scripts — BUILT (dev scaffold/run; coder)
-16-18. CI/CD, Docker, K8s — PARTIAL (batch B: `devops` template generator)
-19. IaC (Terraform) — PARTIAL (batch B templates)
+16-18. CI/CD, Docker, K8s — BUILT (batch D `devops`: GitHub Actions / GitLab CI / Dockerfile / Compose / K8s templates, pinned versions)
+19. IaC (Terraform) — BUILT (batch D `devops`: AWS provider + S3 bucket + versioning template)
 20-21. Frontend/backend scaffolding — BUILT (dev scaffold: react/vue/next/fastapi/flask)
 22. Microservice design — BUILT (coder)
 23. Design patterns — BUILT (coder)
@@ -228,7 +228,7 @@ self-check + routing labels + check_skills, same as every existing skill).
 30. Stack trace analysis — BUILT (dev)
 31. Dependency management — BUILT (pip/npm in dev)
 32. Package recommendations — BUILT (coder)
-33. Git operations — PARTIAL (batch B: `gitops` safe subset)
+33. Git operations — BUILT (batch D `gitops`: reads direct, writes T2-queued with exact commands, force/reset/rebase/clean refused in code)
 34. Merge conflict resolution — BUILT (coder assist)
 35. Snippet organization — BUILT (dev)
 36-37. Function extraction / class design — BUILT (coder)
@@ -252,15 +252,15 @@ Plus A/B framework — PARTIAL (batch D)
 6. Statistical summary — BUILT (batch C `stats` pandas describe: mean/std/min/max, missing values)
 7. Correlation — BUILT (batch C `stats` Pearson pairs)
 8. Distribution analysis — PARTIAL batch B (`stats`)
-9. Time series decomposition — PARTIAL batch B (`forecast`)
+9. Time series decomposition — BUILT-CORE (batch E `forecast`: moving-average smoothing + weekly/monthly cycle spread; full STL not attempted)
 10. Trend analysis — BUILT (markets)
-11. Seasonality — PARTIAL batch B (`forecast`)
+11. Seasonality — BUILT (batch E `forecast`: weekly/monthly phase means with a spread % and an honest weak-cycle verdict)
 12. Anomaly detection — BUILT (batch C `stats` z-score > 3 with row numbers)
 13. Clustering — BUILT (batch C `stats` k-means, standardised features)
 14. Dimensionality reduction — PARTIAL batch C
 15-19. Classification/regression/eval/CV/tuning — PARTIAL batch C (sklearn present?)
 20. Feature importance — PARTIAL batch C
-21. A/B analysis — PARTIAL batch D
+21. A/B analysis — BUILT (batch E `abtest`: two-proportion z-test, lift + p-value, direction-stating verdict)
 22. Cohort analysis — PARTIAL batch C
 23. Funnel analysis — PARTIAL batch C
 24. Retention — PARTIAL batch C
@@ -272,14 +272,14 @@ Plus A/B framework — PARTIAL (batch D)
 30. Network analysis — PARTIAL batch C
 31. Geospatial — PARTIAL batch C
 32. Interactive dashboards — PARTIAL (HUD exists; batch D widgets)
-33. Chart generation — PARTIAL batch B (`chart` matplotlib)
+33. Chart generation — BUILT (batch E `chart`: bar/line/histogram PNGs in data/charts)
 34-38. (heatmap, box, sankey, treemap, 3D) — PARTIAL batch B/C (matplotlib variants)
 39. Animation — PARTIAL batch C
 40. Report generation — BUILT (deep_research; digest)
 
 ## Domain 9 — Document Processing (35)
 1. PDF text extraction — BUILT (pypdfium2)
-2. PDF table extraction — PARTIAL batch B (`pdftables`)
+2. PDF table extraction — BUILT (batch D `pdftables`: pdfplumber → CSV per table in data/extracted)
 3. Document summarization — BUILT
 4. Document comparison — BUILT (diff tools; fileops)
 5. Contract clause extraction — PARTIAL batch B (`legaldoc`)
@@ -300,12 +300,12 @@ Plus A/B framework — PARTIAL (batch D)
 20. Bibliography management — batch B (`citation`)
 21-23. Versioning/collab/comments — PARTIAL batch C
 24. Templates — BUILT (docs)
-25. Mail merge — PARTIAL batch B (`mailmerge`)
+25. Mail merge — BUILT (batch D `mailmerge`: CSV + template → per-row drafts; sending stays per-draft T2)
 26. Batch processing — BUILT (fileops)
 27. Classification & tagging — BUILT (folders smart)
 28. Full-text search — BUILT (files; semantic)
 29. Semantic retrieval — BUILT (chroma)
-30. Redaction — PARTIAL batch B (`redact`)
+30. Redaction — BUILT (batch D `redact`: text/CSV/PDF, column-aware, originals untouched, copies only in data/redacted)
 31. E-signature workflow — BLOCKED (needs cert/legal infra)
 32. Approval workflows — BUILT (T2 gates)
 33. Archive & retention — PARTIAL batch C
@@ -314,7 +314,7 @@ Plus A/B framework — PARTIAL (batch D)
 
 ## Domain 10 — Task & Project Management (30)
 1. Task creation from NL — BUILT (reminders; task tracker)
-2. Eisenhower prioritization — PARTIAL batch B (`prioritize`)
+2. Eisenhower prioritization — BUILT (batch E `prioritize`: inferred flags shown, ordered quadrants, drop-pile honesty)
 3. Deadline tracking — BUILT (reminders)
 4. Recurring scheduling — BUILT (reminders RECUR)
 5. Subtask decomposition — BUILT (planner)
@@ -378,10 +378,10 @@ Plus A/B framework — PARTIAL (batch D)
 4. Priority inbox — PARTIAL (IMAP order; batch C)
 5. Spam detection — BUILT-CORE (Gmail-side) + batch B `phishing_check`
 6. Categorization — BUILT (email)
-7. Send later — PARTIAL batch B (`sendlater` via reminders)
+7. Send later — BUILT (batch D `sendlater`: reminders-store queue with `email:` tasks; fire time hands to the email skill whose T2 gate asks the owner's yes — never sends unattended)
 8. Follow-up reminders — BUILT (reminders)
 9. Templates — BUILT (docs)
-10. Bulk personalization — PARTIAL batch B (`mailmerge`)
+10. Bulk personalization — BUILT (batch D `mailmerge` drafts; the sending step remains per-draft T2 by design)
 11. Signature management — PARTIAL batch C
 12. Semantic search — BUILT (email search)
 13. Attachment extraction — BUILT (email; fileops)
@@ -700,9 +700,83 @@ Routing-quality fixes the gates caught during batch C:
 Verified: check_skills **69 skills / 155 assertions / 183 labelled requests OK**, routing labels
 clean, verify_all **107/107**, smoke **55/55 live cases**.
 
+## Pull verification + Batch D — built 2026-09-28 (this pass)
+
+**The owner's pulled changes were verified first, and three pull regressions were fixed:**
+
+1. **`stats` couldn't see forward-slash paths.** Its PATH regex only accepted `D:\\...`, so
+   `stats D:/data/sales.csv` (the natural typing) fell through to laya → files. All four batch-C
+   `stats` routing labels had silently gone red (183 → 179). Fixed to accept both slash styles;
+   self-check extended with the exact owner-style phrasings.
+2. **arch2 consolidation was dead in production.** `consolidate.PROMPT` contained
+   `{reply[:800]}` — an invalid str.format field — so `extract()` raised on every single turn and
+   the guard swallowed it with a one-line `TypeError` nobody could act on. Every exchange was
+   silently un-learned. Fixed the template, added the full traceback to the skip log, and verified
+   a live extraction now returns real JSON from the pinned planner.
+3. **`test_arch2_memory` leaked the owner's real chat store.** `retrieval.assemble_context()`'s
+   vector path read the live Chroma data (an "unrelated query" assertion pulled an actual
+   IMSciences conversation — see NEEDS #9, the recall threshold is still uncalibrated). The test
+   now stubs `vector_hits` to match its own no-Chroma contract; its promotion assert was also
+   scoped to its own observation (it had demanded the whole world be empty).
+
+Also verified from the pull: the learning reinforcement loop (dispatcher credit/blame,
+`lessons.attribute`, AdMem decay with the `decayed` watermark, chat injecting
+"LEARNED FROM THE OWNER"), the reflections/mining dashboard APIs, and the fix-backs on habits,
+desktop and moodlog — all confirmed intact by the full gate run.
+
+**Batch D — six skills, same gates as everything else:**
+
+| Skill | Covers | Tier / scope |
+|---|---|---|
+| `redact` | text / CSV / PDF redaction: emails, phones, CNICs, IBANs, cards, accounts, name-context; column-aware for CSV; `redact show` previews without writing; originals never touched, copies only in data/redacted | T1, write data/redacted |
+| `devops` | GitHub Actions, GitLab CI, Dockerfile, Docker Compose, Kubernetes Deployment+Service, Terraform templates — pinned versions copied verbatim, service name the only variable | T0, no writes |
+| `gitops` | safe git subset: status/log/diff/branches/current read directly; commit/push/pull/add/stash/checkout shown with their exact commands and T2-queued; **force-push, hard reset, rebase, clean refused in code** (owned refusal, never the LLM) | T2, write data/gitops |
+| `sendlater` | schedule an email via the reminders store (task=1, `email:` prefix): queue/list/cancel; at fire time the email skill's normal T2 gate asks for the owner's yes — **nothing sends while the owner is away** | T2, write data |
+| `mailmerge` | CSV + `{placeholder}` template → one personalized draft per row in data/mailmerge; unknown placeholders filled empty and reported (never a raw `{brace}`); invalid/missing emails skipped and counted | T1, write data/mailmerge |
+| `pdftables` | pdfplumber table extraction → CSV per table in data/extracted with exact row×col counts in the reply | T1, write data/extracted |
+
+**Routing hardening the labels forced (all with regression asserts):**
+- gitops' `log` had to become git-flavoured: `log into my portal` (browser), `log in to github`
+  (security) and `log sleep 7.5 hours` (sleeplog) are not git.
+- dev/gitops boundary: the old `dev` git labels (`git status of the ishti project`) now belong to
+  gitops (priority 12 < dev's 22) — dev keeps run-the-tests / lint.
+- owner's fuzzy verb match (`"on"` → close to `"born"`) claimed "which branch am I on in D:/proj";
+  requests mentioning a path/branch/repo/git are now excluded from `asks_about_me`.
+- gitops write regexes needed word-boundary anchors: "add subscription spotify…" parsed `of s` as a
+  path and stole subscriptions' smoke case.
+- devops / gitops / sendlater / mailmerge / redact / pdftables are **trigger-only** (`laya: false`):
+  their deterministic cues are distinctive, and as laya options they only created confusion
+  ("draft an email…" → mailmerge, "mujhe batao mera project kahan hai" → devops).
+
+Verified: check_skills **75 skills / 162 assertions / 207 labelled requests OK**, routing
+**207/207 @ 0.2 ms**, smoke **70/70 live cases**, verify_all **115/115**.
+
+## Batch E — built 2026-09-28 (this pass)
+
+Six skills, chosen as the highest-value PARTIAL items that run fully local on already-installed
+libraries (pandas, matplotlib, PIL, scipy — verified present before building):
+
+| Skill | Covers |
+|---|---|
+| `forecast` | exact least-squares trend, N-period projection, moving average, weekly/monthly seasonality spread — every number from pandas/numpy, R² reported so a bad fit is visible |
+| `chart` | bar / line / histogram PNGs of a CSV column via matplotlib Agg into data/charts, with exact min/mean/max in the reply; `show charts` lists recent |
+| `palette` | dominant colors as exact hex codes with pixel shares (PIL median-cut quantize), average brightness + text-contrast advice |
+| `imgquality` | resolution/MP/aspect, Laplacian-variance sharpness with a blur verdict, brightness and contrast — measured, never estimated |
+| `abtest` | two-proportion z-test (scipy): rates, pp + relative lift, z, p, and a verdict that states direction — "significant but losing" is never sold as a win |
+| `prioritize` | Eisenhower triage: quick-add tasks with inferred urgent/important flags shown in brackets, ordered DO NOW → DO QUICKLY → SCHEDULE → DROP/PARK plan |
+
+Gate notes: the manifests declare import names, so the PIL skills list `PIL` (importable), not
+`Pillow` (the pip name) — declaring the pip name had made the loader try to reinstall an
+installed package. Read-only skills carry `write: ["data"]` per the house convention so the
+scope auditor has something to verify. Routing labels: 207 → **231**; smoke cases 70 → **81**.
+
+Verified: check_skills **81 skills / 174 assertions / 231 labelled requests OK**, routing
+**231/231 @ 0.2 ms**, smoke **81/81 live cases**, verify_all **121/121**.
+
 ## Running totals (this inventory)
-- BUILT / BUILT-CORE: 300+
-- PARTIAL with a planned batch: ~250 (batch B: ~70 small skills; C: ~60; D: ~25)
+- BUILT / BUILT-CORE: 320+
+- PARTIAL with a planned batch: ~230 (batches B, C, D core and E are built; the remainder are
+  the wider long tail)
 - BLOCKED (infrastructure/policy/model-size): ~45 — each with the reason above; nothing skipped silently.
 - The remainder are already covered by shared capabilities (planner/coder/chat cover dozens of
   "one prompt" items individually listed in the catalogue).

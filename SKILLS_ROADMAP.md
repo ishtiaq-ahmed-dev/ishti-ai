@@ -62,6 +62,30 @@ owner phrasings end-to-end: **33/33 after fixing 2 defects it caught** (quickcal
 matcher gap; checklist reset deleting the list instead of un-ticking it — both now covered by
 extended self-checks).
 
+## Batch E (2026-09-28)
+
+Six local-compute skills on already-installed libraries: **forecast** (exact least-squares
+trend/projection/moving-average/seasonality), **chart** (matplotlib bar/line/histogram PNGs),
+**palette** (PIL dominant colors with exact hex + pixel shares), **imgquality** (Laplacian
+sharpness, blur verdict, brightness/contrast), **abtest** (two-proportion z-test with a
+direction-stating verdict), **prioritize** (Eisenhower triage with visible inferred flags).
+Manifests declare import names (`PIL`, not the pip name `Pillow`) after the loader's package
+check flagged the mismatch. Labels: **231 labelled requests**, check_skills **81/174/231 OK**,
+routing **231/231 @ 0.2 ms**, verify_all **121/121**, smoke **81/81 live cases**.
+
+## Pull verification + Batch D (2026-09-28)
+
+The owner's pull was verified first: three regressions found and fixed (stats' forward-slash
+paths silently breaking four routing labels; arch2's consolidation template crashing on every
+turn — `{reply[:800]}` — so nothing was ever learned; the arch2 test file reading the owner's
+real chat store). Then six skills: **redact, devops (CI/CD + IaC templates), gitops (safe
+read-only subset, writes T2-gated, history rewriting refused in code), sendlater (email queue on
+the reminders store, T2 at send time — nothing sends while the owner is away), mailmerge (CSV +
+template → per-row drafts), pdftables (pdfplumber → CSV)**. New hardening: git-flavoured "log"
+only; owner's fuzzy verb match no longer claims path/branch questions; git ask "add …" can no
+longer steal subscriptions. Labels: **207 labelled requests**, check_skills **75/162/207 OK**,
+routing **207/207 @ 0.2 ms**, verify_all **115/115**, smoke **70/70 live cases**.
+
 ## Batch C (2026-09-28)
 
 Seven more skills: **vocab, recipe, subscriptions, networth, sleeplog, moodlog, stats** — plus

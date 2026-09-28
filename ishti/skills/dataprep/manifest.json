@@ -1,0 +1,13 @@
+{
+  "name": "dataprep",
+  "version": "1.0.0",
+  "description": "CSV data-quality prep with exact pandas numbers: missing-value profile, duplicate rows, constant columns, type mix per column, outlier counts, and concrete cleaning suggestions. Computed, not guessed.",
+  "route": "clean the csv D:/x.csv, data quality of, profile the csv, missing values in, duplicates in",
+  "needs": {"python": ["pandas"], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Data"
+}

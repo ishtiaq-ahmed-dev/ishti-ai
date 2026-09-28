@@ -1,0 +1,13 @@
+{
+  "name": "redact",
+  "version": "1.0.0",
+  "description": "Redact sensitive data from text, CSV or PDF: emails, phone numbers, CNICs, IBANs, card/account numbers and name-context matches are masked; the redacted copy is written to data/redacted/ and the original is never touched. Fully local.",
+  "route": "redacting sensitive data from text, CSV or PDF files into a safe copy: names, emails, phone numbers, CNICs, IBANs and account/card numbers are masked, originals never leave this PC",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T1",
+  "laya": false,
+  "scope": {"write": ["data/redacted"], "net": [], "apps": []},
+  "category": "Documents & Files"
+}

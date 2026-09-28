@@ -1,0 +1,13 @@
+{
+  "name": "vulnscan",
+  "version": "1.0.0",
+  "description": "Static security scan of a Python file or folder without executing it: hardcoded secrets, eval/exec/pickle.loads, shell=True, SQL string building, weak hashes (MD5/SHA1), unsafe yaml.load, debug=True, and assert-based checks. Findings ranked by severity, report saved to data/vulnscan/. bandit-free AST scan - the code is parsed, never run.",
+  "route": "vulnerability scan of project folder, scan my python code for security issues, is this code safe, security scan D:/proj",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data/vulnscan"], "net": [], "apps": []},
+  "category": "Security"
+}

@@ -24,7 +24,7 @@ stated them in their message ("Ahmed is my brother"); never inferred from chatte
 
 Exchange:
 Owner: {request}
-Assistant: {reply[:800]}
+Assistant: {reply}
 
 Reply with ONLY a JSON object:
 {{"semantic": ["stable preference or fact about the owner"],
@@ -51,7 +51,9 @@ def extract(text: str, reply: str) -> dict:
         d = json.loads(m.group(0)) if m else {}
         return d if isinstance(d, dict) else {}
     except Exception as exc:
+        import traceback as _tb  # a one-line TypeError from deep inside tells nothing; the trace does
         print(f"[arch2] consolidation skipped: {type(exc).__name__}: {exc}")
+        _tb.print_exc()
         return {}
 
 

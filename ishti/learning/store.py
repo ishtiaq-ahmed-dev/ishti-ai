@@ -98,8 +98,38 @@ def cfg():
     return conf
 
 
+def _runtime(key, default=None):
+    """The dashboard's runtime override for `key`, merged over the config file.
+
+    Deliberately *not* folded into `cfg()`: `cfg()` feeds `db_path()` -> `conn()`, so a `cfg()`
+    that read the `settings` table would query the database in order to find where the database
+    is. Every key the Settings tab can write is read back through here instead.
+    """
+    base = cfg().get(key, default)
+    try:
+        got = setting(key, None)
+    except Exception:
+        return base
+    if isinstance(base, dict) and isinstance(got, dict):
+        return {**base, **got}      # a partial override must not drop a band or a minimum
+    return base if got is None else got
+
+
 def enabled():
-    return bool(cfg().get("enabled", True))
+    """Fail soft: an unreadable settings table must not decide learning on its own."""
+    return bool(_runtime("enabled", True))
+
+
+def thresholds():
+    """Confidence bands, runtime override first - the dashboard edits these."""
+    out = _runtime("thresholds", DEFAULTS["thresholds"])
+    return out if isinstance(out, dict) else dict(DEFAULTS["thresholds"])
+
+
+def evidence():
+    """Evidence minimums, runtime override first."""
+    out = _runtime("evidence", DEFAULTS["evidence"])
+    return out if isinstance(out, dict) else dict(DEFAULTS["evidence"])
 
 
 def db_path():

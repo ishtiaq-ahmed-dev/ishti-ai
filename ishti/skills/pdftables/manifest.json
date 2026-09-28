@@ -1,0 +1,13 @@
+{
+  "name": "pdftables",
+  "version": "1.0.0",
+  "description": "Extract tables from a PDF into CSV files (pdfplumber): each detected table becomes data/extracted/<pdf>-table-<n>.csv, ready for Excel or pandas. Nothing leaves this PC.",
+  "route": "extract tables from D:/x.pdf, pull the tables out of the pdf, pdf tables to csv",
+  "needs": {"python": ["pdfplumber"], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T1",
+  "laya": false,
+  "scope": {"write": ["data/extracted"], "net": [], "apps": []},
+  "category": "Documents & Files"
+}

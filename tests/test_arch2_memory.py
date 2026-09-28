@@ -38,6 +38,11 @@ import ishti.arch2.jsonio as jsonio  # noqa: E402
 memory.db_path = lambda: os.path.join(TMP, "arch2_memory.db")
 memory._conn = None
 retrieval.memory = memory
+# The test contract (docstring above) is "runs WITHOUT Chroma" — vector_hits() would otherwise
+# open the owner's real conversation store and inject live chat into assertions (it did: the
+# unrelated-query assertion pulled an actual IMSciences exchange). Keyword/procedure paths are
+# what this file verifies; vector recall is covered by the distance calibration in NEEDS #9.
+retrieval.vector_hits = lambda *a, **k: []
 consolidate.memory = memory
 
 
@@ -128,7 +133,10 @@ def test_observations_promote_by_configurable_threshold():
     memory.observe("User asks to make the email shorter.")
     promoted = memory.promote_observations()
     assert any("email shorter" in p["content"] for p in promoted)
-    assert not [x for x in memory.search(mtype="observation") if x["status"] == "active"]
+    # scoped to THIS test's observation: other tests legitimately leave active observations
+    # behind (test_memory_commands lists one on purpose) - the world is not empty, ours is gone
+    assert not [x for x in memory.search("make the email shorter", mtype="observation")
+                if x["status"] == "active"]
 
 
 def test_supersede_and_forget():

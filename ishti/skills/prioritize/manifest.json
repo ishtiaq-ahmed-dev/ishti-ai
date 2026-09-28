@@ -1,0 +1,13 @@
+{
+  "name": "prioritize",
+  "version": "1.0.0",
+  "description": "Eisenhower-matrix triage of the owner's tasks: quick-add several tasks, then get them sorted into do-first / schedule / delegate / drop by stated urgency and importance, with an ordered action list. Stored locally in the notes store.",
+  "route": "prioritize my tasks, sort my tasks by priority, what should I do first, triage my todo list, add task ... urgent important",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Productivity"
+}

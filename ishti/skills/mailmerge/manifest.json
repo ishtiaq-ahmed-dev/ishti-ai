@@ -1,0 +1,13 @@
+{
+  "name": "mailmerge",
+  "version": "1.0.0",
+  "description": "Mail merge: a CSV of recipients plus a {placeholder} template becomes one personalized draft per row, written to data/mailmerge/. Sending is a separate, per-draft T2-confirmed step through the email skill - ISHTI prepares, the owner approves.",
+  "route": "mailmerge D:/contacts.csv:, mail merge the csv with a template, show my mailmerge drafts",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T1",
+  "laya": false,
+  "scope": {"write": ["data/mailmerge"], "net": [], "apps": []},
+  "category": "Communication"
+}

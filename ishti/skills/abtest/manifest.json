@@ -1,0 +1,13 @@
+{
+  "name": "abtest",
+  "version": "1.0.0",
+  "description": "A/B test analysis with the exact two-proportion z-test: conversion rates, absolute and relative lift, z-score and p-value, and a plain-language significant/not verdict at alpha 0.05. Computed with scipy — no gut feeling.",
+  "route": "ab test of, is my a/b test significant, compare conversion 120 of 1000, analyze the split test",
+  "needs": {"python": ["scipy"], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Data"
+}

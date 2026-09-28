@@ -1,0 +1,13 @@
+{
+  "name": "forecast",
+  "version": "1.0.0",
+  "description": "Simple trend forecasting on a CSV time series with exact least-squares numbers: linear trend N periods ahead, moving-average smoothing, week-over-week/month-over-month deltas, best/worst span. Every figure computed by pandas — no LLM arithmetic.",
+  "route": "forecast sales.csv next 6 months, predict next week from, trend of the csv, moving average of, seasonality in",
+  "needs": {"python": ["pandas"], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Data"
+}

@@ -239,7 +239,7 @@ def record(error, interaction_id="", note="", domain=""):
 
 def repeated(min_count=None):
     """Mistake groups that happened often enough to deserve a rule (spec 10)."""
-    floor = int(min_count or store.cfg()["evidence"].get("candidate_rule", 3))
+    floor = int(min_count or store.evidence().get("candidate_rule", 3))
     got = store.rows("SELECT error_type, wrong, right, domain, signature, COUNT(*) n, MAX(ts) last_ts "
                      "FROM mistakes GROUP BY signature HAVING n >= ? ORDER BY n DESC, last_ts DESC", (floor,))
     out = []

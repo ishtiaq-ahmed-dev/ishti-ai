@@ -1,0 +1,13 @@
+{
+  "name": "optimize",
+  "version": "1.0.0",
+  "description": "Small optimization problems solved exactly with scipy: maximize/minimize a linear objective under resource constraints ('budget 5000, item A 200 each max 10, item B 450 each max 6'), plus minimize/maximize a function of one variable. The optimum and binding constraints come from the solver, not a guess.",
+  "route": "optimize the budget, maximize with constraints, minimize x^2 at, best mix of A and B, linear program",
+  "needs": {"python": ["scipy"], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Reasoning"
+}
