@@ -44,6 +44,7 @@ import RareFolder from "@/components/rare/folder-component";
 import { CHAT_FONT_SIZES, getChatFontSize, setChatFontSize, type ChatFontSize } from "@/lib/font-size";
 import { cn } from "@/lib/utils";
 import { ModelsCard, VoiceCard, WhisperCard } from "@/components/ModelsVoices";
+import { ArchitectureCard } from "@/components/ArchitectureCard";
 
 export function Page({
   title,
@@ -2319,6 +2320,11 @@ export function Settings({ onToggleNav }: { onToggleNav?: () => void }) {
       }
     >
       <div className="space-y-6">
+        {/* ========================================================
+             SECTION 0: Architecture (arch1 dispatcher vs arch2 two-pass brain)
+             ======================================================== */}
+        <ArchitectureCard />
+
         {/* ========================================================
              SECTION 1: Language models
              ======================================================== */}

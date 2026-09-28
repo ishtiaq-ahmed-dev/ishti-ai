@@ -330,6 +330,56 @@ async def self_heal_trigger():
     return JSONResponse(res)
 
 
+# ---- Architecture control (ARCH1 dispatcher vs ARCH2 two-pass brain) -------------------------
+@app.get("/api/arch")
+async def arch_state():
+    """Which pipeline is active + the memory store's live stats (the dashboard's Architecture card)."""
+    from ishti.arch2 import registry
+    out = registry.describe()
+    try:
+        from ishti.arch2 import memory as amem
+        out["memory"] = amem.stats()
+    except Exception as exc:
+        out["memory"] = {"error": str(exc)}
+    try:
+        from ishti.arch2 import pipeline as apipe
+        from ishti import llm
+        out["models"] = {"main": llm.model_for("main"), "validation": llm.model_for("validation")}
+        out["tool_rounds"] = apipe.MAX_TOOL_ROUNDS
+    except Exception:
+        out["models"] = {}
+    return JSONResponse(out)
+
+
+@app.post("/api/arch/switch")
+async def arch_switch(req: Request):
+    """{"backend": "arch1" | "arch2"} - the Settings -> Architecture card's switch."""
+    from ishti.arch2 import registry
+    body = await req.json()
+    try:
+        d = registry.set_active(str(body.get("backend", "")), by="dashboard")
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    await broadcast_event("arch_state", d)
+    return JSONResponse(d)
+
+
+@app.post("/api/arch/memory/promote")
+async def arch_memory_promote():
+    """Run the observation->semantic promotion now (normally automatic at the thresholds)."""
+    from ishti.arch2 import memory as amem
+    promoted = amem.promote_observations()
+    return JSONResponse({"promoted": len(promoted), "items": [p["content"] for p in promoted]})
+
+
+@app.post("/api/arch/memory/decay")
+async def arch_memory_decay():
+    """Run a decay pass now: stale low-importance memories are marked needs_confirmation (never deleted)."""
+    from ishti.arch2 import memory as amem
+    flagged = amem.decay()
+    return JSONResponse({"flagged": len(flagged), "items": [r["content"] for r in flagged]})
+
+
 # ---- Global microphone control (Section 7) ---------------------------------------------------
 @app.get("/api/mic/status")
 async def mic_status():

@@ -47,8 +47,21 @@ def clean(text: str, context: str = "") -> str:
 
 
 def model_for(role: str) -> str:
-    """Configured model for a role, falling back when it isn't pulled into Ollama."""
+    """Configured model for a role, falling back when it isn't pulled into Ollama.
+    arch2 (ishti/arch2/*) asks for its own roles ("main", "validation") which live in
+    CONFIG["arch"]["arch2"]["models"], falling back to the planner model."""
     global _installed
+    if role in ("main", "validation"):
+        a2 = (CONFIG.get("arch") or {}).get("arch2", {}).get("models", {})
+        name = a2.get(role) or _cfg["models"].get("planner", _cfg["fallback"])
+        if _installed is None:
+            try:
+                _installed = {m.id for m in _client.models.list().data}
+            except Exception:
+                _installed = set()
+        if _installed and name not in _installed and f"{name}:latest" not in _installed:
+            return a2.get("fallback") or _cfg["fallback"]
+        return name
     name = _cfg["models"].get(role, _cfg["fallback"])
     if role == "fast" or name.lower() in ("laya", "typed-decisions"):
         return "laya"

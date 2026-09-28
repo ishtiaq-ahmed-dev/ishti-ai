@@ -10,12 +10,45 @@
     "fallback": "ishti-qwen2.5:14b",
     "timeout_s": 120
   },
+  "arch": {
+    "active": "arch1",
+    "note": "active: arch1 (existing dispatcher) or arch2 (intent-router -> qwen3:14b think/tool loop -> validation -> qwen3:14B final). Switch here, from the dashboard Settings -> Architecture card, or by asking ISHTI. arch2 memory adds a five-table unified store on SQLite + the existing Chroma; nothing else changes.",
+    "arch2": {
+      "models": {
+        "main": "qwen3:14b",
+        "validation": "qwen3:14b",
+        "fallback": "ishti-qwen2.5:14b"
+      },
+      "memory": {
+        "db_name": "arch2_memory.db",
+        "retrieval_k": 6,
+        "max_distance": 0.45,
+        "context_budget_chars": 2600,
+        "confirmation_thresholds": {
+          "temporary": 2,
+          "weak": 5,
+          "probable": 10,
+          "note": "0-2 observations = temporary; 3-5 weak; 6-10 probable; 11+ strong (promoted to semantic memory). Edit freely - nothing is hard-coded."
+        },
+        "decay": {
+          "enabled": true,
+          "run_interval_h": 12,
+          "min_importance_floor": 0.55,
+          "note": "Low-importance, long-unconfirmed memories are marked needs_confirmation (never deleted); importance >= floor is never decayed."
+        }
+      }
+    }
+  },
   "memory": {
     "db_path": "D:\\ISHTI\\data\\ishti.db",
     "chroma_dir": "D:\\ISHTI\\data\\chroma",
     "embed_model": "nomic-embed-text",
     "embed_url": "http://127.0.0.1:11434",
-    "search_roots": ["D:\\", "~\\Desktop", "~\\Downloads"],
+    "search_roots": [
+      "D:\\",
+      "~\\Desktop",
+      "~\\Downloads"
+    ],
     "search_max_depth": 4,
     "search_budget_s": 10
   },
@@ -29,29 +62,58 @@
     "login": {
       "note": "Owner's Chrome 'Profile 10' - for logins only (Google sign-in, Gmail) - via the Playwright Extension; token in data/mcp_tokens.json",
       "command": "npx",
-      "args": ["-y", "@playwright/mcp@0.0.82", "--extension", "--profile-dir-name", "Profile 10",
-               "--output-dir", "D:\\ISHTI\\data\\mcp_output"],
+      "args": [
+        "-y",
+        "@playwright/mcp@0.0.82",
+        "--extension",
+        "--profile-dir-name",
+        "Profile 10",
+        "--output-dir",
+        "D:\\ISHTI\\data\\mcp_output"
+      ],
       "token_key": "browser",
       "fallback": "browser_isolated"
     },
     "main": {
       "note": "Owner's MAIN Chrome 'Profile 9' - WhatsApp Web, Gemini, general browsing - via the Playwright Extension",
       "command": "npx",
-      "args": ["-y", "@playwright/mcp@0.0.82", "--extension", "--profile-dir-name", "Profile 9",
-               "--output-dir", "D:\\ISHTI\\data\\mcp_output"],
+      "args": [
+        "-y",
+        "@playwright/mcp@0.0.82",
+        "--extension",
+        "--profile-dir-name",
+        "Profile 9",
+        "--output-dir",
+        "D:\\ISHTI\\data\\mcp_output"
+      ],
       "token_key": "whatsapp",
       "fallback": "browser_isolated"
     },
     "browser_isolated": {
       "note": "Fallback until the extension is set up: ISHTI's own separate profile, no logins",
       "command": "npx",
-      "args": ["-y", "@playwright/mcp@0.0.82", "--user-data-dir", "D:\\ISHTI\\data\\mcp_browser_profile",
-               "--output-dir", "D:\\ISHTI\\data\\mcp_output"]
+      "args": [
+        "-y",
+        "@playwright/mcp@0.0.82",
+        "--user-data-dir",
+        "D:\\ISHTI\\data\\mcp_browser_profile",
+        "--output-dir",
+        "D:\\ISHTI\\data\\mcp_output"
+      ]
     }
   },
   "browser_profiles": {
     "note": "Which Chrome profile (mcp_servers entry) each skill browses with; skills not listed use default",
-    "default": "main", "whatsapp": "main", "gemini": "main", "online_fallback": "main", "email": "login", "login": "login", "calendar": "main", "travel": "main", "extract": "main", "contacts": "main"
+    "default": "main",
+    "whatsapp": "main",
+    "gemini": "main",
+    "online_fallback": "main",
+    "email": "login",
+    "login": "login",
+    "calendar": "main",
+    "travel": "main",
+    "extract": "main",
+    "contacts": "main"
   },
   "voice": {
     "whisper_model": "D:\\ISHTI\\data\\models\\whisper-large-v3-turbo",
@@ -60,27 +122,100 @@
     "whisper_compute": "float16",
     "wake_enabled": true,
     "wake_model": "hey_jarvis",
-    "wake_phrases": ["hey ishti", "hey jarvis", "hey my assistant"],
-    "languages": ["en", "ur", "ps"],
+    "wake_phrases": [
+      "hey ishti",
+      "hey jarvis",
+      "hey my assistant"
+    ],
+    "languages": [
+      "en",
+      "ur",
+      "ps"
+    ],
     "primary_language": "en",
     "primary_language_bias": 0.25,
-    "language_switch_threshold": 0.60,
+    "language_switch_threshold": 0.6,
     "forced_language": null,
     "whisper_idle_unload_s": 600,
     "wake_threshold": 0.5,
-    "barge_in": {"enabled": true, "vad_threshold": 0.6, "min_ms": 120, "check_ms": 700, "echo_overlap": 0.5, "cooldown_s": 1.0,
-                 "note": "Tune on the real room: raise vad_threshold/min_ms if speaker echo interrupts; lower echo_overlap if your own words get ignored"},
+    "barge_in": {
+      "enabled": true,
+      "vad_threshold": 0.6,
+      "min_ms": 120,
+      "check_ms": 700,
+      "echo_overlap": 0.5,
+      "cooldown_s": 1.0,
+      "note": "Tune on the real room: raise vad_threshold/min_ms if speaker echo interrupts; lower echo_overlap if your own words get ignored"
+    },
     "voices": [
-      {"name": "Male 1 - Deep/Calm", "engine": "kokoro", "voice": "am_onyx", "gender": "male", "speed": 0.95},
-      {"name": "Male 2 - Energetic", "engine": "kokoro", "voice": "am_puck", "gender": "male", "speed": 1.1},
-      {"name": "Male 3 - Clear", "engine": "kokoro", "voice": "am_michael", "gender": "male", "speed": 1.0},
-      {"name": "Male 4 - British", "engine": "kokoro", "voice": "bm_george", "gender": "male", "lang": "en-gb", "speed": 1.0},
-      {"name": "Female 1 - Neutral", "engine": "kokoro", "voice": "af_heart", "gender": "female", "speed": 1.0},
-      {"name": "Female 2 - British", "engine": "kokoro", "voice": "bf_emma", "gender": "female", "lang": "en-gb", "speed": 1.0},
-      {"name": "Classic Male - Deep (Piper)", "piper_voice": "en_US-norman-medium", "gender": "male", "length_scale": 1.08},
-      {"name": "Classic Male - Energetic (Piper)", "piper_voice": "en_US-bryce-medium", "gender": "male", "length_scale": 0.82},
-      {"name": "Classic Male - Clear (Piper)", "piper_voice": "en_US-ryan-high", "gender": "male", "length_scale": 1.0},
-      {"name": "Classic Female (Piper)", "piper_voice": "en_US-lessac-medium", "gender": "female", "length_scale": 1.0}
+      {
+        "name": "Male 1 - Deep/Calm",
+        "engine": "kokoro",
+        "voice": "am_onyx",
+        "gender": "male",
+        "speed": 0.95
+      },
+      {
+        "name": "Male 2 - Energetic",
+        "engine": "kokoro",
+        "voice": "am_puck",
+        "gender": "male",
+        "speed": 1.1
+      },
+      {
+        "name": "Male 3 - Clear",
+        "engine": "kokoro",
+        "voice": "am_michael",
+        "gender": "male",
+        "speed": 1.0
+      },
+      {
+        "name": "Male 4 - British",
+        "engine": "kokoro",
+        "voice": "bm_george",
+        "gender": "male",
+        "lang": "en-gb",
+        "speed": 1.0
+      },
+      {
+        "name": "Female 1 - Neutral",
+        "engine": "kokoro",
+        "voice": "af_heart",
+        "gender": "female",
+        "speed": 1.0
+      },
+      {
+        "name": "Female 2 - British",
+        "engine": "kokoro",
+        "voice": "bf_emma",
+        "gender": "female",
+        "lang": "en-gb",
+        "speed": 1.0
+      },
+      {
+        "name": "Classic Male - Deep (Piper)",
+        "piper_voice": "en_US-norman-medium",
+        "gender": "male",
+        "length_scale": 1.08
+      },
+      {
+        "name": "Classic Male - Energetic (Piper)",
+        "piper_voice": "en_US-bryce-medium",
+        "gender": "male",
+        "length_scale": 0.82
+      },
+      {
+        "name": "Classic Male - Clear (Piper)",
+        "piper_voice": "en_US-ryan-high",
+        "gender": "male",
+        "length_scale": 1.0
+      },
+      {
+        "name": "Classic Female (Piper)",
+        "piper_voice": "en_US-lessac-medium",
+        "gender": "female",
+        "length_scale": 1.0
+      }
     ],
     "default_voice": "Female 1 - Neutral",
     "kokoro_dir": "D:\\ISHTI\\data\\kokoro",

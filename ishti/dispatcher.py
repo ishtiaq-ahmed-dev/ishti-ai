@@ -98,6 +98,16 @@ class View(dict):
 INFLIGHT = {}  # session id -> threading.Condition guarding its count of running requests
 
 
+def _arch_registry():
+    """arch2.registry or None (arch2 optional - its absence must never break arch1)."""
+    try:
+        from ishti.arch2 import registry
+        return registry
+    except Exception as exc:
+        print(f"[dispatcher] arch2 unavailable: {exc}")
+        return None
+
+
 def _remember(text, reply, skill):
     try:
         from ishti.semantic import get_semantic
@@ -539,7 +549,34 @@ def _handle(text, sid, conv, s, events, t0, channel):
             return _finish(text, sid, conv, s, events, t0, channel, "mic", out,
                            {"skill": "mic", "source": "rule", "confidence": 1.0})
 
-    # 3. Language preference override: "talk to me in English", "switch to Urdu", "auto language"
+    # 3b. ARCH2 command: "use arch 2" / "switch to the new architecture" (registry is the owner of the state)
+    if not pending:
+        try:
+            from ishti.arch2 import registry
+            if (arch_reply := registry.handle_command(text)) is not None:
+                out = {"reply": arch_reply, "sources": []}
+                s["trace"](type="route", skill="arch", source="rule", confidence=1.0, why="architecture switch command")
+                audit.record("arch switch", text[:120], skill="arch", initiator="owner", session=sid)
+                return _finish(text, sid, conv, s, events, t0, channel, "arch", out,
+                               {"skill": "arch", "source": "rule", "confidence": 1.0})
+        except Exception as exc:
+            print(f"[dispatcher] arch command skipped: {exc}")
+
+    # 3c. Memory commands (arch2 four-layer store): "what do you remember about me", "forget that",
+    # "remember that I ...", "who is Ahmed". Always available - they manage the store both archs read.
+    if not pending:
+        try:
+            from ishti.arch2 import consolidate as _mem_cmd
+            if (mem_reply := _mem_cmd.handle_command(text)) is not None:
+                out = {"reply": mem_reply, "sources": []}
+                s["trace"](type="route", skill="memory_manager", source="rule", confidence=1.0,
+                           why="a memory command against the arch2 store")
+                return _finish(text, sid, conv, s, events, t0, channel, "memory_manager", out,
+                               {"skill": "memory_manager", "source": "rule", "confidence": 1.0})
+        except Exception as exc:
+            print(f"[dispatcher] memory command skipped: {exc}")
+
+    # 4. Language preference override: "talk to me in English", "switch to Urdu", "auto language"
     cmd = LANGUAGE_CMD.search(text)
     if cmd and not s.get("pending"):
         f = get_facts()
@@ -566,6 +603,16 @@ def _handle(text, sid, conv, s, events, t0, channel):
                        why="You cleared the answer-language lock (auto-detect enabled).")
         dec = {"skill": "owner", "source": "rule", "confidence": 1.0}
         return _finish(text, sid, conv, s, events, t0, channel, "owner", out, dec)
+
+    # 4b. ARCH2 active: the two-pass brain handles the turn (router -> Qwen3-14B -> tools ->
+    # validation -> Qwen3-14B). Same session, trace, gates and memory as arch1.
+    if not pending and (registry.active() if (registry := _arch_registry()) else "arch1") == "arch2":
+        from ishti.arch2 import pipeline
+        name, out = "arch2", pipeline.run(text, s, SKILLS)
+        dec = {"skill": "arch2", "source": "arch2", "confidence": 1.0}
+        s["trace"](type="route", skill=name, source="arch2", confidence=1.0,
+                   why="ARCH2 is active: the two-pass pipeline answers.")
+        return _finish(text, sid, conv, s, events, t0, channel, name, out, dec)
 
     # Urdu (script or Roman): skills and routing work in English, so understand it in English and answer back
     # in the owner's own form of Urdu. Gemma does both directions (Qwen 2.5 writes poor Urdu).
@@ -675,6 +722,20 @@ def mask(value, secrets):
     return value
 
 
+def _arch2_consolidate(text, reply, name, channel):
+    """ARCH2 memory consolidation after each exchange (background, never blocks the answer,
+    never runs for the arch2 memory commands themselves - they already wrote their changes)."""
+    if channel == "scheduled":
+        return
+    try:
+        from ishti.arch2 import consolidate
+        counts = consolidate.consolidate(text, reply)
+        if counts and any(counts.values()):
+            print(f"[arch2] consolidated: {counts}")
+    except Exception as exc:
+        print(f"[dispatcher] arch2 consolidation skipped: {exc}")
+
+
 def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
     """Close a request: trace, history, persistence, background memory, and the response dict."""
     reply = out["reply"]
@@ -704,6 +765,8 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
     if not secret and name not in ("memory",) and is_safe_for_history(reply):  # exact facts already live in SQLite
         threading.Thread(target=_remember, args=(text, reply, name), daemon=True).start()
         threading.Thread(target=_ftlog, args=(text, reply, name, dec, channel), daemon=True).start()  # Part 3 collection
+        if name != "memory_manager":  # ARCH2: learn from every exchange (extraction + thresholds)
+            threading.Thread(target=_arch2_consolidate, args=(text, reply, name, channel), daemon=True).start()
     if not hidden:
         threading.Thread(target=_learn, args=(text,), daemon=True).start()  # the owner's lasting facts and preferences
     try:
