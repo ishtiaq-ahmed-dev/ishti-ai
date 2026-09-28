@@ -52,6 +52,18 @@
     "search_max_depth": 4,
     "search_budget_s": 10
   },
+  "learning": {
+    "enabled": true,
+    "db_path": "D:\\ISHTI\\data\\learning.db",
+    "proactive": false,
+    "thresholds": {"weak": 0.3, "possible": 0.6, "probable": 0.8, "strong": 0.95},
+    "evidence": {"similar_request": 2, "widen_scope": 3, "candidate_rule": 3, "workflow": 3},
+    "temporary_ttl_s": 3600,
+    "entities": {"ambiguity_margin": 0.2, "min_confidence": 0.6},
+    "dataset": {"min_quality": 0.6, "per_skill_cap": 0.4, "export_dir": "D:\\ISHTI\\data\\finetune"},
+    "export_dir": "D:\\ISHTI\\data\\learning\\export",
+    "note": "Reinforcement-like learning: feedback -> lesson -> memory/policy/dataset. Weights are NEVER changed at runtime; offline LoRA/QLoRA only (orchestrator/finetune.py) behind its eval gate. thresholds = confidence bands (spec 11); evidence = how many independent occasions before a lesson widens scope or becomes a candidate rule (spec 9/10); proactive=false means no volunteered suggestions until the owner asks."
+  },
   "router": {
     "use_laya": true,
     "laya_model": "typed-decisions",
