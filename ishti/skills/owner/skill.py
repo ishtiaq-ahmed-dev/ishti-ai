@@ -52,6 +52,10 @@ def asks_about_me(t):
     if not words or not (t.rstrip().endswith("?") or words[0] in ("where", "what", "which", "when", "whats", "what's")):
         return False
     if ABOUT_ME.search(t) or ("i" in words and re.search(rf"\b(?:{ATTRS})\b", t, I)):  # "what semester am i in?"
+        # "what should I get X for his birthday" is about X, not about the owner:
+        # a third person's name/possessive in the question means it's a relationship question
+        if re.search(r"\b(?:get|give|buy|find)\b.*\bfor\s+(?:him|her|them|his|my\s+\w+|[A-Z][a-z]+)\b", t):
+            return False
         return True
     # ponytail: short questions only, "i <verb>" fuzzy-matched to a few personal verbs; "how do i live stream" is the known miss
     after_i = [words[i + 1] for i, w in enumerate(words[:-1]) if w == "i"]

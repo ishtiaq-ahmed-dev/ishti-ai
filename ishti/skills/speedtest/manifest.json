@@ -1,0 +1,31 @@
+{
+  "name": "speedtest",
+  "version": "1.0.0",
+  "description": "Internet speed test: latency and download/upload measured against Cloudflare's free speed endpoints, history of the last runs, no account and no key. Upload sends only anonymous random bytes.",
+  "route": "internet speed test, how fast is my internet, check my connection speed, speed test history",
+  "needs": {
+    "python": [
+      "requests"
+    ],
+    "models": [],
+    "mcp": [],
+    "apis": [
+      "speed.cloudflare.com"
+    ]
+  },
+  "priority": 15,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {
+    "write": [
+      "data"
+    ],
+    "net": [
+      "speed.cloudflare.com"
+    ],
+    "apps": false
+  },
+  "category": "Utilities & Daily",
+  "path": "ishti/skills/speedtest"
+}

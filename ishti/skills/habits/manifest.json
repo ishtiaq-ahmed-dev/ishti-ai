@@ -1,0 +1,22 @@
+{
+  "name": "habits",
+  "version": "1.0.0",
+  "description": "Daily habit tracker (local SQLite): add a habit ('track water every day'), mark it done today ('I drank water'), see streaks and today's list, gentle nudge for what's still open. Never nags more than once a day per habit.",
+  "route": "track a habit, i did water, mark habit done, my habits today, habit streaks, add habit",
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 10,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {
+    "write": ["data"],
+    "net": [],
+    "apps": false
+  },
+  "category": "Health & Habits"
+}

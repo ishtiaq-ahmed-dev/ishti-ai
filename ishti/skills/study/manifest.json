@@ -1,0 +1,22 @@
+{
+  "name": "study",
+  "version": "1.0.0",
+  "description": "Study tools on local models: make flashcards from any text (Q/A pairs), quiz me on a topic, explain a concept simply, make a study plan for a subject, grade my answer. Pairs with reminders for spaced repetition scheduling.",
+  "route": "make flashcards from, quiz me on, explain simply, study plan for, check my answer, exam prep",
+  "needs": {
+    "python": [],
+    "models": ["ishti-qwen2.5:14b"],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 9,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {
+    "write": ["data"],
+    "net": [],
+    "apps": false
+  },
+  "category": "Learning"
+}

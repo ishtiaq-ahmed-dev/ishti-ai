@@ -91,7 +91,15 @@ from ishti import PDFIUM_LOCK as PDF_LOCK  # noqa: E402
 
 
 def read(url):
-    """(title, text) of a page or PDF."""
+    """(title, text) of a page or PDF.
+
+    Section 8: Obscura (the Rust headless browser) is the DEFAULT reader - real JavaScript,
+    ~30 MB RAM, markdown for LLMs, robots.txt obeyed. Static fetch + pdfium remain the fallbacks;
+    logged-in/interactive pages belong to the browser skill (Playwright MCP), not here."""
+    from ishti import obscura
+    o = obscura.read_page(url)
+    if o.get("ok") and o.get("content", "").strip():
+        return o.get("title") or url, o["content"]
     r = requests.get(url, headers=UA, timeout=15)
     if url.lower().endswith(".pdf") or "pdf" in r.headers.get("content-type", ""):
         import pypdfium2 as pdfium

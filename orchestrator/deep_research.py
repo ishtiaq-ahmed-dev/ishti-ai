@@ -46,6 +46,19 @@ class DeepResearchEngine:
         self.model_router = ModelRouter()
         self.event_callback = event_callback
 
+    def _fetch_one(self, url: str, max_chars: int = 3000) -> Dict[str, Any]:
+        """Section 8: Obscura is the default page reader (one Rust process, no GPU, ~30 MB,
+        markdown for the LLM, robots.txt obeyed). Static WebFetcher stays as the fallback;
+        logged-in/interactive pages belong to the browser skill, not here."""
+        try:
+            from ishti import obscura
+            o = obscura.fetch(url, "markdown")
+            if o.get("ok") and o.get("content", "").strip():
+                return {"status": "success", "content": o["content"][:max_chars]}
+        except Exception:
+            pass
+        return self.fetcher.fetch(url, max_chars=max_chars)
+
     def emit(self, event_type: str, data: Dict[str, Any]) -> None:
         if self.event_callback:
             try:
@@ -237,7 +250,7 @@ class DeepResearchEngine:
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
             future_to_src = {
-                executor.submit(self.fetcher.fetch, src.url, max_chars=3000): (i + 1, src)
+                executor.submit(self._fetch_one, src.url, 3000): (i + 1, src)
                 for i, src in enumerate(sources_pool)
             }
             for future in concurrent.futures.as_completed(future_to_src):

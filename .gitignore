@@ -25,3 +25,9 @@ scratch/
 .claude
 claudecode/
 .freebuff/
+.aider*
+.aider-desk/
+
+# large third-party binaries
+tools/obscura/*.exe
+tools/obscura/*.zip

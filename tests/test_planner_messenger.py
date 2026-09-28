@@ -1,4 +1,4 @@
-"""Regression test: one WhatsApp messenger request must stay ONE task, even when it asks for several messages.
+r"""Regression test: one WhatsApp messenger request must stay ONE task, even when it asks for several messages.
 
 The owner's log (data/sessions/sess_20260927_110742_0bc6b6.json) shows the request
 "open whastap and send mesage to bhai hi how are you in two diffrent messages" being split into two plan

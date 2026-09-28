@@ -1,0 +1,25 @@
+{
+  "name": "focus",
+  "version": "1.0.0",
+  "description": "Focus sprints (Pomodoro): start a timed sprint on a task, a countdown the background loop checks, a spoken announcement when it ends, and a local history of every session with minutes focused per day.",
+  "route": "start a focus sprint or pomodoro, stop or pause the focus sprint, how much time is left on my focus sprint, focus history or stats",
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 14,
+  "status": "working",
+  "tier": "T1",
+  "laya": false,
+  "scope": {
+    "write": [
+      "data"
+    ],
+    "net": [],
+    "apps": false
+  },
+  "category": "Productivity & Planning",
+  "path": "ishti/skills/focus"
+}

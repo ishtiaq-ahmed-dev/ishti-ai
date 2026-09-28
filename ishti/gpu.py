@@ -25,19 +25,18 @@ def free_mb():
 
 
 def unload_idle_models():
-    """Ask Ollama to free the loaded models except the pinned planner (they reload on their next use)."""
+    """Ask Ollama to free the loaded models except pinned models (they reload on their next use)."""
     import requests
-    from ishti import CONFIG
+    from ishti import CONFIG, models
     base = CONFIG["llm"]["base_url"].rsplit("/v1", 1)[0]
-    planner = CONFIG["llm"]["models"]["planner"]
     try:
         loaded = [m["name"] for m in requests.get(f"{base}/api/ps", timeout=5).json().get("models", [])]
     except Exception:
         return []
-    freed = [m for m in loaded if m.split(":")[0] != planner.split(":")[0]]
+    freed = [m for m in loaded if not models.is_pinned(m)]
     for m in freed:
         try:
-            requests.post(f"{base}/api/generate", json={"model": m, "keep_alive": 0}, timeout=15)
+            models.unload_model(m, reason="gpu_slot_demand")
         except Exception:
             pass
     return freed

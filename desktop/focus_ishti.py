@@ -65,32 +65,50 @@ def focus_window() -> bool:
         return False
 
 
+def reveal_window() -> bool:
+    """The server is up but no ISHTI window is on screen (it was closed): open the app window again.
+
+    Split out of main() so the launcher reuses the same path - an already-running instance must never start a
+    second one just because its window happens to be closed."""
+    import subprocess
+    pythonw_exe = os.path.join(ROOT, "venv", "Scripts", "pythonw.exe")
+    python_exe = pythonw_exe if os.path.exists(pythonw_exe) else os.path.join(ROOT, "venv", "Scripts", "python.exe")
+    app_window_py = os.path.join(ROOT, "desktop", "app_window.py")
+    flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+
+    try:
+        if os.path.exists(app_window_py):
+            subprocess.Popen([python_exe, app_window_py], cwd=ROOT, creationflags=flags)
+            return True
+
+        chrome_exe = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+        profile = r"D:\ISHTI\data\chrome_profile"
+        url = "http://127.0.0.1:8888"
+        if os.path.exists(chrome_exe):
+            subprocess.Popen([
+                chrome_exe,
+                f"--user-data-dir={profile}",
+                "--no-first-run",
+                "--no-default-browser-check",
+                f"--app={url}",
+            ], creationflags=flags)
+            return True
+        import webbrowser
+        webbrowser.open(url)
+        return True
+    except Exception as e:
+        print(f"[focus] Error reopening the app window: {e}", file=sys.stderr)
+        return False
+
+
 def main():
     if is_running():
-        focused = focus_window()
-        if focused:
+        if focus_window():
             print("[INFO] ISHTI is already running. Brought existing window to the foreground.")
             sys.exit(0)
-        else:
-            # Server is running but window might be closed; reopen browser window
-            print("[INFO] ISHTI server is active. Reopening application window...")
-            import subprocess
-            chrome_exe = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-            profile = r"D:\ISHTI\data\chrome_profile"
-            if os.path.exists(chrome_exe):
-                flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
-                subprocess.Popen([
-                    chrome_exe,
-                    f"--user-data-dir={profile}",
-                    "--no-first-run",
-                    "--no-default-browser-check",
-                    "--app=http://127.0.0.1:8888",
-                ], creationflags=flags)
-                sys.exit(0)
-            else:
-                import webbrowser
-                webbrowser.open("http://127.0.0.1:8888")
-                sys.exit(0)
+        # Server is running but window might be closed; reopen the browser window
+        print("[INFO] ISHTI server is active. Reopening application window...")
+        sys.exit(0 if reveal_window() else 1)
     sys.exit(1)
 
 

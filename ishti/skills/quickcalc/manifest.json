@@ -1,0 +1,22 @@
+{
+  "name": "quickcalc",
+  "version": "1.0.0",
+  "description": "Everyday micro-calculations, all deterministic: split a bill (with tip), BMI + healthy range, discount price, fuel cost for a trip, sleep-cycle wake times. No LLM arithmetic.",
+  "route": "split the bill, divide the bill between, bmi of, discount on, fuel cost, what time to wake up, sleep cycles",
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {
+    "write": ["data"],
+    "net": [],
+    "apps": false
+  },
+  "category": "Reasoning"
+}

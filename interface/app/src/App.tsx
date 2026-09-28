@@ -69,30 +69,36 @@ export default function App() {
     });
   }, []);
 
+  const postShutdown = useCallback(() => {
+    // sendBeacon survives the page going away, unlike fetch - the native "Yes" must still reach the server
+    const url = "/api/shutdown";
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(url, new Blob(["{}"], { type: "application/json" }));
+    } else {
+      fetch(url, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => {});
+    }
+  }, []);
+
   const handleConfirmExit = useCallback(async () => {
     setIsExiting(true);
-    try {
-      await fetch("/api/shutdown", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-    } catch {}
+    postShutdown();
     setTimeout(() => {
       window.close();
     }, 1200);
-  }, []);
+  }, [postShutdown]);
 
   useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (!isExiting) {
-        e.preventDefault();
-        e.returnValue = "Do you want to exit ISHTI?";
-        return "Do you want to exit ISHTI?";
-      }
+    // All data (chats, facts, memories, settings) is continuously auto-saved.
+    // We avoid setting e.returnValue in beforeunload because browsers force an alarming generic message
+    // ("Changes that you made may not be saved.") which is inaccurate and misleading for ISHTI.
+    const handlePageHide = (e: PageTransitionEvent) => {
+      if (!e.persisted && !isExiting) postShutdown();  // the window was really closed, not just hidden
     };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [isExiting]);
+    window.addEventListener("pagehide", handlePageHide);
+    return () => {
+      window.removeEventListener("pagehide", handlePageHide);
+    };
+  }, [isExiting, postShutdown]);
 
   const onBusy = useCallback((b: boolean) => {
     setBusy(b);
@@ -254,6 +260,14 @@ export default function App() {
                       onClick={() => { setPage("tasks"); setAlerts([]); }}
                       title={alerts.length > 0 ? `${alerts.length} reminder${alerts.length > 1 ? "s" : ""}` : "Reminders"}
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowExitModal(true)}
+                      title="Exit ISHTI (All data is auto-saved)"
+                      className="rounded-lg p-1.5 text-danger transition-colors hover:bg-danger/15 cursor-pointer ml-0.5"
+                    >
+                      <Power className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 </div>
 
@@ -338,20 +352,20 @@ export default function App() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
           <div className="w-full max-w-md rounded-2xl border border-border/80 bg-background/95 p-6 shadow-2xl backdrop-blur-md">
             <div className="flex items-center gap-3">
-              <div className="grid h-10 w-10 place-items-center rounded-xl bg-destructive/15 text-destructive shrink-0">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-danger/15 text-danger shrink-0">
                 <Power className="h-5 w-5" />
               </div>
               <div>
                 <h3 className="text-base font-semibold text-foreground">Do you want to exit ISHTI?</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">Clean shutdown & GPU memory release</p>
+                <p className="text-xs text-emerald-500 font-medium mt-0.5">All data is auto-saved • Clean GPU release</p>
               </div>
             </div>
             <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-              Exiting will cleanly terminate all background server processes, unload models to release GPU VRAM (RTX 5070 Ti), and close active browser sessions.
+              All your conversations, memories, and settings are continuously auto-saved. Exiting will cleanly terminate background processes, unload AI models to release GPU VRAM (RTX 5070 Ti), and close ISHTI.
             </p>
             {isExiting ? (
               <div className="mt-5 flex items-center justify-center gap-2.5 rounded-xl bg-muted/60 p-3 text-xs font-medium text-foreground">
-                <span className="h-2 w-2 animate-ping rounded-full bg-destructive" />
+                <span className="h-2 w-2 animate-ping rounded-full bg-danger" />
                 Shutting down ISHTI services...
               </div>
             ) : (
@@ -366,7 +380,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleConfirmExit}
-                  className="rounded-xl bg-destructive px-4 py-2 text-xs font-medium text-white hover:bg-destructive/90 cursor-pointer transition-colors shadow-xs"
+                  className="rounded-xl bg-danger px-4 py-2 text-xs font-semibold text-white hover:bg-danger/90 active:scale-95 cursor-pointer transition-all shadow-sm"
                 >
                   Yes, exit ISHTI
                 </button>

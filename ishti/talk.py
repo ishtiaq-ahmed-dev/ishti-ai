@@ -5,6 +5,7 @@ player can pause (<1 audio block), resume or stop instantly - what barge-in need
   Sentences feeds streamed tokens and hands each finished sentence to the Talker (first audio after 1 sentence)
 """
 import collections
+import contextvars
 import re
 import threading
 import time
@@ -13,6 +14,32 @@ import numpy as np
 
 BLOCK = 512  # output frames per callback (~23 ms at 22.05 kHz): pause/stop take effect within one block
 SENTENCE_END = re.compile(r"(?<=[.!?۔؟])\s+|\n+")
+
+# Single-Voice Orchestration Gate (Section 4):
+# Only the designated main orchestrator agent has speech authority.
+# Sub-agents execute silently in isolated contexts and return compressed text.
+_voice_allowed = contextvars.ContextVar("voice_allowed", default=True)
+_is_subagent = contextvars.ContextVar("is_subagent", default=False)
+_speech_lock = threading.RLock()
+
+
+def is_voice_allowed() -> bool:
+    """True ONLY when the calling context is allowed to produce speech output."""
+    try:
+        return bool(_voice_allowed.get() and not _is_subagent.get())
+    except Exception:
+        return True
+
+
+def set_subagent_context(is_sub: bool = True):
+    """Mark the calling context as a sub-agent (silences all direct TTS calls)."""
+    _is_subagent.set(is_sub)
+    _voice_allowed.set(not is_sub)
+
+
+def set_voice_allowed(allowed: bool):
+    """Explicitly grant or revoke speech authority for the current context."""
+    _voice_allowed.set(allowed)
 
 
 class Talker:
@@ -36,6 +63,9 @@ class Talker:
     def say(self, text):
         text = text.strip()
         if not text:
+            return
+        if not is_voice_allowed():
+            # Single-voice orchestration: sub-agents work silently and never speak directly
             return
         if self.idle.is_set() and self.duck:  # B5: other apps go quiet while ISHTI talks
             from ishti import duck

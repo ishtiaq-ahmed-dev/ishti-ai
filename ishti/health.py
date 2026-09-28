@@ -19,6 +19,11 @@ def _ollama():
     names = {m["name"] for m in tags.get("models", [])}
     want = CONFIG["llm"]["models"]["planner"]
     ok = any(n == want or n.startswith(want + ":") or n.split(":")[0] == want.split(":")[0] for n in names)
+    if not ok:
+        from ishti import llm
+        fallback = llm.FALLBACK_MAP.get(want, CONFIG["llm"]["models"].get("fallback", ""))
+        if fallback and any(n == fallback or n.startswith(fallback + ":") or n.split(":")[0] == fallback.split(":")[0] for n in names):
+            return True, f"{len(names)} models (planner {want} using fallback {fallback})"
     return ok, f"{len(names)} models" + ("" if ok else f", planner {want} missing")
 
 

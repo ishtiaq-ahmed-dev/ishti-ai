@@ -1,0 +1,30 @@
+{
+  "name": "capcut",
+  "version": "1.0.0",
+  "description": "Full programmatic control of CapCut and JianYing (剪映) video projects via capcut-cli: inspect drafts, create timeline projects, subtitles/captions, cuts/speed/volume, effects, filters, silence removal, and launch CapCut.",
+  "route": "CapCut or JianYing video editing: inspect projects, create draft, subtitles, silence auto-cut, filters, effects, open in CapCut",
+  "priority": 20,
+  "needs": {
+    "python": [
+      "capcut"
+    ],
+    "models": [
+      "planner"
+    ],
+    "mcp": [],
+    "apis": []
+  },
+  "status": "working",
+  "tier": "T1",
+  "scope": {
+    "write": [
+      "data",
+      "user",
+      "~/AppData/Local/CapCut"
+    ],
+    "net": [],
+    "apps": true
+  },
+  "category": "Media & Creative",
+  "path": "ishti/skills/capcut"
+}

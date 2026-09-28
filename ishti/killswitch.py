@@ -62,6 +62,12 @@ def kill(reason="kill switch"):
         record("KILL SWITCH", f"{reason}: {', '.join(stopped) or 'nothing was running'}", initiator="owner", skill="killswitch")
     except Exception:
         pass
+    try:  # Section 7: the kill switch also sets the global mic OFF - no capture after a kill
+        from ishti import mic_control
+        mic_control.mic_off(f"kill switch: {reason}", by="killswitch", also_stop_live=True)
+        stopped.append("global mic OFF")
+    except Exception:
+        pass
     return stopped
 
 

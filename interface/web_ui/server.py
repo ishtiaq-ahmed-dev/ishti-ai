@@ -105,6 +105,8 @@ async def _capture_loop():
     from ishti.skills.automation.skill import start as start_automations
     # "when a pdf appears in downloads, summarize it": the action runs like a scheduled task, its answer is announced
     start_automations(announce, run_task=lambda t: ishti_handle(t, session_id="scheduled", channel="scheduled")["final_answer"])
+    from ishti.skills.focus.skill import start as start_focus
+    start_focus(announce)  # focus sprints: "start a 25 minute focus sprint" ends with an announcement
     from ishti.skills.webtools.skill import _start as start_page_watch
     start_page_watch()  # pages the owner asked to watch keep being checked after a restart
     from ishti.skills.shopping.skill import start_price_watch
@@ -124,16 +126,8 @@ async def _capture_loop():
         except Exception as exc:
             print(f"[ISHTI] kill switch hotkey unavailable ({exc}); the Stop button still works")
     if CONFIG["voice"].get("wake_enabled"):
-        from ishti import wake
-
-        def on_voice_command(text, on_token=None):
-            res = ishti_handle(text, channel="voice", on_token=on_token)  # tokens -> spoken sentence by sentence
-            sync_event_callback("assistant_message", {"user": text, "reply": res["final_answer"],
-                                                      "sources": res.get("sources", []), "channel": "voice"})
-            return res["final_answer"]
-
-        # voice_state / stt_partial / stt_final / barge_in go to the dashboard (orb states, live transcript)
-        wake.start(on_voice_command, on_event=sync_event_callback)
+        from ishti import mic_control
+        mic_control.apply_on_startup()  # starts the wake listener ONLY if the owner left mic ON (default OFF)
 
 
 async def broadcast_event(event_type: str, data: Dict[str, Any]):
@@ -312,6 +306,59 @@ async def get_reflections():
         with open(REFLECTIONS_PATH, "r", encoding="utf-8") as f:
             return {"content": f.read()}
     return {"content": "No reflection log found."}
+
+
+@app.get("/api/self_heal/status")
+async def self_heal_status():
+    from ishti import self_heal
+    return JSONResponse(self_heal.get_status())
+
+
+@app.post("/api/self_heal/toggle")
+async def self_heal_toggle(req: Request):
+    from ishti import self_heal
+    body = await req.json()
+    enabled = body.get("enabled", not self_heal.is_enabled())
+    return JSONResponse({"enabled": self_heal.set_enabled(enabled)})
+
+
+@app.post("/api/self_heal/trigger")
+async def self_heal_trigger():
+    from ishti import self_heal
+    loop = asyncio.get_running_loop()
+    res = await loop.run_in_executor(None, self_heal.trigger_heal)
+    return JSONResponse(res)
+
+
+# ---- Global microphone control (Section 7) ---------------------------------------------------
+@app.get("/api/mic/status")
+async def mic_status():
+    from ishti import mic_control
+    return JSONResponse(mic_control.status())
+
+
+@app.post("/api/mic/on")
+async def mic_on_endpoint():
+    from ishti import mic_control
+    res = mic_control.mic_on(by="dashboard")
+    await broadcast_event("mic_state", res)
+    return JSONResponse(res)
+
+
+@app.post("/api/mic/off")
+async def mic_off_endpoint():
+    from ishti import mic_control
+    res = mic_control.mic_off("dashboard toggle", by="dashboard", also_stop_live=True)
+    await broadcast_event("mic_state", res)
+    return JSONResponse(res)
+
+
+@app.post("/api/mic/toggle")
+async def mic_toggle_endpoint():
+    from ishti import mic_control
+    res = mic_control.toggle(by="dashboard")
+    await broadcast_event("mic_state", res)
+    return JSONResponse(res)
 
 
 @app.post("/api/execute")
@@ -526,6 +573,8 @@ async def live_ws(ws: WebSocket):
         return res["final_answer"]
 
     listener = wake.Listener(on_command, send, live=True, talker=voice)
+    from ishti import mic_control
+    mic_control.register_live(stop)  # mic-off from anywhere closes this live session too
 
     def read_block():
         while not stop.is_set():

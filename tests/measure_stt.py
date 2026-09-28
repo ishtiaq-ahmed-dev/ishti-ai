@@ -56,8 +56,27 @@ def clip(seconds, sentence=SENTENCE) -> np.ndarray:
 
 
 
+def timed(fn, *a, **k):
+    t0 = time.perf_counter()
+    res = fn(*a, **k)
+    return res, round((time.perf_counter() - t0) * 1000)
+
+
+def _cuda_dlls_on_path():
+    """The CUDA runtime DLLs (cublas64_12.dll) live in torch/lib, not on PATH by default - faster-whisper loads
+    the model fine but the first GPU call fails without them. ishti.voice does the same at load time."""
+    import importlib.util
+    import os
+    spec = importlib.util.find_spec("torch")
+    if spec and spec.origin:
+        lib = os.path.join(os.path.dirname(spec.origin), "lib")
+        if os.path.isdir(lib) and lib not in os.environ.get("PATH", "").split(os.pathsep):
+            os.environ["PATH"] = lib + os.pathsep + os.environ.get("PATH", "")
+
+
 def measure(model_ref, compute, device, which, clips):
     from faster_whisper import BatchedInferencePipeline, WhisperModel
+    _cuda_dlls_on_path()  # cublas64_12.dll ships with torch; without it the first GPU call dies
     t0 = time.perf_counter()
     model = WhisperModel(model_ref, device=device, compute_type=compute)
     load_ms = (time.perf_counter() - t0) * 1000
@@ -85,22 +104,23 @@ def measure(model_ref, compute, device, which, clips):
         if "old" in which:
             from ishti.voice import pick_language
             lang = pick_language(model, x)
-            (row["old_text"], _), row["old_ms"] = timed(decode, pcm, language=lang, condition_on_previous_text=False)
+            row["old_text"], row["old_ms"] = timed(decode, pcm, language=lang, condition_on_previous_text=False)
             row["old_lang"] = lang
         if "new" in which:
             lang = (row.get("detect") or "en").split()[0] if row.get("detect") else (row.get("old_lang") or "en")
-            (row["new_text"], _), row["new_ms"] = timed(decode, pcm, language=lang, without_timestamps=True,
-                                                      temperature=0.0, multilingual=False, condition_on_previous_text=False)
+            row["new_text"], row["new_ms"] = timed(decode, pcm, language=lang, without_timestamps=True,
+                                                   temperature=0.0, multilingual=False,
+                                                   condition_on_previous_text=False)
         if "nolang" in which:
-            (row["nolang_text"], _), row["nolang_ms"] = timed(decode, pcm, language=None, without_timestamps=True,
-                                                             temperature=0.0)
+            row["nolang_text"], row["nolang_ms"] = timed(decode, pcm, language=None, without_timestamps=True,
+                                                        temperature=0.0)
         if "batched" in which:
-            (row["batched_text"], _), row["batched_ms"] = timed(decode, pcm, language="en", batch=True,
-                                                               without_timestamps=False, batch_size=8)
+            row["batched_text"], row["batched_ms"] = timed(decode, pcm, language="en", batch=True,
+                                                           without_timestamps=False, batch_size=8)
         if "partial" in which:
-            (row["partial_text"], _), row["partial_ms"] = timed(decode, pcm, language="en", vad=False, tail=8,
-                                                                without_timestamps=True, temperature=0.0,
-                                                                multilingual=False, condition_on_previous_text=False)
+            row["partial_text"], row["partial_ms"] = timed(decode, pcm, language="en", vad=False, tail=8,
+                                                           without_timestamps=True, temperature=0.0,
+                                                           multilingual=False, condition_on_previous_text=False)
         res["rows"][name] = row
         print(f"  [{compute}] {name}: " + " ".join(f"{k}={v}" for k, v in row.items() if k.endswith("_ms")))
     import gc

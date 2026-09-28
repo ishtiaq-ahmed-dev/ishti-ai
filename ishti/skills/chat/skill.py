@@ -14,10 +14,31 @@ ARITHMETIC = re.compile(r"\d\s*(?:[-+*/x×^]|times|plus|minus|divided\s+by|multi
 CREATIVE = re.compile(r"^\s*(?:please\s+)?(?:write|compose)\s+(?:me\s+)?(?:a|an|some)\s+(?:\w+\s+)?"
                       r"(?:poem|haiku|story|song|joke|limerick|essay|letter|speech|toast|caption)s?\b", re.I)
 
+# Programming questions the coder model answers (chat.run picks the coder role). Priority 90 puts this rule last,
+# so a real trigger - dev's git/test/lint rules, skillsmith's, docs' - is still checked first.
+# Written after Laya sent "write a python function to reverse a linked list" to apps and "how do I fix a segfault
+# in C" to capcut: both are code questions, and the wrong skill answers them confidently.
+CODE = re.compile(r"\b(?:in|with|using)\s+(?:python|javascript|typescript|java|c\+\+|c#|golang|go|rust|sql|bash|"
+                  r"powershell|kotlin|swift|php|ruby)\b"
+                  r"|\b(?:segfault|stack\s*trace|traceback|syntax\s+error|compile\s+error|compiler\s+error|"
+                  r"null\s+pointer|undefined\s+behaviou?r|memory\s+leak|deadlock|refactor)\b"
+                  r"|\b(?:write|fix|debug|refactor|explain|optimize|optimi[sz]e)\b[^.]{0,40}?\b(?:function|code|script|"
+                  r"program|class|method|regex|regexp|bug|algorithm|loop|api\s+endpoint)\b"
+                  r"|\b(?:python|javascript|typescript|c\+\+|sql|regex)\b[^.]{0,30}?\b(?:function|code|script|error|"
+                  r"exception|snippet)\b", re.I)
+
+
+BACKCHANNEL = re.compile(r"\b(?:thanks|thank\s+you|that\s+helped|that\s+helps|that's\s+all|good\s+job|"
+                         r"well\s+done|nice\s+work|appreciate\s+it|got\s+it|makes\s+sense)\b", re.I)
+
 
 def match(text):
-    # arithmetic and creative writing: Laya zero-shot sends "a haiku about rain" to weather
-    return bool(ARITHMETIC.search(text) or CREATIVE.match(text))
+    # arithmetic, creative writing and code questions: Laya zero-shot sends "a haiku about rain" to weather,
+    # "write a python function ..." to apps and "fix a segfault in C" to capcut.
+    # Back-channel ("thanks, that helped") is a chat reply too - routing it to a task skill answers
+    # "what would you like me to do?" and breaks the flow.
+    return bool(ARITHMETIC.search(text) or CREATIVE.match(text) or CODE.search(text)
+                or BACKCHANNEL.search(text))
 
 
 def build_context(text):

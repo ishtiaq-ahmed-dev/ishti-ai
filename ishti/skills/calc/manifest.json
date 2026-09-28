@@ -1,0 +1,22 @@
+{
+  "name": "calc",
+  "version": "1.0.0",
+  "description": "Exact math with sympy: solve equations, derivatives/integrals, percentages, tips, loan payments, prime factors, GCD/LCM, simplify. Deterministic - no LLM for the arithmetic itself, so no hallucinated numbers.",
+  "route": "solve for x, derivative of, integral of, calculate tip, loan payment, prime factors of, simplify, what percent of, gcd lcm of",
+  "needs": {
+    "python": ["sympy"],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {
+    "write": ["data"],
+    "net": [],
+    "apps": false
+  },
+  "category": "Reasoning"
+}

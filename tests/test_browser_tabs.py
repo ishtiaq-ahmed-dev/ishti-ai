@@ -87,7 +87,8 @@ assert skill.find_tab("https://google.com/app", URLS) == 4               # googl
 assert skill.find_tab("https://www.google.com/app", URLS) == 4
 assert skill.find_tab("https://example.com/", URLS) is None              # nothing open for it
 assert skill.find_tab("https://google.com/", URLS) is None               # same domain but a different page
-assert skill.find_tab("https://gemini.google.com/", URLS) is None
+assert skill.find_tab("https://gemini.google.com/", URLS) == 4   # Issue 6: reuses open Gemini tab
+assert skill.find_tab("https://mail.google.com/", URLS) == 2     # Issue 6: reuses open Gmail tab
 assert skill.find_tab("https://example.com/", ["about:blank", "chrome-extension://abc/x.html"]) is None
 assert skill.find_tab("https://shop.example.com.pk/page", ["https://www.example.com.pk/page"]) == 0  # 2-part suffix
 two = ["https://web.whatsapp.com/?lang=en", "https://web.whatsapp.com/"]

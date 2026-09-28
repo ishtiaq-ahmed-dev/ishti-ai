@@ -1,0 +1,22 @@
+{
+  "name": "citation",
+  "version": "1.0.0",
+  "description": "Format references in APA, MLA, Harvard or IEEE style: paste a reference (even messy) or give the pieces (author, year, title, source) and get a correctly formatted citation. Local model only.",
+  "route": "cite this in apa, mla citation for, format this reference, harvard referencing, ieee citation, bibliography entry for",
+  "needs": {
+    "python": [],
+    "models": ["ishti-qwen2.5:14b"],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 8,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {
+    "write": ["data"],
+    "net": [],
+    "apps": false
+  },
+  "category": "Learning"
+}

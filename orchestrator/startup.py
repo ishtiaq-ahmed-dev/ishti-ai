@@ -146,13 +146,26 @@ def check_web_ui() -> bool:
 
 
 def launch_browser():
-    print("  [4/6] Launching Isolated Chrome Window...", end="", flush=True)
+    print("  [4/6] Launching ISHTI Application Window...", end="", flush=True)
     flags = (
         subprocess.DETACHED_PROCESS
         | subprocess.CREATE_NEW_PROCESS_GROUP
         if os.name == "nt"
         else 0
     )
+    pythonw_exe = os.path.join(ROOT_DIR, "venv", "Scripts", "pythonw.exe")
+    python_exe = pythonw_exe if os.path.exists(pythonw_exe) else os.path.join(ROOT_DIR, "venv", "Scripts", "python.exe")
+    app_window_py = os.path.join(ROOT_DIR, "desktop", "app_window.py")
+
+    if os.path.exists(app_window_py):
+        subprocess.Popen(
+            [python_exe, app_window_py],
+            cwd=ROOT_DIR,
+            creationflags=flags,
+        )
+        print(" [DESKTOP WINDOW]")
+        return
+
     if os.path.exists(CHROME_EXE):
         subprocess.Popen(
             [

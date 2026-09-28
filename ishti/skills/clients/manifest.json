@@ -1,0 +1,25 @@
+{
+  "name": "clients",
+  "version": "1.0.0",
+  "description": "CRM for the owner's freelance/business clients: per-client isolated memory (profile, notes, thread summaries, invoices, deals), context loading before any reply is drafted (never answer from another client's context), sentiment flagging that routes angry/urgent clients to the owner instead of auto-replying, follow-ups, and a dashboard. Sending anything to a client is ALWAYS confirmed (T2) - drafts only, no auto-send, no exceptions.",
+  "route": "new client, client profile, read my client messages, load client context, draft a reply to a client, client follow up, deal summary, invoice status, client dashboard, client notes, new client inquiry",
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 12,
+  "status": "working",
+  "tier": "T1",
+  "laya": false,
+  "scope": {
+    "write": [
+      "data"
+    ],
+    "net": [],
+    "apps": false
+  },
+  "category": "Finance & Commerce",
+  "path": "ishti/skills/clients"
+}

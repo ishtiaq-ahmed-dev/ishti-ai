@@ -1,0 +1,22 @@
+{
+  "name": "mnemonic",
+  "version": "1.0.0",
+  "description": "Memory techniques: turn any list into a mnemonic (acronym, acrostic, rhyme or story-link), build a memory palace walk, or a number-shape peg for a sequence. Local model.",
+  "route": "make a mnemonic for, memory palace for, help me remember, acronym for this list, memorize this list",
+  "needs": {
+    "python": [],
+    "models": ["ishti-qwen2.5:14b"],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 8,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {
+    "write": ["data"],
+    "net": [],
+    "apps": false
+  },
+  "category": "Learning"
+}

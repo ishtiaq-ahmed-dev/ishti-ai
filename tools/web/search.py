@@ -74,7 +74,14 @@ def ensure_searxng(wait_s: float = 90) -> bool:
 
 
 def heal_in_background():
-    """At most one self-heal attempt every 10 minutes, never blocking the search that noticed the outage."""
+    """Self-heal attempt only if self-healing is explicitly enabled (Section 2: off by default, manual trigger only)."""
+    try:
+        from ishti import self_heal
+        if not self_heal.is_enabled():
+            self_heal.record_candidate("searxng", "SearXNG service unreachable", "Restart SearXNG Docker container")
+            return
+    except Exception:
+        return
     import threading
     import time
     if time.time() - _heal["last"] > 600:

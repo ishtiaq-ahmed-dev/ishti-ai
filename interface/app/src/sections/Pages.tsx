@@ -1917,10 +1917,15 @@ export function System({ onToggleNav }: { onToggleNav?: () => void }) {
   const [activity, setActivity] = useState<{ days: { date: string; count: number }[]; skills: { skill: string; count: number }[] }>();
   const [doctor, setDoctor] = useState<Record<string, Check[]> | null>(null);
   const [running, setRunning] = useState(false);
+  const [healStatus, setHealStatus] = useState<{ enabled: boolean; pending_count: number; last_run?: number } | null>(null);
+  const [healing, setHealing] = useState(false);
+  const [healReport, setHealReport] = useState<any>(null);
+
   useEffect(() => {
     const load = () => getJSON<Telemetry>("/api/system").then(setT);
     load(); const id = setInterval(load, 3000);
     getJSON<typeof activity>("/api/activity").then(setActivity);
+    getJSON<any>("/api/self_heal/status").then(setHealStatus).catch(() => {});
     return () => clearInterval(id);
   }, []);
   const gpu = typeof t?.gpu === "object" ? t.gpu : undefined;
@@ -1964,6 +1969,74 @@ export function System({ onToggleNav }: { onToggleNav?: () => void }) {
           </div>
         </Card>
       )}
+      <Card className="mt-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <div>
+            <div className="text-sm font-semibold flex items-center gap-1.5">
+              <Wrench className="h-4 w-4 text-accent" />
+              <span>Self-Healing Engine (Manual Trigger Only)</span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Automatic background self-healing is OFF by default. Remediation actions run strictly on-demand.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
+              <span className="text-muted-foreground">Auto-Heal:</span>
+              <input
+                type="checkbox"
+                checked={healStatus?.enabled ?? false}
+                onChange={async (e) => {
+                  const res = await postJSON<{ enabled: boolean }>("/api/self_heal/toggle", { enabled: e.target.checked });
+                  setHealStatus((prev) => prev ? { ...prev, enabled: res.enabled } : null);
+                }}
+                className="rounded border-border accent-accent h-3.5 w-3.5 cursor-pointer"
+              />
+              <span className={healStatus?.enabled ? "text-success font-medium" : "text-muted-foreground"}>
+                {healStatus?.enabled ? "ON" : "OFF"}
+              </span>
+            </label>
+            <button
+              disabled={healing}
+              onClick={async () => {
+                setHealing(true);
+                try {
+                  const res = await postJSON<any>("/api/self_heal/trigger", {});
+                  setHealReport(res);
+                  const fresh = await getJSON<any>("/api/self_heal/status");
+                  setHealStatus(fresh);
+                } finally {
+                  setHealing(false);
+                }
+              }}
+              className="flex items-center gap-1.5 rounded-xl bg-accent px-3 py-1.5 text-xs font-medium text-white transition-opacity disabled:opacity-50 cursor-pointer"
+            >
+              {healing ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              Trigger Self-Healing
+            </button>
+          </div>
+        </div>
+
+        {healReport && (
+          <div className="mt-2.5 rounded-xl border border-border/60 bg-muted/30 p-2.5 text-xs">
+            <div className="font-medium text-foreground mb-1">
+              Remediation Report ({healReport.actions_taken?.length ?? 0} actions taken in {healReport.duration_ms}ms):
+            </div>
+            <ul className="space-y-1 text-muted-foreground list-disc list-inside">
+              {healReport.actions_taken?.map((act: string, idx: number) => (
+                <li key={idx} className="text-foreground/90">{act}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="mt-2 text-xs text-muted-foreground flex items-center justify-between">
+          <span>Pending candidates: <strong className="text-foreground">{healStatus?.pending_count ?? 0}</strong></span>
+          {healStatus?.last_run && (
+            <span>Last healed: {new Date(healStatus.last_run * 1000).toLocaleTimeString()}</span>
+          )}
+        </div>
+      </Card>
     </Page>
   );
 }

@@ -34,10 +34,13 @@ def encoder():
 
 
 def segments(pcm):
-    from ishti.voice import pick_language, stt_model
+    from ishti.voice import pick_language, stt_call, stt_model
     model = stt_model()
-    segs, _ = model.transcribe(pcm, beam_size=1, vad_filter=True, language=pick_language(model, pcm), condition_on_previous_text=False)
-    return [{"start": s.start, "end": s.end, "text": s.text.strip()} for s in segs if s.text.strip()]
+    lang = pick_language(model, pcm)
+    # stt_call: the decode (and the lazy iteration over its segments) happens on the one STT thread, never here
+    return stt_call(lambda: [{"start": s.start, "end": s.end, "text": s.text.strip()}
+                             for s in model.transcribe(pcm, beam_size=1, vad_filter=True, language=lang,
+                                                       condition_on_previous_text=False)[0] if s.text.strip()])
 
 
 def diarize(path, speakers=None, threshold=0.6):

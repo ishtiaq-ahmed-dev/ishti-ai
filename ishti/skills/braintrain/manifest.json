@@ -1,0 +1,28 @@
+{
+  "name": "braintrain",
+  "version": "1.0.0",
+  "description": "The brain fine-tuning pipeline, conversational: how many training examples are logged, export the curated dataset (secrets redacted, deduped, balanced), run a QLoRA train job, evaluate a candidate against the regression gate, promote or roll back adapters. Training runs offline in idle hours; a candidate is never promoted without passing the eval gate.",
+  "route": "brain training status, how many training examples, export training data, fine-tune your brain, evaluate the fine-tune, roll back the adapter",
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 16,
+  "status": "working",
+  "tier": "T1",
+  "laya": false,
+  "scope": {
+    "write": [
+      "data"
+    ],
+    "net": [
+      "127.0.0.1:11434",
+      "huggingface.co"
+    ],
+    "apps": false
+  },
+  "category": "Development & Code",
+  "path": "ishti/skills/braintrain"
+}

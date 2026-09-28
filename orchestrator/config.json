@@ -5,10 +5,10 @@
   "cost_model": "Zero Ongoing Fees (100% Local Inference)",
   "ollama": {
     "host": "http://127.0.0.1:11434",
-    "fast_model": "llama3.2:3b",
-    "primary_model": "qwen2.5:14b",
-    "fallback_model": "deepseek-r1:8b",
-    "coding_model": "qwen2.5:14b",
+    "fast_model": "laya",
+    "primary_model": "qwen3:30b-a3b",
+    "fallback_model": "ishti-qwen2.5:14b",
+    "coding_model": "qwen3-coder:30b-a3b",
     "last_benchmark": "2026-09-24T17:54:20",
     "benchmark_scores": {
       "llama3.2:3b": {
@@ -82,7 +82,7 @@
   },
   "voice": {
     "wake_word": "ishti",
-    "whisper_model": "base",
+    "whisper_model": "D:\\ISHTI\\data\\models\\whisper-large-v3-turbo",
     "whisper_device": "cuda",
     "tts_engine": "sapi5",
     "tts_rate": 185,

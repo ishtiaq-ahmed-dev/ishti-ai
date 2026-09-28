@@ -1,4 +1,4 @@
-"""Isolated replay tests for the dispatcher's Issue-1 fixes (no network, no owner memory touched):
+r"""Isolated replay tests for the dispatcher's Issue-1 fixes (no network, no owner memory touched):
 
   * the language lock ("Talk to me in English.") is saved as a fact, not routed to research
   * a skill's "sticky" pending question survives the owner's answer, complaint or correction

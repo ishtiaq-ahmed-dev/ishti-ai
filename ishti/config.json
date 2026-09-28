@@ -2,12 +2,12 @@
   "llm": {
     "base_url": "http://127.0.0.1:11434/v1",
     "models": {
-      "planner": "ishti-qwen2.5:14b",
-      "coder": "ishti-qwen2.5-coder:14b",
-      "fast": "llama3.2:3b",
+      "planner": "qwen3:30b-a3b",
+      "coder": "qwen3-coder:30b-a3b",
+      "fast": "laya",
       "translator": "gemma3:4b"
     },
-    "fallback": "qwen2.5:14b",
+    "fallback": "ishti-qwen2.5:14b",
     "timeout_s": 120
   },
   "memory": {
@@ -62,6 +62,11 @@
     "wake_model": "hey_jarvis",
     "wake_phrases": ["hey ishti", "hey jarvis", "hey my assistant"],
     "languages": ["en", "ur", "ps"],
+    "primary_language": "en",
+    "primary_language_bias": 0.25,
+    "language_switch_threshold": 0.60,
+    "forced_language": null,
+    "whisper_idle_unload_s": 600,
     "wake_threshold": 0.5,
     "barge_in": {"enabled": true, "vad_threshold": 0.6, "min_ms": 120, "check_ms": 700, "echo_overlap": 0.5, "cooldown_s": 1.0,
                  "note": "Tune on the real room: raise vad_threshold/min_ms if speaker echo interrupts; lower echo_overlap if your own words get ignored"},

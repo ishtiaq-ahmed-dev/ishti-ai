@@ -326,9 +326,23 @@ def _sent(snap, text):
     return text[:40].lower() in snap.lower()
 
 
+def _out(reply, verified):
+    """A skill result that carries the truth about verification (the dispatcher warns on verified=False claims)."""
+    return {"reply": reply, "sources": [], "verified": bool(verified)}
+
+
+def _enabled_send(snap):
+    """True when a Send button that is NOT disabled is on the page - i.e. a file preview is still waiting to go."""
+    return any("disabled" not in flags for flags in re.findall(r'button "Send"((?: \[[^\]]*\])*)', snap))
+
+
 def deliver(ref, name, path, messages, session):
     """Open the chat, send the file (the first message as its caption), then each text message in order. The owner
-    named the contact and what to send, so an exact contact match sends without another question."""
+    named the contact and what to send, so an exact contact match sends without another question.
+
+    Returns {"reply", "sources", "verified"}: verified=True only when the page itself shows the outcome (the sent
+    text in the chat, or the file preview closed after Send) - an unverified claim must never sound like a done
+    deal (the dispatcher appends an honest warning to verified=False claims)."""
     browser._call("browser_click", {"element": f"chat with {name}", "target": ref})
     time.sleep(1.5)
     snap = browser._call("browser_snapshot", {})
@@ -354,6 +368,7 @@ def deliver(ref, name, path, messages, session):
         trace(session, "voice_note", f"Recorded context-aware voice reply in {whose}")
 
     messages, done = list(messages), []
+    file_ok = True
     if path:
         ext = os.path.splitext(path)[1].lower()
         # WhatsApp Web attach menu has 'Photos & videos' and 'Document'; audio files are uploaded as Document
@@ -361,13 +376,13 @@ def deliver(ref, name, path, messages, session):
         task = f"attach the file {path} with the '{kind}' option and send it" + (f" with the caption {messages[0]!r}" if messages else "")
         attach = browser.locate(snap, "the Attach button (paperclip or plus) of the chat", "button", "Attach", session)
         if not attach:
-            return _stuck("the attach button", name, task, session)
+            return _out(_stuck("the attach button", name, task, session), False)
         snap = browser._call("browser_click", {"element": "Attach", "target": attach})
         item = browser.locate(snap, f"the '{kind}' option of the attach menu", "menuitem",
                               re.escape(kind).replace("&", "(?:&|&amp;|and)"), session)
         if not item:
             browser._call("browser_press_key", {"key": "Escape"})
-            return _stuck(f"the '{kind}' option", name, task, session)
+            return _out(_stuck(f"the '{kind}' option", name, task, session), False)
         browser._call("browser_click", {"element": kind, "target": item})
         browser._call("browser_file_upload", {"paths": [path]})
         time.sleep(3)  # WhatsApp builds the preview
@@ -378,37 +393,50 @@ def deliver(ref, name, path, messages, session):
             snap = browser._call("browser_snapshot", {})
         send = browser.refs(snap, "button", "Send") or [browser.locate(snap, "the Send button of the file preview", session=session)]
         if not send[-1]:
-            return _stuck("the Send button of the file preview", name, "send the file that is in the preview", session)
+            return _out(_stuck("the Send button of the file preview", name, "send the file that is in the preview", session), False)
         browser._call("browser_click", {"element": "Send", "target": send[-1]})
         time.sleep(2)
         done.append(os.path.basename(path))
+        # the preview is gone (only the disabled chat-box Send remains) = WhatsApp took the file
+        snap = browser._call("browser_snapshot", {})
+        file_ok = not _enabled_send(snap)
+        if not file_ok:
+            trace(session, "verify", f"the file preview for {os.path.basename(path)} is still open", status="error")
     for i, msg in enumerate(messages):
         snap = browser._call("browser_snapshot", {})
         box = browser.locate(snap, f"the message box of the chat with {name}", "textbox", r"Type a message[^\"]*", session)
         if not box:
             rest = " then ".join(repr(m) for m in messages[i:])
-            return ("Sent " + ", ".join(done) + ". " if done else "") + _stuck("the message box", name, f"send the messages {rest}", session)
+            return _out(("Sent " + ", ".join(done) + ". " if done else "") + _stuck("the message box", name, f"send the messages {rest}", session), False)
         browser._call("browser_type", {"element": "message box", "target": box, "text": msg, "submit": True})
         time.sleep(1.2)
         done.append(repr(msg) if len(msg) < 60 else "your message")
     snap = browser._call("browser_snapshot", {})
-    if messages and not _sent(snap, messages[-1]):
+    text_ok = not messages or _sent(snap, messages[-1])
+    if not text_ok:
         trace(session, "verify", "the last message isn't visible in the chat yet", status="error")
-        return f"I typed it to {name}, but I can't see it in the chat - please check WhatsApp."
-    trace(session, "send", f"sent {len(done)} item(s) to {name}")
-    return f"Sent {', '.join(done)} to {name} on WhatsApp."
+        return _out(f"I typed it to {name}, but I can't see it in the chat - please check WhatsApp.", False)
+    if not file_ok:
+        return _out(f"I attached {done[0] if done else 'the file'} to {name}'s chat, but the preview didn't close - "
+                    f"it may not have gone out. Please check WhatsApp.", False)
+    trace(session, "send", f"sent {len(done)} item(s) to {name}", status="done")
+    return _out(f"Sent {', '.join(done)} to {name} on WhatsApp.", True)
 
 
 def send_flow(text, session, pend=None):
     exact_name = None
     voice = None
+    owner_named = False  # the owner just answered "who should I send it to?" - a clear match is the answer
     if pend:
         if pend.get("ask") == "contact":
             c, _, msgs, v = parse_send(f"send to {text}", session)
-            contact = c or text.strip().rstrip(".,!?")
+            # "The name is Bai." answers the question - the phrase must not become part of the contact name
+            contact = re.sub(r"^(?:the\s+name\s+is|name\s+is|it'?s|it\s+is|contact\s+is)\s+", "",
+                             (c or text).strip(), flags=re.I).strip(" .,!?")
             path = pend.get("file")
             messages = pend.get("messages") or msgs
             voice = pend.get("voice") or v
+            owner_named = True
             exact_name = contact
         elif pend.get("ask") == "content":
             contact = pend.get("contact")
@@ -476,16 +504,24 @@ def send_flow(text, session, pend=None):
     browser._call("browser_press_key", {"key": "Escape"}) if not found else None
     ranked = [(n, s) for n, s in rank(contact, [n for n, _ in found]) if s >= 0.66]
     exact = [n for n, _ in ranked if norm(n) == norm(exact_name or contact)]
+    if owner_named and not exact and ranked:
+        # the owner just named the person: the one clear match above the threshold IS their answer - asking
+        # "did you mean 1. Bhai?" after "the name is Bai" is the loop that lost the message
+        top = ranked[0]
+        if len(ranked) == 1 or top[1] - ranked[1][1] >= 0.1:
+            exact = [top[0]]
     if exact:
         ref = dict(found)[exact[0]]
         res = deliver(ref, exact[0], path, messages, session)
-        is_sent = res.startswith("Sent ")
-        if is_sent:
+        if res.get("verified"):
             session["pending"] = None
             session["last_whatsapp_send"] = {"contact": exact[0], "path": path, "messages": messages}
-            return {"reply": res, "sources": [], "verified": True}
+            # the flags describe this one send; a later, ordinary message must not inherit them
+            session["is_reply"] = session["is_voice_reply"] = False
+            session["voice"] = None
+            return res
         session["pending"] = {"skill": "whatsapp", "sticky": True, "ask": "retry", "contact": exact[0], "path": path, "messages": messages}
-        return {"reply": res, "sources": [], "verified": False}
+        return res
     browser._call("browser_press_key", {"key": "Escape"})
     if not ranked:
         session["pending"] = {"skill": "whatsapp", "sticky": True, "ask": "contact", "file": path, "messages": messages, "voice": voice}
@@ -494,6 +530,36 @@ def send_flow(text, session, pend=None):
     session["pending"] = {"skill": "whatsapp", "sticky": True, "candidates": names, "file": path, "messages": messages, "voice": voice}
     return {"reply": f"I didn't find '{contact}' exactly. Did you mean:\n" + "\n".join(f"{i}. {n}" for i, n in enumerate(names, 1))
                      + "\nReply with the number or name.", "sources": []}
+
+
+def _copy_file_clipboard(path):
+    """Put a file on the Windows clipboard as CF_HDROP so Ctrl+V pastes it (WhatsApp Desktop accepts drops this
+    way). True on success; False when pywin32/the clipboard is unavailable (the send then must not pretend)."""
+    try:
+        import win32clipboard
+        import win32con
+        from ctypes import sizeof, c_uint, c_bool, c_long, Structure
+
+        class _POINT(Structure):
+            _fields_ = [("x", c_long), ("y", c_long)]
+
+        class _DROPFILES(Structure):
+            _fields_ = [("pFiles", c_uint), ("pt", _POINT), ("fNC", c_bool), ("fWide", c_bool)]
+
+        hdr = _DROPFILES()
+        hdr.pFiles = sizeof(_DROPFILES)
+        hdr.fWide = True
+        data = bytes(hdr) + (os.path.abspath(path) + "\0\0").encode("utf-16le")
+        win32clipboard.OpenClipboard()
+        try:
+            win32clipboard.EmptyClipboard()
+            win32clipboard.SetClipboardData(win32con.CF_HDROP, data)
+        finally:
+            win32clipboard.CloseClipboard()
+        return True
+    except Exception as exc:
+        print(f"[whatsapp] clipboard file copy failed: {type(exc).__name__}: {exc}")
+        return False
 
 
 def send_desktop(contact, messages, path, session):
@@ -530,7 +596,15 @@ def send_desktop(contact, messages, path, session):
     done = []
     if path and os.path.isfile(path):
         trace(session, "upload", f"Attaching {os.path.basename(path)}")
-        done.append(os.path.basename(path))
+        if _copy_file_clipboard(path):  # CF_HDROP paste: how the desktop app accepts a file drop
+            agent.keyboard_hotkey("ctrl", "v")
+            time.sleep(1.5)
+            agent.press_key("enter")
+            time.sleep(1.0)
+            done.append(os.path.basename(path))
+        else:
+            return _out(f"I couldn't put {os.path.basename(path)} on the clipboard, so nothing was sent to "
+                        f"{contact} - please attach it in WhatsApp yourself.", False)
 
     for msg in messages:
         trace(session, "type", f"Typing: {msg}")
@@ -543,7 +617,8 @@ def send_desktop(contact, messages, path, session):
 
     trace(session, "send", f"Sent to {contact} on WhatsApp", status="done")
     items = ", ".join(done) if done else "message"
-    return {"reply": f"Sent {items} to {contact} on WhatsApp.", "sources": []}
+    # the desktop app is driven blind (keyboard automation): what went out cannot be confirmed from here
+    return _out(f"Sent {items} to {contact} on WhatsApp.", False)
 
 
 def run(text, session):

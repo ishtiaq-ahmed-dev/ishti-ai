@@ -101,7 +101,13 @@ def _weights(name):
 
 
 def _same(a, b):
-    return a == b or a + ":latest" == b or b + ":latest" == a
+    if a == b or a + ":latest" == b or b + ":latest" == a:
+        return True
+    from ishti import llm
+    fallback = llm.FALLBACK_MAP.get(a, "")
+    if fallback and (fallback == b or fallback + ":latest" == b or b + ":latest" == fallback):
+        return True
+    return False
 
 
 def set_role(role, model):
@@ -149,27 +155,62 @@ def _whisper_dir(name):
     return os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub", "models--" + repo.replace("/", "--"))
 
 
+LOCAL_MODELS = os.path.join(DATA, "models")  # where a local build lives (tests/download_whisper_turbo.py)
+
+
+def _local_dir(name):
+    """A local CTranslate2 build of this option, when the owner downloaded one (data/models/whisper-<name>)."""
+    d = os.path.join(LOCAL_MODELS, "whisper-" + name)
+    return d if os.path.isdir(d) else None
+
+
+def selected_whisper():
+    """Which option the configured whisper_model is: a local directory (whisper-large-v3-turbo) or a model name.
+
+    voice.model_source() loads a directory directly, so Settings must recognise that form - a plain name comparison
+    reported "nothing selected" (and the wrong installed flags) while the local turbo model was the one in use.
+    """
+    ref = CONFIG["voice"]["whisper_model"]
+    if os.path.isdir(ref):
+        base = os.path.basename(os.path.normpath(ref)).lower()
+        for name in sorted(WHISPER_OPTIONS, key=len, reverse=True):  # longest first: turbo must win over large-v3
+            if base.endswith(name):
+                return name
+        return None
+    return ref if ref in WHISPER_OPTIONS else None
+
+
+def _model_dir(name):
+    """Where this option's files are: the local build when that is what is in use, else the Hugging Face cache."""
+    ref = CONFIG["voice"]["whisper_model"]
+    if selected_whisper() == name and os.path.isdir(ref):
+        return ref
+    return _local_dir(name) or _whisper_dir(name)
+
+
 def whisper_state():
-    current = CONFIG["voice"]["whisper_model"]
+    current = selected_whisper()
     def ok(n):  # a finished download has its model.bin (a cancelled one leaves only metadata)
-        d = _whisper_dir(n)
+        d = _model_dir(n)
         return any(f == "model.bin" for _, _, fs in os.walk(d) for f in fs) if os.path.isdir(d) else False
-    return [{"name": n, "installed": ok(n), "size": _size(_whisper_dir(n)), "selected": n == current} for n in WHISPER_OPTIONS]
+    return [{"name": n, "installed": ok(n), "size": _size(_model_dir(n)), "selected": n == current} for n in WHISPER_OPTIONS]
 
 
 def set_whisper(name):
     if name not in WHISPER_OPTIONS:
         raise ValueError(name)
-    _save_config(lambda c: c["voice"].__setitem__("whisper_model", name))
+    # a local build of this option is used as-is (the one the owner already tested); else the model name, which
+    # faster-whisper fetches into its own cache on first use
+    _save_config(lambda c: c["voice"].__setitem__("whisper_model", _local_dir(name) or name))
     import ishti.voice as v
-    v._stt = None  # loads the new one on the next use
+    v.release_model()  # freed on the thread that allocated it; the new model loads on the next use
     _audit(f"speech recognition -> whisper {name}")
 
 
 def delete_whisper(name):
-    if name == CONFIG["voice"]["whisper_model"]:
+    if selected_whisper() == name:
         raise ValueError("that's the speech model in use - pick another first")
-    shutil.rmtree(_whisper_dir(name), ignore_errors=True)
+    shutil.rmtree(_model_dir(name), ignore_errors=True)
     _audit(f"deleted whisper {name}")
 
 
@@ -382,7 +423,26 @@ if __name__ == "__main__":
     except ValueError:
         pass
     ws = whisper_state()
-    assert sum(w["selected"] for w in ws) == 1 and next(w for w in ws if w["selected"])["installed"]
+    assert sum(w["selected"] for w in ws) == 1 and next(w for w in ws if w["selected"])["installed"], ws
+    # a local build (data/models/whisper-large-v3-turbo: what the owner actually runs) must be recognised as the
+    # selected, installed model - a plain name comparison used to report "nothing selected"
+    real_ref = CONFIG["voice"]["whisper_model"]
+    local = os.path.join(tempfile.mkdtemp(), "whisper-large-v3-turbo")
+    os.makedirs(local)
+    open(os.path.join(local, "model.bin"), "wb").write(b"x")
+    try:
+        CONFIG["voice"]["whisper_model"] = local
+        assert selected_whisper() == "large-v3-turbo", selected_whisper()
+        got = next(w for w in whisper_state() if w["selected"])
+        assert got["name"] == "large-v3-turbo" and got["installed"], got
+        try:
+            delete_whisper("large-v3-turbo")
+            raise AssertionError("deleted the speech model in use (a local build)")
+        except ValueError:
+            pass
+        assert os.path.isfile(os.path.join(local, "model.bin")), "the in-use local build was deleted"
+    finally:
+        CONFIG["voice"]["whisper_model"] = real_ref
     try:
         delete_model(CONFIG["memory"]["embed_model"])
         raise AssertionError("deleted the embedding model semantic memory needs")

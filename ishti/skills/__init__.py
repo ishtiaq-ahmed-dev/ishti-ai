@@ -70,6 +70,7 @@ SKILL_CATEGORIES = {
     # Productivity & Planning
     "calendar": "Productivity & Planning",
     "reminders": "Productivity & Planning",
+    "focus": "Productivity & Planning",
     "docs": "Productivity & Planning",
     "planners": "Productivity & Planning",
     "workflows": "Productivity & Planning",
@@ -78,6 +79,7 @@ SKILL_CATEGORIES = {
 
     # Knowledge & Intelligence
     "memory": "Knowledge & Intelligence",
+    "relationships": "Knowledge & Intelligence",
     "deep_research": "Knowledge & Intelligence",
     "gemini": "Knowledge & Intelligence",
     "owner": "Knowledge & Intelligence",
@@ -85,21 +87,25 @@ SKILL_CATEGORIES = {
     # Development & Tools
     "dev": "Development & Code",
     "skillsmith": "Development & Code",
+    "braintrain": "Development & Code",
 
     # Media & Creative
     "media": "Media & Creative",
     "video": "Media & Creative",
     "extract": "Media & Creative",
+    "capcut": "Media & Creative",
 
     # Finance & Commerce
     "markets": "Finance & Commerce",
     "shopping": "Finance & Commerce",
+    "clients": "Finance & Commerce",
     "ledger": "Finance & Commerce",
 
     # Utilities & Daily
     "weather": "Utilities & Daily",
     "travel": "Utilities & Daily",
     "utilities": "Utilities & Daily",
+    "speedtest": "Utilities & Daily",
     "legacy": "Utilities & Daily",
 }
 

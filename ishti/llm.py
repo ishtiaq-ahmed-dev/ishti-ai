@@ -27,6 +27,12 @@ STYLE = (
 _cfg = CONFIG["llm"]
 _client = OpenAI(base_url=_cfg["base_url"], api_key="ollama", timeout=_cfg["timeout_s"])
 _installed = None
+
+FALLBACK_MAP = {
+    "qwen3:30b-a3b": "ishti-qwen2.5:14b",
+    "qwen3-coder:30b-a3b": "ishti-qwen2.5-coder:14b",
+    "llama3.2:3b": "laya",
+}
 # qwen2.5:14b (Q4_K_M) sometimes opens a tool-calling reply with a Thai/Chinese junk line
 # ("คณะกรรม... (委员会)"); the tool calls themselves still parse. Drop those lines unless the
 # conversation itself uses that script.
@@ -44,13 +50,19 @@ def model_for(role: str) -> str:
     """Configured model for a role, falling back when it isn't pulled into Ollama."""
     global _installed
     name = _cfg["models"].get(role, _cfg["fallback"])
+    if role == "fast" or name.lower() in ("laya", "typed-decisions"):
+        return "laya"
     if _installed is None:
         try:
             _installed = {m.id for m in _client.models.list().data}
         except Exception:
             _installed = set()
     if _installed and name not in _installed and f"{name}:latest" not in _installed:
-        return _cfg["fallback"]
+        if role == "coder":
+            for cand in ("qwen3-coder:30b-a3b", "ishti-qwen2.5-coder:14b", "qwen2.5-coder:14b"):
+                if cand in _installed or f"{cand}:latest" in _installed:
+                    return cand
+        return _cfg.get("fallback", "ishti-qwen2.5:14b")
     return name
 
 

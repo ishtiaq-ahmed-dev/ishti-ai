@@ -1,0 +1,22 @@
+{
+  "name": "writing",
+  "version": "1.0.0",
+  "description": "Text workbench on the local LLM: summarize (any length), paraphrase/rewrite (formal, casual, simpler), bullet points from text, expand/elaborate, fix grammar and tone, draft an email from bullet points, write a social post or blog outline from a topic. Everything stays on this PC.",
+  "route": "summarize this text, paraphrase this, rewrite in formal tone, make bullet points from, expand this, fix the grammar, tone check, draft an email saying, write a post about, blog outline for",
+  "needs": {
+    "python": [],
+    "models": ["ishti-qwen2.5:14b"],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 9,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {
+    "write": ["data"],
+    "net": [],
+    "apps": false
+  },
+  "category": "Writing & Text"
+}

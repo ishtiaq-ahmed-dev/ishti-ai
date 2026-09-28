@@ -1,0 +1,22 @@
+{
+  "name": "budget",
+  "version": "1.0.0",
+  "description": "Local money tracker (SQLite, nothing leaves the PC): log an expense or income with a category, set monthly category limits, see this month's spend by category, list recent transactions. 'spent 1200 on groceries' just works; limits warn at 80% and 100%.",
+  "route": "spent X on Y, logged an expense, add income, set a limit for, this month's spending, my expenses, spending summary",
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 10,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {
+    "write": ["data"],
+    "net": [],
+    "apps": false
+  },
+  "category": "Finance"
+}

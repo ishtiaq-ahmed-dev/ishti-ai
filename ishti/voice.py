@@ -12,9 +12,16 @@ How the STT is shaped, and why (measured - see tests/measure_stt.py):
     why long audio goes through the batched pipeline, which encodes its 30 s chunks side by side.
   * the model stays loaded (whisper_idle_unload_s): a warm decode is ~0.3 s, a cold load is seconds of disk plus
     first-call kernel setup, and the wake loop needs it the moment the owner stops talking.
+  * one thread decodes it (stt_call): CTranslate2's CUDA/cuBLAS state belongs to the thread that decoded, and a
+    process that decoded the same model from two threads fails fast (0xC0000409 in ucrtbase, logged as an
+    "Application Error" crash and a non-zero exit code) the moment it ends - measured on this PC 2026-09-27, always
+    reproducible with one partial in a worker thread plus the final decode on the command thread. Every decode - the
+    partials, the language pick, the warm-ups, the unload - runs on one dedicated worker now, which also serialises
+    the GPU instead of letting a partial queue behind the final decode.
 """
 import io
 import os
+import queue
 import re
 import threading
 import time
@@ -29,6 +36,82 @@ RATE = 16000                             # every caller feeds 16 kHz mono (wake.
 _cfg = CONFIG["voice"]
 _stt = _batched = _tts = None
 _load_lock, _play_lock = threading.Lock(), threading.Lock()
+
+# ---- the one STT thread -----------------------------------------------------------------------------------
+# Decodes of the whisper model never run on a caller's thread: see the module docstring - a second decoding thread
+# makes the whole process fail fast at exit. Callers submit a function and wait for its result.
+_stt_thread, _stt_queue, _stt_exec = None, None, threading.Lock()
+DECODE_THREADS = set()  # the threads decodes actually ran on (the self-check asserts there is exactly one)
+
+
+def _run(fn):
+    DECODE_THREADS.add(threading.get_ident())  # what the self-check asserts: exactly one thread, ever
+    return fn()
+
+
+def _stt_worker():
+    while True:
+        fn, box, done = _stt_queue.get()
+        try:
+            box.append((True, _run(fn)))
+        except BaseException as exc:  # re-raised in the caller, where the caller can handle it
+            box.append((False, exc))
+        finally:
+            done.set()
+
+
+def stt_call(fn):
+    """Run fn() - a decode or any other touch of the whisper model - on the single STT thread, and return its result.
+    Called on that thread already (a decode calling stt_model/batched_model): runs inline, no deadlock possible."""
+    global _stt_thread, _stt_queue
+    if threading.current_thread() is _stt_thread:
+        return _run(fn)
+    with _stt_exec:
+        if _stt_thread is None or not _stt_thread.is_alive():
+            _stt_queue = queue.Queue()
+            _stt_thread = threading.Thread(target=_stt_worker, name="stt", daemon=True)
+            _stt_thread.start()
+    box, done = [], threading.Event()
+    _stt_queue.put((fn, box, done))
+    done.wait()
+    ok, value = box[0]
+    if not ok:
+        raise value
+    return value
+
+
+def _drop_model():
+    global _stt
+    _stt = None  # CTranslate2 frees its VRAM when the model object goes away
+
+
+def is_stt_loaded() -> bool:
+    return _stt is not None
+
+
+def release_model():
+    """Drop the loaded STT model (Settings -> a different whisper model). Freed on the STT thread that allocated it."""
+    stt_call(_drop_model)
+    try:
+        from ishti import models
+        models.log_event("unload", "whisper", "manual release")
+    except Exception:
+        pass
+
+
+def evict_idle(idle_timeout_s=None) -> bool:
+    """Strict GPU eviction for Whisper STT model when idle (Section 6)."""
+    global _stt
+    idle = idle_timeout_s if idle_timeout_s is not None else IDLE_UNLOAD_S
+    if _stt is not None and (idle == 0 or time.time() - _last_use >= idle):
+        stt_call(_drop_model)
+        try:
+            from ishti import models
+            models.log_event("unload", "whisper", f"idle eviction (timeout={idle}s)")
+        except Exception:
+            pass
+        return True
+    return False
 
 
 def model_source():
@@ -47,13 +130,15 @@ def _warm(model):
     """The first decode on a fresh CTranslate2 model pays kernel/allocator setup. Do it here, at load time, instead
     of inside the owner's first command."""
     t = time.time()
-    " ".join(s.text for s in model.transcribe(np.zeros(RATE // 2, np.float32), language="en", beam_size=1,
-                                              vad_filter=False, without_timestamps=True, temperature=0.0)[0])
+    stt_call(lambda: " ".join(s.text for s in model.transcribe(np.zeros(RATE // 2, np.float32), language="en", beam_size=1,
+                                                               vad_filter=False, without_timestamps=True,
+                                                               temperature=0.0)[0]))
     print(f"[voice] whisper warm ({time.time() - t:.1f}s)")
 
 
 def stt_model():
     global _stt
+    created = None
     with _load_lock:
         if _stt is None:
             import importlib.util
@@ -73,7 +158,11 @@ def stt_model():
             except Exception as exc:  # no CUDA / out of VRAM: slower, but still local
                 print(f"[voice] whisper on {_cfg['whisper_device']} failed ({exc}); using CPU int8")
                 _stt = WhisperModel(ref, device="cpu", compute_type="int8")  # int8: the documented CPU fallback
-            _warm(_stt)
+            created = _stt
+    if created is not None:
+        from ishti import models
+        models.log_event("load", "whisper", f"device={_cfg['whisper_device']}")
+        _warm(created)  # on the STT thread, and outside the lock: a decode must never wait for this lock
     return _stt
 
 
@@ -83,12 +172,15 @@ def batched_model():
     below BATCH_OVER_S. Warms itself once (batched kernels differ from the single-chunk path)."""
     global _batched
     model = stt_model()
+    made = None
     with _load_lock:
         if _batched is None or _batched.model is not model:
             from faster_whisper import BatchedInferencePipeline
             _batched = BatchedInferencePipeline(model=model)
-            [s.text for s in _batched.transcribe(np.zeros(RATE // 2, np.float32), language="en", beam_size=1,
-                                                 batch_size=8)[0]]
+            made = _batched
+    if made is not None:
+        stt_call(lambda: [s.text for s in made.transcribe(np.zeros(RATE // 2, np.float32), language="en", beam_size=1,
+                                                          batch_size=8)[0]])
     return _batched
 
 
@@ -122,8 +214,8 @@ def transcribe(audio, language: str | None = None) -> str:
         lang = pick_language(model, pcm)
     beam = int(_cfg.get("whisper_beam", 1))
     prompt = vocabulary() or None
-    _final_active.set()
-    try:
+
+    def decode():
         if len(pcm) > BATCH_OVER_S * RATE:  # long audio: 30 s chunks in parallel instead of one after the other
             segments, _ = batched_model().transcribe(pcm, language=lang, beam_size=beam, batch_size=8,
                                                      vad_filter=True, initial_prompt=prompt, temperature=0.0)
@@ -131,9 +223,13 @@ def transcribe(audio, language: str | None = None) -> str:
             segments, _ = model.transcribe(pcm, language=lang, beam_size=beam, vad_filter=True, initial_prompt=prompt,
                                            without_timestamps=True, multilingual=False, temperature=0.0,
                                            condition_on_previous_text=False)  # temperature=0: no 5-step retry loop
-        # noise and very short sounds make whisper invent words ("Arabic", "Thank you."): keep only confident speech
+        # noise and very short sounds make whisper invent words ("Arabic", "Thank you."): keep only confident speech.
+        # The iteration happens here: faster-whisper yields lazily, so the decode is this thread's work.
         kept = [s for s in segments if s.no_speech_prob < 0.6 and s.avg_logprob > -1.0]
-        text = " ".join(s.text.strip() for s in kept).strip()
+        return " ".join(s.text.strip() for s in kept).strip(), kept
+    _final_active.set()
+    try:
+        text, kept = stt_call(decode)
     finally:
         _final_active.clear()
     LAST.update(language=lang, confidence=(sum(s.avg_logprob for s in kept) / len(kept)) if kept else -9.0,
@@ -148,20 +244,75 @@ LAST = {"language": None, "confidence": 0.0, "seconds": 0.0}  # of the latest tr
 # the close neighbours are folded in (spoken Hindi = Urdu; Persian is what whisper mistakes Pashto for).
 LANGUAGES = ("en", "ur", "ps")
 FOLD = {"hi": "ur", "fa": "ps"}
+_forced_language = _cfg.get("forced_language", None)
 
 
-def pick_language(model, pcm):
+def set_forced_language(lang: str | None):
+    """Manual override (Section 5): lock STT language or return to auto-detect."""
+    global _forced_language
+    norm = (lang or "").strip().lower()
+    if norm in ("en", "english"):
+        _forced_language = "en"
+    elif norm in ("ur", "urdu"):
+        _forced_language = "ur"
+    elif norm in ("ps", "pashto"):
+        _forced_language = "ps"
+    else:
+        _forced_language = None
+    print(f"[voice] Language mode set to: {_forced_language or 'auto-detect (primary biased)'}")
+
+
+def get_forced_language() -> str | None:
+    return _forced_language
+
+
+def score_language_probs(probs: list) -> str:
+    """Evaluate detected language probabilities according to primary bias and switch threshold (Section 5)."""
+    if _forced_language in ("en", "ur", "ps"):
+        return _forced_language
+
     allowed = tuple(_cfg.get("languages", LANGUAGES))
-    try:
-        _, _, probs = model.detect_language(pcm, vad_filter=True)
-    except Exception:
-        return allowed[0]
+    primary = _cfg.get("primary_language", "en")
+    bias = float(_cfg.get("primary_language_bias", 0.25))
+    switch_thresh = float(_cfg.get("language_switch_threshold", 0.60))
+
     score = {code: 0.0 for code in allowed}
     for code, p in probs:
         code = FOLD.get(code, code)
         if code in score:
             score[code] += p
-    return max(score, key=score.get)
+
+    total = sum(score.values())
+    if total > 0:
+        for k in score:
+            score[k] /= total
+
+    # Check candidates other than primary
+    others = [k for k in allowed if k != primary]
+    best_other = max(others, key=score.get) if others else None
+
+    # Switch away from primary ONLY when detection confidence is clearly high
+    if best_other and score[best_other] >= switch_thresh and score[best_other] > (score.get(primary, 0.0) + bias):
+        return best_other
+
+    return primary
+
+
+def pick_language(model, pcm):
+    """Confidence-threshold tuning with primary language bias (Section 5).
+    English is the default primary language. Only switch to Urdu or Pashto
+    when detection confidence clearly exceeds the switch threshold and margin."""
+    if _forced_language in ("en", "ur", "ps"):
+        return _forced_language
+
+    try:
+        probs = stt_call(lambda: model.detect_language(pcm, vad_filter=True)[2])  # a decode: the STT thread
+    except Exception:
+        primary = _cfg.get("primary_language", "en")
+        allowed = tuple(_cfg.get("languages", LANGUAGES))
+        return primary if primary in allowed else allowed[0]
+
+    return score_language_probs(probs)
 
 
 def vocabulary():
@@ -221,10 +372,13 @@ class Stream:
         tail, model = pcm[-int(self.TAIL_S * RATE):], stt_model()
         if self.language is None:
             self.language = pick_language(model, tail)  # once per utterance, while the owner is still speaking
-        segments, _ = model.transcribe(tail, language=self.language, beam_size=1, vad_filter=False,
-                                       without_timestamps=True, multilingual=False, temperature=0.0,
-                                       condition_on_previous_text=False)
-        kept = [s.text.strip() for s in segments if s.no_speech_prob < 0.6 and s.avg_logprob > -1.0]
+
+        def decode():
+            segments, _ = model.transcribe(tail, language=self.language, beam_size=1, vad_filter=False,
+                                           without_timestamps=True, multilingual=False, temperature=0.0,
+                                           condition_on_previous_text=False)
+            return [s.text.strip() for s in segments if s.no_speech_prob < 0.6 and s.avg_logprob > -1.0]
+        kept = stt_call(decode)
         with self._lock:
             self.text = " ".join(kept).strip()
         return self.text
@@ -247,14 +401,14 @@ def _schedule_unload():
             _unload_timer.cancel()
 
         from ishti import models
-        idle = {"frequent": 3600, "normal": IDLE_UNLOAD_S}.get(models.tier("whisper"), 300)  # D3: by real use
+        idle = IDLE_UNLOAD_S  # Strict 10-minute idle timer (Section 6)
 
         def unload():
-            global _stt
-            with _load_lock:
-                if _stt is not None and time.time() - _last_use >= idle:
-                    _stt = None  # CTranslate2 frees its VRAM when the model object goes away
-                    print("[voice] whisper unloaded after idle")
+            # the drop itself runs on the STT thread: the VRAM is freed by the thread that allocated it
+            gone = stt_call(lambda: _stt is not None and time.time() - _last_use >= idle and (_drop_model() or True))
+            if gone:
+                models.log_event("unload", "whisper", f"idle > {idle // 60}m")
+                print(f"[voice] whisper unloaded after {idle // 60}m idle")
 
         _unload_timer = threading.Timer(idle + 1, unload)
         _unload_timer.daemon = True
@@ -378,7 +532,8 @@ def synthesize(text: str, profile=None) -> bytes:
     """WAV bytes of the spoken reply in the owner's voice (markdown, URLs and citations stripped; [pause] tags
     become short silences, other style tags are dropped)."""
     profile = profile or current_voice()
-    engine = profile.get("engine", "piper")
+    is_urdu_script = bool(URDU_SCRIPT.search(text))
+    engine = "kokoro" if is_urdu_script else profile.get("engine", "piper")
     if engine == "piper":
         from piper import SynthesisConfig
         pv = tts_voice(profile)
@@ -391,7 +546,7 @@ def synthesize(text: str, profile=None) -> bytes:
         if i % 2:
             pcm.append(b"\0\0" * int(rate * PAUSES.get(part.lower().strip(), 0)))
         elif words := speakable(part):
-            if engine == "kokoro":
+            if engine == "kokoro" or URDU_SCRIPT.search(words):
                 pcm.append(_kokoro_pcm(words, profile)[0])
             else:
                 pcm += [chunk.audio_int16_bytes for chunk in pv.synthesize(words, cfg)]
@@ -407,6 +562,9 @@ def synthesize(text: str, profile=None) -> bytes:
 def speak(text: str, wait: bool = False):
     """Play on this PC's speakers through the one Talker (sentence by sentence, interruptible by barge-in);
     SAPI5 if Piper/the audio device is unavailable."""
+    from ishti.talk import is_voice_allowed
+    if not is_voice_allowed():
+        return
     try:
         from ishti.talk import Sentences, talker
         Sentences(talker()).flush(text)
@@ -451,6 +609,8 @@ if __name__ == "__main__":
     assert "peshawar" in streamed and "clear" in streamed, streamed
     assert live.language == "en" and LAST["language"] == "en", (live.language, LAST["language"])
     print(f"stream: partial+final {part_ms:.0f}/{final_ms:.0f} ms -> {streamed!r} (language {live.language})")
+    # the fail-fast guard: decodes of one CTranslate2 model must all happen on the same thread (see the docstring)
+    assert len(DECODE_THREADS) == 1, f"whisper decoded on {len(DECODE_THREADS)} threads: {DECODE_THREADS}"
 
     def pitch_and_length(wav):
         with wave.open(io.BytesIO(wav)) as wf:

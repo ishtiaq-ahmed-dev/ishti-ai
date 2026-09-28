@@ -1,0 +1,22 @@
+{
+  "name": "phishing_check",
+  "version": "1.0.0",
+  "description": "Phishing & suspicious-link analysis (heuristics, not antivirus): checks a URL or pasted email for homograph/lookalike domains, IP-address hosts, URL shorteners, urgent-pressure language, credential-bait phrasing, and mismatched link text. Explains every signal found and always advises verification out-of-band.",
+  "route": "is this link safe, check this link, is this email phishing, suspicious link, is this url legitimate, scam check",
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 11,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {
+    "write": ["data"],
+    "net": [],
+    "apps": false
+  },
+  "category": "Security"
+}

@@ -685,6 +685,21 @@ export function VoiceCard({
 }) {
   const { st, msg, busy, playing, act, preview } = useManage();
   const [showEngines, setShowEngines] = useState(false);
+  // Global microphone control (Section 7): default OFF, persisted on the server.
+  const [micOn, setMicOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    fetch("/api/mic/status")
+      .then((r) => r.json())
+      .then((d) => setMicOn(!!d.enabled))
+      .catch(() => setMicOn(false));
+  }, []);
+  const setMic = (on: boolean) => {
+    setMicOn(on); // optimistic: the indicator flips immediately
+    fetch(`/api/mic/${on ? "on" : "off"}`, { method: "POST" })
+      .then((r) => r.json())
+      .then((d) => setMicOn(!!d.enabled))
+      .catch(() => setMicOn(on));
+  };
 
   const selectedVoice = st?.voices.voices.find((v) => v.selected)?.name;
 
@@ -796,26 +811,42 @@ export function VoiceCard({
 
                 <div className="flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/60 p-3">
                   <div className="flex items-center gap-2">
-                    <Mic className="h-3.5 w-3.5 text-accent shrink-0" />
+                    <Mic
+                      className={cn(
+                        "h-3.5 w-3.5 shrink-0",
+                        micOn ? "text-success animate-pulse" : "text-muted-foreground"
+                      )}
+                    />
                     <div>
                       <div className="text-xs font-semibold text-foreground">
-                        Wake Word (“hey ishti”)
+                        Global microphone
                       </div>
                       <div className="text-[10px] text-muted-foreground">
-                        {wakeEnabled ? "Listening active" : "Disabled"}
+                        {micOn
+                          ? `Listening for wake word${wakeEnabled ? "" : " (wake disabled in config)"}`
+                          : "OFF - no audio captured or processed"}
                       </div>
                     </div>
                   </div>
-                  <span
+                  <button
+                    type="button"
+                    onClick={() => setMic(!micOn)}
                     className={cn(
-                      "rounded-md px-2 py-0.5 text-[9px] font-mono font-semibold",
-                      wakeEnabled
-                        ? "bg-success/15 text-success"
-                        : "bg-muted text-muted-foreground"
+                      "relative h-6 w-11 rounded-full transition-colors cursor-pointer shrink-0",
+                      micOn ? "bg-success" : "bg-muted"
                     )}
+                    aria-pressed={!!micOn}
+                    title={micOn ? "Turn the global microphone OFF" : "Turn the global microphone ON"}
                   >
-                    {wakeEnabled ? "ACTIVE" : "OFF"}
-                  </span>
+                    <motion.span
+                      layout
+                      transition={{ type: "spring", stiffness: 600, damping: 32 }}
+                      className={cn(
+                        "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-xs",
+                        micOn ? "right-0.5" : "left-0.5"
+                      )}
+                    />
+                  </button>
                 </div>
               </div>
 

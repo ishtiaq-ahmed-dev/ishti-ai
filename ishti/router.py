@@ -2,8 +2,15 @@
 then the default skill. Every decision is logged (facts.route_log) so the Laya typed-decisions
 checkpoint can later be fine-tuned on ISHTI's own traffic (NEEDS.md)."""
 import time
+import warnings
 
 from ishti import CONFIG
+
+# The shipped checkpoint's own calibration warning (uncalibrated temperatures) fired on every load
+# and is not actionable here - its confidences are only compared relative to each other. Filtered once
+# at import, in the main thread: catch_warnings() contexts are not thread-safe and routing runs in
+# parallel plan steps.
+warnings.filterwarnings("ignore", message=".*checkpoint ships invalid temperatures.*", category=RuntimeWarning)
 
 _cfg = CONFIG["router"]
 _laya = None

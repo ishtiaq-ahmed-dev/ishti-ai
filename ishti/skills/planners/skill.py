@@ -112,9 +112,10 @@ def op_lecture(text, session):
             info = y.extract_info(url, download=True)
         audio = next(os.path.join(work, f) for f in os.listdir(work))
         trace(session, "whisper", f"transcribing {info.get('duration', 0) // 60} min locally", status="start")
-        from ishti.voice import stt_model
-        segs, _ = stt_model().transcribe(audio, beam_size=1, vad_filter=True, temperature=0.0, condition_on_previous_text=False)
-        transcript = " ".join(s.text.strip() for s in segs)
+        from ishti.voice import stt_call, stt_model
+        model = stt_model()
+        transcript = stt_call(lambda: " ".join(s.text.strip() for s in model.transcribe(
+            audio, beam_size=1, vad_filter=True, temperature=0.0, condition_on_previous_text=False)[0]))
     notes = llm.ask(f"Lecture: {info.get('title')}\nTranscript:\n{guard(transcript[:14000], 'the lecture transcript', session)}\n\nWrite study notes: summary, key "
                     "concepts with short explanations, and 5 review questions.", max_tokens=1600)
     path = save("Lecture notes", info.get("title", "lecture"), f"# {info.get('title')}\n{url}\n\n{notes}\n\n---\n## Transcript\n{transcript}")

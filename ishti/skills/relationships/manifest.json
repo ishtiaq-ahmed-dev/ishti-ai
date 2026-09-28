@@ -1,0 +1,25 @@
+{
+  "name": "relationships",
+  "version": "1.0.0",
+  "description": "Relationship memory graph: family, friends, preferences. 'this is my brother Ahmed' creates a person with the relation; 'my sister likes Y' links it to her; 'who introduced me to X'; gift suggestions from a person's linked likes (avoiding dislikes); contradictions ask which fact is current instead of overwriting; duplicate people are detected and merged; private facts about a person never leave the graph into client-facing context.",
+  "route": "my brother/sister/father/cousin/friend, who introduced me to, what does my X like, gift for X, remember X likes, X doesn't like, merge contacts",
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 12,
+  "status": "working",
+  "tier": "T1",
+  "laya": false,
+  "scope": {
+    "write": [
+      "data"
+    ],
+    "net": [],
+    "apps": false
+  },
+  "category": "Knowledge & Intelligence",
+  "path": "ishti/skills/relationships"
+}

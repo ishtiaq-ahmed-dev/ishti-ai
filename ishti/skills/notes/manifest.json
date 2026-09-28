@@ -1,0 +1,24 @@
+{
+  "name": "notes",
+  "version": "1.0.0",
+  "description": "Quick personal notes in a local SQLite store (data/notes.db): 'note: the meeting moved to 5', 'show my notes', 'find the note about the projector', 'delete the note about X'. Notes are private, local, never leave the PC; search is exact-word based (no model call).",
+  "route": "note that, make a note, show my notes, find my note about, delete the note, my notes list",
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 10,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {
+    "write": [
+      "data"
+    ],
+    "net": [],
+    "apps": false
+  },
+  "category": "Memory & Notes"
+}

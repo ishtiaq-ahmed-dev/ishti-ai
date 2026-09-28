@@ -64,13 +64,16 @@ def ad_copy(request):
 def captions(src, workdir):
     """Speech -> captions.srt with local faster-whisper; None when the clip has no speech."""
     import concurrent.futures as cf
-    from ishti.voice import stt_model
+    from ishti.voice import stt_call, stt_model
 
     def run():
-        # temperature 0 only: music/noise sent whisper into its temperature-fallback loop for 15+ minutes
-        segments, _ = stt_model().transcribe(src, beam_size=1, vad_filter=True, temperature=0.0,
-                                             condition_on_previous_text=False, no_speech_threshold=0.6)
-        return [s for s in segments if s.text.strip() and getattr(s, "no_speech_prob", 0) < 0.6]
+        model = stt_model()
+        # temperature 0 only: music/noise sent whisper into its temperature-fallback loop for 15+ minutes.
+        # stt_call: the decode runs on the one STT thread (a second decoding thread makes the process fail fast)
+        return stt_call(lambda: [s for s in model.transcribe(src, beam_size=1, vad_filter=True, temperature=0.0,
+                                                            condition_on_previous_text=False,
+                                                            no_speech_threshold=0.6)[0]
+                                 if s.text.strip() and getattr(s, "no_speech_prob", 0) < 0.6])
     pool = cf.ThreadPoolExecutor(1)
     try:
         segs = pool.submit(run).result(timeout=CAPTION_BUDGET_S)
@@ -190,41 +193,66 @@ def capcut_project(src, copy, srt, aspect, duration, name, moments=None):
     """The same edit as an editable CapCut draft; None when CapCut isn't installed."""
     if not os.path.isdir(CAPCUT_DRAFTS):
         return None
-    import pycapcut as cc
-    W, H = ASPECTS[aspect]
-    script = cc.DraftFolder(CAPCUT_DRAFTS).create_draft(name, W, H, allow_replace=True)
-    script.add_track(cc.TrackType.video).add_track(cc.TrackType.text, "titles").add_track(cc.TrackType.text, "tagline")
-    material, at = _material(cc, src), 0.0
-    for i, (start, length) in enumerate(moments or [(0.0, duration)]):
-        seg = cc.VideoSegment(material, cc.trange(f"{at:.3f}s", f"{length:.3f}s"),
-                              source_timerange=cc.trange(f"{start:.3f}s", f"{length:.3f}s"))
-        try:
-            seg.add_filter(cc.FilterType.Enhance, 60)
-            if i < len(moments or []) - 1:
-                seg.add_transition(cc.TransitionType.Flash)
-        except Exception:
-            pass
-        script.add_segment(seg)
-        at += length
-    head = cc.TextSegment(copy["headline"], cc.trange("0s", "2.2s"),
-                          style=cc.TextStyle(size=14, bold=True, color=(1.0, 1.0, 1.0), align=1),
-                          clip_settings=cc.ClipSettings(transform_y=0.1))
-    tail = cc.TextSegment(copy["cta"], cc.trange(f"{max(0.0, duration - 2.5):.2f}s", f"{min(2.5, duration):.2f}s"),
-                          style=cc.TextStyle(size=12, bold=True, color=(0.73, 0.66, 1.0), align=1))
-    for seg in (head, tail):
-        try:
-            seg.add_animation(cc.TextIntro.Wiping_In)
-        except Exception:
-            pass
-        script.add_segment(seg, "titles")
-    if copy["tagline"]:
-        script.add_segment(cc.TextSegment(copy["tagline"], cc.trange("0.4s", f"{max(1.0, duration - 0.8):.2f}s"),
-                                          style=cc.TextStyle(size=7, color=(1.0, 1.0, 1.0), align=1),
-                                          clip_settings=cc.ClipSettings(transform_y=-0.78)), "tagline")
-    if srt:
-        script.import_srt(srt, "captions", clip_settings=cc.ClipSettings(transform_y=-0.6))
-    script.save()
-    return os.path.join(CAPCUT_DRAFTS, name)
+    # 1. Preferred modern path: capcut-cli (supports modern storage & draft mirrors)
+    try:
+        from tools.video.capcut_controller import get_capcut_controller
+        ctrl = get_capcut_controller()
+        if ctrl.is_installed():
+            W, H = ASPECTS.get(aspect, (1080, 1920))
+            ratio = "9:16" if aspect == "9:16" else "16:9"
+            res = ctrl.quickstart(name, video=src, srt=srt if srt and os.path.isfile(srt) else None, ratio=ratio, width=W, height=H)
+            pdir = res.get("draft_path") or ctrl.get_project_dir(name)
+            # Add titles/tagline via capcut-cli
+            if copy.get("headline"):
+                ctrl.add_text(pdir, copy["headline"], start="0s", duration="2.2s", font_size=16)
+            if copy.get("tagline"):
+                ctrl.add_text(pdir, copy["tagline"], start="0.4s", duration=f"{max(1.0, duration - 0.8):.2f}s", font_size=12)
+            if copy.get("cta"):
+                ctrl.add_text(pdir, copy["cta"], start=f"{max(0.0, duration - 2.5):.2f}s", duration=f"{min(2.5, duration):.2f}s", font_size=14)
+            return pdir
+    except Exception as exc:
+        print(f"[pro.py] capcut-cli draft creation failed ({exc}); attempting pycapcut fallback...")
+
+    # 2. Fallback legacy path: pycapcut
+    try:
+        import pycapcut as cc
+        W, H = ASPECTS[aspect]
+        script = cc.DraftFolder(CAPCUT_DRAFTS).create_draft(name, W, H, allow_replace=True)
+        script.add_track(cc.TrackType.video).add_track(cc.TrackType.text, "titles").add_track(cc.TrackType.text, "tagline")
+        material, at = _material(cc, src), 0.0
+        for i, (start, length) in enumerate(moments or [(0.0, duration)]):
+            seg = cc.VideoSegment(material, cc.trange(f"{at:.3f}s", f"{length:.3f}s"),
+                                  source_timerange=cc.trange(f"{start:.3f}s", f"{length:.3f}s"))
+            try:
+                seg.add_filter(cc.FilterType.Enhance, 60)
+                if i < len(moments or []) - 1:
+                    seg.add_transition(cc.TransitionType.Flash)
+            except Exception:
+                pass
+            script.add_segment(seg)
+            at += length
+        head = cc.TextSegment(copy["headline"], cc.trange("0s", "2.2s"),
+                              style=cc.TextStyle(size=14, bold=True, color=(1.0, 1.0, 1.0), align=1),
+                              clip_settings=cc.ClipSettings(transform_y=0.1))
+        tail = cc.TextSegment(copy["cta"], cc.trange(f"{max(0.0, duration - 2.5):.2f}s", f"{min(2.5, duration):.2f}s"),
+                              style=cc.TextStyle(size=12, bold=True, color=(0.73, 0.66, 1.0), align=1))
+        for seg in (head, tail):
+            try:
+                seg.add_animation(cc.TextIntro.Wiping_In)
+            except Exception:
+                pass
+            script.add_segment(seg, "titles")
+        if copy["tagline"]:
+            script.add_segment(cc.TextSegment(copy["tagline"], cc.trange("0.4s", f"{max(1.0, duration - 0.8):.2f}s"),
+                                              style=cc.TextStyle(size=7, color=(1.0, 1.0, 1.0), align=1),
+                                              clip_settings=cc.ClipSettings(transform_y=-0.78)), "tagline")
+        if srt:
+            script.import_srt(srt, "captions", clip_settings=cc.ClipSettings(transform_y=-0.6))
+        script.save()
+        return os.path.join(CAPCUT_DRAFTS, name)
+    except Exception as exc2:
+        print(f"[pro.py] pycapcut also failed: {exc2}")
+        return None
 
 
 def _probe(ed, path):

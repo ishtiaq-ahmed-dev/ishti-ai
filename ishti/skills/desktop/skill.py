@@ -115,11 +115,13 @@ def _endpoint():
 def op_volume(m, text, session):
     try:
         vol = _endpoint()
+        now = round(vol.GetMasterVolumeLevelScalar() * 100)
     except Exception as exc:  # COMError "Element not found": Windows has no audio output device right now
+        # the calls on the endpoint raise it too (the device can vanish between connect and read -
+        # it did at 06:48 on 27 Sep), so the whole body is guarded, not just the lookup
         if "Element not found" in str(exc) or "COMError" in type(exc).__name__:
             return "There's no audio output device connected right now (Windows reports none) - connect speakers or headphones."
         raise
-    now = round(vol.GetMasterVolumeLevelScalar() * 100)
     if re.search(r"\bunmute\b", text, I):
         vol.SetMute(0, None)
         return f"Unmuted (volume {now}%)."

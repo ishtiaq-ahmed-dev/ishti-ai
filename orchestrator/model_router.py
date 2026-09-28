@@ -270,6 +270,17 @@ class ModelRouter:
         if count >= 2:
             current_primary = self.config["ollama"].get("primary_model")
             fallback = self.config["ollama"].get("fallback_model")
+            try:
+                from ishti import self_heal
+                if not self_heal.is_enabled():
+                    self_heal.record_candidate(
+                        "model",
+                        f"Model '{model_name}' failed {count} times: {error_detail}",
+                        f"Switch primary model from '{current_primary}' to fallback '{fallback}'"
+                    )
+                    return None
+            except Exception:
+                pass
             if current_primary != fallback and fallback:
                 print(f"[ModelRouter] Self-healing: Switching primary model from '{current_primary}' to fallback '{fallback}'!")
                 self.config["ollama"]["primary_model"] = fallback

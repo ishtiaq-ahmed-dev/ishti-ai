@@ -5,14 +5,31 @@ and launch of the isolated desktop app window.
 import os
 import sys
 import subprocess
+import threading
 import time
 
 ROOT = r"D:\ISHTI"
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from desktop.focus_ishti import is_running, focus_window
+from desktop.focus_ishti import is_running, focus_window, reveal_window
 from desktop.shutdown import shutdown
+
+# Windows gives a console control handler only a few seconds before killing the process, and a full
+# shutdown (process tree kill + VRAM release + verification) takes longer - so it runs in a detached child
+# that outlives this one instead of inline.
+def _shutdown_detached():
+    try:
+        flags = (subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+                 if os.name == "nt" else 0)
+        subprocess.Popen([sys.executable, os.path.join(ROOT, "desktop", "shutdown.py")], cwd=ROOT,
+                         creationflags=flags)
+        return True
+    except Exception as exc:
+        print(f"[launcher] detached shutdown failed ({exc}); shutting down inline")
+        threading.Thread(target=shutdown, daemon=True).start()
+        return True
+
 
 try:
     import win32api
@@ -22,7 +39,7 @@ try:
         # 2: CTRL_CLOSE_EVENT, 5: CTRL_LOGOFF_EVENT, 6: CTRL_SHUTDOWN_EVENT
         if ctrl_type in (2, 5, 6):
             print(f"[launcher] Received OS signal {ctrl_type}, initiating clean shutdown...")
-            shutdown()
+            _shutdown_detached()
             return True
         return False
 
@@ -32,10 +49,12 @@ except Exception:
 
 
 def main():
-    # 1. Singleton Check: If already running, focus existing window and exit immediately
+    # 1. Singleton: an instance is already up (the server answers). Focus its window, or reopen the app window
+    #    when it was closed - either way exit: starting a second startup.py is what duplicated ISHTI.
     if is_running():
-        if focus_window():
-            sys.exit(0)
+        if not focus_window():
+            reveal_window()
+        sys.exit(0)
 
     # 2. Start ISHTI via start.bat or startup.py
     python_exe = os.path.join(ROOT, "venv", "Scripts", "python.exe")
@@ -54,6 +73,14 @@ def main():
         cwd=ROOT,
         creationflags=flags,
     )
+
+    # 2b. System tray icon (Section 7): global mic ON/OFF + dashboard + Stop.
+    #     Best-effort: if it fails, the dashboard toggle and voice commands still work.
+    try:
+        tray_py = os.path.join(ROOT, "desktop", "tray.py")
+        subprocess.Popen([python_exe, tray_py], cwd=ROOT, creationflags=flags)
+    except Exception as exc:
+        print(f"[launcher] tray icon unavailable ({exc}); dashboard/voice toggles still work")
 
     # Wait up to 10s for the window to appear and bring it to foreground
     for _ in range(20):

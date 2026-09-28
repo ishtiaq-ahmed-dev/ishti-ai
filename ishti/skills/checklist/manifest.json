@@ -1,0 +1,22 @@
+{
+  "name": "checklist",
+  "version": "1.0.0",
+  "description": "Persistent checklists in local SQLite: create a list ('checklist for the trip: passport, tickets'), tick items ('tick passport'), see what's left, reset. Multiple named lists; nothing leaves the PC.",
+  "route": "checklist for, add to my checklist, tick off, check off, my checklist, what's left on my checklist, new checklist",
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 10,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {
+    "write": ["data"],
+    "net": [],
+    "apps": false
+  },
+  "category": "Memory & Notes"
+}

@@ -70,7 +70,7 @@ class View(dict):
     """One request's view of a chat session. Its live trace, token stream and route are its own; everything
     else (history, pending question, last entity...) reads and writes through to the shared session. Lets
     several requests of one chat, and the parallel steps of one plan, run at once without mixing streams."""
-    OWN = ("trace", "on_token", "route", "injections", "injected")
+    OWN = ("trace", "on_token", "route", "injections", "injected", "is_subagent")
 
     def __init__(self, shared, **own):
         super().__init__({k: own.get(k) for k in self.OWN})
@@ -106,6 +106,17 @@ def _remember(text, reply, skill):
         print(f"[dispatcher] semantic memory write skipped: {exc}")
 
 
+def _ftlog(text, reply, name, dec, channel):
+    """Behavior-data collection (Part 3): one exchange with its routing decision for the
+    fine-tuning pipeline. Secrets are redacted in ishti.ftlog; secrets this request marked
+    (session redact) never arrive here at all."""
+    try:
+        from ishti import ftlog
+        ftlog.record(text, reply, name, dec.get("source", ""), channel=channel)
+    except Exception as exc:
+        print(f"[dispatcher] ftlog write skipped: {exc}")
+
+
 # Spoken progress for voice requests: the steps an owner would want to hear while waiting, one at a time.
 NARRATE = re.compile(r"^(?:Searching the internet|Trying a different search|Found \d+ sources|Reading through|"
                      r"\d+ sources? answer|writing|rendering|cutting a|transcribing|checking the video|open WhatsApp)", re.I)
@@ -113,6 +124,9 @@ _narrated = {"at": 0.0}
 
 
 def narrate(ev):
+    from ishti.talk import is_voice_allowed
+    if not is_voice_allowed():
+        return
     label = str(ev.get("label") or ev.get("detail") or "")
     if ev.get("type") != "tool" or not NARRATE.search(label) or time.time() - _narrated["at"] < 3:
         return
@@ -143,7 +157,10 @@ LANGUAGE_CMD = re.compile(
     r"\b(?:talk|speak|reply|answer|respond|write|message|chat)\s+(?:to\s+me\s+)?(?:only\s+|always\s+)?in\s+"
     r"(?P<lang>english|urdu|pashto|roman\s+urdu)\b|"
     r"\b(?:switch|change|set)\s+(?:your\s+)?(?:reply\s+|response\s+)?language\s+to\s+(?P<lang2>english|urdu|pashto|roman\s+urdu)\b|"
-    r"\b(?:talk|speak|reply|answer)\s+to\s+me\s+in\s+my\s+(?:own\s+)?language\b", re.I)
+    r"\b(?:switch\s+to|force)\s+(?P<lang3>english|urdu|pashto|roman\s+urdu)\b|"
+    r"\b(?:speak|talk)\s+(?P<lang4>english|urdu|pashto|roman\s+urdu)\b|"
+    r"\b(?:talk|speak|reply|answer)\s+to\s+me\s+in\s+my\s+(?:own\s+)?language\b|"
+    r"\b(?:auto\s+language|detect\s+language|auto\s+detect(?:\s+language)?)\b", re.I)
 LANGS = {"english": "English", "urdu": "Urdu", "pashto": "Pashto", "roman urdu": "Roman Urdu"}
 LANG_TARGET = {"English": "English", "Urdu": "Urdu", "Pashto": "Pashto",
                "Roman Urdu": "Roman Urdu (Urdu written in English letters)"}
@@ -480,53 +497,10 @@ def translate(text, to):
 
 
 def _handle(text, sid, conv, s, events, t0, channel):
-    # Urdu (script or Roman): skills and routing work in English, so understand it in English and answer back
-    # in the owner's own form of Urdu. Gemma does both directions (Qwen 2.5 writes poor Urdu).
-    # Devanagari is spoken Urdu that whisper wrote in Hindi script: understood the same way, answered in Urdu script
-    # only the owner's three languages: Pashto (its own letters ټ ډ ړ ښ ږ ځ څ ګ ڼ ې ۍ), Urdu, Roman Urdu; else English
-    spoken = ("Pashto" if PASHTO.search(text) else "Urdu" if URDU.search(text) or DEVANAGARI.search(text)
-              else "Roman Urdu (Urdu written in English letters)" if roman_urdu(text) else None)
-    if spoken:  # understanding always happens in English; the answer language comes from the lock below
-        s["trace"](type="tool", name="understand", label=f"{spoken.split(' (')[0]} message: reading it in English", status="start")
-        text = translate(text, "English")
-        s["trace"](type="tool", name="understand", label=f"understood as: {text[:120]}", status="done", rewritten=text)
-    lang = LANG_TARGET.get(preferred_language() or "", None) or spoken
-
-    # "talk to me in English": a standing preference that must be saved, not a request to research
-    cmd = LANGUAGE_CMD.search(text)
-    if cmd and not s.get("pending"):
-        f = get_facts()
-        picked = LANGS.get((cmd.group("lang") or "").strip().lower()) if cmd.group("lang") else None
-        if not picked and cmd.group("lang2"):
-            picked = LANGS.get(cmd.group("lang2").strip().lower())
-        if picked:  # keep the owner's choice; the LLM style prompt picks the fact up from here on
-            f.set("owner", "prefers_language", picked)
-            out = {"reply": LANG_CONFIRM[picked], "sources": []}
-            s["trace"](type="route", skill="owner", source="rule", confidence=1.0,
-                       why=f"You set the answer language to {picked}.")
-        else:  # "reply in my own language": drop the lock
-            f.forget("owner", "prefers_language")
-            out = {"reply": "Got it - I'll answer in whichever language you use.", "sources": []}
-            s["trace"](type="route", skill="owner", source="rule", confidence=1.0,
-                       why="You cleared the answer-language lock.")
-        dec = {"skill": "owner", "source": "rule", "confidence": 1.0}
-        return _finish(text, sid, conv, s, events, t0, channel, "owner", out, dec)
-
-    pending, fix = s.get("pending"), CORRECTION.match(text.strip())
-    wanted = fix and ALIASES.get(fix["skill"].lower(), fix["skill"].lower().replace(" ", "_"))
-    if fix and wanted in SKILLS and s.get("last_request"):
-        text = s["last_request"]
-        dec = {"skill": wanted, "confidence": 1.0, "source": "correction", "was": s.get("last_skill")}
-        from ishti import corrections  # D4: remembered - the same request goes there next time
-        corrections.record(text, s.get("last_skill"), wanted)
-    elif not pending and (rf := reflex.answer(text)):  # B7: an instant command - no routing, no model
-        s["trace"](type="route", skill="reflex", source="reflex", confidence=1.0, why=f"an instant command ({rf[1]})")
-        audit.record(f"reflex: {rf[1]}", rf[0][:120], skill="reflex", initiator="instructed", session=sid)
-        out = {"reply": rf[0], "sources": []}
-        if lang and not already_in(out["reply"], lang):
-            out["reply"] = translate(out["reply"], lang)
-        return _finish(text, sid, conv, s, events, t0, channel, "reflex", out, {"skill": "reflex", "source": "reflex", "confidence": 1.0})
-    elif pending and pending.get("action") and (ans := answer_of(text)):  # the universal T2 gate's yes/no
+    # Pattern-First Routing (Section 7): cheapest deterministic resources tried first.
+    # 1. Pending confirmation check (T2 yes/no gate)
+    pending = s.get("pending")
+    if pending and pending.get("action") and (ans := answer_of(text)):
         s["pending"] = None
         tier = SKILLS[pending["skill"]].manifest.get("tier", "T1") if pending["skill"] in SKILLS else "T2"
         audit.record(f"{'confirmed' if ans == 'yes' else 'declined'}: {pending.get('gate', '')[:150]}", text, skill=pending["skill"],
@@ -540,6 +514,83 @@ def _handle(text, sid, conv, s, events, t0, channel):
         s["trace"](type="route", skill=pending["skill"], source="pending", confidence=1.0, why="You answered the confirmation.")
         return _finish(text, sid, conv, s, events, t0, channel, pending["skill"], out,
                        {"skill": pending["skill"], "source": "pending", "confidence": 1.0})
+
+    # 2. Instant reflex command: deterministic pattern match (no LLM, no GPU wake-up)
+    if not pending and (rf := reflex.answer(text)):
+        s["trace"](type="route", skill="reflex", source="reflex", confidence=1.0, why=f"an instant command ({rf[1]})")
+        audit.record(f"reflex: {rf[1]}", rf[0][:120], skill="reflex", initiator="instructed", session=sid)
+        out = {"reply": rf[0], "sources": []}
+        return _finish(text, sid, conv, s, events, t0, channel, "reflex", out, {"skill": "reflex", "source": "reflex", "confidence": 1.0})
+
+    # 2b. Global microphone control (Section 7): "turn off the mic", "microphone on", "stop listening"
+    if not pending:
+        from ishti import mic_control
+        if (mic_reply := mic_control.handle_command(text)) is not None:
+            out = {"reply": mic_reply, "sources": []}
+            s["trace"](type="route", skill="mic", source="rule", confidence=1.0,
+                       why=f"global microphone {'ON' if mic_control.is_enabled() else 'OFF'}")
+            audit.record(f"mic: global microphone {'ON' if mic_control.is_enabled() else 'OFF'}", text[:120],
+                         skill="mic", initiator="owner", session=sid)
+            try:
+                from interface.web_ui.server import sync_event_callback
+                sync_event_callback("mic_state", {**mic_control.status(), "reason": "voice command"})
+            except Exception:
+                pass
+            return _finish(text, sid, conv, s, events, t0, channel, "mic", out,
+                           {"skill": "mic", "source": "rule", "confidence": 1.0})
+
+    # 3. Language preference override: "talk to me in English", "switch to Urdu", "auto language"
+    cmd = LANGUAGE_CMD.search(text)
+    if cmd and not s.get("pending"):
+        f = get_facts()
+        picked = None
+        for g in ("lang", "lang2", "lang3", "lang4"):
+            val = cmd.group(g) if g in cmd.groupdict() else None
+            if val:
+                picked = LANGS.get(val.strip().lower())
+                if picked:
+                    break
+        from ishti import voice
+        if picked:  # keep the owner's choice; sync STT forced language & facts
+            f.set("owner", "prefers_language", picked)
+            code_map = {"English": "en", "Urdu": "ur", "Pashto": "ps", "Roman Urdu": "ur"}
+            voice.set_forced_language(code_map.get(picked))
+            out = {"reply": LANG_CONFIRM[picked], "sources": []}
+            s["trace"](type="route", skill="owner", source="rule", confidence=1.0,
+                       why=f"You set the active language to {picked}.")
+        else:  # "auto language" or "reply in my own language": drop the lock
+            f.forget("owner", "prefers_language")
+            voice.set_forced_language(None)
+            out = {"reply": "Got it - I'll answer in whichever language you use.", "sources": []}
+            s["trace"](type="route", skill="owner", source="rule", confidence=1.0,
+                       why="You cleared the answer-language lock (auto-detect enabled).")
+        dec = {"skill": "owner", "source": "rule", "confidence": 1.0}
+        return _finish(text, sid, conv, s, events, t0, channel, "owner", out, dec)
+
+    # Urdu (script or Roman): skills and routing work in English, so understand it in English and answer back
+    # in the owner's own form of Urdu. Gemma does both directions (Qwen 2.5 writes poor Urdu).
+    # Devanagari is spoken Urdu that whisper wrote in Hindi script: understood the same way, answered in Urdu script
+    # only the owner's three languages: Pashto (its own letters ټ ډ ړ ښ ږ ځ څ ګ ڼ ې ۍ), Urdu, Roman Urdu; else English
+    spoken = ("Pashto" if PASHTO.search(text) else "Urdu" if URDU.search(text) or DEVANAGARI.search(text)
+              else "Roman Urdu (Urdu written in English letters)" if roman_urdu(text) else None)
+    if spoken:  # understanding always happens in English; the answer language comes from the lock below
+        s["trace"](type="tool", name="understand", label=f"{spoken.split(' (')[0]} message: reading it in English", status="start")
+        text = translate(text, "English")
+        s["trace"](type="tool", name="understand", label=f"understood as: {text[:120]}", status="done", rewritten=text)
+    lang = LANG_TARGET.get(preferred_language() or "", None) or spoken
+
+    pending, fix = s.get("pending"), CORRECTION.match(text.strip())
+    wanted = fix and ALIASES.get(fix["skill"].lower(), fix["skill"].lower().replace(" ", "_"))
+    if fix and wanted in SKILLS and s.get("last_request"):
+        text = s["last_request"]
+        dec = {"skill": wanted, "confidence": 1.0, "source": "correction", "was": s.get("last_skill")}
+        from ishti import corrections  # D4: remembered - the same request goes there next time
+        corrections.record(text, s.get("last_skill"), wanted)
+        try:  # Part 3: a corrected exchange is the highest-value training signal
+            from ishti import ftlog
+            ftlog.mark_quality(text, "corrected")
+        except Exception as exc:
+            print(f"[dispatcher] ftlog correction mark skipped: {exc}")
     elif pending and not pending.get("action") and (pending.get("sticky")
                                                     or not (FOLLOW_UP.search(text) and len(text.split()) > 3)):
         # A skill asked the owner for something ("who should I send it to?"). Its pending slot is sticky while
@@ -652,8 +703,14 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
             conv.add_message(sid, "ishti", kept, sources=out.get("sources"), metadata={"events": events[-150:]})
     if not secret and name not in ("memory",) and is_safe_for_history(reply):  # exact facts already live in SQLite
         threading.Thread(target=_remember, args=(text, reply, name), daemon=True).start()
+        threading.Thread(target=_ftlog, args=(text, reply, name, dec, channel), daemon=True).start()  # Part 3 collection
     if not hidden:
         threading.Thread(target=_learn, args=(text,), daemon=True).start()  # the owner's lasting facts and preferences
+    try:
+        from ishti.monitor import inspect_turn
+        threading.Thread(target=inspect_turn, args=(text, reply, name, dec, dict(s), channel), daemon=True).start()
+    except Exception as exc:
+        print(f"[dispatcher] monitoring turn inspection skipped: {exc}")
     return {**{k: v for k, v in out.items() if k not in ("reply", "persisted")},
             "request": text, "final_answer": reply, "mode": out.get("mode") or (name or "none").upper(), "skill": name,
             "sources": out.get("sources", []), "session_id": sid, "channel": channel, "route": dec,

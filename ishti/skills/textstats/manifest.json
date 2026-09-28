@@ -1,0 +1,22 @@
+{
+  "name": "textstats",
+  "version": "1.0.0",
+  "description": "Text analysis without any model: word/char/sentence counts, reading time, sentiment (positive/negative/neutral lexicon), top keywords, readability (Flesch), named-entity-lite (capitals, emails, numbers, dates). Deterministic and instant.",
+  "route": "analyze this text, sentiment of, keywords from, readability of, how many words in, word count, text stats",
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 8,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {
+    "write": ["data"],
+    "net": [],
+    "apps": false
+  },
+  "category": "Writing & Text"
+}

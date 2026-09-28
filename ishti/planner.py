@@ -99,10 +99,12 @@ def run(steps, session, run_step):
     """run_step(text, decision) -> skill output. Steps that don't use {prev} are independent and run in
     parallel; a chain runs in order and stops if a step waits for the owner (a pending confirmation), so
     nothing after an unconfirmed action runs."""
+    from ishti.talk import set_subagent_context
     dec = lambda i, step: {"skill": step["skill"], "confidence": 1.0, "source": "plan", "step": i}
 
     def safe(text, d):
-        """A failing step must not take the others down (in parallel the first exception lost every result)."""
+        """A failing step must not take the others down. Sub-agents run silently (Single-Voice Orchestration)."""
+        set_subagent_context(True)
         try:
             return run_step(text, d)
         except Exception as exc:

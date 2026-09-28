@@ -58,6 +58,23 @@ def signal_server_stop():
         pass
 
 
+def _self_and_ancestors() -> set[int]:
+    """PIDs that must never be killed: this process and everything it was launched from.
+
+    Without this, running shutdown.py from inside ISHTI (the inline fallback in launcher.ctrl_handler, or a
+    test) would match its own parent - the command line contains the ISHTI path - and kill the caller."""
+    pids, me = set(), psutil.Process()
+    while True:
+        pids.add(me.pid)
+        try:
+            me = me.parent()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            break
+        if me is None:
+            break
+    return pids
+
+
 def kill_process_tree(proc: psutil.Process):
     """Recursively kill a process and all its children."""
     try:
@@ -90,10 +107,10 @@ def terminate_all_ishti_processes():
             continue
 
     # 2. Kill python processes matching ishti, watchdog, startup.py
-    current_pid = os.getpid()
+    keep = _self_and_ancestors()
     for p in psutil.process_iter(["pid", "name", "cmdline"]):
         try:
-            if p.pid == current_pid:
+            if p.pid in keep:
                 continue
             cmd = " ".join(p.info.get("cmdline") or [])
             name = (p.info.get("name") or "").lower()
@@ -124,15 +141,15 @@ def terminate_all_ishti_processes():
 
 
 def verify_clean_state() -> bool:
-    """Verifies that no lingering processes or open ports remain."""
+    """Verifies that no lingering processes or open ports remain (skipping this run's own process chain)."""
     time.sleep(1.0)
     lingering = []
     ports = [8888, 8899]
-    current_pid = os.getpid()
+    keep = _self_and_ancestors()
 
     for p in psutil.process_iter(["pid", "name", "cmdline"]):
         try:
-            if p.pid == current_pid:
+            if p.pid in keep:
                 continue
             cmd = " ".join(p.info.get("cmdline") or [])
             name = (p.info.get("name") or "").lower()
@@ -160,6 +177,11 @@ def shutdown():
     print("========================================================================")
     print("  STOPPING ISHTI ASSISTANT — FULL CLEAN SHUTDOWN")
     print("========================================================================")
+    try:  # Section 7: mic must stay closed across restarts; the persisted state is what re-opens it
+        from ishti import mic_control
+        mic_control.mic_off("shutdown", by="shutdown")
+    except Exception as exc:
+        print(f"  [mic] could not force mic OFF: {exc}")
     print("  [1/4] Releasing Ollama GPU VRAM (RTX 5070 Ti)...")
     release_gpu_vram()
 
