@@ -176,21 +176,21 @@ def _learn_turn(text, reply, name, dec, sid, channel):
         # 4. Check for temporary instructions
         policy.temporary_instruction(text)
 
-        # 5. Close the reinforcement loop. `guidance_for()` is a pure function of the request, so
-        #    the lessons it returns here are the same ones `build_context()` put in front of the
-        #    model - credit those on a good turn, blame them on a bad one. Without this the
-        #    positive/negative counters stay at zero forever and nothing is ever demoted.
-        #    The routing domain is passed through: a lesson scoped to "browser" is irrelevant to
-        #    an unrelated request, but must match as soon as the router says this IS a browser turn.
+        # 5. Close the reinforcement loop - but only for turns where the model actually read the
+        #    guidance. `chat.build_context()` is currently the only place `context_for()` reaches
+        #    a prompt; crediting/blaming a lesson for a browser turn where it was never shown
+        #    would demote a rule because of a failure it had no part in. The set is a registry, not
+        #    a hard-coded rule: as more skills inject lessons, they get added here.
         domain = str((dec or {}).get("domain") or "") if isinstance(dec, dict) else ""
         applied = [l["lesson_id"] for l in lessons.guidance_for(text, domain=domain, limit=6)]
-        if reward and applied:
+        if applied and (name or "") in lessons.CONTEXT_INJECTING_SKILLS and reward:
             lessons.apply_turn_outcome(iid, reward, applied,
                                        reason="turn outcome attributed to the guidance in context")
 
         # 6. Reflection (Reflexion): a number cannot tell the next turn what went wrong, so write
         #    the sentence too. Only when there is a signal - a store full of "nothing happened"
-        #    reflections is noise that drowns out the ones that mean something.
+        #    reflections is noise that drowns out the ones that mean something. Reflections are
+        #    kept for *every* skill: they are a record of the turn, recalled later by words.
         if reward or fb:
             reflect.for_turn({"id": iid, "request": text, "skill": name or ""}, reward, fb)
 

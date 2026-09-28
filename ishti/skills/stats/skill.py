@@ -12,7 +12,7 @@ from ishti.skills import trace
 
 I = re.I
 
-PATH = r"(?P<path>[A-Za-z]:\\[^\"']+\.(?:csv|tsv)|[\w./\\ -]+\.(?:csv|tsv))"
+PATH = r"(?P<path>[A-Za-z]:[\\/][^\"']+\.(?:csv|tsv)|[\w./\\ -]+\.(?:csv|tsv))"  # both / and \\ — the owner types D:/data/sales.csv
 SUMMARY = re.compile(r"^\s*(?:stats|summarize|summarise|describe)\s+(?:the\s+)?(?:csv\s+)?" + PATH + r"\s*$", I)
 CORR = re.compile(r"^\s*(?:correlations?|correlate)\s+(?:in|for|of)\s+" + PATH + r"\s*$", I)
 ANOM = re.compile(r"^\s*(?:find\s+)?anomal(?:ies|y)\s+(?:in|for)\s+" + PATH + r"\s*$", I)
@@ -165,6 +165,11 @@ if __name__ == "__main__":
     assert match("correlations in " + csv)
     assert match("find anomalies in " + csv)
     assert match("cluster " + csv + " into 3 groups")
+    assert match("stats D:/data/sales.csv")          # forward slashes (the natural typing) — laya must not steal this to files
+    assert match("correlations in D:/data/sales.csv")
+    assert match("find anomalies in D:/data/sales.csv")
+    assert match("cluster D:/data/sales.csv into 3 groups")
+    assert not match("stats D:/notes.txt")            # not a csv/tsv
     assert not match("analyze this text: hello world")   # textstats
     r = run("stats " + csv, {"trace": None})
     assert "31 rows" in r["reply"] and "units" in r["reply"], r

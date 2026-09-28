@@ -17,6 +17,7 @@ interface/app/node_modules/
 
 # logs & temporary screenshots
 *.log
+*.out
 screenshot_*.png
 scratch/
 

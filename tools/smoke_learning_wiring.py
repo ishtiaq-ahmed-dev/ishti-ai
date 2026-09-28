@@ -50,11 +50,17 @@ def main() -> int:
     print(f"[3] reflection payload OK: {payload['counts']}")
     dump("after turn 2")
 
-    # 4. The reflection is retrievable by words, so it can actually steer the next turn.
+    # 4. Turn 2's correction must have superseded the older Chrome rule (last-writer-wins), and
+    #    the reflection must stay retrievable by words so it can steer a later turn.
+    rows = {str(r["statement"]): str(r["status"]) for r in store.rows("SELECT statement, status FROM lessons")}
+    chrome = next((s for s in rows if "chrome" in s.lower()), None)
+    assert chrome and rows[chrome] == "superseded", (chrome, rows)
+    assert any(r["status"] == "active" for r in store.rows(
+        "SELECT status FROM lessons WHERE source='explicit_user_correction'")), "correction not active"
     got = lessons.guidance_for("open the work site", limit=6)
-    print("    guidance:", [l["statement"][:60] for l in got])
-    assert any("edge" in l["statement"].lower() or "worked" in l["statement"].lower() for l in got), [l["statement"] for l in got]
-    print(f"[4] guidance_for returns {len(got)} lesson(s) for the request")
+    print("    guidance:", [l["statement"][:56] for l in got])
+    assert any("worked" in l["statement"].lower() for l in got), [l["statement"] for l in got]
+    print(f"[4] supersede + reflection recall OK ({len(got)} lesson(s) in context)")
 
     # 5. A low-confidence lesson does not reach the prompt; a confirmed one does.
     weak = lessons.add("preference", "Use dark mode for notes", scope="domain", context="notes",
