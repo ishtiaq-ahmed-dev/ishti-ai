@@ -157,7 +157,31 @@ type LearningSettings = {
 
 type AskSlot = { question?: string | null; candidate_id?: number | null };
 type Notice = { kind: "ok" | "error"; text: string };
-type TabKey = "overview" | "lessons" | "candidates" | "feedback" | "mistakes" | "people" | "workflows" | "training" | "settings";
+type TabKey = "overview" | "lessons" | "reflections" | "candidates" | "feedback" | "mistakes" | "people" | "workflows" | "training" | "settings";
+
+// Reflections (Reflexion 2303.11366) and mined insights (ExpeL 2308.10144). Both are stored as
+// lessons at the weak band, so `bucket`/`confidence` behave like any other row in this file.
+type Reflection = {
+  lesson_id: string;
+  statement: string;
+  context: string;
+  note?: string;
+  confidence: number;
+  bucket?: string;
+  status?: string;
+  updated?: number;
+  kind_of?: "reflection" | "insight";
+};
+type MinedInsight = {
+  statement: string;
+  context?: string;
+  provenance?: { interaction_id?: string; request?: string; skill?: string; ts?: number };
+};
+type ReflectionsPayload = {
+  reflections?: Reflection[];
+  mined?: MinedInsight[];
+  counts?: { reflections?: number; insights?: number; pending?: number };
+};
 
 const THRESHOLD_KEYS = ["weak", "possible", "probable", "strong"] as const;
 const EVIDENCE_KEYS = ["similar_request", "widen_scope", "candidate_rule", "workflow"] as const;
@@ -300,6 +324,7 @@ const inputCls =
 const TABS: { key: TabKey; label: string; icon: LucideIcon }[] = [
   { key: "overview", label: "Overview", icon: Sparkles },
   { key: "lessons", label: "Lessons", icon: Brain },
+  { key: "reflections", label: "Reflections", icon: RefreshCw },
   { key: "candidates", label: "Candidates", icon: ThumbsUp },
   { key: "feedback", label: "Feedback", icon: ThumbsDown },
   { key: "mistakes", label: "Mistakes", icon: X },
@@ -348,6 +373,7 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
   const [settings, setSettings] = useState<LearningSettings | null>(null);
   const [activity, setActivity] = useState<Interaction[]>([]);
   const [ask, setAsk] = useState<AskSlot | null>(null);
+  const [refl, setRefl] = useState<{ list: Reflection[]; mined: MinedInsight[] }>({ list: [], mined: [] });
   const [draft, setDraft] = useState<SettingsDraft | null>(null);
   const [lessonStatus, setLessonStatus] = useState("");
   const [lessonKind, setLessonKind] = useState("");
@@ -360,7 +386,7 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
 
   const load = useCallback(async (spinner = false) => {
     if (spinner) setLoading(true);
-    const [ov, ls, cd, fb, mk, pp, wf, ds, st, ac, aq] = await Promise.all([
+    const [ov, ls, cd, fb, mk, pp, wf, ds, st, ac, aq, rf] = await Promise.all([
       safeGet<Overview>("/api/learning/overview"),
       safeGet<{ lessons?: Lesson[] }>("/api/learning/lessons"),
       safeGet<{ candidates?: Candidate[] }>("/api/learning/candidates"),
@@ -372,6 +398,7 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
       safeGet<LearningSettings>("/api/learning/settings"),
       safeGet<{ interactions?: Interaction[] }>("/api/learning/interactions"),
       safeGet<AskSlot>("/api/learning/ask"),
+      safeGet<ReflectionsPayload>("/api/learning/reflections"),
     ]);
     if (ov) setOverview(ov);
     if (ls) setLessons(ls.lessons ?? []);
@@ -390,6 +417,7 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
     }
     if (ac) setActivity(ac.interactions ?? []);
     setAsk(aq);
+    if (rf) setRefl({ list: rf.reflections ?? [], mined: rf.mined ?? [] });
     setLoaded(true);
     setLoading(false);
   }, []);
@@ -880,6 +908,94 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
                   </div>
                 )}
               </Panel>
+            )}
+            {tab === "reflections" && (
+              <>
+                <Panel
+                  title="Reflections"
+                  hint="One sentence per turn that carried a signal - what went wrong, and the correction (Reflexion)."
+                  action={<span className="text-[11px] text-muted-foreground">{refl.list.filter((r) => (r.kind_of ?? "reflection") === "reflection").length} written</span>}
+                >
+                  {refl.list.filter((r) => (r.kind_of ?? "reflection") === "reflection").length === 0 ? (
+                    <Empty>No reflections yet - they appear once a turn is corrected or gets a clear thumbs up/down.</Empty>
+                  ) : (
+                    <div className="grid gap-2">
+                      {refl.list
+                        .filter((r) => (r.kind_of ?? "reflection") === "reflection")
+                        .map((r) => (
+                          <Card key={r.lesson_id} className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-xs text-foreground">{r.statement}</p>
+                              <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+                                <span>{fmtTs(r.updated)}</span>
+                                <span>{str(r.context, "general")}</span>
+                                <span>{str(r.status, "active")}</span>
+                              </div>
+                            </div>
+                            <ConfBar confidence={num(r.confidence)} bucket={r.bucket} />
+                          </Card>
+                        ))}
+                    </div>
+                  )}
+                </Panel>
+                <Panel
+                  title="Mined insights"
+                  hint="Rules pulled out of past interactions (ExpeL) - kept weak until evidence or you confirm them."
+                  action={
+                    <button
+                      type="button"
+                      className={btnPrimary}
+                      disabled={busy === "insights:mine"}
+                      onClick={() =>
+                        void run(
+                          "insights:mine",
+                          async () => {
+                            const res = await postJSON<{ promoted?: Reflection[] }>("/api/learning/reflections/mine", {});
+                            await load(false);
+                            return res;
+                          },
+                          "Insights promoted to lessons.",
+                        )
+                      }
+                    >
+                      <RefreshCw className={cn("h-3 w-3", busy === "insights:mine" && "animate-spin")} />
+                      Mine now
+                    </button>
+                  }
+                >
+                  {refl.list.filter((r) => r.kind_of === "insight").length === 0 && refl.mined.length === 0 ? (
+                    <Empty>Nothing to promote yet - ISHTI needs a few runs that read as a rule, not a log line.</Empty>
+                  ) : (
+                    <div className="grid gap-2">
+                      {refl.list
+                        .filter((r) => r.kind_of === "insight")
+                        .map((r) => (
+                          <Card key={r.lesson_id} className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-xs text-foreground">{r.statement}</p>
+                              <p className="mt-1 truncate text-[10px] text-muted-foreground">{str(r.note, "mined insight")}</p>
+                            </div>
+                            <ConfBar confidence={num(r.confidence)} bucket={r.bucket} />
+                          </Card>
+                        ))}
+                      {refl.mined.map((m, i) => (
+                        <Card key={`${m.provenance?.interaction_id ?? "pending"}-${i}`} className="border-dashed">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-xs text-muted-foreground">{m.statement}</p>
+                              <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+                                <span className="text-amber-500">pending · not promoted</span>
+                                {m.context && <span>{m.context}</span>}
+                                {m.provenance?.request && <span className="truncate">from: {m.provenance.request}</span>}
+                              </div>
+                            </div>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </Panel>
+              </>
             )}
             {tab === "candidates" && (
               <Panel

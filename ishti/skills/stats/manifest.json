@@ -1,0 +1,22 @@
+{
+  "name": "stats",
+  "version": "1.0.0",
+  "description": "CSV data analysis with exact numbers from pandas: column summary (mean/std/min/max, missing values), Pearson correlations, z-score anomalies, k-means clustering. No LLM arithmetic — every figure is computed.",
+  "route": "stats on file.csv, summarize the csv, correlations in, anomalies in, cluster into N groups",
+  "needs": {
+    "python": ["pandas"],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {
+    "write": ["data"],
+    "net": ["localhost"],
+    "apps": false
+  },
+  "category": "Data"
+}

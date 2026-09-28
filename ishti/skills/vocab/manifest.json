@@ -1,0 +1,22 @@
+{
+  "name": "vocab",
+  "version": "1.0.0",
+  "description": "Vocabulary builder: add words with meanings you supply, look them up later, quiz yourself on meanings, review your weakest words, see accuracy stats. All local SQLite; ISHTI never invents a meaning.",
+  "route": "add word, what does X mean (from my list), define, meaning of, quiz my vocab, vocab quiz, review my weakest words, my vocab, vocab stats",
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 12,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {
+    "write": ["data"],
+    "net": [],
+    "apps": false
+  },
+  "category": "Learning"
+}

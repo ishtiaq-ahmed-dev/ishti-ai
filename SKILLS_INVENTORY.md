@@ -148,7 +148,7 @@ self-check + routing labels + check_skills, same as every existing skill).
 13. Sports statistics — PARTIAL (batch B: `sports` free APIs)
 14. Movie/TV info — PARTIAL (batch B: `movies` OMDb if key, else Wikipedia)
 15. Book summaries — PARTIAL (batch B: `books` search+summary)
-16. Recipe search & nutrition — PARTIAL (batch B: `recipe`)
+16. Recipe search & nutrition — BUILT (batch C `recipe`: from-ingredients/recipe/grocery list)
 17. Travel destination info — BUILT (travel)
 18. Flight & hotel search — PARTIAL (scrape-blocked; grounded itineraries BUILT, NEEDS 12)
 19. Event calendar lookup — PARTIAL (batch C)
@@ -249,14 +249,14 @@ Plus A/B framework — PARTIAL (batch D)
 
 ## Domain 8 — Data Analysis & Visualization (40)
 1-5 (cleaning, imputation, outliers, types, feature ideas) — PARTIAL batch B (`dataprep` pandas)
-6. Statistical summary — PARTIAL batch B (`stats`)
-7. Correlation — PARTIAL batch B (`stats`)
+6. Statistical summary — BUILT (batch C `stats` pandas describe: mean/std/min/max, missing values)
+7. Correlation — BUILT (batch C `stats` Pearson pairs)
 8. Distribution analysis — PARTIAL batch B (`stats`)
 9. Time series decomposition — PARTIAL batch B (`forecast`)
 10. Trend analysis — BUILT (markets)
 11. Seasonality — PARTIAL batch B (`forecast`)
-12. Anomaly detection — PARTIAL batch B (`stats` z-score)
-13. Clustering — PARTIAL batch B (`stats` k-means)
+12. Anomaly detection — BUILT (batch C `stats` z-score > 3 with row numbers)
+13. Clustering — BUILT (batch C `stats` k-means, standardised features)
 14. Dimensionality reduction — PARTIAL batch C
 15-19. Classification/regression/eval/CV/tuning — PARTIAL batch C (sklearn present?)
 20. Feature importance — PARTIAL batch C
@@ -265,7 +265,7 @@ Plus A/B framework — PARTIAL (batch D)
 23. Funnel analysis — PARTIAL batch C
 24. Retention — PARTIAL batch C
 25. Churn — PARTIAL batch C
-26. Segmentation — PARTIAL batch B (`stats`)
+26. Segmentation — BUILT (batch C `stats` k-means group sizes)
 27. Market basket — PARTIAL batch C
 28. Text sentiment data — batch B (`sentiment`)
 29. Topic modeling — batch B (`textstats`)
@@ -422,13 +422,13 @@ maintenance reminders, routine optimization.
 7. Workout plans — BUILT (planner)
 8. Nutrition tracking — PARTIAL batch B (`nutrition` USDA API)
 9. Meal planning — BUILT (planner)
-10. Recipe suggestions — batch B (`recipe`)
+10. Recipe suggestions — BUILT (batch C `recipe`)
 11. Hydration reminders — BUILT (reminders; batch B `hydration` auto-nudge)
-12-13. Sleep tracking/recommendations — PARTIAL batch C (manual log first)
+12-13. Sleep tracking/recommendations — BUILT (batch C `sleeplog`: manual log, weekly/monthly averages, sleep debt; no auto-tracking hardware on this PC)
 14. Meditation guidance — PARTIAL batch B (`breathe` timer + script)
 15. Stress monitoring — PARTIAL batch C
-16. Mood tracking — PARTIAL batch B (`moodlog`)
-17-18. Mental-health check-ins — PARTIAL batch B (`moodlog` trend + supportive text; never diagnosis)
+16. Mood tracking — BUILT (batch C `moodlog` 1–5 + note + trend)
+17-18. Mental-health check-ins — BUILT (batch C `moodlog`: trend + supportive text + distress safety gate; never a diagnosis)
 19. Habit coaching — BUILT (habits streaks)
 20. Posture reminders — BUILT-CORE possible (reminders every X min)
 21. Eye strain 20-20-20 — BUILT (reminders)
@@ -452,12 +452,12 @@ maintenance reminders, routine optimization.
 2. Budget creation & tracking — BUILT (budget limits)
 3. Spending alerts — BUILT (80% warning)
 4. Bill reminders — BUILT (reminders)
-5. Subscription tracking — batch B (`subscriptions`)
+5. Subscription tracking — BUILT (batch C `subscriptions`: exact totals + renewals)
 6. Savings goals — PARTIAL batch B (`goaltrack`)
 7. Portfolio monitoring — BUILT (markets)
 8. Stock alerts — BUILT (shopping-style price watch on markets data)
 9. Crypto tracking — BUILT (markets)
-10. Net worth — PARTIAL batch B (`networth` from budget+assets)
+10. Net worth — BUILT (batch C `networth`: exact assets − liabilities)
 11. Cash flow — BUILT (budget summary)
 12. Expense reports — BUILT (budget; extract)
 13. Receipt matching — BUILT (OCR + budget note)
@@ -497,7 +497,7 @@ maintenance reminders, routine optimization.
 15. Literature review — BUILT (deep_research)
 16. Language practice — PARTIAL batch B (`langpractice` conversation drills)
 17. Pronunciation feedback — PARTIAL batch C
-18. Vocabulary building — PARTIAL batch B (`vocab`)
+18. Vocabulary building — BUILT (batch C `vocab`: add/lookup/quiz/review/stats)
 19. Grammar explanation — BUILT (writing)
 20. Essay feedback — BUILT (writing; chat)
 21. Plagiarism check — batch B (`originality`)
@@ -555,7 +555,7 @@ maintenance reminders, routine optimization.
 9. Gift recommendations — BUILT (relationships prefs + shopping)
 10. Shopping list — PARTIAL batch B (`shoppinglist`)
 11. Grocery optimization — PARTIAL batch C
-12. Meal→grocery — PARTIAL batch B (`recipe` output)
+12. Meal→grocery — BUILT (batch C `recipe` grocery list)
 13. Pantry inventory — PARTIAL batch C (`pantry`)
 14. Expiry reminders — PARTIAL batch C (`pantry`)
 15. Reorder reminders — PARTIAL batch C
@@ -671,6 +671,34 @@ narrow phrasings — this is why re-verification matters):
 2. `checklist` — "reset the X checklist" **deleted the whole list**, so a later "my X checklist"
    found nothing. Reset now un-ticks all items and keeps them (and refuses politely when the
    list does not exist); self-check extended to prove items survive a reset.
+
+## Batch C — built 2026-09-28 (this pass)
+
+Seven skills, same gates as everything else (self-check + manifest + routing labels + check_skills
++ live-fire smoke). Routing labels added: 157 → 183 labelled requests.
+
+| Skill | Covers |
+|---|---|
+| `vocab` | add words with the owner's meanings, lookups gated on saved words only (unsaved words fall through to the dictionary), quiz, weakest-word review, accuracy stats |
+| `recipe` | dishes from the ingredients you have, full recipe for a dish, grocery list (local planner model) |
+| `subscriptions` | track recurring costs (weekly/monthly/yearly), exact monthly + yearly totals, renewal days, cancel |
+| `networth` | assets & liabilities ledger, exact net worth (computed, never estimated), itemised list |
+| `sleeplog` | log hours (h/m), weekly/monthly averages vs an 8 h goal, 7-day sleep debt — informational only |
+| `moodlog` | rate the day 1–5 + note, weekly view, week-over-week trend, and a safety gate: distress language always routes to help info (priority 10, above every skill that matches "kill") |
+| `stats` | pandas CSV summary, Pearson correlations, z-score anomalies, k-means clusters — every number computed in code |
+
+Routing-quality fixes the gates caught during batch C:
+- **habits steal closed**: "track asset bank account 250000" was claimed by habits' generic
+  `track <anything>` rule; habit names are now letters-only, so amounts can never match.
+- **desktop process_kill guard**: "kill myself" / "end it all" never reach a process-kill path —
+  reflexive objects are excluded and moodlog's safety gate (priority 10) owns distress language.
+- **vocab beats the dictionary only for saved words** (priority 12 < utilities' 13): the owner's
+  own meaning wins; anything else still goes to the real dictionary.
+- moodlog's manifest had been omitted in the first draft — the loader silently skipped the folder;
+  the smoke's roster check caught it (69 skills loaded, none broken).
+
+Verified: check_skills **69 skills / 155 assertions / 183 labelled requests OK**, routing labels
+clean, verify_all **107/107**, smoke **55/55 live cases**.
 
 ## Running totals (this inventory)
 - BUILT / BUILT-CORE: 300+

@@ -1,0 +1,22 @@
+{
+  "name": "sleeplog",
+  "version": "1.0.0",
+  "description": "Manual sleep log: log last night's hours (h/m), see the weekly or monthly average against an 8-hour goal, and sleep debt over the last 7 days. Exact arithmetic, informational only — never a diagnosis.",
+  "route": "log sleep, slept X hours, my sleep this week, sleep average, monthly sleep, sleep debt",
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {
+    "write": ["data"],
+    "net": [],
+    "apps": false
+  },
+  "category": "Health"
+}

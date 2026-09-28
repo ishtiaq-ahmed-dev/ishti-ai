@@ -160,21 +160,44 @@ def _learn(text):
 def _learn_turn(text, reply, name, dec, sid, channel):
     """Background learning hook: turn observation, feedback harvesting, reward attribution."""
     try:
-        from ishti.learning import observe, feedback, policy
+        from ishti.learning import observe, feedback, policy, reflect, lessons
         # 1. Check for feedback/corrections on this turn
         fb = feedback.detect(text, last_skill=name)
         reward = feedback.reward_of("ok", fb=fb)
-        
+
         # 2. Log interaction
         iid = observe.turn(text=text, reply=reply, skill=name or "", sid=sid,
                            channel=channel, dec=dec, status="ok", reward=reward)
-        
+
         # 3. If explicit feedback, apply it
         if fb:
             feedback.apply(fb, interaction={"id": iid, "skill": name, "request": text})
-            
+
         # 4. Check for temporary instructions
         policy.temporary_instruction(text)
+
+        # 5. Close the reinforcement loop. `guidance_for()` is a pure function of the request, so
+        #    the lessons it returns here are the same ones `build_context()` put in front of the
+        #    model - credit those on a good turn, blame them on a bad one. Without this the
+        #    positive/negative counters stay at zero forever and nothing is ever demoted.
+        #    The routing domain is passed through: a lesson scoped to "browser" is irrelevant to
+        #    an unrelated request, but must match as soon as the router says this IS a browser turn.
+        domain = str((dec or {}).get("domain") or "") if isinstance(dec, dict) else ""
+        applied = [l["lesson_id"] for l in lessons.guidance_for(text, domain=domain, limit=6)]
+        if reward and applied:
+            lessons.apply_turn_outcome(iid, reward, applied,
+                                       reason="turn outcome attributed to the guidance in context")
+
+        # 6. Reflection (Reflexion): a number cannot tell the next turn what went wrong, so write
+        #    the sentence too. Only when there is a signal - a store full of "nothing happened"
+        #    reflections is noise that drowns out the ones that mean something.
+        if reward or fb:
+            reflect.for_turn({"id": iid, "request": text, "skill": name or ""}, reward, fb)
+
+        # 7. Daily maintenance (AdMem): fade un-confirmed lessons that have gone stale.
+        #    `maybe_decay()` throttles itself to once per decay_interval_s, so this is safe to
+        #    call on every turn without turning each reply into a table scan.
+        lessons.maybe_decay()
     except Exception as exc:
         print(f"[dispatcher] learning turn hook skipped: {exc}")
 

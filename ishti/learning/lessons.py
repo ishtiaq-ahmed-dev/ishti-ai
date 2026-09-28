@@ -184,6 +184,104 @@ def _event(lesson_id, delta, reason, interaction_id="", evidence=None):
               interaction_id=interaction_id or "", evidence=store.dump(evidence or {}))
 
 
+def attribute(lesson_ids, reward, interaction_id="", reason=""):
+    """Close the reinforcement loop: credit/blame the lessons that were actually applied.
+
+    A turn's outcome is evidence *for* the guidance that produced it (Reflexion: verbal
+    reinforcement; AdMem: reward-based evaluation of the long-term store). Without this a
+    lesson's positive/negative columns stay at 0 forever and the system only ever learns
+    from explicit corrections, never from whether its own advice worked.
+
+    The step is deliberately small and symmetric - a lesson is nudged up when the turn it
+    steered went well and down when it did not, and a lesson that keeps steering failures
+    loses confidence until it drops out of `guidance_for()`.
+    """
+    if not lesson_ids or reward is None:
+        return []
+    try:
+        gain = max(-0.15, min(0.15, float(reward) * 0.15))
+    except (TypeError, ValueError):
+        return []
+    touched = []
+    for lesson_id in {l for l in lesson_ids if l}:
+        got = store.row("SELECT * FROM lessons WHERE lesson_id=? AND status='active'", (lesson_id,))
+        if not got:
+            continue
+        # the owner confirmed it explicitly: their statement outranks our own outcome signal
+        if int(got.get("confirmed") or 0):
+            continue
+        adjust(lesson_id, gain, reason or f"turn outcome reward {gain:+.2f}", interaction_id,
+               positive=1 if gain > 0 else 0, negative=1 if gain < 0 else 0)
+        touched.append(lesson_id)
+    return touched
+
+
+def decay(days=None, floor=0.05):
+    """Let un-confirmed, un-recently-evidenced lessons fade (AdMem: reward-based pruning).
+
+    Confidence that never goes down is not confidence, it is a rumour. A weak observation
+    from six months ago that has not been re-confirmed since should stop steering replies.
+    Owner-confirmed and explicit lessons never decay - the owner said so, and only the owner
+    may take it back (`forget`/`reject`).
+
+    The watermark is `decayed`, not `updated`. `updated` means "the owner or the evidence touched
+    this last" and the dashboard and `add()`'s dedup both read it; if decay overwrote it, a fade
+    would masquerade as fresh evidence - decay would reset its own clock and a lesson could sit at
+    the floor forever looking brand new.
+    """
+    cfg = store.cfg()
+    horizon = float(days if days is not None else cfg.get("decay_days", 30)) * 86400
+    if horizon <= 0:
+        return 0
+    now = store.now()
+    stale = store.rows(
+        "SELECT * FROM lessons WHERE status='active' AND confirmed=0 "
+        "AND source NOT IN ('explicit_user_correction','user_confirmation','owner_statement',"
+        "'temporary_instruction','dashboard') AND COALESCE(decayed, updated) < ?", (now - horizon,))
+    faded = 0
+    for row in stale:
+        # age is time since the last fade (or since last evidence if never faded): a lesson can be
+        # "not stale" by evidence yet still be past the horizon on a later run.
+        watermark = float(row["decayed"] or row["updated"] or now)
+        age = (now - watermark) / 86400.0
+        drop = min(0.25, 0.05 * (age / max(1.0, float(days or cfg.get("decay_days", 30)))))
+        new = max(float(floor), float(row["confidence"] or 0) - drop)
+        if new >= float(row["confidence"] or 0):
+            continue
+        store.write("UPDATE lessons SET confidence=?, decayed=? WHERE lesson_id=?", (new, now, row["lesson_id"]))
+        _event(row["lesson_id"], -drop, f"decayed: no new evidence in {age:.0f} days")
+        faded += 1
+    return faded
+
+
+def maybe_decay(force=False):
+    """Run `decay()` at most once per `decay_interval_s`, so a busy dispatcher does not scan
+    the lesson table on every turn. Returns the number of lessons faded (0 when not due)."""
+    cfg = store.cfg()
+    if not force:
+        last = float(store.setting("last_decay", 0) or 0)
+        if store.now() - last < float(cfg.get("decay_interval_s", 86400)):
+            return 0
+    try:
+        faded = decay()
+    except Exception:
+        return 0
+    store.set_setting("last_decay", store.now())
+    return faded
+
+
+def apply_turn_outcome(interaction_id, reward, applied_lesson_ids=None, reason=""):
+    """Record the outcome of a finished turn against the guidance that shaped it."""
+    try:
+        stored = store.row("SELECT considered FROM interactions WHERE id=?", (interaction_id,)) or {}
+        ids = list(applied_lesson_ids or store.js(stored.get("considered"), []) or [])
+        ids = [i for i in ids if isinstance(i, str)]
+        if not ids:
+            return []
+        return attribute(ids, reward, interaction_id, reason)
+    except Exception:
+        return []
+
 
 def confirm(lesson_id, interaction_id=""):
     """The owner confirmed it (HITL, spec 23): pin it high and mark it explicit."""
@@ -206,22 +304,58 @@ def reject(lesson_id, reason="the owner rejected it", interaction_id=""):
     return _out(store.row("SELECT * FROM lessons WHERE lesson_id=?", (lesson_id,)))
 
 
+def _fact_writers(lesson_id=""):
+    """(entity, attr) -> the lessons that wrote it, newest first (a fact is last-writer-wins).
+
+    Only *active* lessons are counted. A retired or deleted lesson no longer stands behind the
+    value it once wrote, so it cannot be the reason to keep that value when another lesson is
+    forgotten - without that filter, superseded lessons would make `forget()` a silent no-op.
+    """
+    sql = ("SELECT ev.lesson_id AS lesson_id, ev.evidence AS evidence, ev.ts AS ts "
+           "FROM lesson_events ev JOIN lessons l ON l.lesson_id = ev.lesson_id "
+           "WHERE ev.ts IS NOT NULL AND l.status='active'")
+    args: tuple = ()
+    if lesson_id:
+        sql += " AND ev.lesson_id<>?"
+        args = (lesson_id,)
+    out = {}
+    for ev in store.rows(sql + " ORDER BY ev.ts DESC", args):
+        payload = store.js(ev["evidence"], {}) or {}
+        fact = payload.get("fact")
+        if isinstance(fact, list) and len(fact) >= 2:
+            out.setdefault((str(fact[0]), str(fact[1])), []).append((ev["ts"], ev["lesson_id"]))
+    return out
+
+
 def forget(lesson_id, interaction_id=""):
-    """Stop using it and undo whatever it wrote into the exact-fact memory (spec 24/29)."""
-    undone = []
+    """Stop using it and undo whatever it wrote into the exact-fact memory (spec 24/29).
+
+    A fact is last-writer-wins, so this only deletes a fact *this* lesson still owns: if a
+    later lesson has since written the same (entity, attr), that newer lesson is the source
+    of truth and forgetting the older one must not silently delete the current value
+    (ChronoMem's post-exposure problem - a correction is often followed by more history).
+    """
+    undone, kept = [], []
+    writers = _fact_writers(lesson_id)
     for ev in store.rows("SELECT evidence FROM lesson_events WHERE lesson_id=?", (lesson_id,)):
         fact = store.js(ev["evidence"], {}) or {}
-        if isinstance(fact.get("fact"), list) and len(fact["fact"]) >= 2:
-            try:
-                from ishti.facts import get_facts
-                if get_facts().forget(fact["fact"][0], fact["fact"][1]):
-                    undone.append(fact["fact"][:2])
-            except Exception:
-                pass
+        if not (isinstance(fact.get("fact"), list) and len(fact["fact"]) >= 2):
+            continue
+        try:
+            from ishti.facts import get_facts
+            entity, attr = str(fact["fact"][0]), str(fact["fact"][1])
+            newer = [lid for _, lid in writers.get((entity, attr), []) if lid != lesson_id]
+            if newer:
+                kept.append([entity, attr])  # a later lesson owns it now - leave the value alone
+            elif get_facts().forget(entity, attr):
+                undone.append([entity, attr])
+        except Exception:
+            pass
     store.write("UPDATE lessons SET status='retired', updated=? WHERE lesson_id=?", (store.now(), lesson_id))
     _event(lesson_id, 0.0, "forgotten by the owner (memory write-back undone)", interaction_id,
-           {"memory_undone": undone})
-    return {**_out(store.row("SELECT * FROM lessons WHERE lesson_id=?", (lesson_id,))), "memory_undone": undone}
+           {"memory_undone": undone, "memory_kept_newer_lesson_owns": kept})
+    return {**_out(store.row("SELECT * FROM lessons WHERE lesson_id=?", (lesson_id,))),
+            "memory_undone": undone, "memory_kept": kept}
 
 
 def delete(lesson_id):
@@ -335,13 +469,24 @@ def guidance_for(text, domain=None, limit=4):
 
     Ordered by (relevance, kind priority, confidence). Weak observations only appear when they
     actually match the request's words, so they can never leak into unrelated decisions.
+
+    A lesson the owner confirmed, or one the owner just said out loud, is applied on relevance
+    alone - their instruction outranks our bookkeeping. Everything else has to clear the
+    confidence floor: a lesson that `decay()` or `attribute()` drove down must stop steering
+    replies, otherwise a disproved rule keeps talking with the same voice as a proven one.
     """
     active(None)  # expire stale temporaries first
     tokens = _tokens(text) | _tokens(domain)
     if not tokens:
         return []
+    floor = float(thresholds().get("weak", 0.3))
     scored = []
     for ls in active(limit=200):
+        pinned = bool(int(ls.get("confirmed") or 0)) or ls.get("source") in (
+            "explicit_user_correction", "user_confirmation", "owner_statement",
+            "temporary_instruction", "dashboard")
+        if not pinned and float(ls.get("confidence") or 0) < floor:
+            continue
         hay = _tokens(" ".join(str(ls.get(k) or "") for k in
                                ("context", "statement", "correct", "incorrect", "entity", "scope")))
         overlap = len(tokens & hay)
@@ -551,5 +696,85 @@ if __name__ == "__main__":
     assert edit(newer["lesson_id"], statement="Use Brave for work browsing.")["statement"].startswith("Use Brave")
     assert delete(temp["lesson_id"]) and not store.row("SELECT * FROM lessons WHERE lesson_id=?",
                                                        (temp["lesson_id"],))
+
+    # --- reinforcement: a turn's outcome credits/blames the guidance that shaped it ---
+    watched = add("preference", "When writing replies, use short paragraphs", scope="domain",
+                  context="replies", source="repeated_observation", confidence=0.5)
+    before = store.row("SELECT confidence, positive, negative FROM lessons WHERE lesson_id=?",
+                       (watched["lesson_id"],))
+    assert before["positive"] == 0 and before["negative"] == 0, before
+    assert attribute([watched["lesson_id"]], 1.0) == [watched["lesson_id"]]
+    up = store.row("SELECT confidence, positive FROM lessons WHERE lesson_id=?", (watched["lesson_id"],))
+    assert up["positive"] == 1 and up["confidence"] > before["confidence"], (before, up)
+    attribute([watched["lesson_id"]], -1.0)
+    down = store.row("SELECT confidence, negative FROM lessons WHERE lesson_id=?", (watched["lesson_id"],))
+    assert down["negative"] == 1 and down["confidence"] < up["confidence"], (before, up, down)
+    # a lesson that keeps steering failures eventually drops out of the guidance set
+    for _ in range(8):
+        attribute([watched["lesson_id"]], -1.0)
+    assert not guidance_for("replies", limit=20) or all(
+        l["lesson_id"] != watched["lesson_id"] for l in guidance_for("replies", limit=20))
+    # the owner's own statement outranks our outcome signal
+    pinned = add("rule", "Always answer in English", scope="global", context="replies",
+                 source="owner_statement", confidence=0.9)
+    confirm(pinned["lesson_id"])
+    pin_before = store.row("SELECT confidence FROM lessons WHERE lesson_id=?", (pinned["lesson_id"],))
+    attribute([pinned["lesson_id"]], -1.0)
+    assert store.row("SELECT confidence FROM lessons WHERE lesson_id=?",
+                     (pinned["lesson_id"],))["confidence"] == pin_before["confidence"]
+    assert attribute([], 1.0) == [] and attribute([pinned["lesson_id"]], None) == []
+
+    # --- decay: un-confirmed lessons fade, owner-confirmed ones never do ---
+    stale = add("preference", "The owner likes bullet lists", scope="domain", context="notes",
+                source="repeated_observation", confidence=0.8)
+    assert store.row("SELECT confidence FROM lessons WHERE lesson_id=?",
+                     (stale["lesson_id"],))["confidence"] == 0.8, "decay test needs its own lesson"
+    store.write("UPDATE lessons SET updated=? WHERE lesson_id=?",
+                (store.now() - 90 * 86400, stale["lesson_id"]))
+    upd_before = store.row("SELECT updated FROM lessons WHERE lesson_id=?",
+                           (stale["lesson_id"],))["updated"]
+    assert decay(days=30) >= 1
+    faded = store.row("SELECT confidence FROM lessons WHERE lesson_id=?", (stale["lesson_id"],))
+    assert faded["confidence"] < 0.8, faded
+    # a lesson faded below the floor stops steering replies entirely
+    store.write("UPDATE lessons SET confidence=0.05 WHERE lesson_id=?", (stale["lesson_id"],))
+    assert not any(l["lesson_id"] == stale["lesson_id"] for l in guidance_for("notes", limit=20))
+    # `updated` (evidence time) must survive decay, or a fade looks like fresh evidence and
+    # decay resets its own clock - the lesson would then never get older than one horizon.
+    assert store.row("SELECT updated, decayed FROM lessons WHERE lesson_id=?",
+                     (stale["lesson_id"],))["decayed"] is not None
+    assert store.row("SELECT updated FROM lessons WHERE lesson_id=?",
+                     (stale["lesson_id"],))["updated"] == upd_before, "decay must not touch `updated`"
+    # and the throttle keeps a busy dispatcher from re-scanning the table on every turn
+    assert maybe_decay(force=True) >= 0
+    assert maybe_decay() == 0, "second call inside the interval must be throttled"
+    store.set_setting("last_decay", 0)  # interval elapsed -> due again, and it restamps itself
+    maybe_decay()
+    assert float(store.setting("last_decay", 0) or 0) > 0, "a due run must restamp the watermark"
+    store.write("UPDATE lessons SET updated=? WHERE lesson_id=?",
+                (store.now() - 90 * 86400, pinned["lesson_id"]))
+    decay(days=30)
+    assert store.row("SELECT confidence FROM lessons WHERE lesson_id=?",
+                     (pinned["lesson_id"],))["confidence"] == pin_before["confidence"]
+
+    # --- post-exposure rollback: forgetting an old lesson must not delete a newer one's fact ---
+    # distinct contexts: `add()` dedupes on (kind, scope, context, target), so two lessons that
+    # write the same fact need different contexts to both be created
+    first = add("preference", "Terminal theme is light", scope="global", context="terminal-light",
+                source="owner_statement", confidence=1.0,
+                action={"fact": ["owner", "term_theme", "light"]})
+    second = add("preference", "Terminal theme is dark", scope="global", context="terminal-dark",
+                 source="owner_statement", confidence=1.0,
+                 action={"fact": ["owner", "term_theme", "dark"]})
+    assert first["lesson_id"] != second["lesson_id"]
+    assert F.get_facts().get("owner").get("term_theme") == "dark", F.get_facts().get("owner")
+    out = forget(first["lesson_id"])
+    assert out["memory_undone"] == [] and out["memory_kept"] == [["owner", "term_theme"]], out
+    assert F.get_facts().get("owner").get("term_theme") == "dark"  # the newer lesson still owns it
+    out2 = forget(second["lesson_id"])
+    assert out2["memory_undone"] == [["owner", "term_theme"]], out2
+    assert not F.get_facts().get("owner").get("term_theme")
+
     print("[self-check] learning.lessons OK - bands, dedup, precedence, widening, supersede, temporary expiry, "
-          "HITL confirm, reversible memory write-back, injection guard, pattern candidates")
+          "HITL confirm, reversible memory write-back, injection guard, pattern candidates, "
+          "outcome attribution, decay, post-exposure rollback")

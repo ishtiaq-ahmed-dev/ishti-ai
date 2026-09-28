@@ -854,6 +854,36 @@ async def learning_feedback(limit: int = 100):
         return _learning_fail(exc)
 
 
+@learning_api.get("/api/learning/reflections")
+async def learning_reflections(limit: int = 100):
+    """Verbal reflections (Reflexion) plus mined-but-not-yet-promoted insights (ExpeL).
+
+    These are records of what happened, kept at the weak confidence band: retrievable on an exact
+    word match, but never able to out-rank something the owner confirmed.
+    """
+    try:
+        data = _learning().reflections(limit)
+        data = data if isinstance(data, dict) else {}
+        return {"reflections": data.get("reflections") or [],
+                "mined": data.get("mined") or [],
+                "counts": data.get("counts") or {}}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.post("/api/learning/reflections/mine")
+async def learning_mine_insights(req: Request):
+    """Mine now: promote interactions that read as rules into low-confidence lessons."""
+    try:
+        body = await _learning_body(req)
+        limit = int(body.get("limit") or 50)
+        data = _learning().promote_insights(limit)
+        data = data if isinstance(data, dict) else {}
+        return {"promoted": data.get("promoted") or [], "error": data.get("error")}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
 @learning_api.get("/api/learning/mistakes")
 async def learning_mistakes(limit: int = 200):
     """Repeated, error-classified failures grouped by signature."""

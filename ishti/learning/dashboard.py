@@ -90,6 +90,48 @@ def feedback_list(limit: int = 100) -> List[Dict[str, Any]]:
     rows = store.rows("SELECT * FROM feedback ORDER BY ts DESC LIMIT ?", (int(limit),))
     return [dict(r) for r in rows]
 
+
+def reflections(limit: int = 100) -> Dict[str, Any]:
+    """The Reflections panel payload (spec: reflect/insight APIs).
+
+    Two halves: what ISHTI has already written down (stored reflections, kept at the weak band so
+    they are retrievable but cannot out-shout an owner-confirmed lesson), and what it can still
+    mine from the interaction log. Fail-soft - a missing reflect module must not blank the panel.
+    """
+    rows = store.rows("SELECT * FROM lessons WHERE source='monitor' ORDER BY updated DESC LIMIT ?",
+                      (int(limit),))
+    stored = []
+    for r in rows:
+        d = dict(r)
+        d["bucket"] = ls_module.bucket(d.get("confidence"))
+        d["action"] = store.js(d.get("action"), {}) if d.get("action") else {}
+        d["kind_of"] = ("insight" if str(d.get("note") or "").startswith("mined insight")
+                        else "reflection")
+        stored.append(d)
+    try:
+        from ishti.learning import reflect as rf_module
+        mined = rf_module.mine_insights(limit=int(limit))
+    except Exception:
+        mined = []
+    return {
+        "reflections": stored,
+        "mined": mined,
+        "counts": {
+            "reflections": sum(1 for d in stored if d["kind_of"] == "reflection"),
+            "insights": sum(1 for d in stored if d["kind_of"] == "insight"),
+            "pending": len(mined),
+        },
+    }
+
+
+def promote_insights(limit: int = 50) -> Dict[str, Any]:
+    """Mine now and turn what reads as a rule into a low-confidence lesson (ExpeL)."""
+    try:
+        from ishti.learning import reflect as rf_module
+        return {"promoted": rf_module.promote_insights(limit=int(limit))}
+    except Exception as exc:
+        return {"promoted": [], "error": str(exc)}
+
 def mistakes(limit: int = 200) -> List[Dict[str, Any]]:
     return err_module.repeated(min_count=1)
 

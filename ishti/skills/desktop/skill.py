@@ -23,7 +23,9 @@ OPS = [  # (name, pattern) - first match wins
     ("brightness", re.compile(r"\bbrightness\b|\b(?:brighter|dimmer|dim\s+the\s+screen)\b", I)),
     ("window", re.compile(r"\b(?P<act>minimi[sz]e|maximi[sz]e|restore|close)\s+(?:the\s+|my\s+)?(?P<app>.+?)(?:\s+window)?\s*$", I)),
     ("windows_list", re.compile(r"\b(?:which|what|list)\s+(?:windows|apps)\s+(?:are\s+)?open\b|\bopen\s+windows\b", I)),
-    ("process_kill", re.compile(r"\b(?:kill|end|force\s+(?:close|quit)|terminate)\s+(?:the\s+)?(?:process\s+|task\s+)?(?P<name>[\w .-]+?)(?:\s+process)?\s*$", I)),
+    # process_kill never claims reflexive objects ("kill myself", "end it all") — those are distress language,
+    # not a process name; moodlog's safety gate handles them before anything else.
+    ("process_kill", re.compile(r"\b(?:kill|end|force\s+(?:close|quit)|terminate)\s+(?:the\s+)?(?:process\s+|task\s+)?(?P<name>(?!myself\b|my\s+self\b|me\b|it\s+all\b|them\b|us\b)[\w .-]+?)(?:\s+process)?\s*$", I)),
     ("process_top", re.compile(r"\b(?:what(?:'s| is)|which\s+(?:apps?|process(?:es)?))\s+(?:is\s+)?using\s+(?:the\s+)?most|\b(?:list|show)\s+(?:running\s+)?process(?:es)?\b|\brunning\s+(?:apps|programs|processes)\b", I)),
     ("updates", re.compile(r"\b(?:check\s+for|any|list|show)\s+(?:software\s+|app\s+)?updates\b|\bwhat\s+(?:needs|can\s+be)\s+updated\b", I)),
     # "update my semester to 8th" is a memory update, not an app: no "my ..." and no "... to ..."

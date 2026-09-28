@@ -1,0 +1,22 @@
+{
+  "name": "networth",
+  "version": "1.0.0",
+  "description": "Net-worth sheet: track assets and liabilities by name and amount, see the exact total (assets minus liabilities) and the itemised list. Arithmetic is done in code, never estimated.",
+  "route": "track asset, track liability, track debt, my net worth, what am I worth, list my assets, show liabilities, remove asset",
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {
+    "write": ["data"],
+    "net": [],
+    "apps": false
+  },
+  "category": "Finance"
+}

@@ -62,6 +62,14 @@ owner phrasings end-to-end: **33/33 after fixing 2 defects it caught** (quickcal
 matcher gap; checklist reset deleting the list instead of un-ticking it — both now covered by
 extended self-checks).
 
+## Batch C (2026-09-28)
+
+Seven more skills: **vocab, recipe, subscriptions, networth, sleeplog, moodlog, stats** — plus
+routing-hardening the gates forced: habits no longer claims "track asset …" (letter-only habit
+names), desktop's process-kill never matches "kill myself" (moodlog's distress safety gate owns
+that path at priority 10), vocab beats the dictionary only for words the owner saved. Labels:
+183 labelled requests, check_skills **69/155/183 OK**, verify_all **107/107**, smoke **55/55**.
+
 ## Counting honestly
 
 The catalogue's ~1,000 "skills" mostly decompose into: (a) capabilities ISHTI already ships as

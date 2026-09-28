@@ -1,0 +1,22 @@
+{
+  "name": "moodlog",
+  "version": "1.0.0",
+  "description": "Daily mood log: rate the day 1-5 with an optional note, see the 7-day average with per-day emoji list, and a week-over-week trend once enough days are logged. Supportive replies, never a diagnosis; distress language always points to people and emergency services.",
+  "route": "rate my mood, mood 1-5, day was good/bad, my mood this week, weekly mood, mood trend, how have I been feeling",
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 10,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {
+    "write": ["data"],
+    "net": [],
+    "apps": false
+  },
+  "category": "Health"
+}

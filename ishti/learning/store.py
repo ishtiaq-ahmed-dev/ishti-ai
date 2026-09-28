@@ -28,6 +28,11 @@ DEFAULTS = {
     "temporary_ttl_s": 3600,
     "entities": {"ambiguity_margin": 0.2, "min_confidence": 0.6},
     "dataset": {"min_quality": 0.6, "per_skill_cap": 0.4},
+    # Decay (AdMem): un-confirmed lessons fade once they have not been re-earned for this long.
+    "decay_days": 30,
+    # How often `maybe_decay()` is allowed to actually run, so a busy dispatcher does not
+    # re-scan the lesson table on every single turn.
+    "decay_interval_s": 86400,
 }
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS interactions(
@@ -52,7 +57,7 @@ CREATE TABLE IF NOT EXISTS lessons(
   statement TEXT, incorrect TEXT, correct TEXT, evidence INTEGER DEFAULT 1, positive INTEGER DEFAULT 0,
   negative INTEGER DEFAULT 0, confidence REAL, status TEXT, source TEXT, priority INTEGER DEFAULT 40,
   action TEXT, expires REAL, entity TEXT, occasions INTEGER DEFAULT 1, confirmed INTEGER DEFAULT 0,
-  note TEXT);
+  note TEXT, decayed REAL);
 CREATE INDEX IF NOT EXISTS ix_lessons_status ON lessons(status);
 CREATE TABLE IF NOT EXISTS lesson_events(
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, lesson_id TEXT, delta REAL, reason TEXT,
@@ -127,6 +132,9 @@ def conn():
             _conn.row_factory = sqlite3.Row
             _conn.execute("PRAGMA journal_mode=WAL")
             _conn.executescript(SCHEMA)
+            cols = {r[1] for r in _conn.execute("PRAGMA table_info(lessons)")}
+            if "decayed" not in cols:  # older databases: the decay watermark is not `updated`
+                _conn.execute("ALTER TABLE lessons ADD COLUMN decayed REAL")
             _conn.commit()
             _conn_path = path
         return _conn

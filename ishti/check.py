@@ -91,6 +91,21 @@ LABELLED = [
     ("lock my pc", "desktop"), ("what is using the most memory", "desktop"),
     ("i study in imsciences", "owner"), ("where i stid ?", "owner"), ("what semester am i in?", "owner"),
     ("why your response is late", "owner"), ("check my whatsap and let me know which chat is unread", "whatsapp"),
+    # batch C (2026-09-28): vocab, recipe, subscriptions, networth, sleeplog, moodlog, stats
+    ("add word serendipity: finding something good by accident", "vocab"),
+    ("quiz my vocab", "vocab"), ("review my weakest words", "vocab"), ("vocab stats", "vocab"),
+    ("recipe from eggs, rice and tomatoes", "recipe"),
+    ("give me a recipe for biryani", "recipe"), ("grocery list for karahi", "recipe"),
+    ("track subscription netflix 1500 monthly on the 5th", "subscriptions"),
+    ("my subscriptions", "subscriptions"), ("upcoming renewals", "subscriptions"),
+    ("cancel subscription spotify", "subscriptions"),
+    ("track asset bank account 250000", "networth"), ("track liability bike loan 180000", "networth"),
+    ("my net worth", "networth"), ("list my assets and liabilities", "networth"),
+    ("log sleep 7.5 hours", "sleeplog"), ("my sleep this week", "sleeplog"), ("my sleep debt", "sleeplog"),
+    ("rate my mood today 4", "moodlog"), ("mood 2: stressful day", "moodlog"),
+    ("my mood this week", "moodlog"), ("mood trend", "moodlog"),
+    ("stats D:/data/sales.csv", "stats"), ("correlations in D:/data/sales.csv", "stats"),
+    ("find anomalies in D:/data/sales.csv", "stats"), ("cluster D:/data/sales.csv into 3 groups", "stats"),
 ]
 
 

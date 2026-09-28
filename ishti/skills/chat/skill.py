@@ -41,7 +41,7 @@ def match(text):
                 or BACKCHANNEL.search(text))
 
 
-def build_context(text):
+def build_context(text, domain=""):
     f = get_facts()
     rows = f.mentioned_in(text) + [("owner", a, v) for a, v in f.get("owner").items()  # instructions/prefs: llm.style()
                                    if a not in ("entity", "instructions") and not a.startswith("prefers_")]
@@ -56,12 +56,24 @@ def build_context(text):
         parts.append("KNOWN FACTS (exact):\n" + "\n".join(f"- {e} {a}: {v}" for e, a, v in rows))
     if recalled:
         parts.append("Possibly relevant past context:\n" + "\n".join(f"- {s[:300]}" for s in recalled))
+    # The apply end of the learning loop: without this line every lesson ISHTI ever learned is
+    # write-only - recorded, scored, displayed on the dashboard, and never read by the model.
+    try:
+        from ishti.learning import lessons
+        block = lessons.context_for(text, domain=domain)
+        if block:
+            parts.append(block)
+    except Exception:
+        pass  # learning is an enhancement; a broken lesson store must not sink the reply
     return "\n\n".join(parts)
 
 
 def run(text, session):
-    role = "coder" if session.get("route", {}).get("domain") == "code" else "planner"
-    ctx = build_context(text)
+    route = session.get("route") or {}
+    if not isinstance(route, dict):
+        route = {}
+    role = "coder" if route.get("domain") == "code" else "planner"
+    ctx = build_context(text, domain=str(route.get("domain") or ""))
     trace(session, "context", f"{ctx.count(chr(10) + '- ')} saved facts / memories in context" if ctx else "no saved context needed")
     trace(session, "model", f"thinking with {llm.model_for(role)}", status="start")
     # memory goes in the system prompt, not the owner's turn: in the user turn the model echoed the
@@ -73,5 +85,5 @@ def run(text, session):
                     on_token=session.get("on_token")).content or "").strip()
     if not inspect(out)[0]:  # refusal / contamination -> one clean retry
         out = (llm.chat(msgs[-1:], role=role, system=system, temperature=0).content or "").strip()
-    out = re.sub(r"\s*(?:KNOWN FACTS|Possibly relevant past context)\b.*$", "", out, flags=re.S | re.I).strip()
+    out = re.sub(r"\s*(?:KNOWN FACTS|Possibly relevant past context|LEARNED FROM THE OWNER)\b.*$", "", out, flags=re.S | re.I).strip()
     return {"reply": out or "No answer from the local model.", "sources": []}
