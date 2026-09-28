@@ -40,6 +40,11 @@ OWNER_SOURCES = ("explicit_user_correction", "user_confirmation", "owner_stateme
 SCOPE_ORDER = ("session", "task", "application", "workflow", "domain", "global")
 EDITABLE = ("statement", "incorrect", "correct", "kind", "scope", "context", "confidence", "note",
             "priority", "entity", "action", "expires", "source")
+# Skills whose prompt actually includes `context_for()` (today only chat: see
+# ishti/skills/chat/skill.py::build_context). Attribution must only move the confidence of a
+# lesson the model saw during that turn, otherwise a failure in an unrelated skill demotes a
+# rule that had nothing to do with it. Add a skill here when you wire lessons into its prompt.
+CONTEXT_INJECTING_SKILLS = frozenset({"chat"})
 
 
 def thresholds():
