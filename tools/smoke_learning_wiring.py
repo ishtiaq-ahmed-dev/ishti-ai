@@ -41,6 +41,29 @@ def main() -> int:
     print("[2] dispatcher turn hook ran")
     dump("after turn 1")
 
+    # 2b. Attribution is gated on the skills that actually inject lessons into a prompt, and only
+    #     moves lessons the owner has not confirmed. Use a fresh observation, not the Chrome rule
+    #     (owner-stated rules are confirmed and therefore never moved by an outcome signal).
+    #     Its context is deliberately not "browser": `add()` refuses a weak observation that
+    #     contradicts an owner rule in the same context, which is the precedence rule working.
+    watch = lessons.add("preference", "Open the work browser before starting", scope="domain",
+                        context="work", source="repeated_observation", confidence=0.5)
+    assert watch and int(watch.get("confirmed") or 0) == 0, watch
+
+    def counters():
+        return dict(store.row("SELECT positive, negative FROM lessons WHERE lesson_id=?",
+                              (watch["lesson_id"],)))
+
+    before = counters()
+    dispatcher._learn_turn("open the work site", "done", "browser", {}, "sid3", "text")
+    after_browser = counters()
+    assert after_browser == before, f"browser turn must not move counters: {before} -> {after_browser}"
+    dispatcher._learn_turn("open the work site", "done again", "chat", {}, "sid4", "text")
+    after_chat = counters()
+    assert after_chat["positive"] > before["positive"], \
+        f"chat turn should credit the guidance it actually showed: {before} -> {after_chat}"
+    print(f"[2b] attribution gated on CONTEXT_INJECTING_SKILLS: {before} -> {after_browser} -> {after_chat}")
+
     # 3. Reflections are stored and readable through the dashboard shape the API returns.
     dispatcher._learn_turn("that was wrong, use edge instead", "oops", "browser", {}, "sid2", "text")
     payload = dashboard.reflections()
