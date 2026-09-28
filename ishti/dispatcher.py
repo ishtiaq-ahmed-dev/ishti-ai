@@ -147,6 +147,28 @@ def _learn(text):
         print(f"[dispatcher] owner learning skipped: {exc}")
 
 
+def _learn_turn(text, reply, name, dec, sid, channel):
+    """Background learning hook: turn observation, feedback harvesting, reward attribution."""
+    try:
+        from ishti.learning import observe, feedback, policy
+        # 1. Check for feedback/corrections on this turn
+        fb = feedback.detect(text, last_skill=name)
+        reward = feedback.reward_of("ok", fb=fb)
+        
+        # 2. Log interaction
+        iid = observe.turn(text=text, reply=reply, skill=name or "", sid=sid,
+                           channel=channel, dec=dec, status="ok", reward=reward)
+        
+        # 3. If explicit feedback, apply it
+        if fb:
+            feedback.apply(fb, interaction={"id": iid, "skill": name, "request": text})
+            
+        # 4. Check for temporary instructions
+        policy.temporary_instruction(text)
+    except Exception as exc:
+        print(f"[dispatcher] learning turn hook skipped: {exc}")
+
+
 URDU = re.compile("[؀-ۿ]")  # Arabic-script letters (Urdu)
 DEVANAGARI = re.compile("[ऀ-ॿ]")  # Hindi script
 PASHTO = re.compile("[ټځڅډړږښګڼۍې]")  # Pashto-only letters
@@ -706,6 +728,7 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
         threading.Thread(target=_ftlog, args=(text, reply, name, dec, channel), daemon=True).start()  # Part 3 collection
     if not hidden:
         threading.Thread(target=_learn, args=(text,), daemon=True).start()  # the owner's lasting facts and preferences
+        threading.Thread(target=_learn_turn, args=(text, reply, name, dec, sid, channel), daemon=True).start()
     try:
         from ishti.monitor import inspect_turn
         threading.Thread(target=inspect_turn, args=(text, reply, name, dec, dict(s), channel), daemon=True).start()

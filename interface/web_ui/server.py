@@ -11,7 +11,7 @@ import json
 import asyncio
 import secrets
 from typing import Dict, Any, List
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
@@ -633,6 +633,371 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         if websocket in active_websockets:
             active_websockets.remove(websocket)
+
+
+
+
+# ---- Learning dashboard API (docs/LEARNING_INTERFACE.md section 4) -----------------------------
+# The learning package (ishti/learning/) may still be under construction: every endpoint imports it
+# lazily inside the handler, so a missing or half-built module answers {"error": ...} (400) instead
+# of breaking the server import. Only stores and runtime settings change here - never model weights.
+learning_api = APIRouter()
+
+
+def _learning():
+    """Lazy handle on ishti.learning.dashboard; keeps a broken package from breaking this server."""
+    from ishti.learning import dashboard as api
+    return api
+
+
+def _learning_fail(exc: Exception) -> JSONResponse:
+    return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+async def _learning_body(req: Request) -> dict:
+    try:
+        body = await req.json()
+    except Exception:
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
+def _learning_rows(result, key: str) -> list:
+    """dashboard helpers may return a bare list or {"<key>": [...]}; the HTTP shape is fixed."""
+    value = result.get(key, []) if isinstance(result, dict) else result
+    return value if isinstance(value, list) else []
+
+
+def _learning_bool(value, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return default
+
+
+def _learning_settings(result) -> dict:
+    data = result if isinstance(result, dict) else {}
+    return {"settings": data.get("settings") or {}, "thresholds": data.get("thresholds") or {},
+            "evidence": data.get("evidence") or {}}
+
+
+@learning_api.get("/api/learning/overview")
+async def learning_overview():
+    """The three feedback loops at a glance: counts, confidence buckets, rewards, recent activity."""
+    try:
+        data = _learning().overview()
+        if not isinstance(data, dict):
+            raise RuntimeError("learning overview returned no data")
+        return {
+            "enabled": _learning_bool(data.get("enabled"), True),
+            "db": data.get("db", ""),
+            "counts": data.get("counts") or {},
+            "loops": data.get("loops") or {},
+            "confidence_buckets": data.get("confidence_buckets") or {},
+            "thresholds": data.get("thresholds") or {},
+            "settings": data.get("settings") or {},
+            "recent": data.get("recent") or [],
+        }
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.get("/api/learning/lessons")
+async def learning_lessons(status: str = "", kind: str = "", q: str = "", limit: int = 200):
+    """Lesson store, filterable by status/kind and free-text search."""
+    try:
+        result = _learning().lessons(status=status or None, kind=kind or None, q=q or None, limit=limit)
+        return {"lessons": _learning_rows(result, "lessons")}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.post("/api/learning/lessons/{lesson_id}")
+async def learning_lesson_update(lesson_id: str, req: Request):
+    """Edit a lesson in place (statement/scope/context/confidence/status/note)."""
+    try:
+        body = await _learning_body(req)
+        fields = {k: body[k] for k in ("status", "statement", "scope", "context", "note")
+                  if body.get(k) not in (None, "")}
+        if body.get("confidence") not in (None, ""):
+            fields["confidence"] = float(body["confidence"])
+        if not fields:
+            raise ValueError("nothing to update")
+        result = _learning().update_lesson(lesson_id, **fields)
+        lesson = result.get("lesson") if isinstance(result, dict) and "lesson" in result else result
+        changed = result.get("changed") if isinstance(result, dict) else None
+        return {"lesson": lesson, "changed": changed if isinstance(changed, list) else []}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.post("/api/learning/lessons/{lesson_id}/confirm")
+async def learning_lesson_confirm(lesson_id: str):
+    """HITL: the owner confirms a lesson; the change is recorded in the evidence trail."""
+    try:
+        api = _learning()
+        fn = getattr(api, "confirm_lesson", None) or getattr(api, "confirm", None)
+        result = fn(lesson_id) if callable(fn) else api.update_lesson(lesson_id, status="confirmed")
+        lesson = result.get("lesson") if isinstance(result, dict) and "lesson" in result else result
+        return {"lesson": lesson, "action": "confirmed"}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.post("/api/learning/lessons/{lesson_id}/reject")
+async def learning_lesson_reject(lesson_id: str):
+    """HITL: the owner rejects a lesson (kept for audit, no longer applied)."""
+    try:
+        api = _learning()
+        fn = getattr(api, "reject_lesson", None) or getattr(api, "reject", None)
+        result = fn(lesson_id) if callable(fn) else api.update_lesson(lesson_id, status="rejected")
+        lesson = result.get("lesson") if isinstance(result, dict) and "lesson" in result else result
+        return {"lesson": lesson, "action": "rejected"}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+@learning_api.delete("/api/learning/lessons/{lesson_id}")
+async def learning_lesson_delete(lesson_id: str, forget: int = 0):
+    """Delete a lesson; ?forget=1 also forgets the memory/fact it wrote back."""
+    try:
+        result = _learning().delete_lesson(lesson_id, forget=bool(forget))
+        data = result if isinstance(result, dict) else {}
+        return {"deleted": _learning_bool(data.get("deleted"), True),
+                "memory_forgotten": _learning_bool(data.get("memory_forgotten"), False)}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.get("/api/learning/candidates")
+async def learning_candidates(status: str = "open"):
+    """Candidate rules/questions waiting for the owner's yes/no."""
+    try:
+        result = _learning().candidates(status=status or None)
+        return {"candidates": _learning_rows(result, "candidates")}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.post("/api/learning/candidates/{candidate_id}")
+async def learning_candidate_answer(candidate_id: int, req: Request):
+    """Keep a candidate (lesson written) or discard it."""
+    try:
+        body = await _learning_body(req)
+        keep = _learning_bool(body.get("keep"), True)
+        edits = body.get("edits") if isinstance(body.get("edits"), dict) else None
+        result = _learning().answer_candidate(candidate_id, keep, edits)
+        data = result if isinstance(result, dict) else {}
+        return {"candidate": data.get("candidate"), "lesson": data.get("lesson")}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.get("/api/learning/feedback")
+async def learning_feedback(limit: int = 100):
+    """Structured feedback rows (corrections, praise, error classes)."""
+    try:
+        return {"feedback": _learning_rows(_learning().feedback_list(limit), "feedback")}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.get("/api/learning/mistakes")
+async def learning_mistakes(limit: int = 200):
+    """Repeated, error-classified failures grouped by signature."""
+    try:
+        return {"mistakes": _learning_rows(_learning().mistakes(limit), "mistakes")}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.get("/api/learning/interactions")
+async def learning_interactions(limit: int = 50):
+    """One row per agent turn: request, decision, status, reward."""
+    try:
+        return {"interactions": _learning_rows(_learning().interactions(limit), "interactions")}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.get("/api/learning/tasks")
+async def learning_tasks(limit: int = 50):
+    """Multi-step tasks with per-step results and final status."""
+    try:
+        return {"tasks": _learning_rows(_learning().tasks(limit), "tasks")}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.get("/api/learning/workflows")
+async def learning_workflows():
+    """Recurring successful procedures mined from tasks (candidate workflows)."""
+    try:
+        return {"workflows": _learning_rows(_learning().workflows(), "workflows")}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.post("/api/learning/workflows/{workflow_id}")
+async def learning_workflow_status(workflow_id: int, req: Request):
+    """Activate or retire a workflow."""
+    try:
+        body = await _learning_body(req)
+        status = str(body.get("status", "")).strip().lower()
+        if status not in ("active", "retired"):
+            raise ValueError("status must be 'active' or 'retired'")
+        api = _learning()
+        fn = getattr(api, "set_workflow", None) or getattr(api, "update_workflow", None)
+        if not callable(fn):
+            from ishti.learning import workflows as workflow_api
+            fn = workflow_api.set_status
+        result = fn(workflow_id, status)
+        data = result if isinstance(result, dict) else {}
+        return {"workflow": data.get("workflow", result)}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.get("/api/learning/people")
+async def learning_people():
+    """People/entities with context; similar names are separate rows, never merged by name."""
+    try:
+        return {"people": _learning_rows(_learning().people(), "people")}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.get("/api/learning/sources")
+async def learning_sources():
+    """Where lessons came from (owner, dispatcher, skill, ...), with counts."""
+    try:
+        return {"sources": _learning_rows(_learning().sources(), "sources")}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.get("/api/learning/dataset")
+async def learning_dataset(limit: int = 200):
+    """Curated offline training examples plus stats (total/exported/by_skill)."""
+    try:
+        result = _learning().dataset(limit)
+        stats = result.get("stats") if isinstance(result, dict) else None
+        return {"dataset": _learning_rows(result, "dataset"), "stats": stats if isinstance(stats, dict) else {}}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.post("/api/learning/dataset")
+async def learning_dataset_add(req: Request):
+    """Manually add an example to the offline fine-tune set (dataset, never memory)."""
+    try:
+        body = await _learning_body(req)
+        instruction = str(body.get("instruction", "")).strip()
+        if not instruction:
+            raise ValueError("instruction is required")
+        payload = {"instruction": instruction}
+        for key in ("correct", "reason", "skill"):
+            if body.get(key) not in (None, ""):
+                payload[key] = body[key]
+        if body.get("quality") not in (None, ""):
+            payload["quality"] = float(body["quality"])
+        result = _learning().add_dataset(payload)
+        example = result.get("example") if isinstance(result, dict) and "example" in result else result
+        return {"example": example}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.delete("/api/learning/dataset/{example_id}")
+async def learning_dataset_delete(example_id: int):
+    """Remove one curated example."""
+    try:
+        result = _learning().delete_dataset(example_id)
+        data = result if isinstance(result, dict) else {}
+        return {"deleted": _learning_bool(data.get("deleted"), True)}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.post("/api/learning/dataset/export")
+async def learning_dataset_export():
+    """Write the curated set to disk for the offline LoRA/QLoRA job (eval-gated, never deployed here)."""
+    try:
+        api = _learning()
+        fn = getattr(api, "export_dataset", None) or getattr(api, "dataset_export", None)
+        result = fn() if callable(fn) else api.export("dataset")
+        if isinstance(result, (list, tuple)) and len(result) == 2:
+            result = {"path": result[0], "count": result[1]}
+        data = result if isinstance(result, dict) else {}
+        return {"path": data.get("path", ""), "count": int(data.get("count") or 0),
+                "skipped": data.get("skipped") or {}}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.post("/api/learning/export")
+async def learning_export(req: Request):
+    """Export lessons/feedback/mistakes/dataset (or all) to the learning export directory."""
+    try:
+        body = await _learning_body(req)
+        what = str(body.get("what", "all")).strip().lower()
+        if what not in ("lessons", "feedback", "mistakes", "dataset", "all"):
+            raise ValueError("what must be lessons|feedback|mistakes|dataset|all")
+        result = _learning().export(what)
+        if isinstance(result, (list, tuple)) and len(result) == 2:
+            result = {"path": result[0], "count": result[1]}
+        data = result if isinstance(result, dict) else {}
+        return {"path": data.get("path", ""), "count": int(data.get("count") or 0)}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.get("/api/learning/settings")
+async def learning_settings():
+    """Runtime overrides from the learning DB settings table (never config.json)."""
+    try:
+        return _learning_settings(_learning().settings())
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.post("/api/learning/settings")
+async def learning_settings_update(req: Request):
+    """Update runtime overrides: enabled, proactive, thresholds, evidence minimums."""
+    try:
+        body = await _learning_body(req)
+        kw = {}
+        if "enabled" in body:
+            kw["enabled"] = _learning_bool(body.get("enabled"), True)
+        if "proactive" in body:
+            kw["proactive"] = _learning_bool(body.get("proactive"), False)
+        if isinstance(body.get("thresholds"), dict):
+            kw["thresholds"] = {k: float(v) for k, v in body["thresholds"].items() if isinstance(v, (int, float))}
+        if isinstance(body.get("evidence"), dict):
+            kw["evidence"] = {k: int(v) for k, v in body["evidence"].items() if isinstance(v, (int, float))}
+        if not kw:
+            raise ValueError("no settings supplied")
+        return _learning_settings(_learning().update_settings(**kw))
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.get("/api/learning/ask")
+async def learning_ask():
+    """The pending human-in-the-loop question slot (empty when proactive learning is off)."""
+    try:
+        result = _learning().ack_and_ask()
+        data = result if isinstance(result, dict) else {}
+        if not data.get("question"):
+            return {"question": None}
+        return {"question": data.get("question"), "candidate_id": data.get("candidate_id")}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+app.include_router(learning_api)  # /api/learning/* - learning dashboard (see docs/LEARNING_INTERFACE.md)
 
 
 def start_server(port: int = 8888):

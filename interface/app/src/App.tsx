@@ -1,9 +1,10 @@
 import { AnimatePresence, motion } from "motion/react";
-import { Bot, Brain, CandlestickChart, UserRound, Cpu, FolderKanban, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, Power, Settings as SettingsIcon, Sparkles } from "lucide-react";
+import { Bot, Brain, CandlestickChart, UserRound, Cpu, FolderKanban, GraduationCap, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, Power, Settings as SettingsIcon, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { getJSON } from "@/lib/api";
 import { Chat } from "@/sections/Chat";
 import { Memory, Settings, Skills, System, Tasks } from "@/sections/Pages";
+import { Learning } from "@/sections/Learning";
 import { Overview } from "@/sections/Overview";
 import { AboutYou } from "@/sections/AboutYou";
 import { Markets } from "@/sections/Markets";
@@ -19,6 +20,7 @@ const NAV = [
   { key: "markets", label: "Markets", icon: CandlestickChart },
   { key: "about", label: "About you", icon: UserRound },
   { key: "memory", label: "Memory", icon: Brain },
+  { key: "learning", label: "Learning", icon: GraduationCap },
   { key: "skills", label: "Skills", icon: Bot },
   { key: "system", label: "System", icon: Cpu },
   { key: "settings", label: "Settings", icon: SettingsIcon },
@@ -340,6 +342,7 @@ export default function App() {
               {page === "markets" && <Markets onToggleNav={toggleNav} />}
               {page === "about" && <AboutYou onToggleNav={toggleNav} />}
               {page === "memory" && <Memory onToggleNav={toggleNav} />}
+              {page === "learning" && <Learning onToggleNav={toggleNav} />}
               {page === "skills" && <Skills onToggleNav={toggleNav} />}
               {page === "system" && <System onToggleNav={toggleNav} />}
               {page === "settings" && <Settings onToggleNav={toggleNav} />}
