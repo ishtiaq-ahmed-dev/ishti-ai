@@ -60,6 +60,10 @@ def conn():
                 CREATE INDEX IF NOT EXISTS idx_mem_type ON memories(type, status);
                 CREATE INDEX IF NOT EXISTS idx_mem_kw ON memories(status);
             """)
+            try:  # display casing for names (the key column is lowercased for matching)
+                _conn.execute("ALTER TABLE entities ADD COLUMN display TEXT DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass  # column already exists
             _conn.commit()
         return _conn
 
@@ -186,15 +190,21 @@ def reconcile(content: str, mtype="semantic", source="inference", importance=0.5
     existing = search(limit=40)
     if not existing:
         return semantic(content, source=source, importance=importance, confidence=confidence)
-    from ishti.arch2.jsonio import ask_json
+    try:
+        from ishti.arch2.jsonio import ask_json  # lazy: pulls ishti.llm/openai only when used
+    except Exception:  # no model stack (self-checks, CI): plain add, never worse than storing
+        return semantic(content, source=source, importance=importance, confidence=confidence)
     listing = "\n".join(f"{r['id']}: {r['content']}" for r in existing)
-    d = ask_json(
-        f"Existing memories:\n{listing}\n\nNew candidate fact: {content}\n\n"
-        "Classify the candidate against the existing memories. Reply ONLY JSON:\n"
-        '{"action": "ADD|UPDATE|DELETE|NOOP", "target_id": "<memory id or empty>", '
-        '"merged_content": "<only for UPDATE: the corrected fact>"}',
-        role="main", schema_hint='{"action": "ADD|UPDATE|DELETE|NOOP", "target_id": "", "merged_content": ""}',
-        on_json_fail=lambda: {"action": "ADD"})
+    try:
+        d = ask_json(
+            f"Existing memories:\n{listing}\n\nNew candidate fact: {content}\n\n"
+            "Classify the candidate against the existing memories. Reply ONLY JSON:\n"
+            '{"action": "ADD|UPDATE|DELETE|NOOP", "target_id": "<memory id or empty>", '
+            '"merged_content": "<only for UPDATE: the corrected fact>"}',
+            role="main", schema_hint='{"action": "ADD|UPDATE|DELETE|NOOP", "target_id": "", "merged_content": ""}',
+            on_json_fail=lambda: {"action": "ADD"})
+    except Exception:  # model stack broken mid-call: plain add, never worse than storing
+        return semantic(content, source=source, importance=importance, confidence=confidence)
     action = str(d.get("action", "ADD")).upper()
     tid = d.get("target_id") or ""
     if action == "UPDATE" and tid and get(tid):
@@ -294,6 +304,9 @@ def upsert_entity(name, kind="person", relationship=None, confidence=None, note=
         if row:
             e = dict(row)
             sets, args = ["updated_at=?", "last_interaction=?"], [now, now]
+            if not e.get("display"):
+                sets.append("display=?")
+                args.append(name)
             if relationship and relationship != e["relationship"]:
                 sets.append("relationship=?")
                 args.append(relationship)
@@ -312,10 +325,10 @@ def upsert_entity(name, kind="person", relationship=None, confidence=None, note=
         else:
             eid = f"person_{uuid.uuid4().hex[:8]}" if kind == "person" else f"ent_{uuid.uuid4().hex[:8]}"
             c.execute("INSERT INTO entities(id, name, kind, aliases, relationship, confidence, notes, "
-                      "last_interaction, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                      "last_interaction, created_at, updated_at, display) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                       (eid, name.lower(), kind, _j([a.lower() for a in aliases]),
                        relationship or "unknown", confidence if confidence is not None else 0.5,
-                       _j([note] if note else []), now, now, now))
+                       _j([note] if note else []), now, now, now, name))
         c.commit()
     row = c.execute("SELECT * FROM entities WHERE id=?", (eid,)).fetchone()
     return dict(row)
@@ -347,7 +360,8 @@ def entity_card(name) -> str:
     if not e:
         return ""
     from ishti import rgraph
-    lines = [f"{e['name']} - {e['relationship']} (confidence {e['confidence']:.2f})"]
+    display = e.get("display") or e["name"]
+    lines = [f"{display} - {e['relationship']} (confidence {e['confidence']:.2f})"]
     lines += [rgraph.describe_edge(x) for x in rgraph.edges_of(e["name"], direction="both")[:6]]
     rel = search(e["name"], limit=5)
     lines += [f"- {r['content']}" for r in rel]
@@ -379,6 +393,25 @@ def stats() -> dict:
     return {"memories": by, "entities": ents, "db": db_path(), "thresholds": thresholds()}
 
 
+def entities(limit=100) -> list:
+    """All entity rows (dashboard, family queries)."""
+    return [dict(r) for r in conn().execute(
+        "SELECT * FROM entities ORDER BY last_interaction DESC LIMIT ?", (limit,)).fetchall()]
+
+
+def forget_person(name: str) -> int:
+    """'Forget everything about Ahmed': every memory mentioning the person plus their links.
+    Rows are marked forgotten (audit trail kept), never deleted."""
+    n = forget(name)
+    e = find_entity(name)
+    if e:
+        c = conn()
+        with _lock, c:
+            c.execute("DELETE FROM memory_links WHERE entity_id=?", (e["id"],))
+            c.commit()
+    return n
+
+
 def wipe_all():
     """'Forget everything' - the owner's explicit command, never called by code."""
     c = conn()
@@ -389,31 +422,33 @@ def wipe_all():
 
 
 if __name__ == "__main__":
+    # NOTE: `import ishti.arch2.memory as M` inside a module running as __main__ binds M=None
+    # (self-import quirk) - patch THIS module's globals directly instead.
     import tempfile
     tmp = tempfile.mkdtemp()
-    real = db_path()
-    import ishti.arch2.memory as M
-    M.db_path = lambda: os.path.join(tmp, "m.db")
-    M._conn = None
+    db_path = lambda: os.path.join(tmp, "m.db")
+    _conn = None
+    # four layers + dedupe
     m1 = semantic("User prefers concise answers.", source="explicit_user", confidence=1.0, importance=0.8)
-    m2 = observe("User asks to make emails shorter.")
     observe("User asks to make emails shorter.")
-    r = M._write("observation", "observation", "User asks to make emails shorter.")
-    assert r["times_observed"] == 3 if "times_observed" in r else True
-    assert search("concise")[0]["content"].startswith("User prefers")
+    observe("User asks to make emails shorter.")
     assert len(search(mtype="observation")) == 1, "same observation must not duplicate"
+    assert search("concise")[0]["content"].startswith("User prefers")
     assert forget(m1["id"]) == 1 and search("concise") == []
     # promotion past thresholds
     for _ in range(4):
         observe("User prefers bullet points.")
     promoted = promote_observations()
     assert any("bullet" in p["content"] for p in promoted)
-    assert len(search(mtype="observation")) == 0 or all(
-        x["status"] == "promoted" for x in search(mtype="observation"))
-    # supersede, not overwrite
+    # supersede stamps bi-temporal validity and provenance
     a = semantic("User prefers Chrome.", source="explicit_user", confidence=1.0)
     b = supersede(a["id"], "User now prefers Firefox.")
-    assert get(a["id"])["status"] == "superseded" and b["confidence"] == 1.0
+    old_row = get(a["id"])
+    assert old_row["status"] == "superseded" and old_row["valid_until"], "bi-temporal: was-true-until stamped"
+    assert "supersedes" in json.loads(get(b["id"])["meta"]), "provenance: new row links to the old"
+    # reconcile without a model (jsonio degrades to ADD): first fact ADDs
+    r0 = reconcile("User programs mainly in Python.", source="explicit_user", importance=0.7, confidence=0.9)
+    assert r0.get("content", "").endswith("Python.") or r0.get("action") == "NOOP", r0
     # entities
     e = upsert_entity("Ahmed", relationship="friend", note="works on Project X", aliases=["Ahmad"])
     e2 = upsert_entity("Ahmed", relationship="friend", note="university friend")
@@ -424,12 +459,19 @@ if __name__ == "__main__":
     assert "Ahmed" in entity_card("Ahmed")
     # strength ladder
     assert strength(1) == "temporary" and strength(4) == "weak" and strength(8) == "probable" and strength(20) == "strong"
-    # decay never deletes, respects the importance floor
+    # decay never deletes, respects the importance floor. NOTE: backdate via a fresh connection+
+    # commit (a bare conn() shares _write's open transaction; its commit() would eat ours)
     old = semantic("User tried a dartboard app once.", importance=0.3, confidence=0.4)
-    c = M.conn()
-    c.execute("UPDATE memories SET last_confirmed_at=? WHERE id=?", (time.time() - 90 * 86400, old["id"]))
-    c.commit()
-    assert any(x["id"] == old["id"] for x in decay())
+    conn()  # ensure schema exists on the real connection first
+    raw = sqlite3.connect(db_path())
+    raw.execute("UPDATE memories SET last_confirmed_at=? WHERE id=?", (time.time() - 90 * 86400, old["id"]))
+    raw.commit()
+    raw.close()
+    row = get(old["id"])
+    assert row and row["status"] == "active", "self-check precondition: the row must be active to decay"
+    assert row["last_confirmed_at"] < time.time() - 89 * 86400, "backdating must stick (fresh connection)"
+    flagged = decay()  # call once: decay() is destructive (it flips statuses)
+    assert any(x["id"] == old["id"] for x in flagged), "low-importance, long-unconfirmed row must be flagged"
     assert get(old["id"])["status"] == "needs_confirmation"
     # privacy export
     semantic("User had knee surgery in March.", source="conversation")

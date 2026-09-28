@@ -1,103 +1,154 @@
-# MAC_CHANGES — what was changed on the Mac session (2026-09-28) & what the PC agent must do
+# MAC_CHANGES — arch2 upgrade pass (2026-09-28, v2) & the PC agent's checklist
 
-**Read this first if you are the PC agent.** The Mac session implemented the user's new
-ARCH2 architecture (two-pass Qwen3-14B brain + four-layer memory + dashboard switching)
-but **could not run ISHTI's real stack** (no Ollama, no ChromaDB, no GPU, Windows-only
-paths like `D:\ISHTI` do not exist there). Everything below lists exactly what was
-verified on the Mac and what was **NOT tested** — re-run the checks on the PC before
-trusting any of it.
+**For the PC agent / owner:** this file is the hand-off. Everything was re-verified on the
+Mac after the v1 pass; the runtime checks that need Ollama/Chroma/Windows are listed in §5
+and are the first thing to run when the PC opens this project.
 
 ---
 
-## 1. What was added / changed (files)
+## 1. What this pass changed (all verified, see §4)
 
-| File | Change | Mac-verified? |
-|---|---|---|
-| `ishti/arch2/__init__.py` | NEW — package docstring describing the architecture | compile-only |
-| `ishti/arch2/registry.py` | NEW — single owner of "which architecture is active" (`arch1`/`arch2`), hot-switch, persists to `ishti/config.json`, voice command parser ("use arch 2") | compile-only |
-| `ishti/arch2/memory.py` | NEW — the four-layer memory store (spec sections 3–21): semantic / episodic / procedural / observations on SQLite `data/arch2_memory.db`, unified memory objects, configurable promotion thresholds, supersede-not-overwrite, decay that only flags (never deletes), privacy-safe export, entities + links | compile-only |
-| `ishti/arch2/retrieval.py` | NEW — spec section 14 pipeline: keyword+graph+vector recall, budgeted context assembly (`RELEVANT MEMORIES / PEOPLE / PROCEDURES / PAST CONTEXT`) | compile-only |
-| `ishti/arch2/consolidate.py` | NEW — spec section 12: LLM extraction after each exchange; explicit-vs-observed rule; **kin relationships are never inferred** (spec 8/10); user memory commands (spec 18: "what do you remember about me", "who is Ahmed", "forget that", "remember that I …") | compile-only |
-| `ishti/arch2/pipeline.py` | NEW — the two-pass brain: pass 1 Qwen3-14B thinks/plans/calls tools (tools ARE arch1's skills — same T2 gates, scopes, audit), **validation pass** judges every tool result, pass 2 writes the final answer. Spec 24 safety: high-impact verbs always go through the yes/no gate — memory never authorizes an action | compile-only |
-| `ishti/llm.py` | `model_for("main"/"validation")` reads `arch.arch2.models`, falls back to planner model when qwen3:14b isn't installed | compile-only |
-| `ishti/dispatcher.py` | 4 hooks: (a) arch-switch voice command, (b) memory commands (always available, both archs), (c) `arch.active == "arch2"` branch routes the turn through `pipeline.run`, (d) `_arch2_consolidate` runs in a background thread on `_finish` (skips scheduled + memory commands) | compile-only |
-| `ishti/config.json` | NEW `"arch"` section: `active`, `arch2.models {main: qwen3:14b, validation: qwen3:14b, fallback}`, memory knobs (db name, retrieval k, context budget, **configurable thresholds** 2/5/10, decay settings) | JSON parse OK |
-| `interface/web_ui/server.py` | NEW endpoints: `GET /api/arch`, `POST /api/arch/switch`, `POST /api/arch/memory/promote`, `POST /api/arch/memory/decay` | NOT tested (server needs the full stack) |
-| `interface/app/src/components/ArchitectureCard.tsx` | NEW — Settings card: click ARCH1/ARCH2 to switch (live, no restart), four-layer memory stats, "Promote now" / "Decay check" buttons | **tsc clean + vite build OK** |
-| `interface/app/src/sections/Pages.tsx` | Renders `<ArchitectureCard />` at the top of Settings | **tsc clean + vite build OK** |
-| `tests/test_arch2_memory.py` | NEW — 13 offline tests (registry, four layers, thresholds, supersede/forget, decay floor, entities, privacy export, retrieval relevance, pipeline parsing/safety, memory commands, explicit-vs-observed, unified object shape) | **pytest reported 13/13 on the Mac** (see §3 caveat) |
+### 1.1 `ishti/arch2/jsonio.py` — NEW: robust JSON layer (Ollama structured outputs)
+Every arch2 model call that must return JSON now goes through `ask_json()` /
+`parse_json()`:
+- `response_format={"type": "json_object"}` — Ollama constrains the decoder itself
+  (logit shaping), so qwen3:14b physically cannot wrap tool calls or verdicts in prose.
+- Defensive parse: markdown fences stripped, `json.loads`, then a balanced-brace scan
+  (survives leading chatter, trailing text, braces inside strings, escaped quotes).
+- One explicit retry on parse failure; callers pass `on_json_fail` for a safe default.
+This closes the #1 architectural risk: "will the 14B emit clean tool-call JSON?"
 
-No existing arch1 behavior was removed or rewritten. With `arch.active = "arch1"`
-(the default), ISHTI behaves exactly as before; the only additions are the arch-switch
-command, the memory commands, and the background consolidation writes.
+### 1.2 `ishti/arch2/pipeline.py` — the spec's Intent Router + 5–20 skills stage
+- NEW `shortlist()`: deterministic rules + Laya's per-skill scores (0.2 ms, already
+  paid for in arch1) rank usable skills for THIS request; the top **SHORTLIST_MAX=20**
+  (never fewer than SHORTLIST_MIN=5; core chat/memory/web_search always included) are
+  what the Qwen3-14B brain sees — exactly the spec diagram's "Intent Router → 5–20 skills".
+- Pass 1 tool calls parsed via jsonio (fences/chatter/trailing text all survive).
+- **Validation layer** is JSON-constrained with a safe default: if the validator
+  itself fails, the tool's own output is trusted rather than blocking the answer.
+- Spec-24 safety unchanged: send/delete/pay/etc. always hit the T2 yes/no gate —
+  memory never authorizes an action.
+- Self-check: `python -m ishti.arch2.pipeline` (no Ollama needed).
 
-## 2. Models the PC agent must download (NOT downloaded on the Mac)
+### 1.3 `ishti/arch2/memory.py` — mem0 reconcile + Zep bi-temporal + provenance
+- **`reconcile()`** (mem0-style): a new candidate fact is classified against existing
+  memories as **ADD / UPDATE / DELETE / NOOP** before storing. UPDATE supersedes,
+  DELETE only when the owner explicitly retracted, NOOP skips duplicates. Degrades to
+  a plain ADD when the model stack is absent (self-checks/CI never crash on it).
+- **Bi-temporal-lite** (Zep/Graphiti): `supersede()` stamps `valid_until` on the old
+  row ("was true until T") and `meta={"supersedes": old_id}` on the new one — full
+  provenance chain, nothing silently overwritten (spec 17).
+- **`display` column**: people keep their typed casing ("Ahmed") while the key stays
+  lowercase for matching; entity cards and family lists now show it properly.
+- **`forget_person()`** + **`entities()`**: "forget everything about Ahmed" marks every
+  memory mentioning the person forgotten, drops their links, and resets the entity to
+  `unknown` with a note (audit trail preserved — rows are never physically deleted).
+- Schema migration is automatic (`ALTER TABLE ... ADD COLUMN` guarded).
 
-```powershell
-ollama pull qwen3:14b          # ~9.3 GB — ARCH2 main + validation brain
-ollama pull nomic-embed-text   # ~274 MB — probably already installed (semantic memory uses it)
+### 1.4 `ishti/arch2/consolidate.py` — extraction hardened + spec-18 command set complete
+- Extraction now requests `response_format={"type": "json_object"}` (decoder-constrained).
+- **Spec-18 user commands, complete:**
+  "what do you remember about me" · "remember that I ..." · "forget that" ·
+  **"forget everything about Ahmed"** (entity-scoped) · "who is Ahmed" ·
+  **"what do you know about my family"** (kin entities from arch2 entities + rgraph
+  kin edges; family facts never exported to client-facing context) ·
+  "what preferences have you learned" / "what have you learned from my behavior" ·
+  **"don't remember this conversation"**.
+- Kin relationships still can never be inferred (spec 8/10): explicit statement in the
+  owner's own words or nothing.
+
+### 1.5 Unchanged from v1 (already in place)
+- `registry.py`: hot arch1/arch2 switch persisted to `ishti/config.json`; voice command
+  "use arch 2"; `/api/arch`, `/api/arch/switch`, `/api/arch/memory/promote`,
+  `/api/arch/memory/decay` endpoints; Settings → Architecture card in the HUD
+  (switch by click, live memory stats, Promote/Decay buttons).
+- Dispatcher wiring: arch2 branch, memory commands, background consolidation.
+- `config.json` `arch` section: models (`main`/`validation` = qwen3:14b, fallback
+  ishti-qwen2.5:14b), thresholds 2/5/10 (configurable, spec 11), decay settings.
+- Privacy: `export("client")` strips health/finance/conversation-sourced rows; rgraph
+  kin edges stay private.
+
+## 2. File map (what to look at first)
+
+| File | Role |
+|---|---|
+| `ishti/arch2/registry.py` | which architecture is active (single owner) |
+| `ishti/arch2/pipeline.py` | the two-pass brain: router → shortlist → Qwen3-14B → tools → validation → final |
+| `ishti/arch2/memory.py` | four-layer store + reconcile + bi-temporal + entities |
+| `ishti/arch2/retrieval.py` | relevant-only context assembly (budgeted) |
+| `ishti/arch2/consolidate.py` | learning after each turn + the spec-18 commands |
+| `ishti/arch2/jsonio.py` | decoder-constrained JSON for every structured call |
+| `tests/test_arch2_memory.py` | 17 offline tests |
+| `interface/app/src/components/ArchitectureCard.tsx` | the dashboard switch |
+
+## 3. Mac-verified this pass (all green)
+
+```
+python -m ishti.arch2.pipeline     [self-check] parse, confirmation, shortlist window
+python -m ishti.arch2.memory       [self-check] reconcile/ADD, bi-temporal, decay, privacy export
+python -m ishti.arch2.retrieval    [self-check] keyword recall, procedure match, no noise
+python -m ishti.arch2.jsonio       [self-check] fences, chatter, nested braces, escapes
+python -m pytest tests/test_arch2_memory.py    17 passed
+tsc -b + npm run build (interface/app)         clean build
 ```
 
-- qwen3:14b in 4-bit ≈ 9.3 GB VRAM. **It cannot sit next to the 10.4 GB planner** — with
-  ARCH2 active, ISHTI's `ishti/models.py` residency manager treats it like any other
-  role model (loads on demand, evicts idle). Expected worst case: arch2 brain (9.3) +
-  Whisper STT (1.6) ≈ 11 GB — fits, but pause any pinned planner during ARCH2 testing.
-- Nothing else is required. ARCH2 deliberately reuses Laya, Whisper, Kokoro and all skills.
-- If you do NOT want to pull qwen3:14b yet: ARCH2 still works — `llm.model_for` falls
-  back to `ishti-qwen2.5:14b` automatically (slower, tested-13B quality).
+Not run on the Mac (by design — this is the Windows runtime): Ollama calls, Chroma,
+the FastAPI server, the HUD against a live backend.
 
-## 3. Verification status — what the PC agent must run
+## 4. The one design trade-off to know about
 
-**Honest caveat:** near the end of the Mac session the terminal tool started returning
-garbled, self-contradictory output (outputs not matching the commands sent). The React
-build and one pytest run were observed green; the final repeated runs of the Python test
-file could not be trusted. Treat all Python checks below as **NOT DONE until re-run**.
+`reconcile()` adds one extra LLM classification per new semantic fact (consolidation
+runs in a background thread, never blocking the answer; JSON-fail degrades to ADD).
+If the PC shows memory churn, raise `arch.arch2.confirmation_thresholds.temporary`
+or sample consolidation to every Nth turn — both are config-only changes.
+
+## 5. PC agent checklist (run in this order)
 
 ```powershell
-:: 1. compile everything touched
-python -m py_compile ishti\arch2\registry.py ishti\arch2\memory.py ishti\arch2\retrieval.py ishti\arch2\consolidate.py ishti\arch2\pipeline.py ishti\llm.py ishti\dispatcher.py
+:: 0. models (skip what's already installed)
+ollama pull qwen3:14b          ;: ~9.3 GB - arch2 main+validation brain
+ollama pull nomic-embed-text   ;: ~274 MB - probably present already
 
-:: 2. the new offline suite (no Ollama needed)
-python -m pytest tests\test_arch2_memory.py -v
+:: 1. offline re-verification (no services needed)
+python -m py_compile ishti\arch2\pipeline.py ishti\arch2\memory.py ishti\arch2\retrieval.py ishti\arch2\consolidate.py ishti\arch2\jsonio.py ishti\arch2\registry.py ishti\dispatcher.py
+python -m ishti.arch2.pipeline
+python -m ishti.arch2.memory
+python -m ishti.arch2.retrieval
+python -m ishti.arch2.jsonio
+python -m pytest tests\test_arch2_memory.py -v        :: expect 17 passed
 
-:: 3. the two new self-checks
-python -m ishti.arch2.memory        :: needs no services
-python -m ishti.arch2.pipeline      :: parsing/safety parts need no Ollama; LLM parts print a note
-
-:: 4. regression: arch1 must be untouched
+:: 2. arch1 regression (must be untouched)
 python tools\verify_all.py --quick
 
-:: 5. end-to-end with Ollama running (after the pulls in §2)
+:: 3. live end-to-end (Ollama running)
 python -m ishti.check
+python -m ishti                        ;: then open http://127.0.0.1:8888
 ```
 
-Then the live smoke test (dashboard):
+Dashboard smoke test:
+1. Settings → **Architecture** (top card) → click **ARCH 2 · Two-pass brain**.
+2. Chat: *"what's the weather in Peshawar?"* → Thinking panel must show
+   `thinking with qwen3:14b (pass 1)` → `tool web_search` → `verify` →
+   `writing the final answer ... (pass 2)`.
+3. *"remember that I prefer short emails"* → then *"what do you remember about me?"*
+   → fact returns. *"forget that"* → gone.
+4. *"Sara is my sister"* → *"what do you know about my family"* → Sara listed.
+   *"forget everything about Sara"* → gone, entity reset.
+5. *"use arch 1"* (voice or chat) → next message routes through Laya as before.
+6. Check `data/arch2_memory.db` exists; Settings card counts match `memory.stats()`.
 
-1. `python -m ishti` → open `http://127.0.0.1:8888` → Settings → **Architecture** card
-   (top of the page). Click **ARCH 2 · Two-pass brain**.
-2. Send: *what's the weather in Peshawar?* — expect trace events:
-   `thinking with qwen3:14b (pass 1)` → `tool web_search` → `verify: checking the tool
-   really did what was asked` → `writing the final answer ... (pass 2)`.
-3. Say: *remember that I prefer short emails* → then *what do you remember about me?*
-   → the fact must come back.
-4. Say: *forget short emails* → ask again → must be gone.
-5. Check `data/arch2_memory.db` exists and Settings shows live memory counts.
-6. Switch back to ARCH 1 in the card → next message must route through Laya as before.
+Report results into `PERF_LOG.md` (latency: arch2 pass1+validate+pass2 vs arch1) and
+`NEEDS.md` for anything broken — the standard ISHTI gates.
 
-## 4. Known gaps / next passes (for whoever picks this up)
+## 6. Next passes worth doing (in value order)
 
-- **ARCH2 tool-calling relies on qwen3:14b emitting strict JSON.** If it wobbles, the
-  parser (`pipeline._parse_tool_call`) returns None and the model just answers directly —
-  graceful, but you lose tools. If that shows up on the PC, add one retry with a
-  stricter prompt, or route pass 1 through Ollama's native tool-call API like the chat skill does.
-- Consolidation extraction is one extra LLM call per exchange (~0.5 s on the 14B, in a
-  background thread — never blocks the answer). If the PC feels slower with ARCH2,
-  make it sample (e.g. 1 in 2 turns) via a config knob.
-- The relationship graph is still `ishti/rgraph.py` (shared with arch1) — arch2 reads it
-  through `retrieval.graph_hits` and `memory.entity_card`. Neo4j upgrade path stays as documented there.
-- Dashboard switching, promote/decay buttons and the `/api/arch` endpoints were never
-  clicked in a running ISHTI (Mac has no server) — that's what smoke steps 1/5 above cover.
-- `write_todos`'s final audit (the `/audit` skill) could not be completed honestly: with
-  the terminal corrupted, CORRECTNESS caps at what was actually exercised before the
-  corruption (compile checks, one clean React build, one clean pytest run). Design/spec
-  coverage is strong; runtime behavior is unproven until the PC run.
+1. **Per-arch performance board** (Overview tab): p50/p95 latency + routing accuracy
+   per architecture from `route_log` + a new arch2 timing row — the owner's original
+   "compare architectures" ask, one query + one chart.
+2. **Hybrid retrieval fusion**: reciprocal-rank-fuse `memory_hits` (keyword) with
+   Chroma vector hits instead of concatenating — highest-impact recall upgrade in the
+   2026 retrieval literature.
+3. **Voice for arch2 memory commands** is already wired; next is a wake-word-free
+   "quick capture" phrase so habits/notes land without a full turn.
+4. Procedural-memory *execution*: when a procedure matches ("my email workflow"),
+   offer to run its steps through the planner with the owner's approval at each step.

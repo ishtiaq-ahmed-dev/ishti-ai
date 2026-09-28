@@ -15,8 +15,6 @@ hint reliably once the decoder is constrained, and the hint keeps prompts small.
 """
 import json
 
-from ishti import llm
-
 
 def parse_json(text: str):
     """Best-effort JSON object extraction from model output. None when nothing parses."""
@@ -65,7 +63,7 @@ def parse_json(text: str):
 def ask_json(prompt: str, role="main", schema_hint: str = "", max_tokens=600, temperature=0,
              on_json_fail=None, **kw):
     """ask() constrained to JSON. Returns the parsed dict, or on_json_fail() (default {})."""
-    from ishti import llm as L
+    from ishti import llm as L  # lazy: keeps arch2 importable without the openai package
     hint = f"\nReply with ONLY a JSON object. Shape: {schema_hint}" if schema_hint else \
         "\nReply with ONLY a JSON object."
     try:

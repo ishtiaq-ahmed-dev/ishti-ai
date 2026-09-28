@@ -33,11 +33,32 @@ import ishti.arch2.memory as memory  # noqa: E402
 import ishti.arch2.retrieval as retrieval  # noqa: E402
 import ishti.arch2.consolidate as consolidate  # noqa: E402
 import ishti.arch2.pipeline as pipeline  # noqa: E402
+import ishti.arch2.jsonio as jsonio  # noqa: E402
 
 memory.db_path = lambda: os.path.join(TMP, "arch2_memory.db")
 memory._conn = None
 retrieval.memory = memory
 consolidate.memory = memory
+
+
+def test_jsonio_parse_hardening():
+    """jsonio must survive every malformed shape local models produce."""
+    assert jsonio.parse_json('{"a": 1}') == {"a": 1}
+    assert jsonio.parse_json('```json\n{"a": 1}\n```') == {"a": 1}
+    assert jsonio.parse_json('Sure! {"a": {"b": [1, 2]}} hope that helps') == {"a": {"b": [1, 2]}}
+    assert jsonio.parse_json('{"a": "text with } and { inside"}') == {"a": "text with } and { inside"}
+    assert jsonio.parse_json('{"a": "escaped \\" quote"}') == {"a": 'escaped " quote'}
+    assert jsonio.parse_json('no json here at all') is None
+    assert jsonio.parse_json('') is None
+    assert jsonio.parse_json('{"tool": "x", "input": "y"}') == {"tool": "x", "input": "y"}
+
+
+def test_reconcile_offline_degrades_to_add():
+    """Without a model stack, reconcile must still store (never worse than not storing)."""
+    n_before = len(memory.search(mtype="semantic"))
+    r = memory.reconcile("User does morning runs.", source="explicit_user", importance=0.6, confidence=0.9)
+    assert r.get("content", "").endswith("runs.") or r.get("action") == "NOOP"
+    assert len(memory.search(mtype="semantic")) in (n_before, n_before + 1)
 
 
 def setup_module(module=None):
@@ -113,7 +134,12 @@ def test_observations_promote_by_configurable_threshold():
 def test_supersede_and_forget():
     a = memory.semantic("User prefers Chrome.", source="explicit_user", confidence=1.0)
     b = memory.supersede(a["id"], "User switched to Firefox.")
-    assert memory.get(a["id"])["status"] == "superseded", "old memory stays, marked superseded"
+    old_row = memory.get(a["id"])
+    assert old_row["status"] == "superseded", "old memory stays, marked superseded"
+    assert old_row["valid_until"], "bi-temporal: the old fact is stamped was-true-until"
+    import json as _json
+    assert _json.loads(memory.get(b["id"])["meta"]).get("supersedes") == a["id"], \
+        "provenance: the new row links back to the old"
     assert memory.get(b["id"])["status"] == "active"
     assert memory.forget(b["id"]) == 1 and memory.get(b["id"])["status"] == "forgotten"
     assert memory.search("Firefox") == []
@@ -173,13 +199,41 @@ def test_retrieval_relevant_only():
 def test_pipeline_tool_parsing_and_safety():
     call = pipeline._parse_tool_call('{"tool": "web_search", "input": "weather in Peshawar"}')
     assert call == {"tool": "web_search", "input": "weather in Peshawar"}
+    assert pipeline._parse_tool_call('```json\n{"tool": "browser", "input": "open gmail"}\n```') \
+        == {"tool": "browser", "input": "open gmail"}
+    assert pipeline._parse_tool_call('chatter {"tool": "chat", "input": "hi"} done') == {"tool": "chat", "input": "hi"}
     assert pipeline._parse_tool_call("Sunny, 34 degrees.") is None
     assert pipeline._parse_tool_call('{"tool": "", "input": "x"}') is None
+    assert pipeline._parse_tool_call('{"tool": null, "input": "x"}') is None
     assert pipeline._parse_tool_call('not json {') is None
     assert pipeline._needs_confirmation("send the report to Ahmed")
     assert pipeline._needs_confirmation("delete that file")
     assert not pipeline._needs_confirmation("what is the capital of Pakistan")
     assert not pipeline._needs_confirmation("summarize this document for me")
+
+
+def test_pipeline_shortlist_window():
+    """The spec's intent-router stage: 5-20 skills reach the brain, never all ~50; broken
+    skills never appear; Laya-picked and core tools lead the list."""
+    class FakeSkill:
+        def __init__(self, desc):
+            self.manifest = {"description": desc}
+            self.status = "working"
+    many = {f"skill{i}": FakeSkill(f"tool {i}") for i in range(30)}
+    many.update({"chat": FakeSkill("conversation"), "memory": FakeSkill("facts"),
+                 "web_search": FakeSkill("search"), "browser": FakeSkill("browse")})
+    many["broken_one"] = FakeSkill("broken")
+    many["broken_one"].status = "broken"
+    names = pipeline.shortlist(many, "search the web for weather in Peshawar")
+    assert pipeline.SHORTLIST_MIN <= len(names) <= pipeline.SHORTLIST_MAX, names
+    assert "broken_one" not in names
+    assert {"chat", "memory", "web_search"} <= set(names), "core tools always listed"
+    assert "browser" in names, "laya-rule-picked skills included"
+    # small installs pass through whole
+    small = {"chat": many["chat"], "memory": many["memory"]}
+    assert pipeline.shortlist(small, "hi") == ["chat", "memory"]
+    # unknown-tool recovery text uses the same shortlist
+    assert "web_search" in ", ".join(pipeline.ranked_names(many, "weather"))
 
 
 # ---------------------------------------------------------------- 5. memory commands
@@ -234,11 +288,32 @@ def test_consolidate_apply_explicit_vs_observed():
     assert "Coding workflow" in ctx
 
 
+def test_entity_commands_scoped_and_family():
+    """Spec 18's entity-scoped commands: forget everything about X, family query, don't remember."""
+    memory.upsert_entity("Bilal", relationship="brother", note="lives in Lahore", aliases=["Bilal Ahmed"])
+    memory.semantic("Bilal plays hockey.")
+    memory.semantic("User works on the falcon drone.")
+    r = consolidate.handle_command("forget everything about Bilal")
+    assert r and not memory.search("Bilal"), "person-scoped forget must clear their memories"
+    e = memory.find_entity("bilal")
+    assert e["relationship"] == "unknown", "the person node is reset, not deleted"
+    r = consolidate.handle_command("Sara is my sister")  # not a command; fall through check first
+    assert r is None
+    memory.upsert_entity("Sara", relationship="sister")
+    r = consolidate.handle_command("what do you know about my family")
+    assert r and "sara" in r.lower() and "sister" in r.lower(), r
+    r = consolidate.handle_command("don't remember this conversation")
+    assert r and "won't keep" in r.lower(), r
+
+
 def test_unified_memory_object_shape():
     row = memory.search(limit=1)[0]
     for field in ("id", "type", "content", "importance", "confidence", "source", "created_at",
                   "updated_at", "last_accessed_at", "last_confirmed_at", "status"):
         assert field in row, f"unified memory object missing {field} (spec 21)"
+    # bi-temporal + provenance fields exist on the schema (Zep-style was-true-until)
+    for field in ("valid_until", "meta"):
+        assert field in row, f"memory row missing bi-temporal field {field}"
 
 
 if __name__ == "__main__":

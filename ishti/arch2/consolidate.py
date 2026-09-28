@@ -43,9 +43,10 @@ NEVER_RELATION = "unknown"
 def extract(text: str, reply: str) -> dict:
     """One extraction pass. Never raises: a broken model/JSON returns {} and the turn is just not learned."""
     try:
-        from ishti import llm
+        from ishti import llm  # lazy: openai import lives here, arch2 must load without it
         out = llm.ask(PROMPT.format(request=text[:1200], reply=reply[:800]),
-                      role="main", system=None, temperature=0, max_tokens=600)
+                      role="main", system=None, temperature=0, max_tokens=600,
+                      response_format={"type": "json_object"})
         m = PROMPT_RE.search(out or "")
         d = json.loads(m.group(0)) if m else {}
         return d if isinstance(d, dict) else {}
@@ -124,15 +125,32 @@ def consolidate(request: str, reply: str) -> dict:
 # --------------------------------------------------------------------- user commands (spec 18)
 WHAT_RE = re.compile(r"\bwhat\s+do\s+you\s+(?:remember|know)\s+about\s+me\b", re.I)
 WHO_RE = re.compile(r"\bwho\s+is\s+(?P<who>[a-z][a-z .'-]{1,40})\??", re.I)
+FAMILY_RE = re.compile(r"\bwhat\s+do\s+you\s+know\s+about\s+my\s+family\b", re.I)
 LEARNED_RE = re.compile(r"\b(?:what\s+preferences\s+have\s+you\s+learned|what\s+have\s+you\s+learned(?:\s+from\s+my\s+behavior|\s+about\s+me)?)\b", re.I)
 FORGET_RE = re.compile(r"\bforget\s+(?:everything\s+about\s+)?(?:that\b\.?|about\s+)?(?P<what>.{2,120}?)\.?$", re.I)
 REMEMBER_RE = re.compile(r"\b(?:remember|keep\s+in\s+mind)\s+that\s+(?P<fact>.{3,200})", re.I)
+NOTHING_RE = re.compile(r"\b(?:don'?t|do\s+not|never)\s+remember\s+this(?:\s+conversation)?\b", re.I)
+KIN = {"brother", "sister", "mother", "father", "son", "daughter", "spouse", "partner",
+       "uncle", "aunt", "cousin", "grandfather", "grandmother", "grandchild", "family"}
 
 
 def handle_command(text: str) -> str | None:
-    """'What do you remember about me', 'who is Ahmed', 'forget that', 'remember that I ...'.
-    Returns the reply, or None when the text is not a memory command."""
+    """The spec-18 command set: 'what do you remember about me', 'remember that I ...',
+    'forget that', 'forget everything about Ahmed', 'who is Ahmed', 'what do you know
+    about my family', 'what have you learned from my behavior', 'don't remember this
+    conversation'. Returns the reply, or None when the text is not a memory command."""
     t = (text or "").strip()
+    if NOTHING_RE.search(t):
+        return ("Understood - I won't keep anything from this conversation. What I saved\n"
+                "before it stays; tell me 'forget <thing>' if you want any of it gone too.")
+    if FAMILY_RE.search(t):
+        rows = memory.search(limit=200)
+        family = [r["content"] for r in rows if any(k in r["content"].lower() for k in KIN)]
+        lines = [f"- {n}: {rel}" for n, rel in _family_entities()]
+        lines += [f"- {c}" for c in family]
+        return ("Your family, as I have it:\n" + "\n".join(lines)) if lines \
+            else ("I don't have anything about your family yet. Tell me - 'Sara is my sister' -\n"
+                  "and I'll remember it (never inferred, only what you say).")
     if WHAT_RE.search(t):
         rows = memory.search(limit=12)
         return ("Here is what I remember about you:\n" + "\n".join(f"- {r['content']}" for r in rows)) \
@@ -168,8 +186,31 @@ def handle_command(text: str) -> str | None:
             n = len(memory.search(limit=1000))
             memory.wipe_all()
             return f"Forgot everything ({n} memories)."
-        n = memory.forget(what)
-        if not n:  # try without the leading 'about'/'that'
-            n = memory.forget(re.sub(r"^(?:about|that)\s+", "", what, flags=re.I))
-        return f"Forgot it." if n else f"I don't have a memory matching '{what}'."
+        # 'forget everything about X' / 'forget X': the person's entity + their memories
+        target = re.sub(r"^(?:everything\s+)?about\s+", "", what, flags=re.I).strip()
+        e = memory.find_entity(target)
+        forgotten = memory.forget_person(target) if e else 0
+        if not forgotten:
+            forgotten = memory.forget(what) or memory.forget(
+                re.sub(r"^(?:about|that)\s+", "", what, flags=re.I))
+        if e and forgotten:
+            memory.upsert_entity(target, relationship="unknown", confidence=0.3,
+                                 note="the owner asked me to forget about them")
+        return "Forgot it." if forgotten else f"I don't have a memory matching '{what}'."
     return None
+
+
+def _family_entities() -> list:
+    """(display name, relationship) for every person tied by a kin word or an rgraph kin edge."""
+    from ishti import rgraph
+    out = []
+    for e in memory.entities(limit=200):
+        rel = (e.get("relationship") or "").lower()
+        if rel in KIN:
+            out.append((e.get("display") or e["name"], rel))
+    for node_row in rgraph.conn().execute("SELECT name FROM nodes WHERE kind='person'").fetchall():
+        for edge in rgraph.edges_of(node_row["name"], direction="in"):
+            if edge["rel"] in KIN and edge["s_name"] == rgraph.OWNER:
+                if all(n != node_row["name"] for n, _ in out):
+                    out.append((node_row["name"], edge["rel"]))
+    return out

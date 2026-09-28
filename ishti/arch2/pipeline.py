@@ -1,27 +1,25 @@
-"""ARCH2 pipeline: the user's two-pass architecture.
+"""ARCH2 pipeline - the spec's two-pass architecture, stage by stage.
 
-    request -> intent router (rules + Laya, reused - already excellent)
-            -> Qwen3-14B pass 1: THINK / PLAN / call a tool
-            -> tool execution (arch1's real skills run it, same scopes/T2 gates/audit)
-            -> validation pass: did the tool actually do what was asked?
-            -> Qwen3-14B pass 2: final answer, grounded in tool evidence + memory
-            -> memory consolidation (consolidate.py, background thread in dispatcher)
+    YOU -> STT (arch1's wake/voice, unchanged) -> Intent Router (embeddings)
+        -> 5-20 skills shortlist -> Qwen3-14B (THINK / PLAN / CALL TOOLS / CONVERSE)
+        -> Browser | PC | Email tools (arch1's real skills, same T2 gates/scopes/audit)
+        -> Validation layer -> Qwen3-14B final response -> Kokoro TTS -> YOU
 
-Spec's routing insight implemented: the model plans best with a SHORTLIST of 5-20
-relevant tools, not all ~50 (long tool lists dilute choice quality). The shortlist
-comes from Laya's own scores for this request (it already ranks every skill), plus
-the always-on core (chat, memory, web_search).
+The Intent Router stage: deterministic rules first, then Laya's typed-decision scores
+(0.2 ms on CPU) rank every usable skill for THIS request; the top SHORTLIST_MAX are the
+"5-20 skills" the brain sees. The brain's tool calls are parsed with jsonio's hardened
+JSON parser and every tool run is judged by the validation pass (JSON-constrained, with
+an explicit safe default when the model/JSON fails).
 
-Safety rule (spec 24): memory NEVER authorizes an action. High-impact verbs go through
-ask_first's yes/no gate exactly like arch1; the skills' configured T2 tiers are the
-only authority.
+Safety rule (spec 24): memory NEVER authorizes an action. High-impact verbs always go
+through ask_first's yes/no gate, exactly like arch1; the skills' configured T2 tiers
+are the only authority.
 """
-import json
 import re
 
-from ishti.skills import trace
 from ishti.arch2 import memory, retrieval
 from ishti.arch2.jsonio import parse_json
+from ishti.skills import trace
 
 SHORTLIST_MIN, SHORTLIST_MAX = 5, 20  # the spec's 5-20 window
 
@@ -58,31 +56,49 @@ Tool results and the context below are your evidence - never invent what they do
 CONFIRM_RE = re.compile(r"\b(?:send|message|reply|delete|remove|erase|pay|buy|order|purchase|post|publish|"
                         r"install|uninstall|kill|shut\s*down|restart|transfer|forward|empty)\b", re.I)
 MAX_TOOL_ROUNDS = 3
+_CORE_TOOLS = ("chat", "memory", "web_search")  # always on the shortlist
+
+
+def _usable(skills: dict) -> dict:
+    return {n: s for n, s in sorted(skills.items()) if s.status != "broken"}
+
+
+def _laya_scores(request: str, usable: dict) -> dict:
+    """Laya's per-skill scores for this request (arch1's router - already paid for, 0.2 ms).
+    {skill: confidence} or {} when Laya is unavailable."""
+    try:
+        from ishti.router import route as _route
+        dec = _route(request, usable)
+        scores = {n: c for n, c in (dec.get("scores") or [])}
+        if dec.get("skill") and dec["skill"] not in scores:
+            scores[dec["skill"]] = max(scores.values(), default=1.0)
+        return scores
+    except Exception:
+        return {}
+
+
+def shortlist(skills: dict, request: str) -> list:
+    """The '5-20 skills' stage: core tools + Laya's ranking for this request, capped.
+    Returns skill NAMES in the order they should be shown to the brain."""
+    usable = _usable(skills)
+    names = list(usable)
+    if len(names) > SHORTLIST_MAX:
+        scores = _laya_scores(request, usable)
+        head = [n for n, _ in sorted(scores.items(), key=lambda kv: -kv[1]) if n in usable]
+        core = [n for n in _CORE_TOOLS if n in usable]
+        names = list(dict.fromkeys(core + head + names))[:max(SHORTLIST_MIN, SHORTLIST_MAX)]
+    return names
 
 
 def _tool_manifests(skills: dict, request: str) -> str:
-    """The shortlist: Laya's scores for this request (via the router) rank the usable skills;
-    top SHORTLIST_MAX win. Cheap (Laya is 0.2 ms) and exactly the spec's 5-20 window."""
-    usable = {n: s for n, s in sorted(skills.items()) if s.status != "broken"}
-    if len(usable) <= SHORTLIST_MAX:
-        ranked = list(usable)
-    else:
-        try:
-            from ishti.router import route as _route
-            scores = {d.get("skill"): c for d in
-                      [_route(request, skills)] if d.get("skill")}
-            # _route returns one pick; use Laya's full score list when it is present
-            dec = _route(request, skills)
-            ranked = [n for n, _ in (dec.get("scores") or [])] if dec.get("scores") else \
-                ([dec["skill"]] if dec.get("skill") else [])
-        except Exception:
-            ranked = []
-        # always-available core first, then Laya's ranking, then manifest order
-        core = [n for n in ("chat", "memory", "web_search") if n in usable]
-        ranked = list(dict.fromkeys(core + [n for n in ranked if n in usable] + list(usable)))
-        ranked = ranked[:SHORTLIST_MAX]
-    lines = [f"- {n}: {usable[n].manifest.get('description', '')[:110]}" for n in ranked]
-    return "\n".join(lines)
+    usable = _usable(skills)
+    return "\n".join(f"- {n}: {usable[n].manifest.get('description', '')[:110]}"
+                     for n in shortlist(skills, request))
+
+
+def ranked_names(skills: dict, request: str) -> list:
+    """The shortlist as names (used in the unknown-tool recovery message)."""
+    return shortlist(skills, request)
 
 
 def _needs_confirmation(text: str) -> bool:
@@ -95,6 +111,15 @@ def _run_tool(skills, name, text, session, tool_log):
         return skills[name].run(text, session) or {"reply": f"The {name} skill had nothing to do for this."}
     except Exception as exc:  # same containment as the dispatcher: the turn carries on
         return {"reply": f"The {name} skill failed: {type(exc).__name__}: {str(exc)[:140]}"}
+
+
+def _parse_tool_call(text: str):
+    """Extract {"tool", "input"} from a model reply; None when the reply is a plain answer.
+    jsonio's parser survives fences, chatter and trailing text."""
+    d = parse_json(text)
+    if isinstance(d, dict) and isinstance(d.get("tool"), str) and d["tool"].strip():
+        return {"tool": d["tool"].strip(), "input": str(d.get("input") or "")}
+    return None
 
 
 def run(request: str, session, skills: dict) -> dict:
@@ -140,12 +165,12 @@ def run(request: str, session, skills: dict) -> dict:
         result_text = str(result.get("reply", result))[:1500] if isinstance(result, dict) else str(result)[:1500]
         trace(session, "tool", f"{name} done: {result_text[:80]}", status="done")
 
-        # validation pass (the architecture's middle layer) - JSON-constrained, degrades open
+        # validation layer (JSON-constrained; safe default = trust the tool when JSON fails)
         trace(session, "verify", "checking the tool really did what was asked", status="start")
         v = parse_json(llm.ask(VALIDATE_PROMPT.format(request=request[:400], tool=name, result=result_text),
                                role="validation", system=None, temperature=0, max_tokens=120,
                                response_format={"type": "json_object"}))
-        if v is None:  # model/JSON failed: trust the tool's own output rather than blocking
+        if v is None:
             v = {"ok": bool(result_text.strip()), "missing": ""}
         trace(session, "verify", "tool output verified" if v.get("ok") else f"gaps: {str(v.get('missing'))[:80]}",
               status="done" if v.get("ok") else "error")
@@ -153,40 +178,25 @@ def run(request: str, session, skills: dict) -> dict:
         tool_log.append({"tool": name, "input": tool_input, "result": result_text, "ok": bool(v.get("ok"))})
         if v.get("ok") or round_no == MAX_TOOL_ROUNDS - 1:
             break
-        # the tool fell short: show the model what is missing and let it try once more
+        # the tool fell short: show the model what is missing and let it try again
         msgs += [{"role": "assistant", "content": reply},
                  {"role": "user", "content": f"Tool {name} returned: {result_text}\nThis did NOT fully "
                                              f"accomplish the request ({v.get('missing')}). Call a tool again "
                                              f"differently, or answer with what you have."}]
 
-    # pass 2: the final answer, grounded in the tool results
+    # pass 2: the final response, grounded in the validated tool evidence
     trace(session, "model", f"writing the final answer with {llm.model_for('main')} (pass 2)", status="start")
     evidence = "\n\n".join(f"Tool {t['tool']} ({'verified' if t['ok'] else 'unverified'}) returned:\n{t['result']}"
                            for t in tool_log) or "(no tools were needed)"
     final = (llm.chat([{"role": "user", "content": f"User request: {request}\n\n{evidence}\n\nWrite the final answer."}],
                       role="main", system=FINAL_SYSTEM, temperature=0.3, max_tokens=1024,
                       on_token=session.get("on_token")).content or "").strip()
-    return {"reply": final or "I could not produce an answer - try rephrasing.", "sources": sources, "mode": "ARCH2",
-            "tools": tool_log}
-
-
-def _parse_tool_call(text: str):
-    """Extract {"tool", "input"} from a model reply; None when the reply is a plain answer.
-    Uses jsonio's defensive parser (fences, chatter, balanced braces)."""
-    d = parse_json(text)
-    if isinstance(d, dict) and isinstance(d.get("tool"), str) and d["tool"].strip():
-        return {"tool": d["tool"].strip(), "input": str(d.get("input") or "")}
-    return None
-
-
-def ranked_names(skills: dict, request: str) -> list:
-    """The shortlist as names (used in the unknown-tool recovery message)."""
-    return [line[2:line.index(":")] for line in
-            _tool_manifests(skills, request).splitlines() if line.startswith("- ")]
+    return {"reply": final or "I could not produce an answer - try rephrasing.", "sources": sources,
+            "mode": "ARCH2", "tools": tool_log}
 
 
 if __name__ == "__main__":
-    # offline parts only (LLM passes need Ollama - see MAC_CHANGES.md)
+    # offline parts only (the LLM passes need Ollama - PC checklist in MAC_CHANGES.md)
     assert _parse_tool_call('{"tool": "web_search", "input": "weather in Peshawar"}') == \
         {"tool": "web_search", "input": "weather in Peshawar"}
     assert _parse_tool_call('```json\n{"tool": "browser", "input": "open gmail"}\n```') == \
@@ -196,5 +206,22 @@ if __name__ == "__main__":
     assert _parse_tool_call('chatter {"tool": "chat", "input": "hi"} trailing') == \
         {"tool": "chat", "input": "hi"}
     assert _needs_confirmation("send the report to Ahmed")
+    assert _needs_confirmation("delete that file")
     assert not _needs_confirmation("what is the capital of Pakistan")
-    print("[self-check] arch2.pipeline OK - tool-call parse (fences/chatter), confirmation triggers")
+    assert not _needs_confirmation("summarize this document for me")
+
+    class _FakeSkill:  # shortlist ordering with >SHORTLIST_MAX skills
+        def __init__(self, desc):
+            self.manifest = {"description": desc}
+            self.status = "working"
+
+    many = {f"skill{i}": _FakeSkill(f"tool {i}") for i in range(30)}
+    many.update({"chat": _FakeSkill("conversation"), "memory": _FakeSkill("facts"),
+                 "web_search": _FakeSkill("search"), "browser": _FakeSkill("browse"),
+                 "broken_one": _FakeSkill("broken")})
+    many["broken_one"].status = "broken"
+    sl = shortlist(many, "search the web for weather")
+    assert 5 <= len(sl) <= SHORTLIST_MAX, sl
+    assert "chat" in sl and "memory" in sl and "web_search" in sl, "core tools always listed"
+    assert "broken_one" not in sl and "browser" in sl, "broken excluded, laya-picked included"
+    print("[self-check] arch2.pipeline OK - parse (fences/chatter), confirmation, shortlist window")
