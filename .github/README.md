@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/ishti_full_wordmark.svg" alt="ISHTI: Personal AI Assistant" width="360" />
+  <img src="assets/ishti_full_wordmark.png" alt="ISHTI: Personal AI Assistant" width="360" />
 </p>
 
 # ISHTI: local-first personal AI assistant
