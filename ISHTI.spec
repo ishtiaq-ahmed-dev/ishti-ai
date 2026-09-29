@@ -1,12 +1,18 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-
 a = Analysis(
     ['desktop/launcher.py'],
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=[],
+    hiddenimports=[
+        'urllib',
+        'urllib.request',
+        'urllib.parse',
+        'urllib.error',
+        'http',
+        'http.client',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

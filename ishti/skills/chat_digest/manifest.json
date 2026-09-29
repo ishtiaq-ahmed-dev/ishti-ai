@@ -1,0 +1,31 @@
+{
+  "name": "chat_digest",
+  "version": "1.0.0",
+  "description": "The 24-hour chat digest: reads (READ-ONLY) every chat, group and community the owner saw in the last rolling 24 hours, summarises what was discussed, what needs action, the owner's relationship to each chat and whether it was useful or noise. Never sends, replies, reacts, marks read or deletes anything - drafts are drafts (sending stays T2).",
+  "route": "check the last 24 hours of all my chats, groups and communities and give me a report; chat digest; what did I miss in my chats",
+  "needs": {
+    "python": [
+      "docx"
+    ],
+    "models": [
+      "planner"
+    ],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 18,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {
+    "write": [
+      "data",
+      "reports"
+    ],
+    "net": [],
+    "apps": false
+  },
+  "category": "Productivity & Planning",
+  "test_file": "tests/test_chat_digest.py",
+  "path": "ishti/skills/chat_digest"
+}

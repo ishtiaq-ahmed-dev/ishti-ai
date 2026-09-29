@@ -1,8 +1,6 @@
 """Singleton check and window focus helper for ISHTI."""
 import os
 import sys
-import urllib.request
-import json
 
 ROOT = r"D:\ISHTI"
 if ROOT not in sys.path:
@@ -12,9 +10,27 @@ if ROOT not in sys.path:
 def is_running(port=8888) -> bool:
     """Checks if the ISHTI web server is responding."""
     try:
+        import urllib.request
         req = urllib.request.Request(f"http://127.0.0.1:{port}/api/health", headers={"User-Agent": "ISHTI-Singleton"})
         with urllib.request.urlopen(req, timeout=1.5) as resp:
             return resp.status == 200
+    except Exception:
+        pass
+
+    try:
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=1.5)
+        conn.request("GET", "/api/health")
+        resp = conn.getresponse()
+        return resp.status == 200
+    except Exception:
+        pass
+
+    try:
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1.0)
+            return s.connect_ex(("127.0.0.1", port)) == 0
     except Exception:
         return False
 
