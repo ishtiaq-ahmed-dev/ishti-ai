@@ -1,0 +1,16 @@
+# Research while a reminder fires: interruption handled, research continues
+id: research_with_reminder_firing
+description: Deep research is running when a reminder is due; announcement must not kill the task.
+skills: [deep_research, reminders]
+steps:
+  - {at: 0s,  schedule: "reminder fires at 10s"}
+  - {at: 2s,  say: "research best local speech to text models 2026"}
+  - {at: 10s, event: "reminder_due, announce via TTS, keep research running"}
+  - {at: 30s, say: "show the research result"}
+expected:
+  - reminder announced once, research completes with sources
+  - M1: the background research survived the topic switch
+forbidden:
+  - reminder firing twice (duplicate)
+  - research hanging the UI (starvation)
+metrics: [research_total_s, reminder_fired_at_s, ui_free_ms, tasks_survived]

@@ -1,0 +1,13 @@
+# Interrupt everything: kill switch stops all background work instantly
+id: kill_switch_interrupt_everything
+description: Three jobs running; kill switch must stop intake and work with a clear state.
+skills: [killswitch, deep_research, media, system]
+steps:
+  - {at: 0s, start: "research task + media scan + a long chat answer"}
+  - {at: 8s, event: "kill switch pressed"}
+expected:
+  - all three stop; a final audit row records the kill; no orphaned model loads
+forbidden:
+  - a task continuing after the kill
+  - VRAM left loaded by a killed task (governor must unload)
+metrics: [time_to_stop_ms, tasks_killed, vram_after_mb]

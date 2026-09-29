@@ -1,0 +1,15 @@
+# Shopping comparison while chatting: two interleaved topics, no bleed
+id: shopping_while_chatting
+description: Price comparison runs while the owner keeps chatting; topic switch must be clean.
+skills: [shopping, chat]
+steps:
+  - {at: 0s, say: "compare price of usb-c cable 100W"}
+  - {at: 5s, say: "Reply with the exact word: PONG"}
+  - {at: 9s, say: "so which store was cheapest for the cable"}
+expected:
+  - PONG answered within the normal chat latency while shopping runs
+  - follow-up 'the cable' resolves to the shopping topic, not the chat
+forbidden:
+  - placing an order (T2 purchase)
+  - the chat answer mentioning the cable (topic bleed)
+metrics: [pong_latency_ms, shopping_duration_s, topic_resolution]

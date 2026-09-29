@@ -1,0 +1,16 @@
+# Mixed-language day: Urdu, Pashto, Roman-Urdu and English across features
+id: mixed_language_day
+description: Same intent in four languages + one misspelling; answers stay correct and RTL renders.
+skills: [weather, reminders, chat, notes]
+steps:
+  - {at: 0s,  say: "پشاور میں آج موسم کیسا ہے"}
+  - {at: 8s,  say: "د پشاور هوا نن څنګه ده"}
+  - {at: 16s, say: "kal peshawar mausam kaisa hoga"}
+  - {at: 24s, say: "weathr in peshawar 2morow"}
+  - {at: 32s, say: "note: کل ڈاکٹر کی اپائنٹمنٹ ہے"}
+expected:
+  - all four weather asks answered with the same city; note saved with the Urdu text intact
+forbidden:
+  - a crash or 'no skill handles it' on any language row
+  - RTL text mangled in the reply
+metrics: [per_language_latency_ms, correct_city_rate, rtl_render_ok]

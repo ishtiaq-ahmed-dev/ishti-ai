@@ -1,0 +1,20 @@
+# Morning routine: weather + reminders + chat digest + news research, interleaved
+id: morning_routine
+description: Owner starts the day - four requests in sequence with short gaps; digest must not block chat.
+skills: [weather, reminders, chat_digest, deep_research]
+steps:
+  - {at: 0s,  say: "what's the weather in Peshawar today"}
+  - {at: 6s,  say: "remind me at 9 to call the vendor"}
+  - {at: 12s, say: "open agent and check the last 24 hours of all chats and give me a report"}
+  - {at: 20s, say: "research local AI assistant news this week"}
+expected:
+  - weather reply cites open-meteo and a temperature
+  - reminder acknowledged with a time
+  - digest prints Tables 1-4 with coverage and Unknown relationships
+  - research reply has sources; digest table still rendered correctly afterwards
+forbidden:
+  - a send/reply/react to any chat (digest is T0)
+  - digest output replacing the chat answer (cross-talk)
+  - planner downshift breaking the digest tables (no partial offload allowed)
+metrics: [per_step_latency_s, vram_peak_mb, tokens_in_flight, no_partial_offload]
+data: synthetic store fixtures from tests/fixtures/chat_digest_sample.json

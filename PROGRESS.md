@@ -137,3 +137,34 @@ Legend: [x] done · [~] in progress · [ ] not started · BLOCKED = needs the ow
 - [x] WP7 commit + tag - done by the concurrent session: the chat-digest work is committed (`b5a2038
       feat(chat_digest): the 24-hour chat digest (Section 4) + GFM-grade chat tables`) and tagged
       **`chat-digest-2026-09-29`**; `git status` is clean apart from this pass's three doc files.
+
+## QA Session 2026-09-30 - Prompt 1 of 3 (scan -> catalog -> matrix -> harness -> feasibility)
+Rollback point: tag `pre-qa-suite1` (commit 9a001c1).
+- [x] FEATURE_CATALOG.md: 120 skills (T0:68/T1:38/T2:14) + 16 core rows, generated from manifests by
+      tools/gen_feature_catalog.py (regenerable). MISSING-as-named: media_rename, browser_agent,
+      diagrams, skill_library (live inside media/browser/chart/skillsmith). Also MISSING: LoRA weights,
+      chat upload picker, live mic hardware.
+- [x] DEPENDENCY_GRAPH.md: layers 0-4 + safe test order (foundations first, T2 last).
+- [x] ISHTI_TEST_MODE=1 switch (ishti/test_mode.py): T2 blocked at the LAST step + audit record +
+      scripted yes/no; wired into the dispatcher's pending gate AND T2 pre-run. E2E proven: terminal
+      delete request -> gate -> yes -> "TEST-MODE BLOCK T2 terminal" in audit, nothing executed.
+      Default OFF; production path unchanged (11 curated dispatcher tests still green).
+- [x] tests/skills/<skill>/: 120 generated suites (happy/language/edge/failure/safety/dispatcher rows)
+      via tools/gen_skill_tests.py. Spot-proven: weather, bayes, notes, chat_digest, calc (55 passed).
+      pytest.ini excludes tests/skills from the default run (module-name collisions + runtime).
+- [x] Product finding recorded: FINDING-QA-CALC-1 - calc crashes (raw sympy ValueError) on
+      "solve 2x + 3 = 11 for x" (in FEATURE_CATALOG.md). NOT fixed (prompt 1 = discovery only).
+- [x] Harness tests/run_skill.py + tests/README.md + TEST_STATE.json: per-test timeout, GPU sampling,
+      audit safety assertion (SAFETY-FAIL), --dry, --json, --runs. PROVEN on weather, bayes,
+      chat_digest: 3/3 green; state tracked with consecutive_green.
+- [x] tests/scenarios/: 12 YAMLs (all parse; required keys asserted) for prompt 3's concurrent runs.
+- [x] NEMOTRON_FEASIBILITY.md: GO (on-demand tool). Measured on this GPU: loads (git-main
+      transformers 5.18.0.dev0 only - 5.17.0 lacks the class), ~1.0 GB VRAM, offline RTF 0.005
+      (97.6 s audio in 0.51 s), 6 speakers/29 segments on the official sample, streaming low_latency
+      1.04 s alg. latency @ 15.6 ms/step. Accuracy on owner audio: BLOCKED (no mic/recordings - Q1).
+      License OpenMDW 1.1 (commercial OK). Install isolated in .qa_nemotron/ (venv untouched).
+- [x] OPENMUSE_IDEAS.md: NO-GO as dependency (cloud key required in every mode - conflicts with
+      local-first); 3 ideas to build with attribution (follow-up queue, task leases, page monitors).
+- [x] NEEDS.md Q1-Q5 added.
+- [x] Final full-suite re-run after the last code change: **105 passed, 11 deselected, 0 failed** in 179 s.
+      Prompt 1 of 3 is COMPLETE; prompts 2-3 can run from here (rollback tag `pre-qa-suite1`).

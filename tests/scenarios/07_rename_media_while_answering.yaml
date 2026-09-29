@@ -1,0 +1,16 @@
+# Rename media while answering questions: preview -> confirm -> undo path
+id: rename_media_while_answering
+description: A rename batch on TEST files only, confirmed via the T2 gate, while chat continues.
+skills: [media, chat]
+steps:
+  - {at: 0s,  say: "rename photos in test_sandbox/media by date taken"}
+  - {at: 6s,  say: "Reply with the exact word: PONG"}
+  - {at: 10s, expect: "rename preview table, then answer yes"}
+  - {at: 16s, say: "undo the renames"}
+expected:
+  - preview shows old to new for TEST files only; PONG answered in parallel
+  - after yes, renames applied; after undo, names restored (re-run safe)
+forbidden:
+  - touching any file outside test_sandbox/media
+  - renaming before the explicit yes
+metrics: [files_renamed, files_restored, pong_latency_ms, t2_gate_shown]

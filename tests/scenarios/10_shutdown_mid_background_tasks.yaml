@@ -1,0 +1,13 @@
+# Shutdown in the middle of background tasks
+id: shutdown_mid_background_tasks
+description: POST /api/shutdown while three tasks run; everything stops cleanly.
+skills: [lifecycle, deep_research, files]
+steps:
+  - {at: 0s,  start: "two background tasks + one long answer"}
+  - {at: 10s, event: "POST /api/shutdown"}
+expected:
+  - overlay shows plain-language steps; window closes; 0 orphan processes; port free; DB integrity ok
+forbidden:
+  - any process left after 35 s
+  - a half-written SQLite db (integrity_check must pass)
+metrics: [shutdown_total_s, orphans, integrity_check, vram_released]

@@ -459,10 +459,16 @@ def _run(text, s, dec):
                 out = ask_first(s, name, "You asked for exactly this a moment ago - do it again",
                                 lambda n=name, t=text: SKILLS[n].run(t, s) or {"reply": "Nothing to do."})
             else:
-                with audit.context(skill=name, initiator=initiator_of(dec, s, tried), tier=tier, view=s):
-                    audit.record(f"run {name}", why(dec))
-                    out = SKILLS[name].run(text, s)
-                    killswitch.check()  # killed mid-skill: whatever it returned (often a swallowed error) is dropped
+                from ishti import test_mode
+                if tier == "T2" and test_mode.enabled() and not str(text or "").strip().lower() in ("yes", "y"):
+                    # ISHTI_TEST_MODE layer 1: a T2-tier skill never executes at all under test mode -
+                    # its whole job may be a side effect. Recorded, honest reply, no code ran.
+                    out = test_mode.blocked(name, f"run '{mask(text, s.get('redact'))[:100]}'", None, tier)
+                else:
+                    with audit.context(skill=name, initiator=initiator_of(dec, s, tried), tier=tier, view=s):
+                        audit.record(f"run {name}", why(dec))
+                        out = SKILLS[name].run(text, s)
+                        killswitch.check()  # killed mid-skill: whatever it returned (often a swallowed error) is dropped
                 gate = s.get("pending")
                 if gate and gate.get("action") and "request" not in gate:
                     gate["request"] = text  # so a "yes" can record the action that ran
@@ -614,7 +620,13 @@ def _handle(text, sid, conv, s, events, t0, channel):
                      initiator="owner", tier=tier, confirmed=time.time() if ans == "yes" else None, session=sid)
         with audit.context(skill=pending["skill"], initiator="instructed", tier=tier, session=sid, channel=channel,
                            request=pending.get("request", text), view=s):
-            reply = pending["action"]() if ans == "yes" else "Cancelled - nothing was done."
+            # ISHTI_TEST_MODE=1: the side effect itself is blocked at this LAST step (after the yes,
+            # before any skill code) and only recorded - the whole real gate path above is exercised.
+            from ishti import test_mode
+            if ans == "yes" and test_mode.enabled():
+                reply = test_mode.blocked(pending["skill"], pending.get("gate", ""), pending["action"], tier)
+            else:
+                reply = pending["action"]() if ans == "yes" else "Cancelled - nothing was done."
         if ans == "yes" and pending.get("request"):
             _did_t2(s, pending["skill"], pending["request"])
         out = reply if isinstance(reply, dict) else {"reply": reply, "sources": []}

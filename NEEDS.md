@@ -154,3 +154,30 @@ session. *Needed:* start ISHTI and ask me to capture it, or take the screenshot 
 digest.
 
 
+
+---
+
+# QA pass 2026-09-30 - what is missing or needs the owner (Prompt 1 of 3)
+
+## Q1. Real multi-speaker recordings for the diarization accuracy check (NEMOTRON_FEASIBILITY.md)
+The model runs (GO verdict), but accuracy on YOUR kind of audio (Urdu/Pashto/mixed, WhatsApp voice
+notes, noisy/overlapping speech) is UNMEASURED: no microphone is connected (N7) and no recordings exist.
+*Needed:* 2-3 short recordings (2-4 speakers, any language), placed anywhere and told to me; I run the
+accuracy pass on them. *Until then:* verdict stays GO on feasibility, accuracy = unknown.
+
+## Q2. Owner's yes to build the three OpenMuse-derived ideas (OPENMUSE_IDEAS.md)
+1. follow-up queue view, 2. task leases + crash recovery, 3. recurring page monitors (price/text/
+change, dedup + backoff). All local, no cloud. *Needed:* pick which (if any) to schedule.
+
+## Q3. transformers pin decision for diarization
+The diarization model only exists in transformers git-main (5.18.0.dev0); PyPI stable (5.17.0) lacks it.
+*Needed:* OK to pin the git commit (isolated install, ISHTI venv untouched) until the next stable
+release carries it. *Until then:* `.qa_nemotron/` stays a probe, not a dependency.
+
+## Q4. `ISHTI_TEST_MODE=1` as the standing test rule
+Implemented and wired into the T2 gate (block at the last step + audit record + scripted confirmations).
+*Needed:* nothing - informational. Default OFF in production; only the QA harness sets it.
+
+## Q5. 120 per-skill suites take time to run in full
+`tests/run_skill.py all --runs 1` is hours (120 suites x net/model skills). *Needed:* your preference:
+run `all` nightly vs on-demand per skill. The curated 105-test offline suite stays the fast gate.

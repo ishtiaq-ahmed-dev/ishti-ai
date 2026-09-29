@@ -1,0 +1,15 @@
+# Voice conversation while a background job runs
+id: voice_session_background_job
+description: Voice Q&A (text-out) while a file scan runs; barge-in still ~150 ms.
+skills: [voice, files, system]
+steps:
+  - {at: 0s,  start_background: "scan D:/ISHTI/docs (read-only)"}
+  - {at: 3s,  voice: "what's my CPU usage"}
+  - {at: 12s, voice_barge_in: "new question during the TTS answer"}
+expected:
+  - voice turn latency within the measured budget; barge-in stops TTS promptly
+  - background scan continues and finishes; mic returns to OFF at the end
+forbidden:
+  - mic staying ON after the session (kill-switch violation)
+  - background scan blocking the voice path
+metrics: [barge_in_ms, voice_turn_latency_s, scan_duration_s, mic_state_after]
