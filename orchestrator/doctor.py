@@ -162,7 +162,21 @@ class IshtiDoctor:
     def check_models(self):
         print("\n--- [4] Local Models & Reasoning ---")
         router = ModelRouter()
+        # The configured name may be stale (NEEDS.md N6: config.json still names a 19 GB MoE that is
+        # not installed). Ping the model ISHTI would actually serve: the first installed ladder rung.
         primary = router.get_model("primary")
+        installed = router.get_installed_models()
+        if primary not in installed:
+            ladder = []
+            try:
+                from ishti import vram as ishti_vram
+                ladder = [r.get("model") for r in (ishti_vram.cfg().get("roles", {}).get("planner", {}).get("rungs") or [])]
+            except Exception:
+                pass
+            ladder = [m for m in ladder if m in installed]
+            self._log_result("Models", f"Configured primary '{primary}' not installed",
+                             False, f"ISHTI serves '{ladder[0] if ladder else 'the fallback rung'}' instead", is_warning=True)
+            primary = ladder[0] if ladder else next(iter(installed), primary)
         fast = router.get_model("fast")
 
         try:
