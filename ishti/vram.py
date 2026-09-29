@@ -381,7 +381,12 @@ def _ours(name):
 
 def is_pinned(name):
     role = role_of(name)
-    return bool(role and role_spec(role).get("pinned"))
+    if not (role and role_spec(role).get("pinned")):
+        return False
+    rs = rungs(role)
+    k = min(_rung.get(role, 0), len(rs) - 1) if rs else 0
+    active = _eff.get(role) or (rs[k]["name"] if rs else "")
+    return bool(active and (name == active or base_of(name)[0] == base_of(active)[0]))
 
 
 def effective(role, configured):

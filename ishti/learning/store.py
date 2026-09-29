@@ -165,6 +165,11 @@ def conn():
             cols = {r[1] for r in _conn.execute("PRAGMA table_info(lessons)")}
             if "decayed" not in cols:  # older databases: the decay watermark is not `updated`
                 _conn.execute("ALTER TABLE lessons ADD COLUMN decayed REAL")
+            try:  # Prompt-2: the learning store's schema is version-tracked (future deltas)
+                from ishti.core.migrations import ensure_current
+                ensure_current(_conn, "learning")
+            except Exception as exc:
+                print(f"[learning.store] migrations skipped: {exc}")
             _conn.commit()
             _conn_path = path
         return _conn

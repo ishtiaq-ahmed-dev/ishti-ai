@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { Bot, Brain, CandlestickChart, UserRound, Cpu, FolderKanban, GraduationCap, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, Power, Settings as SettingsIcon, Sparkles } from "lucide-react";
+import { Bot, Brain, CandlestickChart, UserRound, Cpu, FolderKanban, GraduationCap, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, Power, Settings as SettingsIcon, Sparkles, Minimize2, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { getJSON } from "@/lib/api";
 import { Chat } from "@/sections/Chat";
@@ -12,6 +12,26 @@ import { NotificationBell } from "@/components/rare/notification-bell";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { IshtiBrand } from "@/components/IshtiBrand";
 import { initChatFontSize } from "@/lib/font-size";
+
+type VramData = {
+  device: string;
+  used_mb: number;
+  total_mb: number;
+  percent: number;
+};
+
+type ModelSwitchToast = {
+  role: string;
+  from: string;
+  to: string;
+  reason?: string;
+};
+
+type ShutdownProgress = {
+  stage: string;
+  progress: number;
+  message: string;
+};
 
 const NAV = [
   { key: "chat", label: "Chat", icon: MessageSquare },
@@ -61,7 +81,11 @@ export default function App() {
   });
 
   const [showExitModal, setShowExitModal] = useState(false);
-  const [isExiting, setIsExiting] = useState(false);
+  const [isShuttingDown, setIsShuttingDown] = useState(false);
+  const [shutdownProgress, setShutdownProgress] = useState<ShutdownProgress | null>(null);
+  const [vram, setVram] = useState<VramData | null>(null);
+  const [modelSwitchToast, setModelSwitchToast] = useState<ModelSwitchToast | null>(null);
+  const [rememberExitChoice, setRememberExitChoice] = useState(false);
 
   const toggleNav = useCallback(() => {
     setShowNav((prev) => {
@@ -71,36 +95,71 @@ export default function App() {
     });
   }, []);
 
-  const postShutdown = useCallback(() => {
-    // sendBeacon survives the page going away, unlike fetch - the native "Yes" must still reach the server
+  const executeShutdown = useCallback(() => {
+    setIsShuttingDown(true);
+    setShutdownProgress({
+      stage: "Finishing tasks",
+      progress: 0.25,
+      message: "Saving memory, conversations, and releasing models...",
+    });
     const url = "/api/shutdown";
     if (navigator.sendBeacon) {
       navigator.sendBeacon(url, new Blob(["{}"], { type: "application/json" }));
     } else {
       fetch(url, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => {});
     }
+
+    // Safety timeout: ensure window closes even if server hangs
+    setTimeout(() => {
+      if ((window as any).pywebview?.api?.force_close) {
+        (window as any).pywebview.api.force_close();
+      } else {
+        window.close();
+      }
+    }, 6000);
   }, []);
 
-  const handleConfirmExit = useCallback(async () => {
-    setIsExiting(true);
-    postShutdown();
-    setTimeout(() => {
-      window.close();
-    }, 1200);
-  }, [postShutdown]);
+  const handleMinimizeToTray = useCallback(() => {
+    setShowExitModal(false);
+    if (rememberExitChoice) {
+      try { localStorage.setItem("ishti_exit_preference", "tray"); } catch {}
+    }
+    if ((window as any).pywebview?.api?.minimize_to_tray) {
+      (window as any).pywebview.api.minimize_to_tray();
+    }
+  }, [rememberExitChoice]);
+
+  const handleQuitConfirm = useCallback(() => {
+    setShowExitModal(false);
+    if (rememberExitChoice) {
+      try { localStorage.setItem("ishti_exit_preference", "quit"); } catch {}
+    }
+    executeShutdown();
+  }, [rememberExitChoice, executeShutdown]);
+
+  const handleCloseTrigger = useCallback(() => {
+    const pref = localStorage.getItem("ishti_exit_preference");
+    if (pref === "quit") {
+      executeShutdown();
+    } else if (pref === "tray" && (window as any).pywebview?.api?.minimize_to_tray) {
+      (window as any).pywebview.api.minimize_to_tray();
+    } else {
+      setShowExitModal(true);
+    }
+  }, [executeShutdown]);
 
   useEffect(() => {
-    // All data (chats, facts, memories, settings) is continuously auto-saved.
-    // We avoid setting e.returnValue in beforeunload because browsers force an alarming generic message
-    // ("Changes that you made may not be saved.") which is inaccurate and misleading for ISHTI.
+    const handleCloseReq = () => handleCloseTrigger();
+    window.addEventListener("ishti-window-close-requested", handleCloseReq);
     const handlePageHide = (e: PageTransitionEvent) => {
-      if (!e.persisted && !isExiting) postShutdown();  // the window was really closed, not just hidden
+      if (!e.persisted && !isShuttingDown) executeShutdown();
     };
     window.addEventListener("pagehide", handlePageHide);
     return () => {
+      window.removeEventListener("ishti-window-close-requested", handleCloseReq);
       window.removeEventListener("pagehide", handlePageHide);
     };
-  }, [isExiting, postShutdown]);
+  }, [handleCloseTrigger, executeShutdown, isShuttingDown]);
 
   const onBusy = useCallback((b: boolean) => {
     setBusy(b);
@@ -178,6 +237,53 @@ export default function App() {
               setAlerts((a) => [msg.data.reply, ...a].slice(0, 20));
               if (typeof Notification !== "undefined" && Notification?.permission === "granted") {
                 new Notification("ISHTI", { body: msg.data.reply });
+              }
+            } else if (msg.type === "vram_status" && msg.data) {
+              const d = msg.data;
+              const used = d.gpu?.used_mb ?? d.used_mb ?? 0;
+              const total = d.gpu?.total_mb ?? d.total_mb ?? 16303;
+              const pct = d.gpu?.used_pct ?? d.percent ?? (total > 0 ? Math.round((used / total) * 100) : 0);
+              const device = d.gpu?.name ?? d.device ?? "NVIDIA GeForce RTX 5070 Ti";
+              setVram({
+                device,
+                used_mb: Math.round(used),
+                total_mb: Math.round(total),
+                percent: pct,
+              });
+            } else if (msg.type === "model_switch" && msg.data) {
+              const d = msg.data;
+              const ev: ModelSwitchToast = {
+                role: d.role || "Model",
+                from: d.from || d.from_model || "",
+                to: d.to || d.to_model || "",
+                reason: d.reason || "Switched to a lighter model to stay fast",
+              };
+              setModelSwitchToast(ev);
+              setTimeout(() => {
+                setModelSwitchToast((cur) => (cur === ev ? null : cur));
+              }, 4500);
+            } else if (msg.type === "shutdown_progress" && msg.data) {
+              const d = msg.data;
+              const label = d.label || d.stage || d.step || "Shutting down";
+              const prog = typeof d.progress === "number" ? d.progress : (d.index && d.total ? d.index / d.total : 0.5);
+              setIsShuttingDown(true);
+              setShutdownProgress({
+                stage: label,
+                progress: prog,
+                message: d.message || d.error || "",
+              });
+              if (d.step === "exit" || d.stage === "Goodbye" || prog >= 1.0) {
+                setTimeout(() => {
+                  if ((window as any).pywebview?.api?.force_close) {
+                    (window as any).pywebview.api.force_close();
+                  } else {
+                    window.close();
+                  }
+                }, 600);
+              }
+            } else if (msg.type === "show_window") {
+              if ((window as any).pywebview?.api?.show_window) {
+                (window as any).pywebview.api.show_window();
               }
             }
           } catch (err) {
@@ -262,14 +368,6 @@ export default function App() {
                       onClick={() => { setPage("tasks"); setAlerts([]); }}
                       title={alerts.length > 0 ? `${alerts.length} reminder${alerts.length > 1 ? "s" : ""}` : "Reminders"}
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowExitModal(true)}
-                      title="Exit ISHTI (All data is auto-saved)"
-                      className="rounded-lg p-1.5 text-danger transition-colors hover:bg-danger/15 cursor-pointer ml-0.5"
-                    >
-                      <Power className="h-3.5 w-3.5" />
-                    </button>
                   </div>
                 </div>
 
@@ -297,15 +395,6 @@ export default function App() {
                         <span className="relative font-medium">{label}</span>
                       </button>
                     ))}
-                    <button
-                      type="button"
-                      onClick={() => setShowExitModal(true)}
-                      className="relative flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-destructive/80 hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer mt-1"
-                      title="Shut down ISHTI and release all resources"
-                    >
-                      <Power className="relative h-4 w-4 text-destructive" />
-                      <span className="relative font-medium">Exit ISHTI</span>
-                    </button>
                   </nav>
 
                   <div className="mt-5 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">My projects</div>
@@ -318,14 +407,38 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="mt-3 shrink-0 rounded-2xl bg-gradient-to-br from-indigo-600 via-blue-600 to-emerald-600 p-3.5 text-white shadow-sm">
+                <div className="mt-3 shrink-0 rounded-2xl bg-gradient-to-br from-indigo-600 via-blue-600 to-emerald-600 p-3 text-white shadow-sm">
                   <div className="flex items-center gap-1.5 text-xs font-bold leading-tight tracking-wide">
                     <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-300" />
                     <span>Built and designed by ishtiaq ahmed</span>
                   </div>
-                  <p className="mt-1 text-[11px] leading-snug text-white/85">
+                  <p className="mt-1 text-[10.5px] leading-snug text-white/85">
                     Personal AI Assistant · 100% Local Inference & Neural Privacy
                   </p>
+                </div>
+
+                {/* Bottom-left Power button & Live VRAM chip */}
+                <div className="mt-2 pt-2 border-t border-border/40 flex items-center justify-between gap-1 shrink-0">
+                  <button
+                    type="button"
+                    id="ishti-sidebar-power-btn"
+                    onClick={() => setShowExitModal(true)}
+                    className="flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-danger/90 hover:text-danger hover:bg-danger/10 active:scale-95 transition-all cursor-pointer"
+                    title="Shut down ISHTI (Quit and release all GPU memory)"
+                  >
+                    <Power className="h-4 w-4 text-danger" />
+                    <span>Shut down</span>
+                  </button>
+
+                  {vram && (
+                    <div
+                      className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-muted/40 border border-border/40 text-[10px] text-muted-foreground font-mono"
+                      title={`${vram.device}: ${vram.used_mb}MB / ${vram.total_mb}MB (${vram.percent}%)`}
+                    >
+                      <Cpu className={`h-3 w-3 shrink-0 ${vram.percent > 85 ? "text-amber-400" : "text-emerald-400"}`} />
+                      <span>{(vram.used_mb / 1024).toFixed(1)}GB</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </motion.aside>
@@ -351,6 +464,7 @@ export default function App() {
         </main>
       </div>
 
+      {/* Exit confirmation dialog: Quit / Minimize to tray / Cancel + Remember choice */}
       {showExitModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
           <div className="w-full max-w-md rounded-2xl border border-border/80 bg-background/95 p-6 shadow-2xl backdrop-blur-md">
@@ -366,32 +480,111 @@ export default function App() {
             <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
               All your conversations, memories, and settings are continuously auto-saved. Exiting will cleanly terminate background processes, unload AI models to release GPU VRAM (RTX 5070 Ti), and close ISHTI.
             </p>
-            {isExiting ? (
-              <div className="mt-5 flex items-center justify-center gap-2.5 rounded-xl bg-muted/60 p-3 text-xs font-medium text-foreground">
-                <span className="h-2 w-2 animate-ping rounded-full bg-danger" />
-                Shutting down ISHTI services...
-              </div>
-            ) : (
-              <div className="mt-6 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowExitModal(false)}
-                  className="rounded-xl border border-border px-4 py-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer transition-colors"
-                >
-                  No, keep running
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmExit}
-                  className="rounded-xl bg-danger px-4 py-2 text-xs font-semibold text-white hover:bg-danger/90 active:scale-95 cursor-pointer transition-all shadow-sm"
-                >
-                  Yes, exit ISHTI
-                </button>
-              </div>
-            )}
+
+            <div className="mt-4 pt-3 border-t border-border/40 flex items-center justify-between">
+              <label className="flex items-center gap-2 cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+                <input
+                  type="checkbox"
+                  checked={rememberExitChoice}
+                  onChange={(e) => setRememberExitChoice(e.target.checked)}
+                  className="rounded border-border text-accent focus:ring-accent"
+                />
+                <span>Remember my choice</span>
+              </label>
+
+              <button
+                type="button"
+                onClick={() => setShowExitModal(false)}
+                className="rounded-xl border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+
+            <div className="mt-4 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={handleMinimizeToTray}
+                className="flex items-center gap-1.5 rounded-xl border border-border/80 bg-muted/30 px-3.5 py-2 text-xs font-medium text-foreground hover:bg-muted cursor-pointer transition-colors"
+              >
+                <Minimize2 className="h-3.5 w-3.5" />
+                Minimize to tray
+              </button>
+              <button
+                type="button"
+                onClick={handleQuitConfirm}
+                className="flex items-center gap-1.5 rounded-xl bg-danger px-4 py-2 text-xs font-semibold text-white hover:bg-danger/90 active:scale-95 cursor-pointer transition-all shadow-sm"
+              >
+                <Power className="h-3.5 w-3.5" />
+                Quit ISHTI
+              </button>
+            </div>
           </div>
         </div>
       )}
+
+      {/* Unified Shutdown Progress Overlay */}
+      {isShuttingDown && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-300">
+          <div className="w-full max-w-sm rounded-2xl border border-amber-500/30 bg-background/95 p-6 shadow-2xl backdrop-blur-md flex flex-col items-center text-center">
+            <div className="relative mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-amber-500/10 text-amber-500 border border-amber-500/20">
+              <Sparkles className="h-7 w-7 animate-pulse text-amber-400" />
+            </div>
+            <h3 className="text-base font-bold text-foreground">Shutting Down ISHTI</h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {shutdownProgress?.message || "Releasing RTX 5070 Ti VRAM and stopping services..."}
+            </p>
+
+            <div className="mt-5 w-full">
+              <div className="flex justify-between text-[11px] font-semibold text-amber-400 mb-1.5">
+                <span>{shutdownProgress?.stage || "Finishing tasks"}</span>
+                <span>{Math.round((shutdownProgress?.progress || 0.25) * 100)}%</span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                <motion.div
+                  className="h-full bg-gradient-to-r from-amber-500 to-amber-300 rounded-full"
+                  initial={{ width: "25%" }}
+                  animate={{ width: `${Math.min(100, Math.max(10, Math.round((shutdownProgress?.progress || 0.25) * 100)))}%` }}
+                  transition={{ duration: 0.3 }}
+                />
+              </div>
+            </div>
+            <div className="mt-4 text-[10px] text-muted-foreground/75">
+              Safe exit · Zero orphaned processes
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Model Switch Notification Toast */}
+      <AnimatePresence>
+        {modelSwitchToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            transition={{ duration: 0.2 }}
+            className="fixed top-5 right-5 z-50 flex items-center gap-3 rounded-2xl border border-amber-500/30 bg-background/95 px-4 py-3 shadow-xl backdrop-blur-md max-w-sm"
+          >
+            <div className="grid h-8 w-8 place-items-center rounded-xl bg-amber-500/15 text-amber-500 shrink-0">
+              <Zap className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-semibold text-foreground">Switched to a lighter model to stay fast</div>
+              <div className="text-[11px] text-muted-foreground truncate">
+                <span className="capitalize font-medium text-amber-400/90">{modelSwitchToast.role}</span>: {modelSwitchToast.from} → {modelSwitchToast.to}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setModelSwitchToast(null)}
+              className="rounded-lg p-1 text-muted-foreground hover:text-foreground hover:bg-muted/50 cursor-pointer"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

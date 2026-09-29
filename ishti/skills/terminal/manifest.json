@@ -1,0 +1,23 @@
+{
+  "name": "terminal",
+  "version": "1.0.0",
+  "description": "Sandboxed terminal/script execution (B5): commands run in a restricted subprocess (no shell interpolation, working dir confined to the project, output capped, timeout enforced). An allow-list (Settings -> Skills -> terminal_allow) decides what may run; a deny-list is always refused; anything that changes the system asks first (T2). Read-only commands (status, list, version, diff) run without confirmation.",
+  "route": "run a command, execute a script, git status, run pytest, terminal",
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 26,
+  "status": "working",
+  "tier": "T2",
+  "laya": false,
+  "scope": {
+    "write": ["data"],
+    "net": [],
+    "apps": true
+  },
+  "category": "System & Desktop",
+  "path": "ishti/skills/terminal"
+}

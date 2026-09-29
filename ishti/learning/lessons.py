@@ -496,7 +496,7 @@ def guidance_for(text, domain=None, limit=4):
         if not pinned and float(ls.get("confidence") or 0) < floor:
             continue
         hay = _tokens(" ".join(str(ls.get(k) or "") for k in
-                               ("context", "statement", "correct", "incorrect", "entity", "scope")))
+                               ("context", "statement", "correct", "incorrect", "entity", "note", "scope")))
         overlap = len(tokens & hay)
         if domain and domain.lower() in f"{ls['context']} {ls['statement']} {ls['scope']}".lower():
             overlap += 2

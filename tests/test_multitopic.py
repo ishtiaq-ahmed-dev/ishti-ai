@@ -20,6 +20,15 @@ import threading
 import time
 from types import SimpleNamespace
 
+# The scenario below runs AT IMPORT (its documented mode is a direct script run — see the
+# docstring's Run line). Under pytest it would execute during collection, where its
+# wall-clock overlap assertion flakes under load. Skip the module under pytest; the direct
+# run is untouched.
+if "pytest" in sys.modules:
+    import pytest
+    pytest.skip("concurrency scenario; run directly: python tests/test_multitopic.py",
+                allow_module_level=True)
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 

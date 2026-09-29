@@ -115,10 +115,17 @@ def apply(fb: Dict[str, Any], interaction: Optional[Dict[str, Any]] = None,
         errors.record(fb, interaction_id=iid, domain=domain)
         effects.append("recorded_mistake")
         
-        # Add high-confidence lesson (spec 8)
+        # Add high-confidence lesson (spec 8). The lesson's CONTEXT carries the corrected
+        # subject (the app/person/file) AND the request's own words — 'open my work browser'
+        # must retrieve the Chrome lesson next time, not just a request literally saying 'apps'.
         if right:
             scope = "application" if err_type == "wrong_application" else "domain"
             subject = domain or err_type
+            # retrieval recall WITHOUT touching context: `context` stays the exact subject so
+            # contradiction pairing (lessons.contradictions matches context=) keeps working;
+            # the request's own words go in `note`, which guidance_for() also searches.
+            req_words = [w for w in str((interaction or {}).get("request") or "").lower().split()
+                         if len(w) > 3 and w not in errors.STOP][:6]
             statement = f"When dealing with {subject}, use {right} (not {wrong})." if wrong else f"When dealing with {subject}, use {right}."
             lesson_out = lessons.add(
                 kind="procedural_lesson",
@@ -129,7 +136,8 @@ def apply(fb: Dict[str, Any], interaction: Optional[Dict[str, Any]] = None,
                 correct=right,
                 source="explicit_user_correction",
                 confidence=1.0,
-                interaction_id=iid
+                interaction_id=iid,
+                note=" ".join(req_words)[:160]
             )
             effects.append("added_procedural_lesson")
             

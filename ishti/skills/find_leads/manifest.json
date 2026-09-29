@@ -1,0 +1,23 @@
+{
+  "name": "find_leads",
+  "version": "1.0.0",
+  "description": "Lead finder: natural-language lead requests ('find US LLC formation agencies in Texas', 'e-commerce founders in UAE who need US company setup') with optional filters (industry, location, company size, max results). Pipeline: resolved request -> search queries -> public pages (ScrapeGraphAI when installed, built-in search+fetch extraction otherwise) -> structured fields {name, company, role, website, public email/phone, location, source_url, relevance, notes} -> dedupe -> fact-check verify -> rank -> table + CSV/XLSX export. Public business data only, robots.txt respected, every lead keeps its source URL.",
+  "route": "find leads, find agencies or founders or companies matching a description, build a prospect list, find more like these",
+  "needs": {
+    "python": ["requests", "bs4"],
+    "models": ["planner"],
+    "mcp": [],
+    "apis": ["bing.com"]
+  },
+  "priority": 28,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {
+    "write": ["data"],
+    "net": ["*"],
+    "apps": false
+  },
+  "category": "Finance & Commerce",
+  "path": "ishti/skills/find_leads"
+}

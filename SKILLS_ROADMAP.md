@@ -135,6 +135,30 @@ calc's "solve …" no longer steals sudoku grids (sudoku priority 13). Labels 28
 check_skills **105/208/303 OK**, routing **296/303 (7 Laya-only misses under --no-laya)**,
 verify_all **145/145**, smoke **128/128**.
 
+## Batches J, K, L (2026-09-29) — the buildable backlog is exhausted
+
+Batch J (writing/docs): **legaldoc** (rental/NDA/employment templates with visible [FILL]
+blanks and a mandatory not-legal-advice notice), **pressrel** (press release / product
+description / FAQ from stated facts verbatim), **doclayout** (pdfplumber per-page layout:
+title by font size, heading-like lines, ruled lines, tables; scanned pages reported as scans).
+Batch K (media/data): **pantry** (expiry tracker), **audiomark** (timestamped notes),
+**highlights** (per-second RMS via asetnsamples+astats+ametadata — the naive astats parse
+measured nothing, caught by the self-check), **chromakey** (green → transparent alpha verified
+on real pixels), **infographic** (exact stats printed on the chart). Batch L (reasoning):
+**gametheory** (mixed equilibrium verified by indifference — formula never trusted),
+**sensitivity** (sympy-exact elasticity table, f=0 honest), **argumentcheck** (fallacy patterns
+named with trigger phrase, candidates-not-proof). Routing hardening the gates forced:
+screen_control's KEY rule no longer treats any word as a hotkey ("press release" is safe).
+Labels 303 → **329**, check_skills **116/223/329 OK**, routing **322/329 (7 Laya-only misses
+under --no-laya)**, verify_all 153/153 then **155/156** with one timing-flaky multitopic test
+passing on re-run, smoke **143/143**.
+
+What remains is genuinely blocked or needs the owner: model downloads (segmentation, depth,
+YOLO, FER, rembg — NEEDS 12), cloud APIs (music ID, hotels/flights, Google OAuth tokens),
+Home-Assistant-class infrastructure, wallet keys (T3 by design), and LLM-strength features
+(vision description, moderation) that already route through Gemma3. No remaining PARTIAL item
+is buildable locally today.
+
 ## Counting honestly
 
 The catalogue's ~1,000 "skills" mostly decompose into: (a) capabilities ISHTI already ships as

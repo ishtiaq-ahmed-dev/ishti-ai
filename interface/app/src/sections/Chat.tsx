@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUp, AudioLines, Maximize2, OctagonX, MessageSquare, Mic, Minimize2, Network, PanelLeft, PanelLeftClose, Plus, Square, X } from "lucide-react";
+import { ArrowUp, AudioLines, Maximize2, MessageSquare, Mic, Minimize2, Network, PanelLeft, PanelLeftClose, Plus, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { del, getJSON, postJSON, streamChat, type Result, type Source, type TraceEvent } from "@/lib/api";
 import { ActivityGraph, ConversationGraph, type Turn } from "@/components/ActivityGraph";
@@ -621,13 +621,6 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
             </div>
           </div>
           <div className="flex items-center gap-1">
-            <button type="button" onClick={() => { fetch("/api/kill", { method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ reason: "stop button" }) }).catch(() => {}); setQueue([]); }}
-              title="Stop everything now: speech, thinking, browser steps, tools (kill switch - also Ctrl+Alt+Q)"
-              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer ${busy
-                ? "bg-danger text-white hover:opacity-90" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>
-              <OctagonX className="h-4 w-4" /> Stop
-            </button>
             <button onClick={() => setGraphFor(graphFor ? null : msgs.filter((m) => m.role === "ishti").at(-1)?.id ?? null)}
               className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer">
               <Network className="h-4 w-4" /> Activity

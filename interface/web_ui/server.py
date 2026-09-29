@@ -12,6 +12,7 @@ import asyncio
 import secrets
 from typing import Dict, Any, List
 from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
@@ -29,6 +30,13 @@ from orchestrator.memory.user_profile import get_user_memory
 from ishti.dispatcher import api as ishti_api, handle as ishti_handle, HOOKS as ISHTI_HOOKS
 
 app = FastAPI(title="ISHTI Personal AI Assistant")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(ishti_api)  # /api/chat, /api/skills, /api/facts (the dispatcher)
 
 # Remote access (Cloudflare tunnel, remote/tunnel_setup.md) arrives from cloudflared on 127.0.0.1,
@@ -646,26 +654,64 @@ async def websocket_endpoint(websocket: WebSocket):
         return
     await websocket.accept()
     active_websockets.append(websocket)
+    from ishti import events
+    loop = asyncio.get_running_loop()
+    q = asyncio.Queue(maxsize=500)
+
+    def _put(m):
+        if q.full():
+            try:
+                q.get_nowait()
+            except Exception:
+                pass
+        try:
+            q.put_nowait(m)
+        except Exception:
+            pass
+
+    def push(m):
+        loop.call_soon_threadsafe(_put, m)
+
+    events.subscribe(push)
+    recv_task = None
     try:
         await websocket.send_text(json.dumps({
             "type": "connected",
             "data": {"message": "ISHTI Neural Core Connected."}
         }))
+        for m in events.replay():
+            await websocket.send_text(json.dumps(m, ensure_ascii=False, default=str))
+
+        recv_task = asyncio.ensure_future(websocket.receive_text())
         while True:
-            raw_text = await websocket.receive_text()
-            try:
-                msg = json.loads(raw_text)
-                if msg.get("action") == "execute":
-                    prompt = msg.get("prompt", "")
-                    if prompt:
-                        loop = asyncio.get_event_loop()
-                        def run_sync():
-                            return ishti_handle(prompt)
-                        res = await loop.run_in_executor(None, run_sync)
-                        await websocket.send_text(json.dumps({"type": "task_completed_full", "data": res}))
-            except Exception as e:
-                print(f"[WS Error]: {e}")
-    except WebSocketDisconnect:
+            get_task = asyncio.ensure_future(q.get())
+            done, _ = await asyncio.wait({recv_task, get_task}, return_when=asyncio.FIRST_COMPLETED)
+            if get_task in done:
+                event_msg = get_task.result()
+                await websocket.send_text(json.dumps(event_msg, ensure_ascii=False, default=str))
+            else:
+                get_task.cancel()
+
+            if recv_task in done:
+                raw_text = recv_task.result()
+                recv_task = asyncio.ensure_future(websocket.receive_text())
+                try:
+                    msg = json.loads(raw_text)
+                    if msg.get("action") == "execute":
+                        prompt = msg.get("prompt", "")
+                        if prompt:
+                            def run_sync():
+                                return ishti_handle(prompt)
+                            res = await loop.run_in_executor(None, run_sync)
+                            await websocket.send_text(json.dumps({"type": "task_completed_full", "data": res}))
+                except Exception as e:
+                    print(f"[WS Error]: {e}")
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    finally:
+        if recv_task and not recv_task.done():
+            recv_task.cancel()
+        events.unsubscribe(push)
         if websocket in active_websockets:
             active_websockets.remove(websocket)
 
@@ -1062,7 +1108,286 @@ async def learning_ask():
         return _learning_fail(exc)
 
 
-app.include_router(learning_api)  # /api/learning/* - learning dashboard (see docs/LEARNING_INTERFACE.md)
+# ---- Prompt 2: memory dashboard (people/graph, conflicts, forget log, vault, backups) -------
+# Same fail-soft pattern as /api/learning/*: lazy imports, {"error": ...} on trouble.
+# Actions map to H4: Confirm (person), Forget (person - real deletion + audit), Export,
+# Edit/Confirm/Reject/Delete stay on /api/learning/lessons/*.
+
+
+@learning_api.get("/api/memory/people")
+async def memory_people(limit: int = 200):
+    """Person records with relationship + confidence + needs_confirmation (C2/C5)."""
+    try:
+        from ishti.arch2 import people
+        return {"people": people.list_people(limit)}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.get("/api/memory/graph")
+async def memory_graph(person: str = "", limit: int = 60):
+    """Relationship edges for the graph view (C6); ?person= narrows to one node."""
+    try:
+        from ishti import rgraph
+        if person:
+            edges = rgraph.edges_of(person)[:max(1, limit)]
+        else:
+            edges = [rgraph._dec_edge(dict(r)) for r in rgraph.conn().execute(
+                "SELECT e.*, s.name AS s_name, d.name AS d_name FROM edges e "
+                "JOIN nodes s ON s.id=e.src JOIN nodes d ON d.id=e.dst "
+                "ORDER BY e.last_confirmed DESC LIMIT ?", (max(1, limit),)).fetchall()]
+        return {"edges": [{"s": e.get("s_name"), "rel": e.get("rel"), "d": e.get("d_name"),
+                           "detail": e.get("detail", ""), "confidence": e.get("confidence"),
+                           "source_type": e.get("source_type"), "last_confirmed": e.get("last_confirmed")}
+                          for e in edges],
+                "stats": rgraph.stats(), "questions": rgraph.pending_questions()}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.get("/api/memory/conflicts")
+async def memory_conflicts(limit: int = 50):
+    """Contradiction records (D5) + the deletion audit log (H2: that a forget happened)."""
+    try:
+        from ishti.arch2 import memory
+        return {"conflicts": memory.conflicts(limit), "forget_audit": memory.forget_audit_log(limit)}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.post("/api/memory/conflicts/{conflict_id}")
+async def memory_conflict_resolve(conflict_id: int, req: Request):
+    """The owner decides a contradiction: keep=new (default) or keep=old."""
+    try:
+        body = await _learning_body(req)
+        keep = str(body.get("keep", "new")).strip().lower()
+        if keep not in ("new", "old"):
+            raise ValueError("keep must be 'new' or 'old'")
+        from ishti.arch2 import memory
+        return {"resolved": bool(memory.resolve_conflict(conflict_id, keep=keep,
+                                                         note=str(body.get("note", ""))[:200]))}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.post("/api/memory/people/{name}/confirm")
+async def memory_person_confirm(name: str):
+    """HITL: the owner confirms who this person is (clears needs_confirmation)."""
+    try:
+        from ishti.arch2 import people
+        return {"confirmed": bool(people.confirm(name))}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.post("/api/memory/people/{name}/forget")
+async def memory_person_forget(name: str, req: Request):
+    """'Forget everything about X' from the dashboard: REAL deletion + audit row (H2).
+    Requires {"confirm": true} - it is irreversible by design."""
+    try:
+        body = await _learning_body(req)
+        if not _learning_bool(body.get("confirm"), False):
+            raise ValueError("this permanently deletes data - send confirm=true")
+        from ishti.arch2 import memory
+        res = memory.forget_hard(name)
+        return {"forgotten": True, "memories": res["memories"], "entities": res["entities"],
+                "edges": res["edges"], "audit_id": res["audit_id"]}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.get("/api/memory/vault")
+async def memory_vault():
+    """Encryption-at-rest status (A3)."""
+    try:
+        from ishti.core import vault
+        return vault.status()
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.post("/api/memory/vault")
+async def memory_vault_toggle(req: Request):
+    """Turn field encryption on/off in place ({"enabled": true|false})."""
+    try:
+        body = await _learning_body(req)
+        from ishti.core import vault
+        return vault.set_enabled(_learning_bool(body.get("enabled"), False))
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.post("/api/memory/backup")
+async def memory_backup():
+    """Consistent online backups of both memory stores (A3)."""
+    try:
+        from ishti.core import vault
+        from ishti.arch2 import memory
+        from ishti import rgraph
+        return {"backups": [vault.backup(memory.db_path()), vault.backup(rgraph.DB_PATH)]}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.post("/api/memory/export")
+async def memory_export(req: Request):
+    """Portable decrypted export ZIP of memories + entities + graph (A3/H4 Export)."""
+    try:
+        body = await _learning_body(req)
+        from ishti.core import vault
+        return {"path": vault.export_all(include_private=_learning_bool(body.get("include_private"), True))}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.get("/api/memory/training-dry-run")
+async def memory_training_dry_run():
+    """G3/G4: the offline pipeline's dry-run report (no training, no deployment)."""
+    try:
+        import orchestrator.finetune as FT
+        return FT.dry_run()
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+# ---- Prompt 3: skills registry, multi-agent, tasks, telemetry, leads, flowise ---------------
+p3_api = APIRouter()
+
+
+@p3_api.get("/api/skills/registry")
+async def skills_registry(q: str = "", domain: str = "", k: int = 20):
+    """The Skill Registry: records (optionally retrieved for a request) + enable/disable flags."""
+    try:
+        from ishti.skills import registry as REG, load_skills
+        skills = load_skills()
+        if q:
+            win = REG.retrieve(q, skills, k=k, domain=domain or None, with_scores=True)
+            return {"window": win, "describe": REG.describe(skills)}
+        return {"records": list(REG.records(skills).values()), "describe": REG.describe(skills)}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@p3_api.post("/api/skills/{name}/enabled")
+async def skill_set_enabled(name: str, req: Request):
+    """Enable/disable one skill (?domain=1 for a whole domain)."""
+    try:
+        body = await _learning_body(req)
+        from ishti.skills import registry as REG, load_skills
+        REG.reset_cache()
+        return REG.set_enabled(name, _learning_bool(body.get("enabled"), True),
+                               is_domain=_learning_bool(body.get("domain"), False))
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@p3_api.get("/api/agents")
+async def agents_overview():
+    """Agent roster + live performance (C2/C8)."""
+    try:
+        import ishti.agents as A
+        return {"agents": {k: {"goal": v["goal"], "skills": v["skills"]} for k, v in A.AGENTS.items()},
+                "perf": A.perf(), "budget": A._budget()}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@p3_api.get("/api/tasks")
+async def tasks_list(status: str = ""):
+    """Background task records (D4)."""
+    try:
+        from ishti import taskmgr
+        return {"tasks": taskmgr.list_tasks(status or None), "stats": taskmgr.stats()}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@p3_api.post("/api/tasks/{task_id}/{action}")
+async def task_action(task_id: str, action: str):
+    """pause | resume | cancel a background task."""
+    try:
+        from ishti import taskmgr
+        fn = {"pause": taskmgr.pause, "resume": taskmgr.resume, "cancel": taskmgr.cancel}.get(action)
+        if not fn:
+            raise ValueError("action must be pause|resume|cancel")
+        return {"done": bool(fn(task_id))}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@p3_api.get("/api/metrics")
+async def metrics_snapshot():
+    """H2: per-stage percentiles, counters, tokens, agents, queue, system."""
+    try:
+        from ishti import telemetry
+        return telemetry.metrics()
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@p3_api.get("/api/telemetry/spans")
+async def telemetry_spans(limit: int = 100, name: str = "", status: str = ""):
+    """H1: recent spans (filterable) for the observability view."""
+    try:
+        from ishti import telemetry
+        return {"spans": telemetry.recent_spans(limit, name or "", status or "")}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@p3_api.get("/api/telemetry/errors")
+async def telemetry_errors(limit: int = 50):
+    try:
+        from ishti import telemetry
+        return {"errors": telemetry.errors(limit)}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@p3_api.post("/api/eval/run")
+async def eval_run():
+    """H5: run the fixed regression set on demand; results stored under data/eval/."""
+    try:
+        from ishti import telemetry
+        return telemetry.run_eval()
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@p3_api.get("/api/leads")
+async def leads_list(q: str = "", verified: int = 0, limit: int = 200):
+    try:
+        import ishti.leads as L
+        return {"leads": L.rows(q, limit=limit, verified_only=bool(verified)), "stats": L.stats()}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@p3_api.post("/api/leads/export")
+async def leads_export(req: Request):
+    try:
+        body = await _learning_body(req)
+        import ishti.leads as L
+        return {"path": L.export(fmt=str(body.get("fmt", "csv")), q=str(body.get("q", "")))}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@p3_api.get("/api/flowise/flows")
+async def flowise_flows():
+    """E1: configured? + the chatflows available for intent binding."""
+    try:
+        from ishti import flowise_client as FC
+        ok, detail = FC.health()
+        return {"configured": FC.configured(), "health": detail, "flows": FC.list_flows()}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+app.include_router(p3_api)  # /api/skills/* /api/agents /api/tasks /api/metrics /api/telemetry/* /api/eval /api/leads /api/flowise
+app.include_router(learning_api)  # /api/learning/* + /api/memory/* - learning & memory dashboards
 
 from ishti import lifecycle_api  # noqa: E402  /api/ready, /api/vram, /api/shutdown, /ws/events (docs/API_CONTRACT.md)
 lifecycle_api.attach(app)

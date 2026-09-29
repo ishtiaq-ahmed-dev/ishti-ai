@@ -74,7 +74,13 @@ def reveal_window() -> bool:
     pythonw_exe = os.path.join(ROOT, "venv", "Scripts", "pythonw.exe")
     python_exe = pythonw_exe if os.path.exists(pythonw_exe) else os.path.join(ROOT, "venv", "Scripts", "python.exe")
     app_window_py = os.path.join(ROOT, "desktop", "app_window.py")
-    flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+    flags = (
+        subprocess.CREATE_NO_WINDOW
+        | subprocess.DETACHED_PROCESS
+        | subprocess.CREATE_NEW_PROCESS_GROUP
+        if os.name == "nt"
+        else 0
+    )
 
     try:
         if os.path.exists(app_window_py):

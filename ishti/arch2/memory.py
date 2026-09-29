@@ -48,7 +48,8 @@ def conn():
                     importance REAL DEFAULT 0.5, confidence REAL DEFAULT 0.5, source TEXT DEFAULT 'inference',
                     created_at REAL, updated_at REAL, last_accessed_at REAL, last_confirmed_at REAL,
                     times_observed INTEGER DEFAULT 1, status TEXT DEFAULT 'active',
-                    keywords TEXT DEFAULT '', valid_until REAL, meta TEXT DEFAULT '{}');
+                    keywords TEXT DEFAULT '', valid_until REAL, meta TEXT DEFAULT '{}',
+                    content_hash TEXT DEFAULT '');
                 CREATE TABLE IF NOT EXISTS entities(
                     id TEXT PRIMARY KEY, name TEXT UNIQUE, kind TEXT DEFAULT 'person',
                     aliases TEXT DEFAULT '[]', relationship TEXT DEFAULT 'unknown',
@@ -64,12 +65,69 @@ def conn():
                 _conn.execute("ALTER TABLE entities ADD COLUMN display TEXT DEFAULT ''")
             except sqlite3.OperationalError:
                 pass  # column already exists
+            try:  # at-rest dedupe key (Prompt-2 vault): plaintext hash, survives encryption
+                _conn.execute("ALTER TABLE memories ADD COLUMN content_hash TEXT DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+            try:  # Prompt-2 additive schema (conflicts, events, tasks, training_examples, FTS)
+                from ishti.core.migrations import ensure_current
+                ensure_current(_conn, "memory")
+            except Exception as exc:
+                print(f"[arch2.memory] migrations skipped: {exc}")
+            try:  # one-time: give pre-vault rows their dedupe hash (no-op once every row has one)
+                from ishti.core import vault as _v
+                for row in _conn.execute("SELECT id, content FROM memories WHERE content_hash=''").fetchall():
+                    _conn.execute("UPDATE memories SET content_hash=? WHERE id=?",
+                                  (_v.content_hash(_v.decrypt_text(row["content"])), row["id"]))
+                _conn.commit()
+            except Exception:
+                pass
             _conn.commit()
         return _conn
 
 
 def _j(v) -> str:
     return json.dumps(v, ensure_ascii=False)
+
+
+def _enc(s: str) -> str:
+    """At-rest encryption (core.vault): a no-op while vault is off, ciphertext with an
+    'enc1:' prefix while on. Every read path goes back through _dec."""
+    try:
+        from ishti.core import vault as _v
+        return _v.encrypt_text(s)
+    except Exception:
+        return s
+
+
+def _dec(s: str) -> str:
+    try:
+        from ishti.core import vault as _v
+        return _v.decrypt_text(s)
+    except Exception:
+        return s
+
+
+def _dec_mem(d: dict) -> dict:
+    for col in ("content", "keywords"):
+        if isinstance(d.get(col), str):
+            d[col] = _dec(d[col])
+    return d
+
+
+def _dec_entity(d: dict) -> dict:
+    for col in ("notes", "aliases", "contact_methods", "preferences", "important_facts"):
+        if isinstance(d.get(col), str):
+            d[col] = _dec(d[col])
+    return d
+
+
+def _hash_of(text: str) -> str:
+    try:
+        from ishti.core import vault as _v
+        return _v.content_hash(text)
+    except Exception:
+        return ""
 
 
 def thresholds() -> dict:
@@ -94,9 +152,13 @@ def _write(mtype: str, content: str, *, source="inference", importance=0.5,
            confidence=0.5, entity_ids=(), keywords=(), status="active", meta=None) -> dict:
     now = time.time()
     c = conn()
+    chash = _hash_of(content)          # stable dedupe key: survives at-rest encryption
+    stored_content = _enc(content)     # ciphertext never repeats, so dedupe goes by hash
+    stored_keywords = _enc(_j([k.lower() for k in keywords]))
     with _lock, c:
         row = c.execute("SELECT id, confidence, importance, times_observed, status FROM memories "
-                        "WHERE type=? AND content=?", (mtype, content)).fetchone()
+                        "WHERE type=? AND (content=? OR (?!='' AND content_hash=?))",
+                        (mtype, stored_content, chash, chash)).fetchone()
         if row:  # same memory re-observed: strengthen, don't duplicate
             c.execute("UPDATE memories SET times_observed=times_observed+1, confidence=MIN(0.99, ?), "
                       "last_confirmed_at=?, updated_at=?, status=? WHERE id=?",
@@ -107,14 +169,17 @@ def _write(mtype: str, content: str, *, source="inference", importance=0.5,
             mid = f"mem_{uuid.uuid4().hex[:12]}"
             try:
                 c.execute("INSERT INTO memories(id, type, content, entity_ids, importance, confidence, source, "
-                          "created_at, updated_at, last_accessed_at, last_confirmed_at, status, keywords, meta) "
-                          "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                          (mid, mtype, content, _j(list(entity_ids)), importance, confidence, source,
-                           now, now, now, now, status, _j([k.lower() for k in keywords]), _j(meta or {})))
+                          "created_at, updated_at, last_accessed_at, last_confirmed_at, status, keywords, meta, "
+                          "content_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                          (mid, mtype, stored_content, _j(list(entity_ids)), importance, confidence, source,
+                           now, now, now, now, status, stored_keywords, _j(meta or {}), chash))
             except sqlite3.IntegrityError:
                 # the same text exists under another type (e.g. promoting an observation whose
                 # semantic twin is already stored): treat it as a re-observation of that row
-                row = c.execute("SELECT id, confidence FROM memories WHERE content=?", (content,)).fetchone()
+                row = c.execute("SELECT id, confidence FROM memories WHERE content=? OR (?!='' AND content_hash=?)",
+                                (stored_content, chash, chash)).fetchone()
+                if row is None:
+                    raise
                 mid = row["id"]
                 c.execute("UPDATE memories SET times_observed=times_observed+1, confidence=MAX(confidence,?), "
                           "last_confirmed_at=?, updated_at=? WHERE id=?",
@@ -153,16 +218,24 @@ def observe(content, source="behavior", importance=0.4, confidence=0.5):
 
 
 def forget(mid_or_content: str) -> int:
-    """User command ('forget that'): mark forgotten, keep nothing active. Rows stay for audit.
-    Exact id/content first, then a substring match for the way people actually say it
-    ('forget standing desks' vs the stored 'I prefer standing desks')."""
+    """User command ('forget that'): mark forgotten, keep nothing active. Exact id/content first
+    (content also matched by its hash, which is how an encrypted DB finds it), then a substring
+    match over the DECRYPTED rows for the way people actually say it ('forget standing desks' vs
+    the stored 'I prefer standing desks')."""
     c = conn()
+    chash = _hash_of(mid_or_content)
     with _lock, c:
-        n = c.execute("UPDATE memories SET status='forgotten', updated_at=? WHERE (id=? OR content=?) AND status!='forgotten'",
-                      (time.time(), mid_or_content, mid_or_content)).rowcount
+        n = c.execute("UPDATE memories SET status='forgotten', updated_at=? "
+                      "WHERE (id=? OR content=? OR (?!='' AND content_hash=?)) AND status!='forgotten'",
+                      (time.time(), mid_or_content, mid_or_content, chash, chash)).rowcount
         if not n:
-            n = c.execute("UPDATE memories SET status='forgotten', updated_at=? WHERE content LIKE ? AND status!='forgotten'",
-                          (time.time(), f"%{mid_or_content}%")).rowcount
+            targets = [r["id"] for r in c.execute(
+                "SELECT id, content FROM memories WHERE status!='forgotten'").fetchall()
+                if mid_or_content.lower() in _dec(r["content"]).lower()]
+            if targets:
+                c.executemany("UPDATE memories SET status='forgotten', updated_at=? WHERE id=?",
+                              [(time.time(), t) for t in targets])
+            n = len(targets)
         c.commit()
     return n
 
@@ -171,15 +244,66 @@ def supersede(old_id: str, new_content: str, source="explicit_user", importance=
               valid_until=None):
     """A newer explicit statement beats the older memory (spec 17 / mem0 UPDATE): old row is
     superseded with valid_until stamped (bi-temporal-lite, Zep-style: the old fact stays
-    queryable as 'was true until T'), the new one stored. Never a silent overwrite."""
+    queryable as 'was true until T'), the new one stored. Never a silent overwrite: the
+    contradiction lands in the conflicts table (D5) for the dashboard, with the newer
+    explicit statement as the presumed winner."""
     new = _write("semantic", new_content, source=source, importance=importance,
                  confidence=confidence, meta={"supersedes": old_id})
     c = conn()
     with _lock, c:
+        old = c.execute("SELECT content FROM memories WHERE id=?", (old_id,)).fetchone()
+        c.execute("INSERT INTO conflicts(ts, old_memory_id, new_memory_id, old_content, new_content, "
+                  "status, resolution, resolution_source) VALUES(?,?,?,?,?,?,?,?)",
+                  (time.time(), old_id, new["id"], _dec(old["content"]) if old else "",
+                   new_content, "resolved", "newer explicit statement wins", source))
         c.execute("UPDATE memories SET status='superseded', updated_at=?, valid_until=COALESCE(?, ?) WHERE id=?",
                   (time.time(), valid_until, time.time(), old_id))
         c.commit()
     return new
+
+
+def conflicts(limit=50, status=None) -> list:
+    """Contradiction records (D5/H4) — newest first, contents decrypted."""
+    q, args = "SELECT * FROM conflicts", []
+    if status:
+        q += " WHERE status=?"
+        args.append(status)
+    q += " ORDER BY ts DESC LIMIT ?"
+    args.append(limit)
+    return [dict(r) for r in conn().execute(q, args).fetchall()]
+
+
+def resolve_conflict(conflict_id: int, keep: str = "new", note: str = "") -> bool:
+    """The owner answered a contradiction: 'new' keeps the newer statement (default), 'old'
+    re-activates the superseded row and forgets the new one."""
+    c = conn()
+    with _lock, c:
+        row = c.execute("SELECT old_memory_id, new_memory_id FROM conflicts WHERE id=?", (conflict_id,)).fetchone()
+        if not row:
+            return False
+        if keep == "old":
+            c.execute("UPDATE memories SET status='active', valid_until=NULL, updated_at=? WHERE id=?",
+                      (time.time(), row["old_memory_id"]))
+            if row["new_memory_id"]:
+                c.execute("UPDATE memories SET status='forgotten', updated_at=? WHERE id=?",
+                          (time.time(), row["new_memory_id"]))
+        c.execute("UPDATE conflicts SET status='resolved', resolution=?, resolution_source='owner' WHERE id=?",
+                  (note or f"owner kept the {keep} statement", conflict_id))
+        c.commit()
+    return True
+
+
+def event(kind: str, detail: str, session_id: str = "", entities=(), importance=0.4,
+          source: str = "behavior") -> str:
+    """One durable event row (D1's episodic feed + audit for state changes like forgets)."""
+    eid = f"evt_{uuid.uuid4().hex[:12]}"
+    c = conn()
+    with _lock, c:
+        c.execute("INSERT INTO events(id, ts, kind, detail, session_id, entities, importance, source) "
+                  "VALUES(?,?,?,?,?,?,?,?)",
+                  (eid, time.time(), kind, detail[:500], session_id, _j(list(entities)), importance, source))
+        c.commit()
+    return eid
 
 
 def reconcile(content: str, mtype="semantic", source="inference", importance=0.5, confidence=0.5) -> dict:
@@ -230,21 +354,31 @@ def touch(ids):
 
 def get(mid: str):
     row = conn().execute("SELECT * FROM memories WHERE id=?", (mid,)).fetchone()
-    return dict(row) if row else None
+    return _dec_mem(dict(row)) if row else None
 
 
 def search(text=None, mtype=None, status="active", limit=20) -> list:
-    """Straight listing (dashboard, 'what do you remember')."""
+    """Straight listing (dashboard, 'what do you remember'). Text goes through SQL LIKE first
+    (plaintext DBs) and falls back to a scan over the DECRYPTED contents when the store is
+    encrypted (ciphertext is invisible to LIKE). Rows always come back decrypted."""
     q, args = "SELECT * FROM memories WHERE status=?", [status or "active"]
     if mtype:
         q += " AND type=?"
         args.append(mtype)
     if text:
-        q += " AND content LIKE ?"
-        args.append(f"%{text}%")
+        chash = _hash_of(text)
+        q += " AND (content LIKE ? OR (?!='' AND content_hash=?))"
+        args += [f"%{text}%", chash, chash]
     q += " ORDER BY importance DESC, last_confirmed_at DESC LIMIT ?"
     args.append(limit)
-    return [dict(r) for r in conn().execute(q, args).fetchall()]
+    rows = [_dec_mem(dict(r)) for r in conn().execute(q, args).fetchall()]
+    if text and not rows:  # encrypted (or just missed): scan decrypted contents
+        pool = " AND type=?" if mtype else ""
+        candidates = [dict(r) for r in conn().execute(
+            f"SELECT * FROM memories WHERE status=?{pool}", [status or "active"] + ([mtype] if mtype else []))]
+        rows = [_dec_mem(r) for r in candidates
+                if text.lower() in _dec(r["content"] or "").lower()][:limit]
+    return rows
 
 
 def _score(row, now) -> float:
@@ -262,7 +396,7 @@ def promote_observations() -> list:
     promoted = []
     for r in rows:
         conf = {True: 0.91, False: 0.75}[strength(r["times_observed"]) in ("probable", "strong")]
-        promoted.append(semantic(r["content"], source="behavior", importance=max(0.55, r["importance"] + 0.2),
+        promoted.append(semantic(_dec(r["content"]), source="behavior", importance=max(0.55, r["importance"] + 0.2),
                                  confidence=conf))
         c = conn()
         with _lock, c:
@@ -272,17 +406,22 @@ def promote_observations() -> list:
 
 
 def decay(now=None) -> list:
-    """Mark stale low-importance memories needs_confirmation (spec 16). Never deletes; importance
-    at/above min_importance_floor is never touched."""
+    """Mark stale memories needs_confirmation (spec 16, D4/J12). Never deletes anything:
+    low-importance rows fade after ~a month unconfirmed; HIGH-importance rows (identity,
+    family, key preferences) fade much slower — twelve times the window, 'stable facts decay
+    slowly' — but they too surface for re-confirmation instead of living forever unexamined.
+    The owner confirms them back to active (or forgets them); the system never decides."""
     cfg = MEM().get("decay", {})
     if not cfg.get("enabled", True):
         return []
     floor = cfg.get("min_importance_floor", 0.55)
-    max_age = cfg.get("run_interval_h", 12) * 3600 * 30  # ~a month unconfirmed
+    low_age = cfg.get("run_interval_h", 12) * 3600 * 30   # ~a month unconfirmed
+    high_age = low_age * 12                                # stable facts decay slowly (D4): ~6 months
     now = now or time.time()
     rows = [dict(r) for r in conn().execute(
-        "SELECT id, content FROM memories WHERE status='active' AND importance < ? AND last_confirmed_at < ?",
-        (floor, now - max_age)).fetchall()]
+        "SELECT id, content FROM memories WHERE status='active' AND last_confirmed_at < ? "
+        "AND ((importance < ? AND last_confirmed_at < ?) OR last_confirmed_at < ?)",
+        (now - low_age, floor, now - low_age, now - high_age)).fetchall()]
     if not rows:
         return []
     c = conn()
@@ -313,32 +452,42 @@ def upsert_entity(name, kind="person", relationship=None, confidence=None, note=
             if confidence is not None:
                 sets.append("confidence=MAX(confidence,?)")
                 args.append(confidence)
-            if note and note not in json.loads(e["notes"]):
+            if note and note not in json.loads(_dec(e["notes"]) or "[]"):
                 sets.append("notes=?")
-                args.append(_j((json.loads(e["notes"]) + [note])[-10:]))
+                args.append(_enc(_j((json.loads(_dec(e["notes"]) or "[]") + [note])[-10:])))
             if aliases:
-                merged = sorted(set(json.loads(e["aliases"])) | {a.lower() for a in aliases})
+                merged = sorted(set(json.loads(_dec(e["aliases"]) or "[]")) | {a.lower() for a in aliases})
                 sets.append("aliases=?")
-                args.append(_j(merged))
+                args.append(_enc(_j(merged)))
             c.execute(f"UPDATE entities SET {', '.join(sets)} WHERE id=?", (*args, e["id"]))
             eid = e["id"]
         else:
             eid = f"person_{uuid.uuid4().hex[:8]}" if kind == "person" else f"ent_{uuid.uuid4().hex[:8]}"
             c.execute("INSERT INTO entities(id, name, kind, aliases, relationship, confidence, notes, "
                       "last_interaction, created_at, updated_at, display) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                      (eid, name.lower(), kind, _j([a.lower() for a in aliases]),
+                      (eid, name.lower(), kind, _enc(_j([a.lower() for a in aliases])),
                        relationship or "unknown", confidence if confidence is not None else 0.5,
-                       _j([note] if note else []), now, now, now, name))
+                       _enc(_j([note] if note else [])), now, now, now, name))
         c.commit()
     row = c.execute("SELECT * FROM entities WHERE id=?", (eid,)).fetchone()
-    return dict(row)
+    return _dec_entity(dict(row))
 
 
 def find_entity(name) -> dict | None:
     key = (name or "").strip().lower()
     row = conn().execute("SELECT * FROM entities WHERE name=? OR aliases LIKE ?",
                          (key, f'%"{key}"%')).fetchone()
-    return dict(row) if row else None
+    if row is None:  # encrypted aliases are invisible to LIKE: scan the decrypted ones
+        for r in conn().execute("SELECT * FROM entities").fetchall():
+            d = _dec_entity(dict(r))
+            try:
+                alias_list = [a.lower() for a in json.loads(d["aliases"] or "[]")]
+            except Exception:
+                alias_list = []
+            if key == d["name"] or key in alias_list:
+                return d
+        return None
+    return _dec_entity(dict(row))
 
 
 def link(memory_id: str, entity_id: str):
@@ -390,7 +539,9 @@ def stats() -> dict:
     by = {r["type"]: r["n"] for r in c.execute(
         "SELECT type, COUNT(*) n FROM memories WHERE status='active' GROUP BY type").fetchall()}
     ents = c.execute("SELECT COUNT(*) FROM entities").fetchone()[0]
-    return {"memories": by, "entities": ents, "db": db_path(), "thresholds": thresholds()}
+    conflicts = c.execute("SELECT COUNT(*) FROM conflicts WHERE status='open'").fetchone()[0]
+    return {"memories": by, "entities": ents, "db": db_path(), "thresholds": thresholds(),
+            "open_conflicts": conflicts}
 
 
 def entities(limit=100) -> list:
@@ -399,26 +550,107 @@ def entities(limit=100) -> list:
         "SELECT * FROM entities ORDER BY last_interaction DESC LIMIT ?", (limit,)).fetchall()]
 
 
-def forget_person(name: str) -> int:
-    """'Forget everything about Ahmed': every memory mentioning the person plus their links.
-    Rows are marked forgotten (audit trail kept), never deleted."""
-    n = forget(name)
-    e = find_entity(name)
-    if e:
-        c = conn()
-        with _lock, c:
+def forget_person(name: str, hard: bool = True) -> int:
+    """'Forget everything about Ahmed' (H2/J7): REAL deletion — the entity row, every memory
+    mentioning them, their links, their graph node and edges, and any vector-store snippets
+    only about them. hard=False keeps the old soft behavior (status='forgotten', audit trail).
+    The deletion itself is logged in forget_audit (that it happened and how much went —
+    never the deleted content)."""
+    if not hard:
+        n = forget(name)
+        e = find_entity(name)
+        if e:
+            c = conn()
+            with _lock, c:
+                c.execute("DELETE FROM memory_links WHERE entity_id=?", (e["id"],))
+                c.commit()
+        return n
+    return forget_hard(name)["memories"]
+
+
+def forget_hard(target: str) -> dict:
+    """Real deletion of everything about `target` (a person's name or a memory phrase):
+    memory rows + links + the entity + rgraph node/edges + vector snippets whose text only
+    mentions them. Derived-only memories go with the fact they were derived from (H2).
+    Returns the counts; writes one forget_audit + one event row."""
+    from ishti import rgraph
+    c = conn()
+    t_low = (target or "").strip().lower()
+    counts = {"memories": 0, "entities": 0, "edges": 0}
+    with _lock, c:
+        ids = [r["id"] for r in c.execute("SELECT id, content, content_hash FROM memories").fetchall()
+               if t_low in _dec(r["content"]).lower() or t_low in (r["content_hash"] or "")]
+        if ids:
+            c.executemany("DELETE FROM memory_links WHERE memory_id=?", [(i,) for i in ids])
+            counts["memories"] = c.executemany("DELETE FROM memories WHERE id=?", [(i,) for i in ids]).rowcount or len(ids)
+        for e in c.execute("SELECT id FROM entities WHERE name=? OR aliases LIKE ?",
+                           (t_low, f'%"{t_low}"%')).fetchall():
             c.execute("DELETE FROM memory_links WHERE entity_id=?", (e["id"],))
-            c.commit()
-    return n
+            counts["entities"] += c.execute("DELETE FROM entities WHERE id=?", (e["id"],)).rowcount
+        else_note = f"entity + memories + graph for '{t_low}'"
+        c.commit()
+    # the graph: every node whose name CONTAINS the target as a whole word ('ahmed' matches
+    # 'ahmed doomed' and 'ahmed (work)', never 'sahmed') and every edge touching them
+    # (private included — this is the owner asking)
+    import re as _re
+    victims = []
+    try:
+        victims = [dict(r) for r in rgraph.conn().execute("SELECT id, name FROM nodes").fetchall()
+                   if _re.search(rf"\b{_re.escape(t_low)}\b", r["name"] or "")]
+    except Exception:
+        victims = []
+    if victims:
+        rc = rgraph.conn()
+        with rgraph.LOCK, rc:
+            for v in victims:
+                counts["edges"] += rc.execute("DELETE FROM edges WHERE src=? OR dst=?",
+                                              (v["id"], v["id"])).rowcount
+                rc.execute("DELETE FROM nodes WHERE id=?", (v["id"],))
+            rc.commit()
+    # vector store: past-conversation snippets that mention the person (best effort, own file)
+    vec = 0
+    try:
+        from ishti.semantic import get_semantic
+        st = get_semantic()
+        if hasattr(st, "delete_where_text"):
+            vec = st.delete_where_text(t_low)
+    except Exception:
+        pass
+    audit_id = _audit("forget_hard", f"removed everything about '{t_low}' "
+                      f"({counts['memories']} memories, {counts['entities']} entities, "
+                      f"{counts['edges']} graph edges, {vec} vector snippets)",
+                      items=counts["memories"] + counts["entities"] + counts["edges"])
+    event("forget", f"owner asked to forget everything about '{t_low}'", entities=[t_low], source="explicit_user")
+    return {**counts, "audit_id": audit_id}
+
+
+def _audit(action: str, detail: str, items: int = 0, requested_by: str = "owner") -> int:
+    """H2: the audit log records THAT a deletion happened (and how much went), never its content."""
+    c = conn()
+    with _lock, c:
+        cur = c.execute("INSERT INTO forget_audit(ts, action, detail, items, requested_by) VALUES(?,?,?,?,?)",
+                        (time.time(), action, detail, items, requested_by))
+        c.commit()
+        return cur.lastrowid
+
+
+def forget_audit_log(limit=50) -> list:
+    """The dashboard's deletion log (H4 actions column)."""
+    return [dict(r) for r in conn().execute(
+        "SELECT * FROM forget_audit ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()]
 
 
 def wipe_all():
-    """'Forget everything' - the owner's explicit command, never called by code."""
+    """'Forget everything' - the owner's explicit command, never called by code. Real deletion
+    of every memory, link and entity row, logged in forget_audit (H2)."""
     c = conn()
     with _lock, c:
+        n = c.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
         c.execute("DELETE FROM memories")
         c.execute("DELETE FROM memory_links")
+        c.execute("DELETE FROM entities")
         c.commit()
+    _audit("wipe_all", f"forget-everything: removed {n} memories and all entities/links", items=n)
 
 
 if __name__ == "__main__":
@@ -477,4 +709,21 @@ if __name__ == "__main__":
     semantic("User had knee surgery in March.", source="conversation")
     assert "surgery" not in export("client").lower()
     assert "surgery" in export("owner").lower()
+    # D5: contradictions land in the conflicts table; the owner can re-decide
+    a = semantic("User prefers Chrome.", source="explicit_user", confidence=1.0)
+    supersede(a["id"], "User now prefers Firefox.")
+    conf = conflicts()
+    assert conf and conf[0]["old_memory_id"] == a["id"] and "Chrome" in conf[0]["old_content"], conf
+    assert resolve_conflict(conf[0]["id"], keep="old", note="changed my mind back")
+    assert get(a["id"])["status"] == "active", "keep=old re-activates the original"
+    # H2/J7: real deletion + audit (content never reappears)
+    upsert_entity("Ahmed", relationship="brother", note="test")
+    semantic("Ahmed is my brother.", source="explicit_user", confidence=1.0)
+    semantic("Unrelated fact about tea.")
+    res = forget_hard("Ahmed")
+    assert res["memories"] >= 1 and res["entities"] >= 1, res
+    assert search("Ahmed") == [] and find_entity("ahmed") is None
+    assert search("tea"), "unrelated memories must survive the person-delete"
+    log = forget_audit_log()
+    assert log and log[0]["action"] == "forget_hard" and "Ahmed" not in log[0]["detail"].split("'")[1], log
     print(f"[self-check] arch2.memory OK - {stats()}")

@@ -328,6 +328,54 @@ Any planner downshift to the 7B (voice sessions, heavy vision) loses Urdu qualit
 crude: it only looks for Arabic script). The `model_switch` reason tells the user it switched; the quality question needs your
 own Urdu prompts (NEEDS.md).
 
+### Issue 25: WebSocket `/ws` in `interface/web_ui/server.py` was not subscribing to event bus — VERIFIED-FIXED
+- **Severity**: P1 / High
+- **Component**: `interface/web_ui/server.py`
+- **Location**: Line 280 (`@app.websocket("/ws")`)
+- **Root Cause**: The API contract (`docs/API_CONTRACT.md`) specifies that `/ws` mirrors `/ws/events`. However, `/ws` only handled chat streaming and was missing subscription to `ishti.events.subscribe()`, meaning frontend clients connecting to `/ws` received zero system events (`boot_stage`, `vram_status`, `model_switch`, `shutdown_progress`).
+- **Fix**: Added queue subscription to `events.subscribe()` in `/ws` endpoint with event replay and async forwarding.
+- **Verified 2026-09-29**: `tests/contract_test.py` validates that both `/ws` and `/ws/events` receive all broadcast events without duplication.
+
+### Issue 26: `is_pinned()` in `ishti/vram.py` protected all ladder rungs of a role — VERIFIED-FIXED
+- **Severity**: P1 / High
+- **Component**: `ishti/vram.py`
+- **Location**: Line 228
+- **Root Cause**: `is_pinned(name)` returned True if `name` matched ANY rung of a pinned role's ladder (e.g. `ishti-qwen2.5:14b`, `qwen2.5:7b`, and `qwen2.5:3b`). When the governor downshifted from 14B to 7B or admitted an on-demand model, the previous rung could not be evicted from VRAM because `is_pinned` considered all rungs permanently pinned.
+- **Fix**: Updated `is_pinned()` to only protect the currently effective model (`_eff.get(role) or rs[k]["name"]`).
+- **Verified 2026-09-29**: `tests/test_vram_governor_pressure.py` verified that idle rungs are cleanly evicted under pressure and heavy models (`gemma3:12b`) load with 100% VRAM allocation.
+
+### Issue 27: `tools/verify_all.py` crashed on Windows CP1252 codepage — VERIFIED-FIXED
+- **Severity**: P2 / Medium
+- **Component**: `tools/verify_all.py`
+- **Location**: Line 67
+- **Root Cause**: Windows command prompt defaults to CP1252 encoding. Test output strings containing unicode arrow characters (`\u2192`) raised uncaught `UnicodeEncodeError: 'charmap' codec can't encode character '\u2192'`.
+- **Fix**: Added `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` and `sys.stderr.reconfigure(encoding="utf-8", errors="replace")`.
+- **Verified 2026-09-29**: `verify_all.py` runs cleanly without unicode encoding crashes on Windows 11.
+
+### Issue 28: `desktop/splash.html` scale mismatch and premature completion — VERIFIED-FIXED
+- **Severity**: P2 / Medium
+- **Component**: `desktop/splash.html`
+- **Location**: Lines 430-445
+- **Root Cause**: Backend emits progress as integer 0-100, while contract noted 0.0-1.0. A condition `progress >= 1.0 && progress <= 1.0` triggered premature splash completion when the backend reached 1% progress (`progress: 1`). Furthermore, `stages` list could arrive as either `string[]` or `object[]` (`[{id, label, done}]`).
+- **Fix**: Normalized progress calculation (`pct = progress > 1 ? progress : progress * 100`) and added safe object/string label extraction.
+- **Verified 2026-09-29**: Splash screen displays stages and progress monotonically without premature completion.
+
+### Issue 29: Desktop launcher spawned terminal banner and skipped splash screen — VERIFIED-FIXED
+- **Severity**: P1 / High
+- **Component**: `desktop/launcher.py`, `desktop/app_window.py`
+- **Location**: `desktop/launcher.py:61`, `desktop/app_window.py:85`
+- **Root Cause**: `desktop/launcher.py` was invoking `orchestrator/startup.py`, which printed a terminal banner and opened Chrome directly, completely bypassing `desktop/splash.html`. Furthermore, `desktop/app_window.py` was missing `SplashApi` and `MainApi` bridges (`on_ready`, `view_log`, `retry_boot`, `minimize_to_tray`, `force_close`, `show_window`).
+- **Fix**: Replaced `startup.py` call with headless `python -m ishti 8888` (`CREATE_NO_WINDOW`), added `SplashApi` and `MainApi` bridges in `desktop/app_window.py`, and compiled native binary `dist\ISHTI\ISHTI.exe` with PyInstaller `--onedir --noconsole`.
+- **Verified 2026-09-29**: Double-clicking `dist\ISHTI\ISHTI.exe` or desktop shortcut pops up splash screen instantly with zero terminal windows.
+
+### Issue 30: Chat UI lacks frontend file attachment / upload picker — OPEN (Documented in NEEDS.md)
+- **Severity**: P2 / Medium
+- **Component**: `interface/app/src/sections/Chat.tsx`
+- **Location**: `Chat.tsx` input toolbar
+- **Root Cause**: Chat interface currently accepts only text inputs. Users must type raw local paths (e.g., "summarize D:\ISHTI\data\test.pdf") for document and image processing skills. No multipart form upload endpoint or visual attachment picker is present.
+- **Fix**: Add a paperclip / upload icon in `Chat.tsx`, a drag-and-drop file target, and a backend `POST /api/upload` endpoint saving to `data/uploads/`.
+
+
 ### Unrelated failures seen in the offline suite (not from this work)
 `tests/test_arch2_memory.py` (2), `test_learning.py`, `test_learning_wiring.py`, `test_memory_prompt2.py`: memory/learning stores that
 another session is editing right now (one assertion fails on a lesson persisted in the real store). No module touched here is

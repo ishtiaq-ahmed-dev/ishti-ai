@@ -81,6 +81,14 @@ def run(text, session):
     if query != text:
         trace(session, "dates", f"search for: {query}")
     res = engine.quick_search(query, depth=IntentDetector.classify(text).get("depth", "SIMPLE"))
+    # D1: remember the search (query + result URLs) in the Conversation State so later
+    # "those results" / "find the cheapest one" resolves against THIS topic.
+    try:
+        from ishti.core import state as cstate
+        cstate.get_manager().record_search(session.get("id", "default"), query,
+                                           [s.get("url", "") for s in res.get("sources", []) if isinstance(s, dict)])
+    except Exception:
+        pass
     # "no confident match" after the rewording retries is final: escalating would just loop again. A confident answer
     # was written only from pages that passed the per-page check, so the dispatcher's second model check (which
     # misjudged a correct answer and cost a 25 s deep-research detour) is skipped unless the text itself gives up.

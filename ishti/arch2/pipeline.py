@@ -128,6 +128,11 @@ def run(request: str, session, skills: dict) -> dict:
     from ishti import llm  # openai import lives here; arch2 must load without it
 
     context = retrieval.assemble_context(request)
+    # D3: the conversation-state summary (active topic / task / constraints) is pinned
+    # into the context block - the brain never sees only the raw latest message.
+    state_summary = session.get("state_summary") or ""
+    if state_summary:
+        context = f"CONVERSATION STATE:\n{state_summary}\n\n{context}"
     tool_block = _tool_manifests(skills, request)
     system1 = SYSTEM_PASS1.format(tools=tool_block, context=context or "(none)")
     msgs = session.get("history", [])[-8:] + [{"role": "user", "content": request}]
@@ -188,9 +193,27 @@ def run(request: str, session, skills: dict) -> dict:
     trace(session, "model", f"writing the final answer with {llm.model_for('main')} (pass 2)", status="start")
     evidence = "\n\n".join(f"Tool {t['tool']} ({'verified' if t['ok'] else 'unverified'}) returned:\n{t['result']}"
                            for t in tool_log) or "(no tools were needed)"
-    final = (llm.chat([{"role": "user", "content": f"User request: {request}\n\n{evidence}\n\nWrite the final answer."}],
+    state_line = session.get("state_summary") or ""
+    user_block = f"User request: {request}" + (f"\n\nConversation context (the topic is fixed - do not drift):\n{state_line}" if state_line else "")
+    final = (llm.chat([{"role": "user", "content": f"{user_block}\n\n{evidence}\n\nWrite the final answer."}],
                       role="main", system=FINAL_SYSTEM, temperature=0.3, max_tokens=1024,
                       on_token=session.get("on_token")).content or "").strip()
+
+    # D5: is the answer about the resolved topic? A deterministic floor (no model) keeps a
+    # drifting answer from ever reaching the owner.
+    try:
+        from ishti.core.tools import ValidationStage
+        from ishti.core import state as cstate
+        st = cstate.get_manager().get(session.get("id", "default"))
+        verdict = ValidationStage().validate_answer(request, final, topic=st.active_topic)
+        if not verdict.get("ok"):
+            trace(session, "verify", f"answer was off-topic ({verdict.get('reason')}) - re-planning", status="error")
+            final = (llm.chat([{"role": "user", "content":
+                                f"{user_block}\n\n{evidence}\n\nYour previous draft ignored the topic. "
+                                f"Write the final answer ABOUT: {st.active_topic}."}],
+                              role="main", system=FINAL_SYSTEM, temperature=0.2, max_tokens=1024).content or final).strip()
+    except Exception:
+        pass
     return {"reply": final or "I could not produce an answer - try rephrasing.", "sources": sources,
             "mode": "ARCH2", "tools": tool_log}
 

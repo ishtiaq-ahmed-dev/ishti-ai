@@ -24,6 +24,27 @@ def run(text, session):
     fallback = session.get("route", {}).get("source") == "escalation"
     # as a fallback for a plain question: 2 focused queries, not a 4-angle investigation
     res = _engine.run_deep_research(ground_dates(text), max_queries=2 if fallback else 4)
+    # F1/F2: fact-check the report's checkable claims against independent sources and append
+    # the verdict block — conflicts are flagged, never silently kept.
+    try:
+        import orchestrator.factcheck as F
+        fc = F.check(res.get("report", ""), max_claims=3)
+        if fc["claims"]:
+            res["report"] += "\n\n---\n" + F.format_report(fc)
+            res["factcheck"] = {"supported": fc["supported"], "contradicted": fc["contradicted"],
+                                "unclear": fc["unclear"]}
+            trace(session, "factcheck", f"{fc['supported']} supported, {fc['contradicted']} contradicted, "
+                                        f"{fc['unclear']} unclear", status="done")
+    except Exception as exc:
+        trace(session, "factcheck", f"skipped: {type(exc).__name__}", status="error")
+    # D1: record the research (topic + sources) so "go deeper" / "find the cheapest one"
+    # resolves against THIS topic in the same chat.
+    try:
+        from ishti.core import state as cstate
+        cstate.get_manager().record_search(session.get("id", "default"), text,
+                                           [s.get("url", "") for s in res.get("sources", []) if isinstance(s, dict)])
+    except Exception:
+        pass
     report = res.get("report", "")
     if session.get("route", {}).get("source") == "escalation":
         # used as a fallback for a plain question: the owner asked for an answer, not a report

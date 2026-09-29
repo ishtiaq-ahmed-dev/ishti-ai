@@ -512,7 +512,9 @@ if __name__ == "__main__":
             if (out := listener.watch(audio[i:i + BLOCK], talker)) is not None:
                 return out
             time.sleep(0.005)
-        deadline = time.time() + 20  # the echo check shares the GPU with the running server
+        deadline = time.time() + 60  # the echo check shares the GPU with the running server (and everything
+        # else on it): under load the deciding transcribe can take well over 20 s - wait for the verdict,
+        # never race it, or a passing echo looks like a stuck pause
         while listener._check is not None and time.time() < deadline:  # let the echo check finish
             if (out := listener.watch(np.zeros(BLOCK, np.int16), talker)) is not None:
                 return out

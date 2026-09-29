@@ -76,11 +76,46 @@ def conn():
                     new TEXT, asked REAL, answer TEXT DEFAULT '');
             """)
             _conn.commit()
+            try:  # Prompt-2 additive schema (edge confidence/source_type, node needs_confirmation)
+                from ishti.core.migrations import ensure_current
+                ensure_current(_conn, "rgraph")
+            except Exception as exc:
+                print(f"[rgraph] migrations skipped: {exc}")
         return _conn
 
 
 def _now():
     return time.time()
+
+
+def _enc(s: str) -> str:
+    """At-rest encryption (core.vault): no-op while the vault is off."""
+    try:
+        from ishti.core import vault as _v
+        return _v.encrypt_text(s)
+    except Exception:
+        return s
+
+
+def _dec(s: str) -> str:
+    try:
+        from ishti.core import vault as _v
+        return _v.decrypt_text(s)
+    except Exception:
+        return s
+
+
+def _dec_edge(d: dict) -> dict:
+    if isinstance(d.get("detail"), str):
+        d["detail"] = _dec(d["detail"])
+    return d
+
+
+def _dec_pending(d: dict) -> dict:
+    for col in ("old", "new"):
+        if isinstance(d.get(col), str):
+            d[col] = _dec(d[col])
+    return d
 
 
 def _day(ts):
@@ -113,29 +148,110 @@ def get_node(name):
     return dict(row) if row else None
 
 
-def relate(src_name, rel, dst_name, detail="", private=None, kind_src="person", kind_dst="person"):
-    """Create (or re-confirm) an edge src -[rel]-> dst. Returns (edge_id, created_bool)."""
+def relate(src_name, rel, dst_name, detail="", private=None, kind_src="person", kind_dst="person",
+           confidence: float | None = None, source_type: str | None = None):
+    """Create (or re-confirm) an edge src -[rel]-> dst. Returns (edge_id, created_bool).
+    Edge metadata (C4): confidence 0..1 (default 0.8 — an observed fact, not a stated one)
+    and source_type ('explicit_user' > 'observed' > 'inferred'). An explicit re-statement
+    upgrades an existing edge's confidence and provenance; a weaker one never downgrades."""
     sid = node(src_name, kind_src)
     did = node(dst_name, kind_dst)
     if not sid or not did or sid == did:
         return None, False
     rel = rel.strip().lower().replace("-", "_").replace(" ", "_")
+    conf = max(0.0, min(1.0, float(confidence))) if confidence is not None else \
+        (1.0 if source_type == "explicit_user" else 0.8)
+    stype = (source_type or ("explicit_user" if confidence == 1.0 else "observed")).lower()
     c = conn()
     with LOCK, c:
-        row = c.execute("SELECT id, detail, last_confirmed FROM edges WHERE src=? AND dst=? AND rel=?",
+        row = c.execute("SELECT id, confidence, source_type FROM edges WHERE src=? AND dst=? AND rel=?",
                         (sid, did, rel)).fetchone()
         if row:
-            c.execute("UPDATE edges SET last_confirmed=? WHERE id=?", (_now(), row["id"]))
+            if stype == "explicit_user" or conf > (row["confidence"] or 0):
+                c.execute("UPDATE edges SET last_confirmed=?, confidence=?, source_type=? WHERE id=?",
+                          (_now(), max(conf, row["confidence"] or 0),
+                           "explicit_user" if stype == "explicit_user" else row["source_type"], row["id"]))
+            else:
+                c.execute("UPDATE edges SET last_confirmed=? WHERE id=?", (_now(), row["id"]))
             _resolve_pending(row["id"], "confirm")
             return row["id"], False
-        cur = c.execute("INSERT INTO edges(src, dst, rel, detail, private, first_seen, last_confirmed) "
-                        "VALUES(?,?,?,?,?,?,?)",
-                        (sid, did, rel, detail, int(bool(private)) if private is not None
+        cur = c.execute("INSERT INTO edges(src, dst, rel, detail, private, first_seen, last_confirmed, "
+                        "confidence, source_type) VALUES(?,?,?,?,?,?,?,?,?)",
+                        (sid, did, rel, _enc(detail), int(bool(private)) if private is not None
                          else (1 if rel in ("brother", "sister", "father", "mother", "son", "daughter",
                                             "cousin", "uncle", "aunt", "nephew", "niece",
                                             "grandfather", "grandmother") else 0),
-                         _now(), _now()))
+                         _now(), _now(), conf, stype))
         return cur.lastrowid, True
+
+
+def kin_edge(src_name: str, rel: str, dst_name: str, source_type: str = "explicit_user",
+             confidence: float = 1.0) -> tuple[int | None, bool]:
+    """A family tie (J1). Kin edges are ONLY created by the owner's explicit statement —
+    every caller passes source_type='explicit_user'; anything observed stays 'observed' with
+    capped confidence and is flagged needs_confirmation on the node (C5)."""
+    rel = rel.strip().lower().replace("-", "_").replace(" ", "_")
+    if rel not in KIN:
+        return None, False
+    private = True
+    eid, created = relate(src_name, rel, dst_name, private=private,
+                          confidence=1.0 if source_type == "explicit_user" else min(0.7, confidence),
+                          source_type=source_type)
+    if eid and source_type != "explicit_user":
+        c = conn()
+        with LOCK, c:
+            c.execute("UPDATE nodes SET needs_confirmation=1 WHERE id=?", (get_node(dst_name)["id"],))
+            c.commit()
+    return eid, created
+
+
+def note_contact(person: str, channel: str = "") -> int:
+    """Frequency WITHOUT relationship (J2/C5): repeated contact creates/extends a
+    'frequently_contacted' edge — never a friend/colleague guess. The relationship stays
+    'unknown' until the owner states it. Returns the running contact count."""
+    eid, created = relate("me", "frequently_contacted", person, private=0,
+                          confidence=0.6, source_type="observed")
+    if eid is None:
+        return 0
+    c = conn()
+    with LOCK, c:
+        row = c.execute("SELECT detail FROM edges WHERE id=?", (eid,)).fetchone()
+        detail = _dec(row["detail"]) if row and row["detail"] else ""
+        try:
+            count = int(re.search(r"(\d+)", detail).group(1)) + 1 if detail else (1 if created else 2)
+        except ValueError:
+            count = 2
+        suffix = f" via {channel}" if channel else ""
+        c.execute("UPDATE edges SET detail=?, last_confirmed=? WHERE id=?",
+                  (_enc(f"contacted {count}x{suffix}"), _now(), eid))
+        c.commit()
+    return count
+
+
+def relationship_of(name: str) -> dict:
+    """The best-known relationship to the owner (C2/C5): an explicit kin/friend edge wins;
+    frequency alone means relationship='unknown' + needs_confirmation — never a guess."""
+    for e in edges_of(name, direction="in"):
+        if e["s_name"] != OWNER:
+            continue
+        if e["rel"] in KIN or e["rel"] in ("friend", "colleague", "classmate"):
+            explicit = e.get("source_type") == "explicit_user"
+            return {"relationship": e["rel"], "confidence": e.get("confidence", 0.8),
+                    "source_type": e.get("source_type", "observed"),
+                    "needs_confirmation": not explicit}
+    if any(e["rel"] == "frequently_contacted" for e in edges_of(name, direction="in")):
+        return {"relationship": "unknown", "confidence": 0.3, "source_type": "observed",
+                "needs_confirmation": True}
+    return {"relationship": "unknown", "confidence": 0.0, "source_type": "", "needs_confirmation": True}
+
+
+def ask_relationship(name: str) -> str | None:
+    """The one clarifying question (C5) when knowing the relationship matters and it is
+    unknown; None when the relationship is already established."""
+    r = relationship_of(name)
+    if r["confidence"] >= 0.8 and r["relationship"] != "unknown":
+        return None
+    return f"Who is {name} to you? I won't guess from how often you talk."
 
 
 def unrelate(src_name, rel, dst_name):
@@ -155,7 +271,7 @@ def _edge_row(eid):
         row = c.execute("SELECT e.*, s.name AS s_name, s.kind AS s_kind, d.name AS d_name, d.kind AS d_kind "
                         "FROM edges e JOIN nodes s ON s.id=e.src JOIN nodes d ON d.id=e.dst WHERE e.id=?",
                         (eid,)).fetchone()
-    return dict(row) if row else None
+    return _dec_edge(dict(row)) if row else None
 
 
 def _conflicts_with(rel, new_detail, old_detail):
@@ -193,14 +309,14 @@ def set_detail(src_name, rel, dst_name, detail, private=None, kind_dst="person")
         c = conn()
         with LOCK, c:
             c.execute("INSERT INTO pending(edge_id, kind, old, new, asked) VALUES(?,?,?,?,?)",
-                      (eid, "conflict", row["detail"], detail, _now()))
+                      (eid, "conflict", _enc(row["detail"]), _enc(detail), _now()))
         return eid, (f"Note: earlier I have it that {row['s_name']} {row['rel']} "
                      f"{row['d_name']} ({row['detail']}). Which is current - the old one or this? "
                      "(say 'the new one' or 'the old one')")
     if detail and detail != row["detail"] and not _conflicts_with(rel, detail, row["detail"]):
         c = conn()
         with LOCK, c:
-            c.execute("UPDATE edges SET detail=?, last_confirmed=? WHERE id=?", (detail, _now(), eid))
+            c.execute("UPDATE edges SET detail=?, last_confirmed=? WHERE id=?", (_enc(detail), _now(), eid))
     return eid, None
 
 
@@ -250,7 +366,7 @@ def pending_questions():
                          "FROM pending p JOIN edges e ON e.id=p.edge_id "
                          "JOIN nodes s ON s.id=e.src JOIN nodes d ON d.id=e.dst "
                          "WHERE p.answer='' ORDER BY p.id").fetchall()
-    return [dict(r) for r in rows]
+    return [_dec_pending(dict(r)) for r in rows]
 
 
 def resolve_question(pid, keep):
@@ -270,7 +386,7 @@ def resolve_question(pid, keep):
                 _apply_fact(row["new"])
             # keep='old': the new fact was never stored, so there's nothing to undo
         elif keep == "new":
-            c.execute("UPDATE edges SET detail=?, last_confirmed=? WHERE id=?", (row["new"], _now(), row["edge_id"]))
+            c.execute("UPDATE edges SET detail=?, last_confirmed=? WHERE id=?", (_enc(row["new"]), _now(), row["edge_id"]))
         else:
             c.execute("UPDATE edges SET last_confirmed=? WHERE id=?", (_now(), row["edge_id"]))
     return dict(row)
@@ -301,7 +417,7 @@ def edges_of(name, rel=None, direction="both"):
     c = conn()
     with LOCK:
         rows = c.execute(q, args).fetchall()
-    return [dict(r) for r in rows]
+    return [_dec_edge(dict(r)) for r in rows]
 
 
 def describe_edge(e, staleness=True):
@@ -425,7 +541,7 @@ def export(allowed="graph"):
         rows = c.execute(f"SELECT e.*, s.name AS s_name, d.name AS d_name FROM edges e "
                          f"JOIN nodes s ON s.id=e.src JOIN nodes d ON d.id=e.dst {where} "
                          f"ORDER BY e.last_confirmed DESC LIMIT 40").fetchall()
-    return [describe_edge(dict(r)) for r in rows]
+    return [describe_edge(_dec_edge(dict(r))) for r in rows]
 
 
 def stats():
@@ -500,4 +616,27 @@ if __name__ == "__main__":
     # unrelate
     assert unrelate("sara", "introduced", "bilal")
     assert introducer_of("me", "bilal") is None  # with that edge gone, the introduction is unknown
+    # J1: explicit kin edge carries source_type=explicit_user, confidence 1.0
+    keid, _ = kin_edge("me", "brother", "ahmed khan")
+    assert keid and _edge_row(keid)["source_type"] == "explicit_user" and _edge_row(keid)["confidence"] == 1.0
+    # J2: frequency never invents a relationship — 'frequently_contacted' only, relationship unknown
+    for _ in range(4):
+        note_contact("ahmed khan", "whatsapp")
+    assert not any(e["rel"] in ("friend", "colleague") for e in edges_of("ahmed khan")), \
+        "frequency must never create a social edge"
+    fc = [e for e in edges_of("me", rel="frequently_contacted") if e["d_name"] == "ahmed khan"]
+    assert fc and "4x via whatsapp" in fc[0]["detail"], fc
+    rel = relationship_of("ahmed khan")
+    assert rel["relationship"] == "brother" and rel["confidence"] == 1.0, rel  # kin beats frequency
+    # observed-only kin stays weak + needs_confirmation
+    kin_edge("me", "cousin", "zoya", source_type="observed", confidence=0.5)
+    rel2 = relationship_of("zoya")
+    assert rel2["needs_confirmation"] and rel2["confidence"] <= 0.7, rel2
+    assert ask_relationship("zoya") and "zoya" in ask_relationship("zoya").lower()
+    assert ask_relationship("ahmed khan") is None  # established: no question needed
+    # a plain contact with no stated relationship stays unknown (never a guess)
+    for _ in range(3):
+        note_contact("bilal")
+    rel3 = relationship_of("bilal")
+    assert rel3["relationship"] == "unknown" and rel3["needs_confirmation"], rel3
     print(f"[self-check] rgraph OK - {stats()}; temporal edges, conflicts, merge, privacy export, gifts")

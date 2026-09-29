@@ -256,22 +256,71 @@ FOLLOW_UP = re.compile(
 def contextualize(text, s) -> str:
     """Follow-ups ("search now", "why didn't you search?", "do it using the names instead") only make
     sense with the conversation. Rewrite them into one standalone request before routing, so the right
-    skill gets the full intent (the standard condense-question-with-history step)."""
-    if not s["history"] or not FOLLOW_UP.search(text):
-        return text
-    from ishti import llm
-    turns = "\n".join(f"{'Owner' if m['role'] == 'user' else 'ISHTI'}: {m['content'][:400]}" for m in s["history"][-6:])
-    s["trace"](type="tool", name="understand", label="read the conversation to understand the follow-up", status="start")
-    out = llm.ask(
-        f"Conversation so far:\n{turns}\n\nOwner's new message: {text}\n\n"
-        "Rewrite the owner's new message as ONE complete, standalone request that an assistant could act on "
-        "without the conversation. If the owner is complaining that the last answer was wrong or did the wrong "
-        "thing, rewrite it as their original request done the right way (for example 'search the internet for "
-        "...'). Keep their wording, file names and paths exactly. Output only the rewritten request.",
-        system=None, temperature=0, max_tokens=120).strip().strip('"')
-    rewritten = out if 3 <= len(out.split()) <= 80 else text
-    s["trace"](type="tool", name="understand", label=f"understood as: {rewritten[:120]}", status="done", rewritten=rewritten)
-    return rewritten
+    skill gets the full intent (the standard condense-question-with-history step).
+
+    Part D2: the Conversation State Manager resolves first (topic-anchored, deterministic, instant);
+    the LLM rewriter is only asked when the state cannot resolve. Every resolved request is stored in
+    the session (s["resolved_request"]) so validation and skills see WHAT we're acting on."""
+    resolved = resolve_request(text, s)
+    if resolved is None:
+        # state had nothing to anchor on: fall back to the original LLM rewriter for FOLLOW_UP phrasings
+        if not s["history"] or not FOLLOW_UP.search(text):
+            return text
+        from ishti import llm
+        turns = "\n".join(f"{'Owner' if m['role'] == 'user' else 'ISHTI'}: {m['content'][:400]}" for m in s["history"][-6:])
+        s["trace"](type="tool", name="understand", label="read the conversation to understand the follow-up", status="start")
+        out = llm.ask(
+            f"Conversation so far:\n{turns}\n\nOwner's new message: {text}\n\n"
+            "Rewrite the owner's new message as ONE complete, standalone request that an assistant could act on "
+            "without the conversation. If the owner is complaining that the last answer was wrong or did the wrong "
+            "thing, rewrite it as their original request done the right way (for example 'search the internet for "
+            "...'). Keep their wording, file names and paths exactly. Output only the rewritten request.",
+            system=None, temperature=0, max_tokens=120).strip().strip('"')
+        rewritten = out if 3 <= len(out.split()) <= 80 else text
+        s["trace"](type="tool", name="understand", label=f"understood as: {rewritten[:120]}", status="done", rewritten=rewritten)
+        return rewritten
+    if resolved.ambiguous:
+        # ONE clarifying question, then the owner's answer completes the resolution (T3)
+        from ishti.skills import ask_first
+        question = resolved.clarify_question
+        s["resolved_request"] = resolved.original
+        s["pending"] = {"skill": "resolve_ambiguous", "gate": question, "sticky": True,
+                        "request": resolved.original}
+        s["trace"](type="tool", name="understand", label=f"ambiguous - asking which one is meant", status="done")
+        return f"__CLARIFY__{question}"
+    if resolved.changed:
+        s["trace"](type="tool", name="understand",
+                   label=f"resolved as: {resolved.request[:120]}", status="done",
+                   original=resolved.original, rewritten=resolved.request)
+    return resolved.request
+
+
+def resolve_request(text: str, s) -> "object | None":
+    """D2: resolve the message against the Conversation State (ishti.core.resolver).
+    Returns a Resolved or None when the state has no topic/searches to anchor on.
+    Also updates the state with this turn's topic/task/entities/constraints."""
+    try:
+        from ishti.core import state as cstate
+        from ishti.core.resolver import QueryResolver
+        mgr = cstate.get_manager()
+        sid = s.get("id", "default")
+        st = mgr.get(sid)
+        with mgr.turn(sid) as fresh:
+            mgr.observe_user_turn(fresh, text)
+        # re-read so the resolver sees the updated topic/task
+        st = mgr.get(sid)
+        r = QueryResolver().resolve(text, st)
+        if not r.changed and not r.ambiguous and not st.active_topic and not st.last_searches:
+            return None
+        s["resolved_request"] = r.request
+        s["state_summary"] = cstate.ConversationStateManager.summary(st)
+        return r
+    except Exception as exc:  # the resolver must never break the turn
+        try:
+            s["trace"](type="tool", name="understand", label=f"resolver skipped ({type(exc).__name__})", status="error")
+        except Exception:
+            pass
+        return None
 
 
 def fell_short(question, reply, skill, s) -> bool:
@@ -573,6 +622,27 @@ def _handle(text, sid, conv, s, events, t0, channel):
         return _finish(text, sid, conv, s, events, t0, channel, pending["skill"], out,
                        {"skill": pending["skill"], "source": "pending", "confidence": 1.0})
 
+    # 1b. An unresolved ambiguous reference ("the cheapest one"): the owner's answer picks
+    # the topic (T3). "iphone" / "the sony" completes the resolution; anything else moves on.
+    pending = s.get("pending")
+    if pending and pending.get("skill") == "resolve_ambiguous" and not answer_of(text):
+        s["pending"] = None
+        try:
+            from ishti.core import state as cstate
+            mgr = cstate.get_manager()
+            with mgr.turn(sid) as st:
+                mgr.observe_user_turn(st, text)
+            st = mgr.get(sid)
+            if st.active_topic:
+                text = s["resolved_request"] = f"{st.active_task or 'continue'}: {st.active_topic}"
+                s["state_summary"] = cstate.ConversationStateManager.summary(st)
+                s["trace"](type="tool", name="understand",
+                           label=f"resolved as: {text[:120]}", status="done")
+            else:
+                text = s.get("resolved_request") or text
+        except Exception:
+            text = s.get("resolved_request") or text
+
     # 2. Instant reflex command: deterministic pattern match (no LLM, no GPU wake-up)
     if not pending and (rf := reflex.answer(text)):
         s["trace"](type="route", skill="reflex", source="reflex", confidence=1.0, why=f"an instant command ({rf[1]})")
@@ -610,8 +680,7 @@ def _handle(text, sid, conv, s, events, t0, channel):
         except Exception as exc:
             print(f"[dispatcher] arch command skipped: {exc}")
 
-    # 3c. Memory commands (arch2 four-layer store): "what do you remember about me", "forget that",
-    # "remember that I ...", "who is Ahmed". Always available - they manage the store both archs read.
+    # 3c. Memory commands (arch2 four-layer store): "what do you remember about me", "forget that",    # "remember that I ...", "who is Ahmed". Always available - they manage the store both archs read.
     if not pending:
         try:
             from ishti.arch2 import consolidate as _mem_cmd
@@ -623,6 +692,30 @@ def _handle(text, sid, conv, s, events, t0, channel):
                                {"skill": "memory_manager", "source": "rule", "confidence": 1.0})
         except Exception as exc:
             print(f"[dispatcher] memory command skipped: {exc}")
+
+    # 3d. Architecture-profile command: "switch to multi agent mode" (asks yes/no first, C3)
+    if not pending:
+        try:
+            from ishti.core.architectures import get_registry
+            reg = get_registry()
+            arch_cmd = reg.handle_command(text, confirm=True)
+            if arch_cmd is not None:
+                if isinstance(arch_cmd, dict) and arch_cmd.get("pending_confirmation"):
+                    pc = arch_cmd["pending_confirmation"]
+                    s["pending"] = {"skill": "architecture", "gate": pc["question"],
+                                    "request": text,
+                                    "action": lambda t=pc["target"]: reg.confirm_switch(t, True)}
+                    out = {"reply": pc["question"], "sources": []}
+                else:
+                    out = {"reply": str(arch_cmd), "sources": []}
+                s["trace"](type="route", skill="architecture", source="rule", confidence=1.0,
+                           why="architecture profile switch command")
+                audit.record("architecture switch", text[:120], skill="architecture",
+                             initiator="owner", session=sid)
+                return _finish(text, sid, conv, s, events, t0, channel, "architecture", out,
+                               {"skill": "architecture", "source": "rule", "confidence": 1.0})
+        except Exception as exc:
+            print(f"[dispatcher] architecture profile command skipped: {exc}")
 
     # 4. Language preference override: "talk to me in English", "switch to Urdu", "auto language"
     cmd = LANGUAGE_CMD.search(text)
@@ -656,11 +749,70 @@ def _handle(text, sid, conv, s, events, t0, channel):
     # validation -> Qwen3-14B). Same session, trace, gates and memory as arch1.
     if not pending and (registry.active() if (registry := _arch_registry()) else "arch1") == "arch2":
         from ishti.arch2 import pipeline
+        text = contextualize(text, s)          # D3: arch2 also gets the resolved request
+        if text.startswith("__CLARIFY__"):
+            out = {"reply": text.removeprefix("__CLARIFY__"), "sources": []}
+            return _finish(text, sid, conv, s, events, t0, channel, "resolve_ambiguous", out,
+                           {"skill": "resolve_ambiguous", "source": "resolver", "confidence": 1.0})
         name, out = "arch2", pipeline.run(text, s, SKILLS)
         dec = {"skill": "arch2", "source": "arch2", "confidence": 1.0}
         s["trace"](type="route", skill=name, source="arch2", confidence=1.0,
                    why="ARCH2 is active: the two-pass pipeline answers.")
         return _finish(text, sid, conv, s, events, t0, channel, name, out, dec)
+
+    # 4c. MULTI-AGENT profile: the supervisor decomposes, specialists run the pieces (Prompt 3).
+    if not pending:
+        try:
+            from ishti.core.architectures import get_registry
+            if get_registry().active() == "multi_agent_orchestrator":
+                import ishti.agents as agents
+                text = contextualize(text, s)
+                if text.startswith("__CLARIFY__"):
+                    out = {"reply": text.removeprefix("__CLARIFY__"), "sources": []}
+                    return _finish(text, sid, conv, s, events, t0, channel, "resolve_ambiguous", out,
+                                   {"skill": "resolve_ambiguous", "source": "resolver", "confidence": 1.0})
+                out = agents.run(text, s, SKILLS)
+                s["trace"](type="route", skill="multi_agent", source="orchestrator", confidence=1.0,
+                           why="the multi-agent orchestrator profile is active.")
+                return _finish(text, sid, conv, s, events, t0, channel, "multi_agent", out,
+                               {"skill": "multi_agent", "source": "orchestrator", "confidence": 1.0})
+        except Exception as exc:
+            print(f"[dispatcher] multi-agent path skipped: {exc}")
+
+    # 4d. FLOWISE profile: the owner's flow answers through the adapter (Prompt 3).
+    if not pending:
+        try:
+            from ishti.core.architectures import get_registry
+            if get_registry().active() == "flowise_flow":
+                from ishti import flowise_client as FC
+                text = contextualize(text, s)
+                if text.startswith("__CLARIFY__"):
+                    out = {"reply": text.removeprefix("__CLARIFY__"), "sources": []}
+                    return _finish(text, sid, conv, s, events, t0, channel, "resolve_ambiguous", out,
+                                   {"skill": "resolve_ambiguous", "source": "resolver", "confidence": 1.0})
+                fid = FC.pick_flow(text)
+                if not fid:
+                    out = {"reply": "No Flowise flow is bound to this request. Map one in "
+                                   "Settings -> Integrations (intent -> flow), or add a flow.", "sources": []}
+                else:
+                    state_line = ""
+                    try:
+                        from ishti.core.state import get_manager
+                        st = get_manager().get(sid)
+                        state_line = f"Active topic: {st.active_topic}" if st.active_topic else ""
+                    except Exception:
+                        pass
+                    res = FC.run_flow(fid, text, context=state_line)
+                    out = ({"reply": FC.strip_markers(res["reply"]), "sources": res.get("sources", [])}
+                           if not res.get("error") else
+                           {"reply": f"The Flowise flow couldn't answer ({res['error']}). I'll answer myself instead.",
+                            "sources": [], "no_escalate": False})
+                s["trace"](type="route", skill="flowise", source="flow", confidence=1.0,
+                           why=f"flow {fid or '(none)'} via the flowise_flow profile")
+                return _finish(text, sid, conv, s, events, t0, channel, "flowise", out,
+                               {"skill": "flowise", "source": "flow", "confidence": 1.0})
+        except Exception as exc:
+            print(f"[dispatcher] flowise path skipped: {exc}")
 
     # Urdu (script or Roman): skills and routing work in English, so understand it in English and answer back
     # in the owner's own form of Urdu. Gemma does both directions (Qwen 2.5 writes poor Urdu).
@@ -696,6 +848,12 @@ def _handle(text, sid, conv, s, events, t0, channel):
         if pending:  # a real follow-up, not an answer to the skill's question: drop the question
             s["pending"] = None
         text = contextualize(text, s)
+        if text.startswith("__CLARIFY__"):   # D2: one clarifying question for an ambiguous reference
+            out = {"reply": text.removeprefix("__CLARIFY__"), "sources": []}
+            s["trace"](type="route", skill="resolve_ambiguous", source="resolver", confidence=1.0,
+                       why="the reference is ambiguous - asking which topic is meant")
+            return _finish(text, sid, conv, s, events, t0, channel, "resolve_ambiguous", out,
+                           {"skill": "resolve_ambiguous", "source": "resolver", "confidence": 1.0})
         if planner.candidate(text, SKILLS, s) and (steps := planner.plan(text, SKILLS)):
             dec = {"skill": "plan", "confidence": 1.0, "source": "planner", "steps": steps}
         else:
@@ -806,23 +964,28 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
         secret = True  # and nothing from this exchange goes to long-term memory
     s["history"] = (s["history"] + [{"role": "user", "content": text},
                                     {"role": "assistant", "content": kept}])[-20:]
-    if not out.get("persisted"):  # legacy skill writes its own session history
+    # incognito (H3): this conversation writes NOTHING to memory — no chat persistence, no
+    # semantic remember, no behavior log, no consolidation, no learning. Explicit memory
+    # commands ('forget that') still ran earlier in _handle: removing is not remembering.
+    from ishti.core import incognito as _incognito
+    incog = _incognito.enabled(s)
+    if not incog and not out.get("persisted"):  # legacy skill writes its own session history
         conv.add_message(sid, "user", text)
         if is_safe_for_history(kept):
             conv.add_message(sid, "ishti", kept, sources=out.get("sources"), metadata={"events": events[-150:]})
-    if not secret and name not in ("memory",) and is_safe_for_history(reply):  # exact facts already live in SQLite
+    if not incog and not secret and name not in ("memory",) and is_safe_for_history(reply):  # exact facts already live in SQLite
         threading.Thread(target=_remember, args=(text, reply, name), daemon=True).start()
         threading.Thread(target=_ftlog, args=(text, reply, name, dec, channel), daemon=True).start()  # Part 3 collection
         if name != "memory_manager":  # ARCH2: learn from every exchange (extraction + thresholds)
             threading.Thread(target=_arch2_consolidate, args=(text, reply, name, channel), daemon=True).start()
-    if not hidden:
+    if not hidden and not incog:
         threading.Thread(target=_learn, args=(text,), daemon=True).start()  # the owner's lasting facts and preferences
         threading.Thread(target=_learn_turn, args=(text, reply, name, dec, sid, channel), daemon=True).start()
-    try:
-        from ishti.monitor import inspect_turn
-        threading.Thread(target=inspect_turn, args=(text, reply, name, dec, dict(s), channel), daemon=True).start()
-    except Exception as exc:
-        print(f"[dispatcher] monitoring turn inspection skipped: {exc}")
+        try:
+            from ishti.monitor import inspect_turn
+            threading.Thread(target=inspect_turn, args=(text, reply, name, dec, dict(s), channel), daemon=True).start()
+        except Exception as exc:
+            print(f"[dispatcher] monitoring turn inspection skipped: {exc}")
     return {**{k: v for k, v in out.items() if k not in ("reply", "persisted")},
             "request": text, "final_answer": reply, "mode": out.get("mode") or (name or "none").upper(), "skill": name,
             "sources": out.get("sources", []), "session_id": sid, "channel": channel, "route": dec,

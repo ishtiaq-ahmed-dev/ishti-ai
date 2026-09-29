@@ -151,3 +151,9 @@ Requirement already satisfied: colorama in d:\ishti\venv\lib\site-packages (from
  - asked: "auto-install"
 - 2026-09-28 23:26 [error] palette: pip couldn't install Pillow: Requirement already satisfied: Pillow in d:\ishti\venv\lib\site-packages (12.3.0)
  - asked: "auto-install"
+- 2026-09-29 14:12 [error] chat: GpuBusy: The graphics card is busy: ishti-qwen2.5:14b needs about 9.8 GB and only 0.0 GB is free within the 80% GPU budget (in us - asked: "Write a python function to compute factorial of a number."
+- 2026-09-29 14:46 [error] health: 575 MB free of 16303 - asked: "gpu"
+- 2026-09-29 15:02 [error] dispatcher: GpuBusy: The graphics card is busy: gemma3:4b needs about 2.9 GB and only 1.4 GB is free within the 80% GPU budget (in use: qwen2 - asked: "Write a python function to compute factorial of a number."
+- 2026-09-29 15:04 [error] dispatcher: GpuBusy: The graphics card is busy: gemma3:4b needs about 5.5 GB and only 1.4 GB is free within the 80% GPU budget (in use: qwen2 - asked: "Translate to Urdu: Hello, thank you for your help."
+- 2026-09-29 15:49 [error] health: 116/117 loaded; broken: find_leads - asked: "skills"
+- 2026-09-29 17:51 [error] dispatcher: GpuBusy: The graphics card is busy: ishti-qwen2.5:14b needs about 9.8 GB and only 0.0 GB is free within the 80% GPU budget (in us - asked: "Hello ISHTI, who are you and what GPU are you running on?"

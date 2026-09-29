@@ -1,0 +1,14 @@
+{
+  "name": "taskctl",
+  "version": "1.0.0",
+  "description": "Background task control (D4): 'what tasks are running', 'cancel task 2', 'pause the research task', 'resume task 1'. Tasks run in the background while you keep chatting; each keeps its own conversation state so topics never mix.",
+  "route": "list, pause, resume or cancel background tasks",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 24,
+  "status": "working",
+  "tier": "T1",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": false},
+  "category": "Productivity & Planning",
+  "path": "ishti/skills/taskctl"
+}

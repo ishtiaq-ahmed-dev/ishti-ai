@@ -8,6 +8,14 @@ Run:  $env:PYTHONIOENCODING='utf-8'; D:\ISHTI\venv\Scripts\python.exe D:\ISHTI\t
 """
 import sys
 
+# Script-style regression check (no test_ functions; documented run is the direct python
+# invocation below). Under pytest it would execute its imports at collection for zero tests
+# while pulling in the planner/model stack — skip instead.
+if "pytest" in sys.modules:
+    import pytest
+    pytest.skip("planner regression script; run directly: python tests/test_planner_messenger.py",
+                allow_module_level=True)
+
 sys.path.insert(0, r"D:\ISHTI")
 
 import ishti.router as router_mod  # noqa: E402

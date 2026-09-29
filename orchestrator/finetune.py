@@ -60,6 +60,82 @@ def deps():
     return missing
 
 
+def curate_examples(rows, min_quality=None, cap_per_skill=None):
+    """G3 hygiene pass over dataset rows: quality filter, dedupe, contradiction drop and a
+    per-skill cap so one loud domain can't dominate the mix. Returns (kept, {dropped: n})."""
+    try:
+        from ishti.learning.store import cfg as lcfg
+        conf = lcfg().get("dataset", {})
+        min_quality = min_quality if min_quality is not None else conf.get("min_quality", 0.6)
+        cap_per_skill = cap_per_skill if cap_per_skill is not None else conf.get("per_skill_cap", 0.4)
+    except Exception:
+        min_quality = 0.6 if min_quality is None else min_quality
+        cap_per_skill = 0.4 if cap_per_skill is None else cap_per_skill
+    kept = []
+    dropped = {"low_quality": 0, "duplicate": 0, "contradiction": 0, "capped": 0}
+    seen_pairs, seen_instructions, counts = set(), set(), {}
+    cap_n = max(3, int(cap_per_skill * len(rows))) if rows else None
+    for r in rows:
+        try:
+            q = float(r.get("quality") or 0.0)
+        except (TypeError, ValueError):
+            q = 0.0
+        if q < min_quality:
+            dropped["low_quality"] += 1
+            continue
+        ikey = (r.get("instruction") or "").strip().lower()
+        ckey = (r.get("correct") or r.get("correction") or "").strip().lower()
+        pair = (ikey, ckey)
+        if pair in seen_pairs:
+            dropped["duplicate"] += 1
+            continue
+        if ikey in seen_instructions and ckey:
+            # same instruction kept with a DIFFERENT correction: a contradiction, not data
+            dropped["contradiction"] += 1
+            continue
+        seen_pairs.add(pair)
+        seen_instructions.add(ikey)
+        skill = r.get("skill") or r.get("domain") or "general"
+        counts[skill] = counts.get(skill, 0) + 1
+        if cap_n and counts[skill] > cap_n:
+            dropped["capped"] += 1
+            continue
+        kept.append(r)
+    return kept, dropped
+
+
+def dry_run(min_quality=None, eval_also=False) -> dict:
+    """G3/G4: the whole offline pipeline WITHOUT training — data sufficiency, curation,
+    eval-set presence, dependency check, and the gate math. Touches nothing; deploys
+    nothing (deployment only ever happens via the explicit `promote` command after a
+    real training run). Safe to run any time."""
+    from ishti import ftlog
+    ok, s = ftlog.ready_for_training(MIN_EXAMPLES)
+    report = {"examples_logged": s["total"], "min_needed": MIN_EXAMPLES, "data_ready": bool(ok)}
+    try:
+        rows = ftlog.rows("SELECT instruction, correct, correction, quality, skill, domain FROM dataset ORDER BY ts DESC LIMIT 50000") \
+            if hasattr(ftlog, "rows") else []
+    except Exception:
+        rows = []
+    if not rows:
+        try:
+            from ishti.learning import dataset as DS
+            rows = DS.rows(limit=50000)
+        except Exception:
+            rows = []
+    kept, dropped = curate_examples(rows, min_quality=min_quality)
+    report["curated_examples"] = len(kept)
+    report["dropped"] = dropped
+    report["curation_would_train"] = len(kept) >= MIN_EXAMPLES
+    report["eval_set"] = "present" if os.path.isfile(EVAL_SET) else "missing (created on first real run)"
+    report["training_deps_missing"] = deps()
+    report["would_train"] = bool(report["curation_would_train"] and not report["training_deps_missing"])
+    report["auto_deploy"] = False
+    report["note"] = ("dry-run only: nothing was trained, nothing was promoted. "
+                      "Deployment is always an explicit `promote` after a real run evaluates >= the gate.")
+    return report
+
+
 def base_model_name():
     """The exact Ollama model name of the production brain (config name kept verbatim:
     'ishti-qwen2.5:14b' must be asked for by its full tag, not a stripped family name)."""
@@ -198,6 +274,8 @@ if __name__ == "__main__":
     elif cmd == "eval-set":
         ensure_eval_set()
         print(f"eval set at {EVAL_SET}")
+    elif cmd == "dry-run":
+        print(json.dumps(dry_run(), indent=1))
     elif cmd == "train":
         out, note = train()
         print(note or out)
@@ -213,5 +291,5 @@ if __name__ == "__main__":
         good, note = rollback()
         print(("OK: " if good else "NO: ") + note)
     else:
-        print("usage: python orchestrator/finetune.py [status|eval-set|train|eval|promote <dir>|rollback]")
+        print("usage: python orchestrator/finetune.py [status|dry-run|eval-set|train|eval|promote <dir>|rollback]")
     print("[self-check] finetune CLI responds (graceful degradation, no training deps needed for status)")

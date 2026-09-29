@@ -37,7 +37,8 @@
           "note": "Low-importance, long-unconfirmed memories are marked needs_confirmation (never deleted); importance >= floor is never decayed."
         }
       }
-    }
+    },
+    "active_profile": "router_single_agent"
   },
   "memory": {
     "db_path": "D:\\ISHTI\\data\\ishti.db",

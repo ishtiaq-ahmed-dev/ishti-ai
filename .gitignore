@@ -32,3 +32,7 @@ claudecode/
 # large third-party binaries
 tools/obscura/*.exe
 tools/obscura/*.zip
+
+# build outputs
+build/
+dist/

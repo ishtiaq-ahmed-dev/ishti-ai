@@ -38,6 +38,17 @@ import ishti.arch2.jsonio as jsonio  # noqa: E402
 memory.db_path = lambda: os.path.join(TMP, "arch2_memory.db")
 memory._conn = None
 retrieval.memory = memory
+# Prompt-2 retrieval also consults the learning store (lessons) and memory flows (person
+# hard-forget) write the relationship graph — both must be scratch too, or a test could
+# touch the owner's real data (house rule) or flake on unrelated lesson matches.
+try:
+    import ishti.rgraph as _rgraph
+    _rgraph.DB_PATH = os.path.join(TMP, "rgraph.db")
+    _rgraph._conn = None
+    from ishti.learning import store as _lstore
+    _lstore.set_db_path(os.path.join(TMP, "learning.db"))
+except Exception:
+    pass
 # The test contract (docstring above) is "runs WITHOUT Chroma" — vector_hits() would otherwise
 # open the owner's real conversation store and inject live chat into assertions (it did: the
 # unrelated-query assertion pulled an actual IMSciences exchange). Keyword/procedure paths are
@@ -297,14 +308,17 @@ def test_consolidate_apply_explicit_vs_observed():
 
 
 def test_entity_commands_scoped_and_family():
-    """Spec 18's entity-scoped commands: forget everything about X, family query, don't remember."""
+    """Spec 18's entity-scoped commands. Prompt-2 semantics (H2/J7): 'forget everything about X'
+    is REAL deletion — entity, memories and graph rows gone, the deletion itself audited."""
     memory.upsert_entity("Bilal", relationship="brother", note="lives in Lahore", aliases=["Bilal Ahmed"])
     memory.semantic("Bilal plays hockey.")
     memory.semantic("User works on the falcon drone.")
     r = consolidate.handle_command("forget everything about Bilal")
     assert r and not memory.search("Bilal"), "person-scoped forget must clear their memories"
-    e = memory.find_entity("bilal")
-    assert e["relationship"] == "unknown", "the person node is reset, not deleted"
+    assert memory.find_entity("bilal") is None, "the entity row is really deleted (H2), not reset"
+    audit = memory.forget_audit_log(3)
+    assert audit and audit[0]["action"] == "forget_hard" and audit[0]["requested_by"] == "owner", audit
+    assert memory.search("falcon drone"), "unrelated memories survive the person-delete"
     r = consolidate.handle_command("Sara is my sister")  # not a command; fall through check first
     assert r is None
     memory.upsert_entity("Sara", relationship="sister")

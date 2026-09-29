@@ -7,6 +7,15 @@ import sys
 import subprocess
 import threading
 import time
+import ctypes
+
+# 1. Inform Windows Shell of explicit Application User Model ID before any window creation
+# This ensures Windows groups and taskbar icons use the official ISHTI logo instead of generic Python
+APP_ID = "ISHTI.PersonalAI.Assistant.Desktop.1.0"
+try:
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+except Exception:
+    pass
 
 ROOT = r"D:\ISHTI"
 if ROOT not in sys.path:
@@ -15,14 +24,25 @@ if ROOT not in sys.path:
 from desktop.focus_ishti import is_running, focus_window, reveal_window
 from desktop.shutdown import shutdown
 
+
+def _get_pythonw():
+    pw = os.path.join(ROOT, "venv", "Scripts", "pythonw.exe")
+    return pw if os.path.exists(pw) else sys.executable
+
+
 # Windows gives a console control handler only a few seconds before killing the process, and a full
 # shutdown (process tree kill + VRAM release + verification) takes longer - so it runs in a detached child
 # that outlives this one instead of inline.
 def _shutdown_detached():
     try:
-        flags = (subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-                 if os.name == "nt" else 0)
-        subprocess.Popen([sys.executable, os.path.join(ROOT, "desktop", "shutdown.py")], cwd=ROOT,
+        flags = (
+            subprocess.CREATE_NO_WINDOW
+            | subprocess.DETACHED_PROCESS
+            | subprocess.CREATE_NEW_PROCESS_GROUP
+            if os.name == "nt"
+            else 0
+        )
+        subprocess.Popen([_get_pythonw(), os.path.join(ROOT, "desktop", "shutdown.py")], cwd=ROOT,
                          creationflags=flags)
         return True
     except Exception as exc:
@@ -56,9 +76,9 @@ def main():
             reveal_window()
         sys.exit(0)
 
-    # 2. Start ISHTI via start.bat or startup.py
-    python_exe = os.path.join(ROOT, "venv", "Scripts", "python.exe")
-    startup_py = os.path.join(ROOT, "orchestrator", "startup.py")
+    # 2. Start ISHTI backend headless (Job Object + rotating logs in %LOCALAPPDATA%\ISHTI\logs)
+    # Always use pythonw.exe so no console window is allocated
+    python_exe = _get_pythonw()
 
     flags = (
         subprocess.CREATE_NO_WINDOW
@@ -68,26 +88,22 @@ def main():
         else 0
     )
 
-    proc = subprocess.Popen(
-        [python_exe, startup_py],
+    subprocess.Popen(
+        [python_exe, "-m", "ishti", "8888"],
         cwd=ROOT,
         creationflags=flags,
     )
 
-    # 2b. System tray icon (Section 7): global mic ON/OFF + dashboard + Stop.
-    #     Best-effort: if it fails, the dashboard toggle and voice commands still work.
+    # 2b. System tray icon: global mic ON/OFF + dashboard + Stop.
     try:
         tray_py = os.path.join(ROOT, "desktop", "tray.py")
         subprocess.Popen([python_exe, tray_py], cwd=ROOT, creationflags=flags)
     except Exception as exc:
         print(f"[launcher] tray icon unavailable ({exc}); dashboard/voice toggles still work")
 
-    # Wait up to 10s for the window to appear and bring it to foreground
-    for _ in range(20):
-        time.sleep(0.5)
-        if is_running():
-            focus_window()
-            break
+    # 3. Launch the desktop GUI window directly (instant animated splash -> main window on ready)
+    from desktop.app_window import run_app_window
+    run_app_window()
 
 
 if __name__ == "__main__":

@@ -1,39 +1,37 @@
 @echo off
-title ISHTI - Your Personal AI Assistant
-color 0B
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
-echo ========================================================================
-echo   ISHTI INTELLIGENT PERSONAL ASSISTANT
-echo   Zero-Cost Local Architecture (RTX 5070 Ti)
-echo ========================================================================
-echo.
+:: 1. If CLI developer commands are passed (%1 is not empty), handle in console
+if not "%1"=="" goto handle_cli
 
-:: 1. Verify and Activate Python Virtual Environment
-if not exist "%~dp0venv\Scripts\activate.bat" (
-    echo [ERROR] Virtual environment not found at %~dp0venv
-    echo Creating virtual environment...
-    python -m venv "%~dp0venv"
-    if errorlevel 1 (
-        echo [FATAL] Failed to create virtual environment. Ensure Python 3.11 is installed.
-        pause
-        exit /b 1
-    )
+:: 2. Launch isolated desktop application directly with animated startup screen (NO CMD WINDOW)
+if exist "%~dp0dist\ISHTI\ISHTI.exe" (
+    start "" "%~dp0dist\ISHTI\ISHTI.exe"
+    exit /b 0
 )
 
+if exist "%~dp0venv\Scripts\pythonw.exe" (
+    start "" "%~dp0venv\Scripts\pythonw.exe" "%~dp0desktop\launcher.py"
+    exit /b 0
+)
+
+:: Fallback if venv is missing
+echo [ERROR] Virtual environment not found at %~dp0venv
+echo Creating virtual environment...
+python -m venv "%~dp0venv"
+if errorlevel 1 (
+    echo [FATAL] Failed to create virtual environment. Ensure Python 3.11 is installed.
+    pause
+    exit /b 1
+)
+call "%~dp0venv\Scripts\activate.bat"
+start "" "%~dp0venv\Scripts\pythonw.exe" "%~dp0desktop\launcher.py"
+exit /b 0
+
+:handle_cli
 call "%~dp0venv\Scripts\activate.bat"
 
-:: 2. Singleton-instance check: if ISHTI is already running, focus existing window and exit
-if "%1"=="" (
-    "%~dp0venv\Scripts\python.exe" "%~dp0desktop\focus_ishti.py"
-    if !errorlevel! equ 0 (
-        echo [INFO] ISHTI is already running. Existing instance brought to focus.
-        exit /b 0
-    )
-)
-
-:: 3. CLI commands support
 if "%1"=="doctor" (
     python "orchestrator\doctor.py"
     exit /b %errorlevel%
@@ -54,6 +52,18 @@ if "%1"=="find" (
     exit /b %errorlevel%
 )
 
+if "%1"=="settings" (
+    echo [ISHTI] Opening the Settings screen...
+    start "" http://127.0.0.1:8888/settings
+    exit /b 0
+)
+
+if "%1"=="test" (
+    echo [ISHTI] Running the offline test suite...
+    python -m pytest
+    exit /b %errorlevel%
+)
+
 if "%1"=="server" (
     set PORT=8888
     if not "%2"=="" set PORT=%2
@@ -67,15 +77,6 @@ if "%1"=="cli" (
     exit /b %errorlevel%
 )
 
-:: 3. Launch Default Startup Sequence & Health-Checks
+:: Default fallback with args
 "%~dp0venv\Scripts\python.exe" "%~dp0orchestrator\startup.py" %*
-
-if errorlevel 1 (
-    echo.
-    echo [ISHTI EXITED WITH ERROR] Press any key to close.
-    pause >nul
-    exit /b 1
-)
-
-:: Auto-close CMD console window so desktop application runs seamlessly
-exit
+exit /b %errorlevel%

@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ISHTI</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      width: 520px;
+      height: 340px;
+      overflow: hidden;
+      background: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: #0F172A;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .splash-container {
+      width: 100%;
+      height: 100%;
+      border-radius: 20px;
+      background: linear-gradient(135deg, #FFFFFF 0%, #FAF8F5 45%, #F4EDE2 100%);
+      border: 1px solid rgba(217, 119, 6, 0.28);
+      box-shadow: 0 24px 64px rgba(15, 23, 42, 0.16), 0 2px 10px rgba(217, 119, 6, 0.10);
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 38px 40px 30px 40px;
+      overflow: hidden;
+    }
+
+    /* Ambient animated warm gold sunlight glow */
+    .ambient-glow {
+      position: absolute;
+      top: -25%;
+      left: 15%;
+      width: 360px;
+      height: 260px;
+      background: radial-gradient(circle, rgba(245, 158, 11, 0.20) 0%, rgba(254, 243, 199, 0.40) 50%, transparent 80%);
+      filter: blur(40px);
+      pointer-events: none;
+      animation: glowMove 6s ease-in-out infinite alternate;
+      transform: translate3d(0, 0, 0);
+    }
+
+    @keyframes glowMove {
+      0% { transform: translate3d(-18px, -10px, 0) scale(0.95); opacity: 0.7; }
+      100% { transform: translate3d(18px, 15px, 0) scale(1.15); opacity: 1.0; }
+    }
+
+    /* Logo & Brand Styling */
+    .brand-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      z-index: 2;
+      margin-top: 6px;
+    }
+
+    .logo-row {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+
+    /* Squircle Icon */
+    .app-icon {
+      width: 72px;
+      height: 72px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, #FFFFFF 0%, #FEF3C7 100%);
+      border: 1px solid rgba(217, 119, 6, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 24px rgba(217, 119, 6, 0.22), 0 2px 6px rgba(0, 0, 0, 0.04);
+      transform: scale(0.8);
+      opacity: 0;
+      animation: iconPop 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes iconPop {
+      0% { transform: scale(0.65); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    .sparkle-icon {
+      width: 44px;
+      height: 44px;
+      animation: sparkleDraw 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) forwards, sparklePulse 3s ease-in-out infinite 1.2s;
+      transform-origin: center;
+    }
+
+    @keyframes sparkleDraw {
+      0% { transform: scale(0) rotate(-45deg); opacity: 0; }
+      70% { transform: scale(1.18) rotate(6deg); opacity: 1; }
+      100% { transform: scale(1) rotate(0deg); opacity: 1; }
+    }
+
+    @keyframes sparklePulse {
+      0%, 100% { transform: scale(1); opacity: 1; filter: drop-shadow(0 0 2px rgba(217, 119, 6, 0.4)); }
+      50% { transform: scale(1.08); opacity: 0.92; filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.7)); }
+    }
+
+    /* Wordmark Letters */
+    .wordmark {
+      display: flex;
+      align-items: baseline;
+      position: relative;
+    }
+
+    .letter {
+      display: inline-block;
+      font-size: 46px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      color: #0F172A;
+      opacity: 0;
+      transform: translateY(14px);
+      animation: letterIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    .letter:nth-child(1) { animation-delay: 0.15s; }
+    .letter:nth-child(2) { animation-delay: 0.22s; }
+    .letter:nth-child(3) { animation-delay: 0.29s; }
+    .letter:nth-child(4) { animation-delay: 0.36s; }
+    .letter:nth-child(5) { animation-delay: 0.43s; }
+
+    @keyframes letterIn {
+      0% { opacity: 0; transform: translateY(14px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+
+    .wordmark-star {
+      position: absolute;
+      top: -6px;
+      right: -16px;
+      width: 14px;
+      height: 14px;
+      opacity: 0;
+      animation: starPop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.55s forwards, sparklePulse 2.5s ease-in-out infinite 1.4s;
+    }
+
+    @keyframes starPop {
+      0% { transform: scale(0); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    .tagline {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.24em;
+      color: #64748B;
+      margin-top: 10px;
+      opacity: 0;
+      animation: fadeIn 0.6s ease 0.4s forwards;
+      text-transform: uppercase;
+    }
+
+    @keyframes fadeIn {
+      0% { opacity: 0; transform: translateY(4px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Status & Real Progress Section */
+    .status-section {
+      width: 100%;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .status-text-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      min-height: 22px;
+    }
+
+    .stage-label {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #1E293B;
+      transition: opacity 0.3s ease, transform 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #D97706;
+      box-shadow: 0 0 6px rgba(217, 119, 6, 0.6);
+      animation: dotPulse 1.6s ease-in-out infinite;
+      display: inline-block;
+    }
+
+    @keyframes dotPulse {
+      0%, 100% { transform: scale(0.9); opacity: 0.6; }
+      50% { transform: scale(1.25); opacity: 1; box-shadow: 0 0 10px rgba(245, 158, 11, 0.9); }
+    }
+
+    .stage-label.crossfade-out {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+
+    .stage-label.crossfade-in {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .progress-percent {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #D97706;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Slim Gold Progress Bar on Clean Light Track */
+    .progress-track {
+      width: 100%;
+      height: 4.5px;
+      background: rgba(217, 119, 6, 0.12);
+      border: 1px solid rgba(217, 119, 6, 0.15);
+      border-radius: 999px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 5%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #D97706 0%, #F59E0B 50%, #FBBF24 100%);
+      box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+      transition: width 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    .footer-spec {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10.5px;
+      font-weight: 500;
+      color: #64748B;
+      letter-spacing: 0.02em;
+    }
+
+    /* Error Failure State */
+    .error-card {
+      display: none;
+      width: 100%;
+      background: #FEF2F2;
+      border: 1px solid #FECACA;
+      border-radius: 12px;
+      padding: 10px 14px;
+      margin-bottom: 4px;
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.08);
+    }
+
+    .error-card.visible {
+      display: block;
+      animation: fadeIn 0.3s ease forwards;
+    }
+
+    .error-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #DC2626;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .error-desc {
+      font-size: 11px;
+      color: #991B1B;
+      margin-top: 3px;
+    }
+
+    .error-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+      justify-content: flex-end;
+    }
+
+    .btn-action {
+      background: #FFFFFF;
+      border: 1px solid #CBD5E1;
+      color: #334155;
+      border-radius: 8px;
+      padding: 4px 12px;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-action:hover {
+      background: #F1F5F9;
+      border-color: #94A3B8;
+    }
+
+    .btn-retry {
+      background: #D97706;
+      border-color: #B45309;
+      color: #FFFFFF;
+      font-weight: 600;
+    }
+
+    .btn-retry:hover {
+      background: #B45309;
+    }
+
+    /* Reduced Motion Accessibility */
+    @media (prefers-reduced-motion: reduce) {
+      .ambient-glow, .sparkle-icon, .wordmark-star, .status-pulse-dot {
+        animation: none !important;
+      }
+      .letter, .app-icon, .tagline {
+        opacity: 1 !important;
+        transform: none !important;
+        animation: none !important;
+      }
+      .progress-fill {
+        transition: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="splash-container">
+    <div class="ambient-glow"></div>
+
+    <!-- Official Brand Logo Lockup -->
+    <div class="brand-section">
+      <div class="logo-row">
+        <div class="app-icon">
+          <!-- 4-point gold sparkle logo -->
+          <svg class="sparkle-icon" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M 58.50,29.00 A 1.50,1.50 0 0 1 61.50,29.00 Q 67.80,52.20 91.00,58.50 A 1.50,1.50 0 0 1 91.00,61.50 Q 67.80,67.80 61.50,91.00 A 1.50,1.50 0 0 1 58.50,91.00 Q 52.20,67.80 29.00,61.50 A 1.50,1.50 0 0 1 29.00,58.50 Q 52.20,52.20 58.50,29.00 Z" fill="#D97706" />
+          </svg>
+        </div>
+        <div class="wordmark">
+          <span class="letter">I</span>
+          <span class="letter">S</span>
+          <span class="letter">H</span>
+          <span class="letter">T</span>
+          <span class="letter">I</span>
+          <!-- Floating Accent Star -->
+          <svg class="wordmark-star" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M 11.00,1.00 A 1.00,1.00 0 0 1 13.00,1.00 Q 14.75,8.25 22.00,10.00 A 1.00,1.00 0 0 1 22.00,12.00 Q 14.75,13.75 13.00,21.00 A 1.00,1.00 0 0 1 11.00,21.00 Q 9.25,13.75 2.00,12.00 A 1.00,1.00 0 0 1 2.00,10.00 Q 9.25,8.25 11.00,1.00 Z" fill="#D97706" />
+          </svg>
+        </div>
+      </div>
+      <div class="tagline">Personal AI Assistant</div>
+    </div>
+
+    <!-- Error State Display -->
+    <div id="error-card" class="error-card">
+      <div class="error-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        Startup Issue Encountered
+      </div>
+      <div id="error-msg" class="error-desc">Could not connect to assistant backend.</div>
+      <div class="error-actions">
+        <button class="btn-action" onclick="viewLog()">View Log</button>
+        <button class="btn-action btn-retry" onclick="retryBoot()">Retry</button>
+      </div>
+    </div>
+
+    <!-- Dynamic Status & Real Progress Section -->
+    <div class="status-section">
+      <div class="status-text-row">
+        <span id="stage-text" class="stage-label crossfade-in">
+          <span class="status-pulse-dot"></span>
+          <span>Initializing...</span>
+        </span>
+        <span id="progress-percent" class="progress-percent">0%</span>
+      </div>
+      <div class="progress-track">
+        <div id="progress-bar" class="progress-fill"></div>
+      </div>
+      <div class="footer-spec">
+        <span>RTX 5070 Ti · 100% Local Inference</span>
+        <span>Secure & Private</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const startTime = performance.now();
+    const MIN_DISPLAY_MS = 1400; // Smooth ~1.4s display, comfortable animated intro
+    let isCompleted = false;
+    let pollInterval = null;
+    let ws = null;
+    let lastStage = "";
+
+    const stageEl = document.getElementById("stage-text");
+    const percentEl = document.getElementById("progress-percent");
+    const barEl = document.getElementById("progress-bar");
+    const errorCard = document.getElementById("error-card");
+    const errorMsg = document.getElementById("error-msg");
+
+    function setStageLabel(label) {
+      if (!label || label === lastStage) return;
+      lastStage = label;
+      stageEl.classList.remove("crossfade-in");
+      stageEl.classList.add("crossfade-out");
+      setTimeout(() => {
+        stageEl.innerHTML = `<span class="status-pulse-dot"></span><span>${label}</span>`;
+        stageEl.classList.remove("crossfade-out");
+        stageEl.classList.add("crossfade-in");
+      }, 140);
+    }
+
+    function updateProgress(stage, progress, error, stagesList, isReady) {
+      if (error) {
+        showError(stage, error);
+        return;
+      }
+
+      let displayLabel = stage;
+      if (stagesList && Array.isArray(stagesList)) {
+        const found = stagesList.find(s => typeof s === "string" ? s === stage : (s && (s.id === stage || s.label === stage)));
+        if (found) {
+          displayLabel = typeof found === "string" ? found : (found.label || found.id);
+        }
+      }
+
+      if (displayLabel) {
+        setStageLabel(displayLabel);
+      }
+
+      let pct = 5;
+      if (typeof progress === "number") {
+        if (progress > 1) {
+          pct = Math.min(100, Math.max(0, Math.round(progress)));
+        } else if (progress > 0) {
+          pct = Math.min(100, Math.max(0, Math.round(progress * 100)));
+        }
+      }
+      if (isReady || stage === "ready") {
+        pct = 100;
+      }
+      pct = Math.max(5, pct);
+      barEl.style.width = pct + "%";
+      percentEl.textContent = pct + "%";
+
+      if (isReady || pct >= 100 || stage === "ready") {
+        finishStartup();
+      }
+    }
+
+    function showError(stage, message) {
+      errorCard.classList.add("visible");
+      errorMsg.textContent = `${stage ? stage + ": " : ""}${message || "Startup stalled"}`;
+      barEl.style.background = "#DC2626";
+      barEl.style.boxShadow = "0 0 10px rgba(220, 38, 38, 0.4)";
+    }
+
+    function hideError() {
+      errorCard.classList.remove("visible");
+      barEl.style.background = "linear-gradient(90deg, #D97706 0%, #F59E0B 50%, #FBBF24 100%)";
+      barEl.style.boxShadow = "0 0 10px rgba(245, 158, 11, 0.5)";
+    }
+
+    function finishStartup() {
+      if (isCompleted) return;
+      isCompleted = true;
+
+      const elapsed = performance.now() - startTime;
+      const remaining = Math.max(0, MIN_DISPLAY_MS - elapsed);
+
+      setTimeout(() => {
+        if (window.pywebview && window.pywebview.api && window.pywebview.api.on_ready) {
+          window.pywebview.api.on_ready();
+        } else {
+          console.log("[Splash] Ready: transitioning to main app window.");
+        }
+      }, remaining);
+    }
+
+    async function checkReady() {
+      try {
+        const res = await fetch("http://127.0.0.1:8888/api/ready", { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          updateProgress(data.stage, data.progress, data.error, data.stages, data.ready);
+        }
+      } catch (err) {
+        const elapsed = (performance.now() - startTime) / 1000;
+        if (elapsed > 40) {
+          showError("Backend Launch", "Assistant backend took too long to respond");
+        }
+      }
+    }
+
+    function connectWebSocket() {
+      try {
+        ws = new WebSocket("ws://127.0.0.1:8888/ws/events");
+        ws.onmessage = (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            if (payload.type === "boot_stage") {
+              const d = payload.data || {};
+              updateProgress(d.label || d.stage, d.progress, d.error, null, d.done && d.stage === "ready");
+            } else if (payload.type === "error") {
+              const d = payload.data || {};
+              updateProgress(d.stage, 0, d.message);
+            }
+          } catch (e) {}
+        };
+        ws.onerror = () => {};
+      } catch (e) {}
+    }
+
+    function viewLog() {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.view_log) {
+        window.pywebview.api.view_log();
+      } else {
+        alert("Log path: %LOCALAPPDATA%\\ISHTI\\logs\\ishti.log");
+      }
+    }
+
+    function retryBoot() {
+      hideError();
+      fetch("http://127.0.0.1:8888/api/ready/retry", { method: "POST" }).catch(() => {});
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.retry_boot) {
+        window.pywebview.api.retry_boot();
+      }
+    }
+
+    // Startup bootstrap
+    connectWebSocket();
+    pollInterval = setInterval(checkReady, 300);
+    checkReady();
+  </script>
+</body>
+</html>

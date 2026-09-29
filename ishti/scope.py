@@ -91,6 +91,10 @@ def check_write(path, what="write"):
     scope = scope_of(skill)
     if skill == "skillsmith" and _under(path, [os.path.join(ROOT, "ishti", "skills")]):
         return  # installing a skill is what it's for (after the owner's yes)
+    if skill in ("architecture", "settings") and _norm(path) in (_norm(os.path.join(ROOT, "ishti", "config.json")),
+                                                                 _norm(os.path.join(DATA, "settings.json")),
+                                                                 _norm(os.path.join(DATA, "settings.secrets.json"))):
+        return  # first-party config: the architecture registry and settings service ARE their managers
     if _under(path, PROTECTED) and not _under(path, ALWAYS_WRITABLE):
         _deny(skill, f"{what} {path}", "a protected system/ISHTI folder")
     if _under(path, ALWAYS_WRITABLE) or _under(path, _roots(scope)):
