@@ -36,3 +36,8 @@ tools/obscura/*.zip
 # build outputs
 build/
 dist/
+
+# QA harness artifacts (2026-09-30)
+.qa_nemotron/
+TEST_STATE_last_run.json
+reports/skills/_scratch/
