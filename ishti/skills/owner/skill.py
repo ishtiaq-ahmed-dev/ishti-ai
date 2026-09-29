@@ -246,7 +246,9 @@ def run(text, session):
         lines = [f"- {n} ({s.status}): {s.manifest['route']}" for n, s in SKILLS.items()]
         return {"reply": "Skills:\n" + "\n".join(lines), "sources": []}
     from orchestrator.doctor import IshtiDoctor
-    report = IshtiDoctor().check_all()
+    # Interactive diagnostics must answer within a chat turn: 20 s cap (static checks + bounded live
+    # probes). The DOCTOR tab can afford the full budget; a chat reply cannot (loop-2 fix).
+    report = IshtiDoctor().check_all(budget_s=20)
     bad = report["errors"] + report["warnings"]
     return {"reply": ("All checks passed." if not bad else "Issues:\n" + "\n".join(f"- {b}" for b in bad[:8]))
                      + " Full report: DOCTOR tab.", "sources": []}

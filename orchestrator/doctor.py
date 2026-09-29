@@ -39,8 +39,38 @@ class IshtiDoctor:
         self.warnings = []
         self.errors = []
 
-    def check_all(self, include_e2e: bool = True) -> Dict[str, Any]:
-        """Runs full diagnostic suite."""
+    def _live(self, fn, skip_note):
+        """Run one LIVE check with the remaining budget as its cap (thread + join). A hung network call
+        therefore delays the suite by at most the leftover budget, never forever (2026-09-30 fix).
+        """
+        import threading
+        left = self._deadline - time.time()
+        if left <= 1.0:
+            self._log_result("Doctor", skip_note, True, "skipped: time budget spent", is_warning=True)
+            return
+        box = {}
+
+        def runner():
+            try:
+                fn()
+            except BaseException as e:   # noqa: BLE001 - a live check failure is recorded, not fatal
+                box["err"] = e
+        th = threading.Thread(target=runner, daemon=True)
+        th.start()
+        th.join(left)
+        if th.is_alive():
+            self._log_result("Doctor", f"{skip_note} (skipped: overran the time budget)", True,
+                             "the suite moved on", is_warning=True)
+
+    def check_all(self, include_e2e: bool = True, budget_s: float = 45.0) -> Dict[str, Any]:
+        """Runs full diagnostic suite.
+
+        budget_s: overall wall-clock cap. Live-network checks (search, fetch, weather, e2e) are
+        SKIPPED once the budget is spent, so 'run diagnostics' can never hang on a slow/offline
+        network (owner-skill timeout bug, 2026-09-30). Static checks always run.
+        """
+        import time as _t
+        self._deadline = _t.time() + float(budget_s)
         print("\n" + "=" * 65)
         print("         ISHTI SYSTEM HEALTH & CAPABILITY DIAGNOSTICS")
         print("=" * 65 + "\n")
@@ -50,14 +80,14 @@ class IshtiDoctor:
         self.check_ollama()
         self.check_models()
         self.check_browser_isolation()
-        self.check_web_search()
-        self.check_web_fetch()
-        self.check_voice()
+        self._live(self.check_web_search, "Live web search")
+        self._live(self.check_web_fetch, "Live page fetch")
+        self.check_voice()               # internal live parts are budget-aware
         self.check_memory_and_skills()
         self.check_services()
-        
+
         if include_e2e:
-            self.check_end_to_end_capabilities()
+            self._live(self.check_end_to_end_capabilities, "End-to-end core checks")
 
         self._print_summary()
         return {
@@ -159,6 +189,9 @@ class IshtiDoctor:
 
         # Real test: launch the browser, load a page, close it. A version string proves nothing.
         for label, headless in (("Headless Browser Launch", True), ("Visible Browser Launch", False)):
+            if time.time() >= self._deadline:
+                self._log_result("Browser", f"{label} (skipped: time budget spent)", True, "static checks complete", is_warning=True)
+                continue
             try:
                 from browser.browser_agent import BrowserAgent
                 t0 = time.time()
@@ -214,25 +247,32 @@ class IshtiDoctor:
         except Exception as e:
             self._log_result("Voice", "Faster-Whisper STT", False, str(e), is_warning=True)
 
-        # Real test: Piper synthesises audio bytes.
-        try:
-            from ishti.voice import synthesize
-            size = len(synthesize("ISHTI audio test"))
-            self._log_result("Voice", "Piper TTS", size > 1000, f"Synthesised {size} bytes of audio",
-                             is_warning=size <= 1000)
-        except Exception as e:
-            self._log_result("Voice", "Piper TTS", False, str(e)[:120], is_warning=True)
+        # Real test: Piper synthesises audio bytes. SKIPPED when the time budget is spent - a slow
+        # TTS first-load must never hang 'run diagnostics' (owner-skill timeout bug, 2026-09-30).
+        if time.time() < self._deadline:
+            try:
+                from ishti.voice import synthesize
+                size = len(synthesize("ISHTI audio test"))
+                self._log_result("Voice", "Piper TTS", size > 1000, f"Synthesised {size} bytes of audio",
+                                 is_warning=size <= 1000)
+            except Exception as e:
+                self._log_result("Voice", "Piper TTS", False, str(e)[:120], is_warning=True)
+        else:
+            self._log_result("Voice", "Piper TTS (skipped: time budget spent)", True, "static checks complete", is_warning=True)
 
-        # Real test: weather data source used for live local queries
-        try:
-            from tools.web.weather import get_weather
-            from orchestrator.memory.user_profile import get_user_memory
-            city = get_user_memory().get_preferences().default_weather_city or "Peshawar"
-            w = get_weather(city, 1)
-            self._log_result("LiveData", "Weather API (Open-Meteo)", bool(w.get("ok")),
-                             w.get("answer") or w.get("error", ""), is_warning=not w.get("ok"))
-        except Exception as e:
-            self._log_result("LiveData", "Weather API (Open-Meteo)", False, str(e)[:120], is_warning=True)
+        # Real test: weather data source used for live local queries (LIVE NETWORK - budget-capped)
+        if time.time() < self._deadline:
+            try:
+                from tools.web.weather import get_weather
+                from orchestrator.memory.user_profile import get_user_memory
+                city = get_user_memory().get_preferences().default_weather_city or "Peshawar"
+                w = get_weather(city, 1)
+                self._log_result("LiveData", "Weather API (Open-Meteo)", bool(w.get("ok")),
+                                 w.get("answer") or w.get("error", ""), is_warning=not w.get("ok"))
+            except Exception as e:
+                self._log_result("LiveData", "Weather API (Open-Meteo)", False, str(e)[:120], is_warning=True)
+        else:
+            self._log_result("LiveData", "Weather API (skipped: time budget spent)", True, "static checks complete", is_warning=True)
 
     def check_memory_and_skills(self):
         print("\n--- [9] Memory & search services ---")
