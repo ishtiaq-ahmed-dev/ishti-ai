@@ -151,9 +151,10 @@ def stt_model():
             if note:
                 print(note)
             try:
-                # measured: turbo float16 holds ~1.1 GB (large-v3 int8_float16 held ~1.7 GB): ask for that much and
-                # wait for the 14B planner instead of making Ollama's allocation fail
-                with gpu.slot(1200, "load whisper"):
+                # measured 29 Sep on the RTX 5070 Ti: loading turbo float16 grew the GPU by 3047 MiB (weights ~1.6 GB plus its
+                # CUDA context and cuBLAS/cuDNN workspace) - the old 1.1 GB figure left the planner on top of it at 84% VRAM.
+                # The governor makes room (the planner goes a rung lighter: voice has priority) and re-learns this from now on
+                with gpu.slot(3000, "speech recognition loading", for_voice=True):
                     _stt = WhisperModel(ref, device=_cfg["whisper_device"], compute_type=_cfg["whisper_compute"])
             except Exception as exc:  # no CUDA / out of VRAM: slower, but still local
                 print(f"[voice] whisper on {_cfg['whisper_device']} failed ({exc}); using CPU int8")
@@ -201,7 +202,8 @@ def transcribe(audio, language: str | None = None) -> str:
     the owner is still speaking) - that saves the extra encoder pass the old code spent detecting first."""
     global _last_use
     _last_use = time.time()
-    from ishti import models
+    from ishti import models, vram
+    vram.touch_voice()  # a voice turn is running: the governor keeps the planner where it is
     models.used("whisper")
     from faster_whisper import decode_audio
     pcm = audio if isinstance(audio, np.ndarray) else decode_audio(audio, sampling_rate=RATE)
@@ -531,6 +533,8 @@ def synthesize_as_owner(text):
 def synthesize(text: str, profile=None) -> bytes:
     """WAV bytes of the spoken reply in the owner's voice (markdown, URLs and citations stripped; [pause] tags
     become short silences, other style tags are dropped)."""
+    from ishti import vram
+    vram.touch_voice()
     profile = profile or current_voice()
     is_urdu_script = bool(URDU_SCRIPT.search(text))
     engine = "kokoro" if is_urdu_script else profile.get("engine", "piper")

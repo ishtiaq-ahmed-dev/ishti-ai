@@ -43,27 +43,34 @@ def unload_idle_models():
 
 
 @contextlib.contextmanager
-def slot(need_mb, what="gpu job", wait_s=60):
-    with _heavy:
-        deadline = time.time() + wait_s
-        tried_unload = False
-        while free_mb() < need_mb and time.time() < deadline:
-            if not tried_unload:
-                tried_unload = True
-                freed = unload_idle_models()
-                if freed:
-                    print(f"[gpu] {what}: freed VRAM by unloading {', '.join(freed)}")
-                    time.sleep(2)
-                    continue
-            time.sleep(1)
-        yield free_mb()
+def slot(need_mb, what="gpu job", wait_s=60, for_voice=False):
+    """One heavy job at a time, placed by the VRAM governor (ishti/vram.py): idle models are unloaded and the planner goes
+    a rung lighter to make room; if it still doesn't fit within wait_s the job gets vram.GpuBusy with the plain reason
+    (it is never run 'anyway' - that is what made Ollama split a model between GPU and CPU)."""
+    from ishti import vram
+    if not _heavy.acquire(timeout=wait_s):  # bounded: the voice pipeline must not sit behind an upscale for minutes
+        raise vram.GpuBusy("The graphics card is busy with another heavy job")
+    try:
+        res = vram.reserve(need_mb, what, wait_s, for_voice)
+        if not res["ok"]:
+            raise vram.GpuBusy("The graphics card is busy: " + res["queued"])
+        vram._cache.pop("gpu", None)
+        before = vram.gpu()["used_mb"]
+        try:
+            yield free_mb()
+        finally:
+            vram._cache.pop("gpu", None)
+            vram.learn_job(what, vram.gpu()["used_mb"] - before)  # what this job really took, for next time
+            vram.release(res["lease"])
+    finally:
+        _heavy.release()
 
 
 if __name__ == "__main__":
     order = []
 
     def job(n):
-        with slot(1, f"job {n}", wait_s=1):
+        with slot(1, f"job {n}", wait_s=20):
             order.append(("start", n))
             time.sleep(0.3)
             order.append(("end", n))

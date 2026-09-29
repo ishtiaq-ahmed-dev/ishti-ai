@@ -256,3 +256,108 @@ Status legend: **VERIFIED-FIXED** = fix confirmed in code and by a self-check/te
   `test_multitopic`.
 - `tools/verify_all.py`: **82/82 passed in ~5 minutes** (final run; includes the new isolation, multitopic and
   STT-thread tests).
+
+---
+
+## Backend pass: VRAM governor + lifecycle (2026-09-29, "Prompt 1")
+
+Everything below was found by running it. Evidence: `TEST_RESULTS.md`, `data/e2e_vram_lifecycle.json`,
+`data/vram_calibration.json`. Status words: FIXED (code + a check that fails if it regresses), OPEN (needs the owner or a later pass).
+
+### Issue 12: Laya (the router) is on the GPU, contradicting MODEL_DECISIONS.md — FIXED (record), OPEN (choice)
+`ishti/router.py` builds `Router(device="cuda")` in fp16. Measured: **~1.5 GB resident in the ISHTI process, 3.8 GB peak while loading**
+(it loads fp32 first). The 28 Sep decision text said "CPU, near-zero VRAM". The governor now counts it (all VRAM users are
+measured from nvidia-smi) and the boot loads the planner only after Laya finished. Moving Laya to the CPU would free ~1.3 GB at
+the cost of routing latency: not changed, owner's call (NEEDS.md).
+
+### Issue 13: `gpu.slot()` ran the job "anyway" after its wait — FIXED
+The old slot waited 60 s for free VRAM and then proceeded regardless: that is how Real-ESRGAN once made Ollama fail its
+allocation (27 Sep 01:30) and how a model ends up split between GPU and CPU. `slot()` now delegates to `vram.reserve()`
+(idle models out, planner a rung down) and raises `vram.GpuBusy` with the reason instead of running.
+
+### Issue 14: Whisper's VRAM cost was 2.5x what the code assumed — FIXED
+`voice.stt_model` reserved 1200 MiB; measured growth **3047 MiB**. The planner sat on top of it at 84% VRAM. Seed is now 3000 MiB and
+`gpu.slot` records the real growth of every job it wraps (`job_footprints`) for next time.
+
+### Issue 15: Ollama's `/api/ps` size under-reports vision models — FIXED
+`gemma3:4b` 2742 vs 3857 MiB really used, `gemma3:12b` 7672 vs 8973 (the vision projector). Footprints now store the GPU's real
+growth (`gpu_delta`), and both loading and unloading arithmetic use the larger number.
+
+### Issue 16: a failed `/api/ps` read counted as "nothing is loaded" — FIXED
+When Ollama was busy the governor saw an empty list, double-counted the resident planner and chose a lighter one (found because
+`test_multitask_voice_session` reported the planner as the 3B). Decision paths now raise (or reuse a <30 s old good reading).
+
+### Issue 17: architecture-based KV estimates over-credit context reductions — FIXED
+Predicted 770 MiB saved for `gemma3:12b` 4k→2k; measured 2 MiB (sliding-window attention). A context step is now only taken
+when that exact context was measured and saves ≥ 128 MiB; scaling from another context never assumes a saving.
+
+### Issue 18: the watchdog killed the server the moment `stop.flag` appeared — FIXED
+That skipped the data flush. It now asks for the graceful shutdown (`POST /api/shutdown`) and only kills after 35 s.
+It also ticks every second now (was 10 s), so a stop or a crash is noticed at once.
+
+### Issue 19: three competing start/stop paths — FIXED (deleted)
+`desktop/shutdown.py` killed **any Python process whose command line contained "ishti"**, `orchestrator/startup.py` started a second
+Ollama and pinged the model outside any governor, `llm._create` started Ollama with its own `Popen`. Now: one graceful shutdown
+(`ishti/lifecycle.py`), one Ollama start (`lifecycle.start_ollama`, hidden, in the Job Object, remembered as ours), and the
+stop client only kills pids ISHTI recorded (`%LOCALAPPDATA%\ISHTI\run\ishti-<port>.json`) - never by process name.
+`tests/test_lifecycle.py` (which pinned the old code layout) was updated to the new design.
+
+### Issue 20: reading state created models — FIXED
+`GET /api/vram` and the first boot created `*-c8k:*` alias models as a side effect. Aliases are now created only right before a
+load. (Three aliases exist from before the fix: `qwen2.5-c8k:7b`, `qwen2.5-c8k:3b`, `ishti-qwen2.5-c4k:14b`; the last was made
+by the bug and is unused - `ollama rm ishti-qwen2.5-c4k:14b` is safe, it shares the 14B's weights. It was left because the rule
+is not to touch `ishti-*` models.)
+
+### Issue 21: `config.json` names a planner that is not installed — OPEN (owner)
+`llm.models.planner = "qwen3:30b-a3b"` (and coder `qwen3-coder:30b-a3b`): not installed, 19 GB, rejected in MODEL_DECISIONS.md.
+`llm.model_for` falls back silently to `ishti-qwen2.5:14b`, and the health check reports it as "using fallback". The ladder now
+governs what actually runs; the config value should be changed to `ishti-qwen2.5:14b` (not done: `config.json` has other
+uncommitted edits from another session).
+
+### Issue 22: a stale 18.5 GB partial download sits in the Ollama store — OPEN (owner)
+`~/.ollama/models/blobs/sha256-58574f...-partial` (18.5 GB, dated 26 Sep 22:39), left by an interrupted pull of something
+larger than any installed model. Ollama removes such files at its next start unless `OLLAMA_NOPRUNE` is set; ISHTI did not touch it.
+
+### Issue 23: `orchestrator/model_router.py` (deep research) still calls `/api/generate` directly — OPEN
+It goes through `models.used()` but not through `vram.admit()`. Deep research uses the configured model names, which the ladder
+already keeps loaded, so it has not caused a violation; the sampler's partial-offload watch is the safety net. Routing it through
+the governor is the next step.
+
+### Issue 24: the `qwen2.5:7b` planner rung fails the Urdu prompt — OPEN (by design, visible)
+Any planner downshift to the 7B (voice sessions, heavy vision) loses Urdu quality on my test prompt (the 3B passed it, the check is
+crude: it only looks for Arabic script). The `model_switch` reason tells the user it switched; the quality question needs your
+own Urdu prompts (NEEDS.md).
+
+### Unrelated failures seen in the offline suite (not from this work)
+`tests/test_arch2_memory.py` (2), `test_learning.py`, `test_learning_wiring.py`, `test_memory_prompt2.py`: memory/learning stores that
+another session is editing right now (one assertion fails on a lesson persisted in the real store). No module touched here is
+involved.
+
+### Independent audit of this work (a read-only review agent, 24 findings) — status
+Each claim was checked against the code before acting. **Fixed** unless marked.
+
+| # | Finding | Status |
+|---|---|---|
+| 1 | upshift decided outside the governor lock: could unload the planner mid heavy job | FIXED: `upshift_tick` takes the lock without waiting (skips the tick if a load is running) and re-checks jobs/voice/fit inside it |
+| 2 | a failed switch left NO planner loaded (heavier one already unloaded) | FIXED: `switch_role` decides inside the lock and reloads the previous model on failure |
+| 3 | arch2's `main`/`validation` roles ignored the downshifted rung and took a lease | FIXED: they are the planner role in `model_for` and `_create` |
+| 4 | a queued-job entry leaked on any exception, blocking upshift for good | FIXED: `try/finally` in `admit` and `reserve` |
+| 5 | chat carried on ungoverned after the governor's load failed (HTTP 500/OOM) | FIXED: an HTTP error from the load now raises `GpuBusy`; only "Ollama unreachable"/governor bugs fail open |
+| 6 | a new sampler thread per boot retry | FIXED: idempotent `start_sampler` |
+| 7 | the governor lock is held across a 300 s load, delaying the sampler and a voice-priority reservation | ACCEPTED: bounded by real load times (2–9 s measured); the sampler's upshift no longer waits on it. Voice does not preempt a load already in progress |
+| 8 | `gpu.slot` waited on its semaphore without a timeout | FIXED: bounded by `wait_s`, then `GpuBusy` |
+| 9 | `/api/vram/admit` etc. stayed open during shutdown (prefix match); the governor could load after unload | FIXED: exact always-open list; `vram.stop()` at the start of shutdown makes admit/switch/upshift refuse |
+| 10 | children of a console-less server flash console windows | FIXED: `Popen` without flags gets `CREATE_NO_WINDOW` |
+| 11 | the Job Object would kill apps ISHTI opened for the owner (Chrome, Notepad) when it exits | FIXED and **verified** (an `os.startfile`d process did die with the job): job allows breakaway; `os.startfile`/`webbrowser` go through `cmd /c start` with breakaway; detached launches break away; the exit sweep skips them. Own children still die: tested |
+| 12 | registry pids trusted by name: pid reuse could kill an unrelated `python.exe` | FIXED: creation times stored and compared; stale entries cleared at exit |
+| 13 | any loaded model not marked busy was evicted as "idle", including other clients' models; busy was marked after admit | FIXED: only models ISHTI asked for are ever evicted (the embedding model never); busy is marked before admit |
+| 14 | unchecked `unload()` results | FIXED: a failed unload aborts the plan / the upshift |
+| 15 | leases without owner or expiry (a vanished UI client blocks upshift forever) | FIXED: `lease_ttl_s` (900 s) reaper |
+| 16 | any web page in the owner's browser could POST `/api/shutdown`, `/api/ollama/apply`, `/api/vram/admit` to `127.0.0.1`, or open `/ws/events` | FIXED: those endpoints reject a foreign `Origin` or a non-loopback `Host` (DNS rebinding); the desktop shell (no Origin) and the app itself are unaffected; tested |
+| 17 | a failed `/api/show` or `/api/tags` was cached for an hour/10 s as the answer | FIXED: failures are never cached |
+| 18 | WAL checkpoint reported success when the WAL was busy | FIXED |
+| 19 | contract said `stopped` and a voice-failure signal that the code didn't provide | FIXED: state becomes `stopped` before exit; `/api/ready` has `warnings[]` |
+| 20 | a timed-out boot stage thread could start a second Ollama | FIXED: one start at a time under a lock, "already answering" wins |
+| 21–22 | log stream not thread-safe; pending WebSocket `recv` never cancelled | FIXED |
+| 23 | `/api/status` (async) blocked the event loop with Ollama calls | FIXED: plain `def` (thread pool) |
+| 24 | shutdown deadline (25 s) shorter than the worst case of its steps | FIXED: 40 s (watchdog waits 50 s) |

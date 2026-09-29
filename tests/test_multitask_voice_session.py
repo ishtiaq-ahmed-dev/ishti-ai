@@ -31,7 +31,11 @@ def test_section_1_model_swap_and_fallbacks():
     print(f"  Translator model: {translator_model}")
 
     assert fast_model == "laya", f"Fast classifier should be laya, got {fast_model}"
-    assert planner_model in ("qwen3:30b-a3b", "ishti-qwen2.5:14b"), f"Unexpected planner model: {planner_model}"
+    # the VRAM governor (ishti/vram.py) may have the planner on a lighter rung of its ladder when the GPU is busy (Whisper,
+    # a heavy job): any installed rung is a valid planner; only an unrelated model would be wrong
+    from ishti import vram
+    allowed = {"qwen3:30b-a3b"} | {r["name"] for r in vram.rungs("planner")}
+    assert planner_model in allowed, f"Unexpected planner model: {planner_model} (allowed: {sorted(allowed)})"
     assert coder_model in ("qwen3-coder:30b-a3b", "ishti-qwen2.5-coder:14b", "qwen2.5-coder:14b"), f"Unexpected coder: {coder_model}"
     assert translator_model in ("gemma3:4b", "ishti-qwen2.5:14b"), f"Unexpected translator: {translator_model}"
 

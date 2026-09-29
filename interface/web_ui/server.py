@@ -220,33 +220,18 @@ async def kill_endpoint(req: Request):
     return {"stopped": _kill(str(reason)[:40])}
 
 
-@app.post("/api/shutdown")
-async def shutdown_endpoint():
-    """Full clean shutdown: kill process tree, release GPU VRAM, terminate browser automation sessions."""
-    import threading
-    import time
-
-    def _do_shutdown():
-        time.sleep(0.5)
-        try:
-            from desktop.shutdown import shutdown
-            shutdown()
-        except Exception as exc:
-            print(f"[shutdown] Error during shutdown: {exc}", file=sys.stderr)
-
-    threading.Thread(target=_do_shutdown, daemon=True).start()
-    return {"status": "shutting_down", "message": "ISHTI full shutdown initiated."}
+# POST /api/shutdown, /api/ready, /api/vram, /ws/events ...: ishti/lifecycle_api.py (docs/API_CONTRACT.md), attached below.
 
 
 @app.get("/api/health")
 async def health_endpoint():
     """Liveness for the watchdog (answering at all = not hung) + the latest health-loop snapshot."""
-    from ishti import health
-    return {"ok": True, **health.snapshot()}
+    from ishti import health, lifecycle
+    return {"ok": True, "state": lifecycle.state(), **health.snapshot()}
 
 
 @app.get("/api/status")
-async def get_status():
+def get_status():  # a plain def: FastAPI runs it in a thread; it makes blocking HTTP calls (Ollama) and must not stall the event loop
     installed = model_router.get_installed_models()
     primary = model_router.get_model("primary")
     fast = model_router.get_model("fast")
@@ -1079,10 +1064,15 @@ async def learning_ask():
 
 app.include_router(learning_api)  # /api/learning/* - learning dashboard (see docs/LEARNING_INTERFACE.md)
 
+from ishti import lifecycle_api  # noqa: E402  /api/ready, /api/vram, /api/shutdown, /ws/events (docs/API_CONTRACT.md)
+lifecycle_api.attach(app)
+
 
 def start_server(port: int = 8888):
+    from ishti import lifecycle
+    lifecycle._st["port"] = port
     print(f"\n[ISHTI Server] Launching Web UI on http://127.0.0.1:{port}")
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+    lifecycle.serve(app, port)  # uvicorn with a handle the graceful shutdown can stop
 
 
 if __name__ == "__main__":

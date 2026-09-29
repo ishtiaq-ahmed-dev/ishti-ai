@@ -1,66 +1,133 @@
-# MODEL_DECISIONS — per-role model choices, measured on THIS machine (2026-09-28)
+# MODEL_DECISIONS — per-role ladders, measured on THIS machine (2026-09-29)
 
-Machine: RTX 5070 Ti 16 GB VRAM, 64 GB RAM, Windows, Ollama with OpenAI-compatible API.
-Everything below was measured here (Ollama `/api/ps` reports actual VRAM; latency measured on
-real ISHTI prompts, not toy prompts). Disk free: 352 GB on D: at decision time.
+Machine: RTX 5070 Ti 16 GB (16303 MiB), 64 GB RAM, Windows 11, Ollama 0.31.2 (OpenAI-style API on :11434).
+Every number below was measured here with `python -m ishti.vram_calibrate` (real loads, `/api/ps`, nvidia-smi, fixed
+prompts) and `tests/e2e_vram_lifecycle.py`; raw data: `data/vram_calibration.json`, `data/vram.db` (`model_footprints`).
+The policy lives in `models_ladder.yaml`; the code is `ishti/vram.py` (governor) and `ishti/lifecycle.py`.
 
-## The rule that drove every choice
+## What changed since the 28 Sep version, and why (corrections first)
 
-**Memory footprint is based on TOTAL parameters, not active parameters.** MoE models load all
-experts into VRAM even though few activate per token. `qwen3:30b-a3b` (30B total / 3B active,
-Q4_K_M) is ~19 GB on the Ollama registry - it does NOT fit in 16 GB VRAM next to Whisper STT
-and the TTS pipeline. It is not installed here and was not adopted.
+| Earlier statement | What measurement shows |
+|---|---|
+| "Laya runs on CPU/onnx, near-zero VRAM" | **Laya runs on the GPU** (`ishti/router.py`: `Router(device="cuda")`, fp16). The ISHTI process holds **~1.5 GB** of VRAM after warm-up and peaks at **3.8 GB while Laya loads** (fp32 first, then halved). The boot now waits for that to finish before the planner loads. |
+| "planner + Whisper worst case ≈ 12.0 GB = 74%" | The planner is 9.9 GiB, the rest of the machine (Windows compositor, browsers, ISHTI's own process incl. Laya) was **2.9 GB** with the server running, and Whisper turbo grew the GPU by **3047 MiB**, not 1.1 GB. Planner + Whisper = **84–86%**: over the 80% budget. So a live voice session takes the planner **one rung down (7B)** - by design (voice has priority). |
+| "translator/vision on demand ≈ 2.88 GB" | Ollama reports 2742 MiB for `gemma3:4b`, but the GPU grew by **3857 MiB** (the vision projector is not in Ollama's number). Same for `gemma3:12b`: 7672 reported, **8973** real. The governor plans with the larger figure. |
+| `config.json` planner = `qwen3:30b-a3b` | That model is **not installed** and is 19 GB (does not fit); `llm.model_for` silently falls back to `ishti-qwen2.5:14b`. The ladder now names the real chain; the config value is left for the owner (ISSUES.md #21). |
 
-## Measured baseline (before this pass)
+## The ladders (measured)
 
-| Model | Role | VRAM (measured via /api/ps) | Latency on real ISHTI prompt | Quality check |
-|---|---|---|---|---|
-| ishti-qwen2.5:14b (Q4_K_M) | planner | 10.40 GB | 1.52 s first token (planning task) | plans correctly, formats tables |
-| ishti-qwen2.5-coder:14b | coder | (weights shared with planner size class) | 0.48 s / 44 tok/s sustained | fixed the sample loop bug |
-| gemma3:4b | translator | 2.88 GB | 0.54 s | Urdu translation correct (Script) |
-| llama3.2:3b | fast | 2.55 GB | 0.19 s | classified intent correctly |
-| whisper-large-v3-turbo (CTranslate2, float16) | STT | ~1.6 GB (from earlier audit) | 114-116 ms per decode | en/ur/ps verified in tests |
+"GPU MiB" = what the GPU really grew by when the model loaded (Ollama's own `size_vram` in brackets). Quality =
+`ishti/vram_calibrate.py` fixed prompts: arithmetic, JSON extraction (`{"contact","message"}`), Markdown table, Urdu
+translation (checks for Arabic-script output only), a tool call (`get_weather`), and for vision models reading "PRICE 42"
+from an image. These are **my** prompts, not yours - see NEEDS.md ("quality notes need your own prompt set").
 
-## Decision per role (and why)
+| Role | Rung | Model (ctx) | GPU MiB (Ollama) | tok/s | first token | load | Quality | Note |
+|---|---|---|---|---|---|---|---|---|
+| **planner** (pinned) | 0 | `ishti-qwen2.5:14b` (8192) | 10151 (9922) | 79.5 | 157 ms | 3.2 s | 5/5 | your Modelfile, never touched |
+| | 1 | `qwen2.5:7b` @8192 → alias `qwen2.5-c8k:7b` | 5121 (4896) | 143.2 | 149 ms | 2.4 s | 4/5 | **Urdu translation prompt failed** |
+| | 2 | `qwen2.5:3b` @8192 → `qwen2.5-c8k:3b` | 2517 (2292) | 240.9 | 146 ms | 2.0 s | 5/5 | last resort |
+| **coder** (10 min idle) | 0 | `ishti-qwen2.5-coder:14b` (8192) | 10151 (9922) | 80.9 | 157 ms | 5.0 s | 4/5 | tool-call prompt failed (also on rung 1) |
+| | 1 | `qwen2.5-coder:7b` @8192 → `qwen2.5-coder-c8k:7b` | 5121 (4896) | 146.0 | 150 ms | 3.0 s | 4/5 | |
+| **fast** | 0 | Laya (CPU-independent router, GPU fp16) | ~1300 in the ISHTI process | ~35 ms/decision | | | - | not an Ollama model |
+| | 1 | `llama3.2:3b` (4096) | 2661 (2436) | 245.0 | 181 ms | 2.8 s | 5/5 | emergency classifier only |
+| **translator / vision tier 2** | 0 | `gemma3:4b` (4096) | 3857 (2742) | 163.7 | 397 ms | 3.6 s | 5/5 | vision ok (read "PRICE 42") |
+| **vision tier 3** | 0 | `gemma3:12b` (4096) | 8973 (7672) | 85.6 | 412 ms | 4.6 s | 5/5 | vision ok |
+| | 1 | `gemma3:4b` | 3857 (2742) | | | | | = tier 2 |
+
+Verified against the Ollama library before use (no invented names): `qwen2.5:7b` 4.68 GB, `qwen2.5:3b` 1.93 GB,
+`qwen2.5-coder:7b` 4.68 GB, `gemma3:12b` 8.15 GB, `gemma3:4b` 3.34 GB (registry manifests, 29 Sep). Downloaded for the
+ladders: `qwen2.5:7b`, `qwen2.5:3b`, `qwen2.5-coder:7b`, `gemma3:12b` (19.5 GB). Approved but **not** pulled (skipped by the
+governor, never downloaded at runtime): `qwen2.5-coder:3b`. Alias models (`*-c8k:*`) are created by `POST /api/create`
+from the same weights with `PARAMETER num_ctx 8192`; they take no extra disk.
+
+**Why aliases:** Ollama's OpenAI-style endpoint (`/v1`, what `llm.py` uses) ignores per-request `options`, and reloads a model
+back to its default context on the next call (measured: 4.5 s reload every time). A different `num_ctx` therefore has to be
+a different model name. The planner is never run below 8192 context (`min_ctx`): ISHTI's prompts need it.
+
+## The environment the budget is measured against
+
+| | MiB |
+|---|---|
+| GPU total | 16303 |
+| Budget (80%) | 13042 |
+| Windows + browsers + tray apps, no ISHTI (`dwm.exe` alone reports ~4.2 GB, but per-process figures overlap; total-used is the ground truth) | 886–1200 |
+| ISHTI server process after warm-up (CUDA context + Laya fp16) | ~1500 |
+| Planner 14B | 10151 |
+| → planner alone, ISHTI running | ~78.5% (12.8 GB) |
+| Whisper turbo float16 (measured) | +3047 |
+| → planner + Whisper | ~84–86% → planner goes to 7B during a voice session |
+
+Per-process VRAM: nvidia-smi and NVML show `[N/A]` under WDDM, so per-process attribution comes from Windows'
+`\GPU Process Memory(*)\Dedicated Usage` counters (read in-process with pywin32 `win32pdh`, ~100 ms). Those can add up to
+more than the adapter total, so **`nvidia-smi` total-used is the ground truth** for every decision.
+
+## Ollama's own fit rule (why the governor keeps 1.5 GB of headroom)
+
+Read from Ollama's debug log while loading `gemma3:12b` next to a 7B: `llama-server model predicted to exceed available
+memory, evicting: predicted="9.0 GiB" available="9.9 GiB"`, and llama.cpp's fitter: `will leave 10140 >= 1024 MiB of free
+device memory`. So Ollama needs **≥ 1 GiB free after every load** (`LLAMA_ARG_FIT_TARGET`, default 1024 MiB), and its predicted
+size ran ~240 MiB above what the GPU really grew. Where it can't make room it evicts an idle model (silently taking the
+pinned planner with it) or splits the new model between GPU and CPU. `models_ladder.yaml: ollama_headroom_mb: 1536`
+enforces that as a hard rule on top of the 80% budget. Before this rule, a 95%-budget run let a planner and a vision model
+"fit" on paper while Ollama evicted the planner; the strict test now requires both resident together.
+
+## How the governor decides (spec §1.3, implemented in `ishti/vram.py`)
+
+Before any heavy load it asks whether the load fits (measured footprint + 128 MiB margin inside the budget, and ≥ 1536 MiB
+free afterwards). If not, cheapest first: (1) unload idle on-demand models, (2) planner one rung lighter (never during a live
+voice turn - unless the load *is* the voice pipeline), (3) less context for the new model **only if that context was
+measured to save memory** (sliding-window models such as Gemma 3 saved 2 MiB going 4k → 2k; the full-attention formula
+predicted ~770), (4) a lighter rung of the new model's own ladder (vision tier 3 → 2, coder 14B → 7B) unless the caller
+requires the tier, (5) the planner further down, (6) queue with a plain reason. After the load it verifies
+`size_vram == size`; on a partial offload the model is unloaded at once and the next lighter step is tried. A model that has
+never been measured needs 1.35 × its estimate free, then is measured on its first load. Upshift: one rung at a time, only
+when no heavy job is active or queued, no voice turn is running, and the memory has been free for `hysteresis_s` (90 s;
+idle on-demand models are evicted first because they reload on demand and the pinned planner has priority).
+
+Measured transitions (RTX 5070 Ti): downshift + heavy load 6–9 s end to end; upshift back to the 14B 34–50 s after the job
+(8 s hysteresis in the test, 90 s in production). Planner first-token latency was **154–160 ms idle (median 157–165 ms while a heavy job waited during a voice turn; the worst single
+sample 233–420 ms** across runs, partly CPU contention inside the single test process).
+
+## Decision per role
 
 | Role | Decision | Rationale |
 |---|---|---|
-| **planner** | KEEP `ishti-qwen2.5:14b` (custom Modelfile, backed up to `data/ishti-qwen2.5-14b.modelfile.bak`) | 10.4 GB VRAM fits the 12.8 GB budget with STT+TTS; 1.5 s TTFT acceptable for a planner; the custom Modelfile carries ISHTI's system prompt - preserving it was a hard rule. qwen3:30b-a3b REJECTED: 19 GB > 16 GB. qwen3:14b was considered but offers no measured advantage over the tuned 2.5 for this workload and would add a new download+eval cycle for zero expected gain. |
-| **coder** | KEEP `ishti-qwen2.5-coder:14b` | Same VRAM class as planner; they swap (NEEDS 3 documents this). 44 tok/s sustained is fine. qwen3-coder:30b-a3b REJECTED: same 19 GB MoE problem. |
-| **fast classifier** | SWITCH to `laya` (typed-decision engine, near-zero VRAM) - **already the configured model** (`config.json` `llm.models.fast = "laya"`) | Laya runs on CPU/onnx at 0.2 ms median (measured: routing eval 157/157 at 0.2 ms) - replaces the 2.55 GB llama3.2:3b LLM call for intent routing entirely. llama3.2:3b stays installed but unused by default. This was the single biggest VRAM win: 2.55 GB freed. |
-| **translator** | KEEP `gemma3:4b` | 2.88 GB, 0.54 s, correct Urdu script output on the real ISHTI prompt. Loaded on demand only (evictable, 10-min idle unload via `ishti/models.py`). NLLB-200-distilled-600M was considered for lower VRAM but its license (CC-BY-NC) is non-commercial and its Urdu quality below gemma3's in published evals; not worth the swap. |
+| planner | `ishti-qwen2.5:14b` → `qwen2.5:7b` → `qwen2.5:3b` | The 14B is the only rung with a perfect score on my prompts; the 7B fails the Urdu prompt, so the UI should say so when it switches (the `model_switch` reason does). `qwen3:30b-a3b`, `qwen3-coder:30b-a3b`, `qwen-27b` remain rejected (19 GB, MoE loads all experts; `qwen-27b` measured: loading it through raw Ollama gives a 13614/19272 MiB **partial offload**). |
+| coder | `ishti-qwen2.5-coder:14b` → `qwen2.5-coder:7b` | A coder request while the planner is resident needs the planner to go down (14B+14B can't co-reside). |
+| fast | Laya | Unchanged decision; the VRAM cost is now on the record. |
+| translator | `gemma3:4b` | No lighter model produced acceptable Urdu in the earlier comparison; single rung. |
+| vision | tier 2 `gemma3:4b`, tier 3 `gemma3:12b` | Tier 3 (8973 MiB) can only sit next to a planner **down to the 3B** and only above the default 80% budget (95% in the strict test: 14B → 3B, both resident, 83% peak). At the 80% default the governor gives the job tier 2 and says so. To use tier 3 routinely raise `budget_pct` or accept the 3B planner meanwhile. |
 
-## VRAM budget check (all resident models + STT + TTS)
+## Ollama settings (verified on 0.31.2; applied by ISHTI to an Ollama it starts)
 
-| Component | VRAM |
-|---|---|
-| planner (pinned) | 10.40 GB |
-| STT whisper-turbo (on demand, idle-unloads) | ~1.6 GB |
-| TTS Kokoro (CPU, 0 GB VRAM) | 0 |
-| fast classifier (Laya, CPU) | 0 |
-| translator/coder (on demand, evictable) | 0 resident |
-| **Total resident (worst case: planner + STT)** | **~12.0 GB = 74% of 16 GB** |
+| Setting | Value | Notes |
+|---|---|---|
+| `OLLAMA_NUM_PARALLEL` | 1 | parallel requests multiply KV cache; ISHTI serializes model calls anyway |
+| `OLLAMA_MAX_LOADED_MODELS` | 4 | planner + one on-demand model + the embedding model (`nomic-embed-text`, 308 MiB) + one spare |
+| `OLLAMA_KEEP_ALIVE` | 10m | pinned roles (planner) are loaded with per-request `keep_alive: -1`; the `/v1` endpoint ignores it, so `models.used()` re-posts it |
+| `num_gpu` | **never set** | forcing layers off the GPU is exactly the partial offload this project forbids |
+| `OLLAMA_KV_CACHE_TYPE` | f16 (default) | see the KV/flash-attention section below |
+| `OLLAMA_CONTEXT_LENGTH` | unset | Ollama's VRAM-based default is 4096 at this size (log: `vram-based default context ... default_num_ctx=4096`); the planner's 8192 comes from its Modelfile |
 
-Under the 80% (12.8 GB) budget. Worst case with translator loaded at the same moment as a
-voice turn: 10.4 + 2.88 + 1.6 = 14.9 GB - possible only if the owner asks a translation DURING
-live speech; `ishti/gpu.py`'s slot gate unloads idle models first, and the translator evicts
-after 10 idle minutes.
+Env vars need an Ollama restart: `POST /api/ollama/settings` saves them, `POST /api/ollama/apply` restarts an Ollama **ISHTI
+started** (it stops it first and unloads the models). An Ollama that was already running (the Windows tray app, another
+tool) is never restarted without an explicit `{"take_over": true}`; the response says `needs_restart` and how.
 
-## Candidates verified NOT to fit (do not retry without a second GPU)
+## KV cache type and flash attention (measured by `tests/kv_cache_probe.py` on a private Ollama, 29 Sep)
 
-- `qwen3:30b-a3b` (19 GB, Q4_K_M) - MoE, all experts loaded. Rejected.
-- `qwen3-coder:30b-a3b` (19 GB) - same. Rejected.
-- `qwen-27b` (19 GB, already installed here) - crashes llama-server with CUDA OOM (NEEDS 12).
+Same model (`ishti-qwen2.5:14b`, 8192 ctx), same prompts; the only difference is the environment the private Ollama was started with.
 
-## Downloads performed this pass
+| Setting | GPU MiB | tok/s | Fixed ISHTI prompts | Long-context recall (a code word hidden at 3 positions in ~6k tokens) |
+|---|---|---|---|---|
+| `OLLAMA_KV_CACHE_TYPE` unset (f16) | 9922 | 80.9 | 5/5 | 3/3 |
+| `OLLAMA_KV_CACHE_TYPE=q8_0` (+ `OLLAMA_FLASH_ATTENTION=1`) | **9202** (-720, -7%) | 77.1 (-5%) | 5/5 | 3/3 |
 
-None. All four roles are served by models already installed and verified. No model over 5 GB
-was pulled; nothing was deleted; the two custom `ishti-*` Modelfiles were backed up (see above)
-and remain untouched.
-
-## Latency quality gates (measured)
-
-- routing (rule/laya): 0.2 ms median - pattern-first routing works (Section 2's goal)
-- first token on planner: ~1.5 s (was ~2.3 s before Laya replaced the fast LLM call)
-- STT decode: 114 ms (single-threaded via voice.stt_call, Issue 8's fix, no regression)
-- full voice turn: ~2.1 s (routing 0.2 ms + planner 1.5 s + TTS start on first tokens)
+- **Flash attention is automatic on this version/GPU**: Ollama 0.31.2's log says `llama_context: flash_attn = auto` then
+  `Flash Attention was auto, set to enabled` even with `OLLAMA_FLASH_ATTENTION=false` in its (default) config. Nothing to set
+  for f16; a quantized KV cache needs it forced on, which ISHTI's env mapping does.
+- **q8_0 saves ~720 MiB at 8k context** (it grows with context) and costs ~5% speed here. On my prompts and a 6k-token recall
+  test there was **no quality difference**, but the reported problem is with *long* contexts and hard reasoning, which these
+  tests only touch lightly (8k window). **Decision: left off (f16).** It is a setting (`kv_cache_type` in
+  `POST /api/ollama/settings`) and takes effect at the next Ollama start ISHTI performs. Enable it only after grading on your own
+  long prompts (NEEDS.md N2): 720 MiB is the difference between the 7B rung and the 14B fitting next to Whisper only in
+  marginal cases.

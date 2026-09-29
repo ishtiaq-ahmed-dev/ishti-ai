@@ -23,6 +23,7 @@ STOP_FLAG = os.path.join(DATA, "stop.flag")
 LOG = os.path.join(DATA, "watchdog.log")
 HOTKEY = CONFIG.get("kill_hotkey", "<ctrl>+<alt>+q")
 POLL_S, HUNG_AFTER, GRACE_S = 10, 3, 240
+STOP_WAIT_S = 50  # a graceful shutdown takes up to lifecycle.SHUTDOWN_HARD_S (40 s) before it force-exits by itself
 
 
 def log(msg):
@@ -48,15 +49,17 @@ class Watchdog:
 
     @staticmethod
     def _out():
-        """The server's console output (no window any more): data/logs/server.log, the last run kept as .1."""
-        path = os.path.join(DATA, "logs", "server.log")
+        """What the server prints before its own logging starts (import errors, crashes at launch), in the shared log folder
+        %LOCALAPPDATA%\ISHTI\logs\launch.log; the last run kept as .1. Once running, the server logs to ishti.log itself."""
+        from ishti import lifecycle
+        path = os.path.join(lifecycle.LOG_DIR, "launch.log")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         if os.path.isfile(path) and os.path.getsize(path) > 5_000_000:
             os.replace(path, path + ".1")
         return open(path, "a", encoding="utf-8", buffering=1)
 
     def start(self):
-        env = {**os.environ, "ISHTI_WATCHDOG": "1", "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}  # a file, not cp1252
+        env = {**os.environ, "ISHTI_WATCHDOG": "1", "ISHTI_WATCHDOG_PID": str(os.getpid()), "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}  # a file, not cp1252
         flags = 0
         if os.name == "nt":
             flags = (
@@ -132,29 +135,50 @@ class Watchdog:
         self.kill_tree()
         self.start()
 
+    def stop_gracefully(self):
+        """A stop was requested (data/stop.flag): ask the server to shut down properly and give it time to flush its data
+        and exit on its own; only then kill what is left. (Killing at once skipped the data flush.)"""
+        try:
+            requests.post(self.url("/api/shutdown"), json={}, timeout=3)  # a no-op if the server started the shutdown itself
+        except requests.RequestException:
+            pass
+        end = time.time() + STOP_WAIT_S
+        while self.proc.poll() is None and time.time() < end:
+            time.sleep(0.5)
+        if self.proc.poll() is None:
+            log(f"the server did not exit within {STOP_WAIT_S} s - killing its process tree")
+        self.kill_tree()
+
     def run(self, once=False):
+        from ishti import lifecycle
         if os.path.exists(STOP_FLAG):
             os.remove(STOP_FLAG)
+        lifecycle.adopt_job()  # everything this watchdog starts dies with it, even if it is killed
         self.listen_hotkey()
         self.start()
-        misses = 0
+        misses, last_poll = 0, time.time()
         while True:
-            time.sleep(POLL_S)
+            time.sleep(1)  # 1 s ticks: a stop or a crash is noticed at once; the health poll stays every POLL_S
             if os.path.exists(STOP_FLAG):
                 log("stop requested - shutting the server down")
-                self.kill_tree()
-                os.remove(STOP_FLAG)
+                self.stop_gracefully()
+                try:
+                    os.remove(STOP_FLAG)
+                except OSError:
+                    pass
                 return
             if self.proc.poll() is not None:
                 why = "hard kill from the kill switch" if self.hard_killed.is_set() else f"server exited (code {self.proc.returncode})"
                 self.hard_killed.clear()
                 self.restart(why)
-                misses = 0
-            elif time.time() - self.started > GRACE_S:
-                misses = 0 if self.healthy() else misses + 1
-                if misses >= HUNG_AFTER:
-                    self.restart(f"server not answering for {misses * POLL_S} s (hung)")
-                    misses = 0
+                misses, last_poll = 0, time.time()
+            elif time.time() - last_poll >= POLL_S:
+                last_poll = time.time()
+                if time.time() - self.started > GRACE_S:
+                    misses = 0 if self.healthy() else misses + 1
+                    if misses >= HUNG_AFTER:
+                        self.restart(f"server not answering for {misses * POLL_S} s (hung)")
+                        misses = 0
             if once:
                 return
 

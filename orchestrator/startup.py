@@ -43,65 +43,42 @@ def print_banner():
 
 
 def check_ollama(router: ModelRouter) -> bool:
-    print("  [1/6] Checking Ollama Service...", end="", flush=True)
+    """Ollama is started (hidden, inside ISHTI's Job Object) and verified by the backend's boot sequence
+    (ishti/lifecycle.py); the launcher no longer starts a second copy or fails when it is offline right now."""
+    print("  [1/6] AI engine (Ollama)...", end="", flush=True)
     try:
-        r = requests.get(f"{router.host}/api/tags", timeout=3)
-        if r.status_code == 200:
-            print(" [ONLINE]")
-            return True
+        online = requests.get(f"{router.host}/api/tags", timeout=3).status_code == 200
     except Exception:
-        pass
+        online = False
+    print(" [ONLINE]" if online else " [will be started by ISHTI]")
+    return True
 
-    print(" [OFFLINE] -> Launching Ollama daemon...", end="", flush=True)
-    flags = (
-        subprocess.CREATE_NO_WINDOW
-        | subprocess.DETACHED_PROCESS
-        | subprocess.CREATE_NEW_PROCESS_GROUP
-        if os.name == "nt"
-        else 0
-    )
-    try:
-        subprocess.Popen(
-            ["ollama", "serve"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=flags,
-        )
-        for _ in range(8):
+
+def wait_ready(timeout_s: float = 300) -> str:
+    """Wait for the backend's own readiness (GET /api/ready): AI engine, memory, skills, the planner fully on the GPU,
+    voice. Prints each stage as it completes; returns the planner model name."""
+    print("  [2/6] Waiting for ISHTI to be ready...", flush=True)
+    seen, end, err = set(), time.time() + timeout_s, None
+    while time.time() < end:
+        try:
+            r = requests.get("http://127.0.0.1:8888/api/ready", timeout=3).json()
+        except Exception:
             time.sleep(1.0)
-            try:
-                r = requests.get(f"{router.host}/api/tags", timeout=2)
-                if r.status_code == 200:
-                    print(" [READY]")
-                    return True
-            except Exception:
-                continue
-    except Exception as e:
-        print(f" [FAILED: {e}]")
-        return False
-    return False
-
-
-def check_model_responsiveness(router: ModelRouter) -> str:
-    print("  [2/6] Checking Active Model Responsiveness...", end="", flush=True)
-    model = router.get_model("primary")
+            continue
+        for st in r["stages"]:
+            if st["done"] and st["id"] not in seen:
+                seen.add(st["id"])
+                print(f"        [{r['progress']:>3}%] {st['label']}", flush=True)
+        if r["error"] and r["error"] != err:
+            err = r["error"]
+            print(f"        [!] {err} (details: {r.get('log_path', '')})", flush=True)
+        if r["ready"]:
+            break
+        time.sleep(0.5)
     try:
-        t0 = time.time()
-        res = requests.post(
-            f"{router.host}/api/generate",
-            json={"model": model, "prompt": "ping", "stream": False},
-            timeout=10,
-        )
-        if res.status_code == 200:
-            elapsed = round(time.time() - t0, 2)
-            print(f" [{model} OK ({elapsed}s)]")
-            return model
-    except Exception as e:
-        print(f" [WARN: {model} failed ({e})]")
-
-    print("        Triggering automatic model re-benchmark...", flush=True)
-    router.run_full_benchmark(reason="startup_health_check_failed")
-    return router.get_model("primary")
+        return requests.get("http://127.0.0.1:8888/api/vram", timeout=5).json()["roles"]["planner"]["model"]
+    except Exception:
+        return "the local model"
 
 
 def check_web_ui() -> bool:
@@ -235,12 +212,12 @@ def main():
     from tools.web.search import ensure_searxng
     print(" [ONLINE]" if ensure_searxng() else " [OFFLINE] -> web search will use fallback providers")
 
-    # Step 2: Model
-    active_model = check_model_responsiveness(router)
-
-    # Step 3: Web UI
+    # Step 2: Web UI (watchdog + server); the server then boots Ollama, memory, skills, the planner and the voice
     if not check_web_ui():
         print("\n[WARNING] Web UI could not start. Falling back to terminal REPL.")
+
+    # Step 3: wait for the backend's readiness (replaces the old model ping, which loaded the model outside the VRAM governor)
+    active_model = wait_ready()
 
     # Step 4: Chrome
     launch_browser()

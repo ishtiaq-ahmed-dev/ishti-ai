@@ -20,7 +20,7 @@ import requests
 from ishti import CONFIG
 
 DB = os.path.join(os.path.dirname(CONFIG["memory"]["db_path"]), "model_usage.db")
-OLLAMA = CONFIG.get("llm", {}).get("base_url", "http://127.0.0.1:11434/v1").rsplit("/v1", 1)[0]
+OLLAMA = (os.environ.get("ISHTI_OLLAMA_URL") or CONFIG.get("llm", {}).get("base_url", "http://127.0.0.1:11434/v1")).rsplit("/v1", 1)[0]
 IDLE_TIMEOUT_S = int(CONFIG.get("model_idle_timeout_s", 600))  # 10 minutes idle timer
 
 _lock = threading.Lock()

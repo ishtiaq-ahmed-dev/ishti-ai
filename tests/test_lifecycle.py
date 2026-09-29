@@ -99,16 +99,20 @@ bundle = open(os.path.join(r"D:\ISHTI\interface\app\dist\assets", dist_js[0]), e
 for needle in ("Do you want to exit ISHTI?", "/api/shutdown", "sendBeacon", "pagehide"):
     assert needle in bundle, f"the served bundle is stale - it lacks {needle!r}"
 
-# the server endpoint exists and answers
+# the server endpoint exists: ONE graceful shutdown (ishti/lifecycle_api.py), attached to the app by server.py
 server = r"D:\ISHTI\interface\web_ui\server.py"
-assert '@app.post("/api/shutdown")' in open(server, encoding="utf-8").read()
+assert "lifecycle_api.attach(app)" in open(server, encoding="utf-8").read()
+assert '@router.post("/api/shutdown")' in open(r"D:\ISHTI\ishti\lifecycle_api.py", encoding="utf-8").read()
+assert '@app.post("/api/shutdown")' not in open(server, encoding="utf-8").read(), "a second, competing shutdown path"
 
 # ---- 5. start.bat and stop.bat are wired to the singleton check and the full stop ---------------------------
 assert "focus_ishti.py" in open(r"D:\ISHTI\start.bat", encoding="utf-8").read()
 assert "shutdown.py" in open(r"D:\ISHTI\stop.bat", encoding="utf-8").read()
-# stop.bat verifies nothing is left behind
-assert "verify_clean_state" in open(r"D:\ISHTI\desktop\shutdown.py", encoding="utf-8").read()
-assert "release_gpu_vram" in open(r"D:\ISHTI\desktop\shutdown.py", encoding="utf-8").read()
+# stop.bat -> desktop/shutdown.py: asks the backend for the graceful shutdown, then verifies the port and recorded pids are gone;
+# it kills only by recorded pid (never by matching process names / command lines)
+_sd = open(r"D:\ISHTI\desktop\shutdown.py", encoding="utf-8").read()
+assert "/api/shutdown" in _sd and "registry()" in _sd and "clean =" in _sd
+assert "process_iter" not in _sd and "cmdline" not in _sd, "name/command-line based killing is back"
 
 print("[self-check] lifecycle OK - Start is idempotent, Stop verifies, OS shutdown is detached, exit confirms")
 

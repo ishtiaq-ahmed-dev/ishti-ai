@@ -268,14 +268,16 @@ def _frame(ed, path, t, workdir, name):
     return out if os.path.isfile(out) else None
 
 
-def look(image, question):
-    """Ask the local vision model (Gemma 3, role "translator") about one frame; returns its JSON answer."""
+def look(image, question, role="vision2"):
+    """Ask the local vision model about one frame; returns its JSON answer. role "vision2" = Gemma 3 4B (light, the
+    default); "vision3" = the heavy tier (Gemma 3 12B) for dense pages/charts - the VRAM governor makes room for it
+    (or falls back to tier 2) and hands the memory back afterwards."""
     with open(image, "rb") as f:
         b64 = base64.b64encode(f.read()).decode()
     msg = llm.chat([{"role": "user", "content": [
         {"type": "text", "text": question + ' Reply only JSON {"text": "<all text you can read>", "ok": true/false, "problem": "<short or empty>"}.'},
         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}]}],
-        role="translator", system=None, temperature=0, max_tokens=150)
+        role=role, system=None, temperature=0, max_tokens=150)
     try:
         return json.loads(re.search(r"\{.*\}", msg.content or "", re.S)[0])
     except (TypeError, ValueError):

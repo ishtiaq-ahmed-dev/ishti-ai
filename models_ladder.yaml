@@ -1,0 +1,56 @@
+# ISHTI model ladders - read by ishti/vram.py (the VRAM governor). Documented in MODEL_DECISIONS.md.
+#
+# A ladder is an ordered list of rungs for one role, best first. "Auto-adjust" = move a role to a lighter rung
+# (a smaller size/quant variant that is INSTALLED); weights are never modified or re-quantized. A rung that is not
+# installed is skipped (never downloaded at runtime). "num_ctx" = the context the rung runs with: when it differs
+# from the model's own default, the governor creates a variant alias `<name>-c<k>k:<tag>` (same weights, only
+# PARAMETER num_ctx differs) - because Ollama's OpenAI-style endpoint ignores per-request options and would reload
+# the model back to its default every call. Never set num_gpu: partial offload is a hard failure.
+#
+# Every number in MODEL_DECISIONS.md was measured on this PC (RTX 5070 Ti 16 GB) - see `python -m ishti.vram_calibrate`.
+
+budget_pct: 80            # everything resident on the GPU (all users: Windows, browser, voice, Ollama) stays under this % of VRAM
+safety_margin_mb: 128     # kept free on top of a model's measured footprint (Ollama's sizes are exact; 512 made the 14B fail admission at 78.5% used)
+ollama_headroom_mb: 1536   # free VRAM that must remain after a load: Ollama/llama.cpp needs 1 GiB (LLAMA_ARG_FIT_TARGET) and predicts ~240 MiB high;
+                          # below it Ollama evicts an idle model or splits the new one (verified in its debug log, see MODEL_DECISIONS.md)
+transient_limit_pct: 95   # loading the lighter model BEFORE unloading the heavier one is only allowed up to this % of VRAM
+hysteresis_s: 90          # VRAM must have stayed free this long before a role moves back up a rung
+unknown_headroom: 1.35    # a model never measured loads only if free VRAM >= (its estimate * this); then it is measured
+min_ctx: 2048             # context reduction stops here
+voice_hold_s: 10          # after any speech/STT activity a live voice turn counts as running: no upshift, heavy jobs get lighter rungs
+lease_ttl_s: 900           # a heavy-job lease nobody released (a vanished UI client) is dropped after this, so it can't block the upshift forever
+queue_wait_s: 45          # a job that still doesn't fit waits this long (re-checking) before it reports "queued: <why>"
+
+roles:
+  planner:                # the brain: pinned (keep_alive -1), always resident
+    pinned: true
+    min_ctx: 8192         # ISHTI's prompts (system + history + search context) need it: never trade context for room
+    rungs:
+      - {model: "ishti-qwen2.5:14b", note: "custom Modelfile (ISHTI system prompt, num_ctx 8192); the owner's model, never modified"}
+      - {model: "qwen2.5:7b", num_ctx: 8192, note: "same family/tool format as the 14B; verified in the Ollama library 4.68 GB"}
+      - {model: "qwen2.5:3b", num_ctx: 8192, note: "last resort; verified in the Ollama library 1.93 GB"}
+  coder:                  # on demand: 10 min idle -> unloaded
+    keep_alive: "10m"
+    min_ctx: 4096
+    rungs:
+      - {model: "ishti-qwen2.5-coder:14b"}
+      - {model: "qwen2.5-coder:7b", num_ctx: 8192, note: "verified in the Ollama library 4.68 GB"}
+  fast:                   # intent routing: Laya (a small router model; measured ON the GPU in fp16: ~1.3 GB resident, 3.8 GB peak while
+                          # loading - the governor counts it as "other" VRAM); an LLM classifier is only the emergency rung
+    cpu: true
+    rungs:
+      - {model: "laya", cpu: true}
+      - {model: "llama3.2:3b"}
+  translator:             # Urdu/Pashto <-> English; gemma3:4b (also vision tier 2); no lighter model translates Urdu acceptably
+    keep_alive: "10m"
+    rungs:
+      - {model: "gemma3:4b"}
+  vision2:                # screenshots / images, light
+    keep_alive: "10m"
+    rungs:
+      - {model: "gemma3:4b"}
+  vision3:                # heavy vision (complex pages, charts, dense screenshots); falls back to tier 2
+    keep_alive: "10m"
+    rungs:
+      - {model: "gemma3:12b", note: "verified in the Ollama library 8.15 GB, vision capable"}
+      - {model: "gemma3:4b", note: "= vision tier 2"}

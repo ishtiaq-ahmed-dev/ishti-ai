@@ -1,5 +1,6 @@
 """Single entry point to the local LLM (Ollama's OpenAI-compatible /v1 endpoint).
 Model names come from config.json, so models swap without code changes."""
+import os
 import re
 from types import SimpleNamespace
 
@@ -25,7 +26,8 @@ STYLE = (
 )
 
 _cfg = CONFIG["llm"]
-_client = OpenAI(base_url=_cfg["base_url"], api_key="ollama", timeout=_cfg["timeout_s"])
+_client = OpenAI(base_url=(os.environ["ISHTI_OLLAMA_URL"].rstrip("/") + "/v1") if os.environ.get("ISHTI_OLLAMA_URL") else _cfg["base_url"],
+                 api_key="ollama", timeout=_cfg["timeout_s"])  # ISHTI_OLLAMA_URL: a second Ollama (tests, another port)
 _installed = None
 
 FALLBACK_MAP = {
@@ -47,9 +49,23 @@ def clean(text: str, context: str = "") -> str:
 
 
 def model_for(role: str) -> str:
+    """The model to use for a role right now: the configured one (with fallbacks below), unless the VRAM governor has
+    moved the role to a lighter rung (planner downshifted while a heavy job runs, vision tier 2/3)."""
+    from ishti import vram
+    if role in ("vision2", "vision3"):  # no config entry: the ladder's best installed rung
+        rs = vram.rungs(role)
+        return vram.effective(role, rs[0]["name"] if rs else _cfg["fallback"])
+    name = _configured_for(role)
+    return name if name == "laya" else vram.effective("planner" if role in ("main", "validation") else role, name)
+
+
+def _configured_for(role: str) -> str:
     """Configured model for a role, falling back when it isn't pulled into Ollama.
     arch2 (ishti/arch2/*) asks for its own roles ("main", "validation") which live in
     CONFIG["arch"]["arch2"]["models"], falling back to the planner model."""
+    forced = os.environ.get(f"ISHTI_MODEL_{role.upper()}")  # e.g. ISHTI_MODEL_PLANNER=qwen2.5:3b: pins a role to one model (tests, low-VRAM days)
+    if forced:
+        return forced
     global _installed
     if role in ("main", "validation"):
         a2 = (CONFIG.get("arch") or {}).get("arch2", {}).get("models", {})
@@ -83,18 +99,65 @@ def _create(**args):
     """Degraded mode: if Ollama isn't running (after a reboot, or stopped), start it and retry once; if it still
     can't be reached, say so plainly instead of a raw connection error."""
     import openai
-    from ishti import models
+    from ishti import models, vram
+    import requests
+    role = args.pop("_role", None)
+    if role in ("main", "validation"):  # arch2's roles are the planner: same rung, same pinning
+        role = "planner"
+    lease = None
+    guard = vram.busy(args["model"])  # marked BEFORE the governor looks: a just-admitted model must never be picked as idle
+    guard.__enter__()
+    try:  # the governor makes room BEFORE the call, so Ollama never has to split a model between GPU and CPU
+        res = vram.admit(args["model"], role=role, job=f"answer with {args['model']}")
+        if not res["ok"]:
+            raise vram.GpuBusy("The graphics card is busy: " + res["queued"] + ". Try again in a moment.")
+        if res["model"] != args["model"]:  # the governor chose another rung: that is the model that is busy now
+            guard.__exit__(None, None, None)
+            args["model"] = res["model"]
+            guard = vram.busy(args["model"])
+            guard.__enter__()
+        lease = res.get("lease")
+    except vram.GpuBusy:
+        guard.__exit__(None, None, None)
+        raise
+    except requests.HTTPError as exc:  # Ollama refused the load (out of memory...): sending the chat would just retry it ungoverned
+        guard.__exit__(None, None, None)
+        raise vram.GpuBusy(f"The model could not be loaded onto the graphics card ({exc.response.status_code if exc.response is not None else 'error'}).") from exc
+    except Exception as exc:  # Ollama unreachable / governor bug: never block a chat on it - log, and the degraded path below handles Ollama being down
+        print(f"[llm] VRAM governor skipped ({type(exc).__name__}: {exc})", flush=True)
     models.used(args["model"])  # D3: usage decides how long the model stays in VRAM
+
+    def done():
+        guard.__exit__(None, None, None)
+        if lease:
+            vram.release(lease)
+    try:
+        out = _create_call(args, openai)
+    except BaseException:
+        done()
+        raise
+    if not args.get("stream"):
+        done()
+        return out
+
+    def stream():  # the busy mark and the job lease last until the last token has been read
+        try:
+            yield from out
+        finally:
+            done()
+    return stream()
+
+
+def _create_call(args, openai):
     try:
         return _client.chat.completions.create(**args)
     except openai.APIConnectionError:
-        import subprocess
         import time
-        try:
-            subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        except OSError:
-            pass
+        from ishti import lifecycle
+        try:  # the one place that starts Ollama (hidden, in our Job Object, remembered as ours)
+            lifecycle.start_ollama()
+        except Exception as exc:
+            print(f"[llm] could not start Ollama: {type(exc).__name__}: {exc}", flush=True)
         for _ in range(15):
             time.sleep(1)
             try:
@@ -133,7 +196,7 @@ def chat(messages, role="planner", system=STYLE, tools=None, temperature=0.3, ma
         from ishti.untrusted import RULE
         system = f"{system}\n\n{RULE}" if system else RULE
     msgs = ([{"role": "system", "content": system}] if system else []) + list(messages)
-    args = dict(model=model_for(role), messages=msgs, temperature=temperature, max_tokens=max_tokens, **kw)
+    args = dict(model=model_for(role), messages=msgs, temperature=temperature, max_tokens=max_tokens, _role=role, **kw)
     context = " ".join(str(m.get("content", "")) for m in messages if m.get("role") == "user")
     if tools:
         args["tools"] = tools
