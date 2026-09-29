@@ -1,0 +1,13 @@
+{
+  "name": "symptomlog",
+  "version": "1.0.0",
+  "description": "Symptom diary (local SQLite): log a symptom with severity 1-10 and an optional note, list recent entries, show frequency and severity stats per symptom, and prepare a doctor-visit summary. Strictly a diary - never diagnosis, never treatment.",
+  "route": "log headache severity 7, my symptoms this week, headache history, doctor summary, symptom log",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Health"
+}

@@ -642,18 +642,30 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
         <div ref={scrollContainer} className="scroll-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
           {msgs.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-6 px-6">
-              <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.4 }} className="relative flex items-center justify-center">
-                <div className="absolute inset-0 -m-8 rounded-full bg-accent/10 blur-3xl pointer-events-none" />
-                <AgentOrb size={80} state="breathing" />
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.4 }}
+                className="relative flex flex-col items-center justify-center cursor-pointer group select-none"
+                onClick={newChat}
+                title="ISHTI - Start New Chat"
+              >
+                <div className="absolute inset-0 -m-6 rounded-3xl bg-accent/15 blur-2xl pointer-events-none" />
+                <IshtiBrand
+                  variant="squircle"
+                  size={76}
+                  className="mb-3.5 drop-shadow-md group-hover:scale-105 group-active:scale-95 transition-all duration-200"
+                />
+                <IshtiBrand
+                  variant="wordmark"
+                  height={30}
+                  className="drop-shadow-xs group-hover:opacity-90 transition-opacity"
+                />
+                <span className="text-[10px] font-bold tracking-[0.24em] text-muted-foreground uppercase mt-1 mb-2">
+                  PERSONAL AI ASSISTANT
+                </span>
               </motion.div>
               <div className="text-center flex flex-col items-center">
-                <IshtiBrand
-                  variant="full"
-                  width={220}
-                  className="mb-4 drop-shadow-sm cursor-pointer hover:opacity-90 active:scale-95 transition-all"
-                  onClick={newChat}
-                  title="ISHTI - Start New Chat"
-                />
                 <h1 className="text-2xl font-semibold tracking-tight">{greeting}, {owner}</h1>
                 <p className="mt-1 text-sm text-muted-foreground">Ask anything, or tell me what to do on this PC.</p>
               </div>

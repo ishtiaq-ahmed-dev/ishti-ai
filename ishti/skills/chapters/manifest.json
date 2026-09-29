@@ -1,0 +1,13 @@
+{
+  "name": "chapters",
+  "version": "1.0.0",
+  "description": "Video chapters from measured scene changes: ffmpeg scdet (threshold 8) timestamps parsed into a YouTube-style chapter list plus a Mermaid timeline block. Honest about single-shot videos.",
+  "route": "chapters for D:/talk.mp4, detect scenes in D:/clip.mp4, video chapters D:/v.mkv",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Media & Creative"
+}

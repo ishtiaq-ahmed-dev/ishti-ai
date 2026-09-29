@@ -1,0 +1,13 @@
+{
+  "name": "legaldoc",
+  "version": "1.0.0",
+  "description": "Legal document drafting ASSISTANCE, not advice: rental/lease, NDA and employment-contract house templates filled with only the facts stated in the request - unstated clauses stay as visible [FILL: ...] blanks so nothing is invented silently. Every reply carries a not-legal-advice notice. Output: data/docs/.",
+  "route": "draft a rental agreement: tenant Ahmed, rent 25000 per month, draft an nda between me and Acme for 2 years, draft an employment contract: Ali, 80000 per month",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T1",
+  "laya": false,
+  "scope": {"write": ["data/docs"], "net": [], "apps": []},
+  "category": "Writing & Text"
+}

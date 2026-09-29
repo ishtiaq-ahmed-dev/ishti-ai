@@ -1,0 +1,13 @@
+{
+  "name": "sensitivity",
+  "version": "1.0.0",
+  "description": "One-variable sensitivity analysis with sympy: exact function values, the symbolic derivative d f/dx, and the elasticity (d f/dx * x/f) at each sampled point in a table. Points where f=0 get an 'undefined' elasticity instead of a fake number; one-variable-at-a-time limits are stated.",
+  "route": "sensitivity analysis of f(x) = 30*x - 1000, x from 10 to 50 step 5, sensitivity of profit = -2*q**2 + 400*q - 5000, q from 50 to 150 step 10",
+  "needs": {"python": ["sympy"], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Reasoning"
+}

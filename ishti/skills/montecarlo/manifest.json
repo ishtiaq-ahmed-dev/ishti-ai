@@ -1,0 +1,13 @@
+{
+  "name": "montecarlo",
+  "version": "1.0.0",
+  "description": "Seeded Monte Carlo simulation, reproducible with seed 7 stated in every reply: portfolio paths (Box-Muller returns, P5/median/P95, chance of loss), dice-sum distributions validated against the analytical mode and mean, and project-finish estimates with the model's limits declared (independent tasks, normal returns).",
+  "route": "monte carlo: portfolio 1000000, yearly return 8% +/- 15%, 20 years, simulate 10000 rolls of 2 dice, monte carlo project finish: 5 tasks, each 5 days +/- 2",
+  "needs": {"python": ["numpy"], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Reasoning"
+}

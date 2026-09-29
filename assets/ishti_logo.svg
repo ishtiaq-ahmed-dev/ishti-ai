@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 140" width="100%" height="100%" fill="none">
+  <defs>
+    <style>
+      .brand-title { font-family: system-ui, -apple-system, 'Segoe UI', Inter, sans-serif; font-weight: 800; font-size: 58px; letter-spacing: 0.04em; }
+      .brand-star { fill: #ce8418; }
+      .brand-sub { font-family: system-ui, -apple-system, 'Segoe UI', Inter, sans-serif; font-weight: 700; font-size: 13.5px; letter-spacing: 0.28em; }
+      .brand-text-theme { fill: #13243e; }
+      @media (prefers-color-scheme: dark) {
+        .brand-text-theme { fill: #f8fafc; }
+      }
+    </style>
+  </defs>
+  <!-- ISHTI Round-Cornered Squircle App Icon -->
+  <g transform="translate(10, 10)">
+    <rect x="0" y="0" width="120" height="120" rx="28" fill="#13243e" />
+    <path d="M 58.50,29.00 A 1.50,1.50 0 0 1 61.50,29.00 Q 67.80,52.20 91.00,58.50 A 1.50,1.50 0 0 1 91.00,61.50 Q 67.80,67.80 61.50,91.00 A 1.50,1.50 0 0 1 58.50,91.00 Q 52.20,67.80 29.00,61.50 A 1.50,1.50 0 0 1 29.00,58.50 Q 52.20,52.20 58.50,29.00 Z" fill="#ce8418" />
+  </g>
+  <!-- ISHTI Wordmark with Floating Accent Star -->
+  <g transform="translate(154, 76)">
+    <text x="0" y="0" class="brand-title brand-text-theme">ISHTI</text>
+    <path d="M 177.00,-42.00 A 1.00,1.00 0 0 1 179.00,-42.00 Q 180.75,-34.75 188.00,-33.00 A 1.00,1.00 0 0 1 188.00,-31.00 Q 180.75,-29.25 179.00,-22.00 A 1.00,1.00 0 0 1 177.00,-22.00 Q 175.25,-29.25 168.00,-31.00 A 1.00,1.00 0 0 1 168.00,-33.00 Q 175.25,-34.75 177.00,-42.00 Z" class="brand-star" />
+  </g>
+  <!-- Tagline -->
+  <g transform="translate(156, 110)">
+    <text x="0" y="0" class="brand-sub brand-text-theme" opacity="0.82">PERSONAL AI ASSISTANT</text>
+  </g>
+</svg>

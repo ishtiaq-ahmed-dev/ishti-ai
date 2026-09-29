@@ -1,0 +1,13 @@
+{
+  "name": "goaltrack",
+  "version": "1.0.0",
+  "description": "Goal tracker (local SQLite): create a goal with a target amount or count, log progress, see percent complete + remaining + required per remaining day, and list/cancel goals. Donation and savings categories included.",
+  "route": "new goal save 100000 for laptop, add 5000 to laptop goal, my goals, progress on the laptop goal, cancel the laptop goal",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Finance"
+}

@@ -1,0 +1,13 @@
+{
+  "name": "kanban",
+  "version": "1.0.0",
+  "description": "Personal kanban board (local SQLite): add cards, move between todo/doing/done, list the board with WIP counts, and clear done. A card in doing beyond 3 triggers a WIP warning - pull, don't push.",
+  "route": "kanban add write the report, move write the report to doing, my kanban board, kanban done for X, clear kanban done",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Productivity"
+}

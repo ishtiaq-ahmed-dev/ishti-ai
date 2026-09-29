@@ -1,0 +1,13 @@
+{
+  "name": "okr",
+  "version": "1.0.0",
+  "description": "Objectives & key results tracker (local SQLite): set an objective with measurable key results, update KR progress, see the objective roll-up (average KR completion). Exact arithmetic, no vibes.",
+  "route": "set objective grow the channel, add key result 1000 subscribers to grow the channel, update kr, my okrs",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Productivity"
+}

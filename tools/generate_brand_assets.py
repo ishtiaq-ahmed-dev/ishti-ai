@@ -197,31 +197,42 @@ def generate_wordmark_only():
 
 
 # ---------------------------------------------------------------------------
-# 3. STANDALONE APP ICON
+# 3. STANDALONE APP ICON (Circle + Squircle with Round Corners)
 # ---------------------------------------------------------------------------
 def generate_standalone_icon():
-    svg_content = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%" fill="none">
+    circle_svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%" fill="none">
   <!-- ISHTI Standalone App Icon (Navy Circle + Warm Amber Gold Star) -->
   <circle cx="256" cy="256" r="236" fill="{NAVY_HEX}" />
   <path d="{star_svg_d(256, 256, 126, c=0.24, tip_r=5.5)}" fill="{GOLD_HEX}" />
 </svg>"""
 
-    # Squircle (rounded app icon) variant
+    # Squircle (rounded app icon) variant: perfectly square with smooth round corners (rx=108, ~22% radius)
     squircle_svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%" fill="none">
-  <!-- ISHTI Standalone App Icon (Squircle / App Tile) -->
+  <!-- ISHTI Standalone App Icon (Squircle / Round Corners App Tile) -->
   <rect x="24" y="24" width="464" height="464" rx="108" fill="{NAVY_HEX}" />
   <path d="{star_svg_d(256, 256, 126, c=0.24, tip_r=5.5)}" fill="{GOLD_HEX}" />
 </svg>"""
 
     canvas_size = 2048
-    im = Image.new("RGBA", (canvas_size, canvas_size), TRANSPARENT)
-    draw = ImageDraw.Draw(im)
-    draw.ellipse([(96, 96), (canvas_size - 96, canvas_size - 96)], fill=NAVY_RGBA)
-    pts = star_polygon_points(canvas_size // 2, canvas_size // 2, 504, c=0.24, tip_r=22.0)
-    draw.polygon(pts, fill=GOLD_RGBA)
+    # 1. Circle Icon PNG
+    im_circle = Image.new("RGBA", (canvas_size, canvas_size), TRANSPARENT)
+    draw_c = ImageDraw.Draw(im_circle)
+    draw_c.ellipse([(96, 96), (canvas_size - 96, canvas_size - 96)], fill=NAVY_RGBA)
+    pts_c = star_polygon_points(canvas_size // 2, canvas_size // 2, 504, c=0.24, tip_r=22.0)
+    draw_c.polygon(pts_c, fill=GOLD_RGBA)
+    out_circle_png = im_circle.resize((1024, 1024), Image.Resampling.LANCZOS)
 
-    out_png = im.resize((1024, 1024), Image.Resampling.LANCZOS)
-    return svg_content, squircle_svg, out_png
+    # 2. Squircle Icon PNG (Master 1024x1024 with transparent background outside round corners)
+    im_squircle = Image.new("RGBA", (canvas_size, canvas_size), TRANSPARENT)
+    draw_s = ImageDraw.Draw(im_squircle)
+    pad = 96
+    corner_r = int((canvas_size - 2 * pad) * 0.233)  # ~432px on 1856px tile (rx=108 on 512)
+    draw_s.rounded_rectangle([pad, pad, canvas_size - pad, canvas_size - pad], radius=corner_r, fill=NAVY_RGBA)
+    pts_s = star_polygon_points(canvas_size // 2, canvas_size // 2, 504, c=0.24, tip_r=22.0)
+    draw_s.polygon(pts_s, fill=GOLD_RGBA)
+    out_squircle_png = im_squircle.resize((1024, 1024), Image.Resampling.LANCZOS)
+
+    return circle_svg, squircle_svg, out_circle_png, out_squircle_png
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +260,90 @@ def generate_favicon():
     return svg_content, out_128, out_32, out_16
 
 
+# ---------------------------------------------------------------------------
+# 5. GITHUB & HEADER BRAND LOGO (Rounded Squircle Icon + Wordmark + Tagline)
+# ---------------------------------------------------------------------------
+def generate_readme_brand_logos():
+    """Generate the official horizontal lockup logo for GitHub README:
+    Icon tile on the left with round corners + ISHTI bold wordmark + Tagline on the right.
+    """
+    svg_content = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 140" width="100%" height="100%" fill="none">
+  <defs>
+    <style>
+      .brand-title {{ font-family: system-ui, -apple-system, 'Segoe UI', Inter, sans-serif; font-weight: 800; font-size: 58px; letter-spacing: 0.04em; }}
+      .brand-star {{ fill: {GOLD_HEX}; }}
+      .brand-sub {{ font-family: system-ui, -apple-system, 'Segoe UI', Inter, sans-serif; font-weight: 700; font-size: 13.5px; letter-spacing: 0.28em; }}
+      .brand-text-theme {{ fill: {NAVY_HEX}; }}
+      @media (prefers-color-scheme: dark) {{
+        .brand-text-theme {{ fill: #f8fafc; }}
+      }}
+    </style>
+  </defs>
+  <!-- ISHTI Round-Cornered Squircle App Icon -->
+  <g transform="translate(10, 10)">
+    <rect x="0" y="0" width="120" height="120" rx="28" fill="{NAVY_HEX}" />
+    <path d="{star_svg_d(60, 60, 32.5, c=0.24, tip_r=1.5)}" fill="{GOLD_HEX}" />
+  </g>
+  <!-- ISHTI Wordmark with Floating Accent Star -->
+  <g transform="translate(154, 76)">
+    <text x="0" y="0" class="brand-title brand-text-theme">ISHTI</text>
+    <path d="{star_svg_d(178, -32, 11, c=0.25, tip_r=1.0)}" class="brand-star" />
+  </g>
+  <!-- Tagline -->
+  <g transform="translate(156, 110)">
+    <text x="0" y="0" class="brand-sub brand-text-theme" opacity="0.82">PERSONAL AI ASSISTANT</text>
+  </g>
+</svg>"""
+
+    # Render High-DPI PNGs (2x supersampled: 1080 x 280)
+    W, H = 1080, 280
+    font_main = ImageFont.truetype("C:/Windows/Fonts/segoeuib.ttf", 116)
+    font_sub = ImageFont.truetype("C:/Windows/Fonts/segoeuib.ttf", 27)
+
+    def _render_png(dark: bool):
+        im = Image.new("RGBA", (W, H), TRANSPARENT)
+        draw = ImageDraw.Draw(im)
+
+        # 1. Squircle Icon on the left
+        pad = 20
+        tile_size = 240
+        radius = int(tile_size * 0.233)  # 56px radius
+        draw.rounded_rectangle([pad, pad, pad + tile_size, pad + tile_size], radius=radius, fill=NAVY_RGBA)
+
+        # Star in center of tile: center = (pad + tile_size//2, pad + tile_size//2) = (140, 140), R = 65
+        star_pts = star_polygon_points(pad + tile_size // 2, pad + tile_size // 2, 65, c=0.24, tip_r=3.0)
+        draw.polygon(star_pts, fill=GOLD_RGBA)
+
+        # 2. Text on the right
+        text_color = (248, 250, 252, 255) if dark else NAVY_RGBA
+        sub_color = (226, 232, 240, 215) if dark else (19, 36, 62, 215)
+
+        tx = 308
+        ty = 38
+        draw.text((tx, ty), "ISHTI", font=font_main, fill=text_color)
+
+        # Floating gold star near the top right of wordmark
+        accent_pts = star_polygon_points(tx + 348, ty + 18, 22, c=0.25, tip_r=2.0)
+        draw.polygon(accent_pts, fill=GOLD_RGBA)
+
+        # Tagline with letter spacing
+        tagline = "PERSONAL AI ASSISTANT"
+        ch_w = [draw.textbbox((0, 0), ch, font=font_sub)[2] for ch in tagline]
+        target_w = 480
+        spacing = (target_w - sum(ch_w)) / (len(tagline) - 1)
+        sx = tx + 4
+        sy = 194
+        for ch, cw in zip(tagline, ch_w):
+            draw.text((sx, sy), ch, font=font_sub, fill=sub_color)
+            sx += cw + spacing
+
+        return im
+
+    png_light = _render_png(dark=False)
+    png_dark = _render_png(dark=True)
+    return svg_content, png_light, png_dark
+
+
 def main():
     os.makedirs("assets", exist_ok=True)
     os.makedirs("interface/app/public", exist_ok=True)
@@ -266,46 +361,64 @@ def main():
         f.write(wm_svg)
     wm_png.save("assets/ishti_wordmark.png", "PNG")
 
-    print("Generating 3. STANDALONE APP ICON...")
-    icon_svg, squircle_svg, icon_png = generate_standalone_icon()
+    print("Generating 3. STANDALONE APP ICON (Circle + Squircle with Round Corners)...")
+    circle_svg, squircle_svg, circle_png, squircle_png = generate_standalone_icon()
     with open("assets/ishti_app_icon.svg", "w", encoding="utf-8") as f:
-        f.write(icon_svg)
+        f.write(circle_svg)
     with open("assets/ishti_app_icon_squircle.svg", "w", encoding="utf-8") as f:
         f.write(squircle_svg)
-    icon_png.save("assets/ishti_app_icon.png", "PNG")
-    icon_png.resize((512, 512), Image.Resampling.LANCZOS).save("assets/ishti_app_icon_512.png")
-    icon_png.resize((192, 192), Image.Resampling.LANCZOS).save("assets/ishti_app_icon_192.png")
 
-    print("Generating 4. FAVICON (16px-tested)...")
+    circle_png.save("assets/ishti_app_icon_circle.png", "PNG")
+    squircle_png.save("assets/ishti_app_icon.png", "PNG")
+    squircle_png.save("assets/ishti_app_icon_squircle.png", "PNG")
+    squircle_png.resize((512, 512), Image.Resampling.LANCZOS).save("assets/ishti_app_icon_512.png")
+    squircle_png.resize((192, 192), Image.Resampling.LANCZOS).save("assets/ishti_app_icon_192.png")
+
+    print("Generating 4. WINDOWS APP ICO (Multi-resolution 16-256px with Round Corners)...")
+    ico_sizes = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
+    # Save the true multi-resolution squircle icon with transparent rounded corners!
+    squircle_png.save("assets/ishti.ico", format="ICO", sizes=ico_sizes)
+
+    print("Generating 5. FAVICON (16px-tested)...")
     fav_svg, fav_128, fav_32, fav_16 = generate_favicon()
     with open("assets/ishti_favicon.svg", "w", encoding="utf-8") as f:
         f.write(fav_svg)
     fav_128.save("assets/ishti_favicon.png", "PNG")
     fav_32.save("assets/ishti_favicon_32.png", "PNG")
     fav_16.save("assets/ishti_favicon_16.png", "PNG")
-    fav_128.save("assets/favicon.ico", format="ICO", sizes=[(16, 16), (32, 32), (48, 48), (64, 64)])
+    fav_128.save("assets/favicon.ico", format="ICO", sizes=ico_sizes)
+
+    print("Generating 6. GITHUB & HEADER BRAND LOGOS...")
+    readme_svg, readme_light_png, readme_dark_png = generate_readme_brand_logos()
+    with open("assets/ishti_logo.svg", "w", encoding="utf-8") as f:
+        f.write(readme_svg)
+    readme_light_png.save("assets/ishti_logo.png", "PNG")
+    readme_dark_png.save("assets/ishti_logo_dark.png", "PNG")
 
     print("Deploying assets to interface/app/public/ and interface/web_ui/static/...")
     with open("interface/app/public/favicon.svg", "w", encoding="utf-8") as f:
         f.write(fav_svg)
     with open("interface/app/public/ishti-icon.svg", "w", encoding="utf-8") as f:
-        f.write(icon_svg)
+        f.write(squircle_svg)
     with open("interface/app/public/ishti-logo.svg", "w", encoding="utf-8") as f:
-        f.write(full_svg)
+        f.write(readme_svg)
     with open("interface/app/public/ishti-wordmark.svg", "w", encoding="utf-8") as f:
         f.write(wm_svg)
 
-    fav_128.save("interface/app/public/favicon.ico", format="ICO", sizes=[(16, 16), (32, 32), (48, 48)])
+    squircle_png.save("interface/app/public/favicon.ico", format="ICO", sizes=ico_sizes)
     fav_32.save("interface/app/public/favicon.png", "PNG")
-    icon_png.resize((192, 192), Image.Resampling.LANCZOS).save("interface/app/public/ishti-icon.png", "PNG")
-    full_png.save("interface/app/public/ishti-logo.png", "PNG")
+    squircle_png.resize((192, 192), Image.Resampling.LANCZOS).save("interface/app/public/ishti-icon.png", "PNG")
+    readme_light_png.save("interface/app/public/ishti-logo.png", "PNG")
+    readme_dark_png.save("interface/app/public/ishti-logo-dark.png", "PNG")
 
     with open("interface/web_ui/static/favicon.svg", "w", encoding="utf-8") as f:
         f.write(fav_svg)
-    full_png.save("interface/web_ui/static/ishti_logo.png", "PNG")
+    readme_light_png.save("interface/web_ui/static/ishti_logo.png", "PNG")
+    squircle_png.resize((512, 512), Image.Resampling.LANCZOS).save("interface/web_ui/static/ishti_app_icon.png", "PNG")
 
-    print("[SUCCESS] All brand assets updated and deployed successfully!")
+    print("[SUCCESS] All brand assets updated, perfectly rounded, and deployed successfully!")
 
 
 if __name__ == "__main__":
     main()
+

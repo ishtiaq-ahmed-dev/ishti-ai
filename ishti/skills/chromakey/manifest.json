@@ -1,0 +1,13 @@
+{
+  "name": "chromakey",
+  "version": "1.0.0",
+  "description": "Green-screen removal with ffmpeg: colorkey for images (PNG with alpha), chromakey for video (WebM/VP9 with alpha). The exact filter string, similarity 0.20 and blend 0.10 are stated in the reply; edges may need a higher blend, and the reply says so. Originals untouched.",
+  "route": "remove the green screen from D:/take1.mp4, chroma key D:/shot.mp4 with 00ff00, key out the background of D:/x.jpg",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T1",
+  "laya": false,
+  "scope": {"write": ["data/keyed"], "net": [], "apps": []},
+  "category": "Media & Creative"
+}

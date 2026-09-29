@@ -1,0 +1,13 @@
+{
+  "name": "meetingcost",
+  "version": "1.0.0",
+  "description": "Meeting cost calculator: people × minutes × an hourly rate (default a stated rate, else asked) gives the exact money a meeting burns, plus per-person share and yearly cost for recurring meetings. Pure arithmetic, no estimates hidden.",
+  "route": "cost of a 60 minute meeting with 8 people at 2500/hour, yearly cost of our weekly standup, meeting cost",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Productivity"
+}

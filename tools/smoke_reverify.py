@@ -164,6 +164,145 @@ LIVE = {
         ("prioritize my tasks", ("smoke test task",)),
         ("clear my tasks", ("Cleared",)),
     ],
+    # ---- batch F (2026-09-28) ----
+    "dataprep": [
+        ("clean the csv D:/definitely/missing.csv", ("not found",)),
+    ],
+    "vulnscan": [
+        ("vulnerability scan of D:/definitely/missing_proj", ("Not found",)),
+    ],
+    "optimize": [
+        ("maximize 5x + 3y subject to x <= 4, y <= 6", ("38",)),
+        ("minimize x**2 - 4*x at x near -10 to 10", ("x = 2", "-4")),
+    ],
+    "timeline": [
+        ("timeline from these events: just words, more words", ("None of those lines",)),
+    ],
+    "formula": [
+        ("formula to count unique values in D1:D50", ("SUMPRODUCT",)),
+        ("what does =SUMIF(B1:B20, >100, C1:C20) do", ("SUMIF",)),
+    ],
+    "resumeparse": [
+        ("parse my resume D:/definitely/missing.pdf", ("Could not read",)),
+    ],
+    # ---- batch G (2026-09-28) ----
+    "metrics": [
+        ("log weight 82", ("Logged **weight** 82",)),
+        ("log blood pressure today 130 over 85", ("130/85",)),
+        ("my weight this week", ("avg", "No **weight**")),
+        ("metrics summary", ("weight",)),
+    ],
+    "symptomlog": [
+        ("log smoke test symptom severity 3", ("Logged",)),
+        ("symptom stats", ("smoke test symptom",)),
+        ("doctor summary", ("Doctor-visit summary",)),
+    ],
+    "goaltrack": [
+        ("new goal save 100k for smoke-test-goal", ("Goal **smoke-test-goal** created",)),
+        ("add 25000 to the smoke-test-goal goal", ("25%",)),
+        ("cancel the smoke-test-goal goal", ("Cancelled",)),
+    ],
+    "standup": [
+        ("set standup yesterday: smoke test item", ("Standup yesterday set",)),
+        ("give me my standup", ("**Yesterday:** smoke test item", "No standup lines")),
+    ],
+    "meetingcost": [
+        ("cost of a 60 minute meeting with 8 people at 2500 per hour", ("20,000",)),
+        ("yearly cost of a weekly 30 minute meeting with 6 people at 2000 per hour", ("312,000",)),
+    ],
+    "gantt": [
+        ("gantt chart of: smokeA 2d, smokeB 1d after smokeA", ("dateFormat", "3 day(s) total",)),
+    ],
+    # ---- batch H (2026-09-29) ----
+    "imgcrop": [
+        ("crop D:/definitely/missing.png to square", ("not found",)),
+    ],
+    "meme": [
+        ("meme D:/definitely/missing.png top: nope", ("not found",)),
+        ("make a meme: smoke top text | smoke bottom text", ("Meme saved", "SMOKE TOP TEXT")),
+    ],
+    "audioquality": [
+        ("audio quality of D:/definitely/missing.mp3", ("not found",)),
+    ],
+    "kanban": [
+        ("kanban add smoke-card", ("Added to **todo**",)),
+        ("move smoke-card to doing", ("→ doing",)),
+        ("my kanban board", ("smoke-card",)),
+        ("kanban done for smoke-card", ("→ done",)),
+        ("clear kanban done", ("Cleared",)),
+    ],
+    "okr": [
+        ("set objective smoke objective", ("Objective **smoke objective** set",)),
+        ("add key result 1000 subscribers to smoke objective", ("0/1000",)),
+        ("update kr 1 of smoke objective to 400", ("400/1000 (40%)",)),
+        ("my okrs", ("smoke objective",)),
+    ],
+    "riskregister": [
+        ("log risk smoke risk likelihood 4 impact 5", ("20/25", "HIGH")),
+        ("mitigate smoke risk with nightly backups", ("nightly backups", "20/25")),
+        ("top risks", ("smoke risk",)),
+        ("close risk smoke risk", ("closed",)),
+    ],
+    # ---- batch I (2026-09-29) ----
+    "scanqr": [
+        ("qr code for ISHTI-SMOKE-42", ("Verified",)),
+        ("scan the qr in D:/definitely/missing.png", ("not found",)),
+    ],
+    "audioclean": [
+        ("denoise D:/definitely/missing.mp3", ("not found",)),
+    ],
+    "chapters": [
+        ("chapters for D:/definitely/missing.mp4", ("not found",)),
+    ],
+    "sudoku": [
+        ("solve this sudoku: 530070000600195000098000060800060003400803001700020006060000280000419005000080079", ("Solved",)),
+    ],
+    "bayes": [
+        ("bayes: prior 1% sensitivity 99% specificity 95%", ("16.67%",)),
+    ],
+    "montecarlo": [
+        ("simulate 10000 rolls of 2 dice", ("modal sum **7**", "matches")),
+    ],
+    # ---- batch J (2026-09-29) ----
+    "legaldoc": [
+        ("draft an nda between me and smoke corp for 2 years", ("not legal advice", "smoke corp", "[FILL:")),
+    ],
+    "pressrel": [
+        ("draft a press release: smoke product launches 2026-11-01 with free shipping", ("PRESS RELEASE", "2026-11-01")),
+        ("generate an faq from: returns accepted within 14 days; warranty 1 year", ("Q1.", "14 days")),
+    ],
+    "doclayout": [
+        ("layout of D:/definitely/missing.pdf", ("not found",)),
+    ],
+    # ---- batch K (2026-09-29) ----
+    "pantry": [
+        ("add smoke-item to the pantry", ("Added **1 × smoke-item**",)),
+        ("pantry list", ("smoke-item",)),
+        ("used up the smoke-item", ("removed",)),
+    ],
+    "audiomark": [
+        ("bookmark 00:01 in D:/smoke-test.mp3: smoke note", ("Bookmarked **00:01**",)),
+        ("my bookmarks for D:/smoke-test.mp3", ("smoke note",)),
+    ],
+    "highlights": [
+        ("highlights of D:/definitely/missing.mp4", ("not found",)),
+    ],
+    "chromakey": [
+        ("remove the green screen from D:/definitely/missing.mp4", ("not found",)),
+    ],
+    "infographic": [
+        ("infographic of D:/definitely/missing.csv", ("not found",)),
+    ],
+    # ---- batch L (2026-09-29) ----
+    "gametheory": [
+        ("analyze the game: TL 3,2; TR 1,1; BL 0,3; BR 2,0", ("Nash", "dominant")),
+    ],
+    "sensitivity": [
+        ("sensitivity analysis of f(x) = 30*x - 1000, x from 10 to 50 step 5", ("| 10 | -700",)),
+    ],
+    "argumentcheck": [
+        ("check my argument: he is an idiot so his plan fails", ("ad hominem",)),
+    ],
 }
 
 

@@ -94,6 +94,47 @@ names), desktop's process-kill never matches "kill myself" (moodlog's distress s
 that path at priority 10), vocab beats the dictionary only for words the owner saved. Labels:
 183 labelled requests, check_skills **69/155/183 OK**, verify_all **107/107**, smoke **55/55**.
 
+## Batch F + G (2026-09-28/29)
+
+Batch F: **dataprep** (CSV quality/outliers/dedup), **vulnscan** (AST-based Python checks —
+bandit absent; f-string SQL included), **optimize** (scipy LP/1-D minimization + cost-phrase
+knapsack), **timeline** (text events → chronological timeline), **formula** (sympy Excel-formula
+help), **resumeparse** (PDF/text resume → structured JSON). Batch G: **metrics** (weight/BP/sugar
+log), **symptomlog** (severity log + doctor summary), **goaltrack** (savings goals with %),
+**standup** (yesterday/today/blockers note), **meetingcost** (computed meeting cost — the assert
+caught my own wrong expected value before the engine was wrong once), **gantt** (task list →
+Mermaid gantt). Fix the gates forced: desktop's window rule no longer steals math expressions
+("maximize 5x + 3y"), formula's EXPLAIN restricted to formula-shaped text, symptomlog/metrics DBs
+lazily resolved so self-check tempdirs actually apply. Labels 231 → **266**; smoke 81 → 104.
+
+## Batch H (2026-09-29)
+
+Six more local skills: **imgcrop** (PIL aspect/box/trim crop → data/crops, originals untouched),
+**meme** (top/bottom outlined captions, auto font fit, canvas fallback → data/memes),
+**audioquality** (ffprobe codec/rate/bitrate/channels/duration + verdict), **kanban** (SQLite
+todo/doing/done board with the WIP>3 warning — the board double-listing bug the gates missed is
+fixed and regression-asserted), **okr** (objectives + key results, exact average roll-up),
+**riskregister** (5x5 matrix, computed 1-25 scores, top-by-score, mitigations recorded without
+claiming the risk is already reduced). Routing fix forced by the gates: desktop's generic
+"close <window>" rule stole "close risk X" — riskregister outranks it (priority 11). Labels
+266 → **287**, check_skills **99/199/287 OK**, routing **280/287 (all 7 misses Laya-only labels
+under --no-laya)**, verify_all **139/139**, smoke **121/121**.
+
+## Batch I (2026-09-29)
+
+Six skills probed before building: **scanqr** (this machine's cv2 5.0 wheel QR *decoder* returns
+None even on its own encoder output — verified live, so decoding uses the newly installed
+zxing-cpp; the encoder works and every generated QR is re-decoded before claiming success),
+**audioclean** (ffmpeg afftdn + EBU R128 loudnorm to data/clean, failures shown verbatim),
+**chapters** (ffmpeg scdet → YouTube-style chapters + Mermaid), **sudoku** (givens-consistency
+pre-check + full post-verify; "1"×81 is proven unsolvable instead of "solved"), **bayes**
+(explicit % parsing — "prior 1%" was silently 100% until the self-check caught it; the 16.67%
+base-rate anchor is asserted), **montecarlo** (seed 7 reproducibility asserted; dice mode
+validated against the analytical mode 7 and mean 3.5n). Routing fixes the gates forced:
+calc's "solve …" no longer steals sudoku grids (sudoku priority 13). Labels 287 → **303**,
+check_skills **105/208/303 OK**, routing **296/303 (7 Laya-only misses under --no-laya)**,
+verify_all **145/145**, smoke **128/128**.
+
 ## Counting honestly
 
 The catalogue's ~1,000 "skills" mostly decompose into: (a) capabilities ISHTI already ships as

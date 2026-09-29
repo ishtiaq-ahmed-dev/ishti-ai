@@ -102,8 +102,8 @@ def run_app_window():
     )
     window.events.closing += on_closing
 
-    # Launch native Edge Chromium WebView2 window
-    webview.start(private_mode=False)
+    # Launch native Edge Chromium WebView2 window with official ISHTI rounded icon
+    webview.start(private_mode=False, icon=ICON_PATH)
 
 
 if __name__ == "__main__":

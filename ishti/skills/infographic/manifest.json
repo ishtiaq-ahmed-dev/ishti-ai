@@ -1,0 +1,13 @@
+{
+  "name": "infographic",
+  "version": "1.0.0",
+  "description": "Stat-panel infographics from a CSV with matplotlib: each numeric column becomes a panel with its exact min/mean/median/max printed on the image; a by-X-with-Y request produces per-group mean bars with exact labels. Computed figures, no artistic licence.",
+  "route": "infographic of D:/data/sales.csv, make an infographic from D:/visitors.csv by region with amount, stats image of D:/x.csv",
+  "needs": {"python": ["pandas", "matplotlib"], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T1",
+  "laya": false,
+  "scope": {"write": ["data/infographics"], "net": [], "apps": []},
+  "category": "Data"
+}

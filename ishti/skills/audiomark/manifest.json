@@ -1,0 +1,13 @@
+{
+  "name": "audiomark",
+  "version": "1.0.0",
+  "description": "Audio bookmarks (local SQLite): timestamped notes into long recordings (HH:MM or HH:MM:SS, kept exactly as given), chronological per-file listing, delete-by-number. Nothing snapped or guessed.",
+  "route": "bookmark 12:34 in D:/talk.mp3: key claim, my bookmarks for D:/talk.mp3, delete bookmark 2",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Media & Creative"
+}

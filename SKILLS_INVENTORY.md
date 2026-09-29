@@ -50,7 +50,7 @@ self-check + routing labels + check_skills, same as every existing skill).
 6. Voice cloning & personalization — BUILT-CORE (clone.py; owner-voice WhatsApp notes)
 7. Emotion detection from voice — PARTIAL (batch B: `voiceemotion`, heuristic prosody)
 8. Accent recognition & adaptation — PARTIAL (batch B: vocabulary hints; whisper handles accents)
-9. Noise cancellation & audio enhancement — PARTIAL (batch B: `audioclean` FFmpeg filters)
+9. Noise cancellation & audio enhancement — BUILT (batch I `audioclean`: ffmpeg afftdn denoise + EBU R128 loudnorm, originals untouched)
 10. Music identification — BLOCKED (needs Shazam-class service/API; no offline equivalent)
 11. Podcast transcription & summarization — BUILT (planners; yt-dlp + whisper)
 12. Voice command parsing — BUILT-CORE (wake -> dispatcher)
@@ -66,7 +66,7 @@ self-check + routing labels + check_skills, same as every existing skill).
 22. Voice speed adjustment — BUILT (Kokoro/Piper speed params in roster)
 23. Background music/speech separation — BLOCKED (needs Demucs-class model ~GB; can add batch C if owner approves download)
 24. Voice-based search queries — BUILT-CORE (voice -> web_search)
-25. Audio quality assessment — PARTIAL (batch B: `audioquality` FFmpeg stats)
+25. Audio quality assessment — BUILT (batch H `audioquality`: ffprobe codec/rate/bitrate/channels/duration + verdict bands)
 
 ## Domain 3 — Vision & Image Understanding (35)
 1. Object detection & localization — PARTIAL (Gemma3 describes; boxes need YOLO — batch C with owner-approved ~6 MB model)
@@ -77,7 +77,7 @@ self-check + routing labels + check_skills, same as every existing skill).
 6. Age & gender estimation — PARTIAL (same model as above)
 7. OCR — BUILT-CORE (Windows OCR + RapidOCR)
 8. Handwritten text recognition — BUILT (Gemma3 fallback when OCR fails)
-9. Barcode & QR scanning — PARTIAL (batch B: `scanqr` pyzbar/zxing)
+9. Barcode & QR scanning — BUILT (batch I `scanqr`: cv2 encoder + zxing-cpp reader, self-verified round-trip)
 10. Document layout analysis — PARTIAL (batch B: `doclayout` pdfplumber)
 11. Table extraction from images — BUILT (extract skill + vision)
 12. Chart & graph interpretation — BUILT (Gemma3; screen_understand)
@@ -98,8 +98,8 @@ self-check + routing labels + check_skills, same as every existing skill).
 27. Style transfer — BLOCKED (needs model; batch C if approved)
 28. Image inpainting — BLOCKED (needs model)
 29. Background removal — PARTIAL (rembg pending, NEEDS 12)
-30. Cropping & composition suggestions — PARTIAL (batch B: `imgcrop` smart-crop)
-31. Meme generation — PARTIAL (batch B: `meme` PIL text-on-image)
+30. Cropping & composition suggestions — BUILT (batch H `imgcrop`: aspect/box/trim crop, originals untouched)
+31. Meme generation — BUILT (batch H `meme`: top/bottom outlined captions, auto-fit, canvas fallback)
 32. Infographic creation — PARTIAL (batch B: matplotlib → `chart`)
 33. Visual search (similar images) — BUILT (media dedupe/similar)
 34. Image-based product recommendations — PARTIAL (batch C)
@@ -117,7 +117,7 @@ self-check + routing labels + check_skills, same as every existing skill).
 9. Video summarization — BUILT (pro.py)
 10. Event detection (goals, applause) — PARTIAL (audio-energy heuristic, batch C)
 11. Video search by text query — PARTIAL (batch C: transcript index)
-12. Video chaptering — PARTIAL (batch C: `chapters` from scenes)
+12. Video chaptering — BUILT (batch I `chapters`: ffmpeg scdet timestamps → YouTube-style list + Mermaid)
 13. Slow-motion & time-lapse — BUILT (FFmpeg/capcut)
 14. Video stabilization — PARTIAL (batch B: FFmpeg vidstab if present)
 15. Green screen removal — PARTIAL (FFmpeg chromakey, batch B)
@@ -178,7 +178,7 @@ self-check + routing labels + check_skills, same as every existing skill).
 1-6 (deduction, math, word problems, equations, stats, probability) — BUILT-CORE (planner; chat math rules); batch B adds `calc` (sympy) and `datecalc`
 7. Optimization — PARTIAL (batch B: `optimize` scipy-lite)
 8. Constraint satisfaction — PARTIAL (batch C)
-9. Puzzles (Sudoku/chess) — PARTIAL (batch B: `sudoku` solver; chess engine part of games batch C)
+9. Puzzles (Sudoku/chess) — Sudoku BUILT (batch I `sudoku`: verified solver, unsolvable proven by exhaustion); chess engine still PARTIAL
 10. Strategic planning — BUILT (planner)
 11. Decision trees — BUILT (planner)
 12. Root cause analysis — BUILT (planner + monitor data)
@@ -202,8 +202,8 @@ self-check + routing labels + check_skills, same as every existing skill).
 31. Forecasting — BUILT (batch E `forecast`: exact least-squares trend + N-period projection, R² reported)
 32. Trend extrapolation — BUILT (batch E `forecast`)
 33. Sensitivity analysis — PARTIAL (batch C)
-34. Monte Carlo guidance — PARTIAL (batch C)
-35. Bayesian reasoning — PARTIAL (batch C)
+34. Monte Carlo guidance — BUILT (batch I `montecarlo`: seeded Box-Muller portfolios, dice ground-truth check, project estimates)
+35. Bayesian reasoning — BUILT (batch I `bayes`: exact posteriors with odds/likelihood-ratio working, sequential updates)
 
 ## Domain 7 — Code Generation & Software Development (50)
 1-8 (gen, complete, bugs, refactor, tests, docs, review, quality) — BUILT (dev + coder model + skillsmith)
@@ -320,12 +320,12 @@ Plus A/B framework — PARTIAL (batch D)
 5. Subtask decomposition — BUILT (planner)
 6. Dependency mapping — PARTIAL batch C
 7. Gantt generation — PARTIAL batch C
-8. Kanban — PARTIAL batch C
+8. Kanban — BUILT (batch H `kanban`: todo/doing/done SQLite board with WIP>3 warning)
 9. Sprint planning — PARTIAL batch C
 10. Standup summaries — PARTIAL batch B (`standup`)
 11. Retrospectives — PARTIAL batch C
 12. SMART goals — BUILT (planner)
-13. OKR tracking — PARTIAL batch C
+13. OKR tracking — BUILT (batch H `okr`: objectives + KRs with exact average roll-up)
 14. Progress tracking — BUILT (task tracker)
 15. Time estimation — BUILT (planner)
 16. Time tracking — BUILT (lifelog)
@@ -341,7 +341,7 @@ Plus A/B framework — PARTIAL (batch D)
 26. Minutes & action items — BUILT (digest; batch B `meetingdocs`)
 27. Follow-up scheduling — BUILT (reminders)
 28. Stakeholder comms — BUILT (clients/email)
-29. Risk register — PARTIAL batch C
+29. Risk register — BUILT (batch H `riskregister`: 5x5 matrix, computed 1-25 scores, top ranking, mitigations)
 30. Resource allocation — PARTIAL batch C
 
 ## Domain 11 — Calendar & Scheduling (25)

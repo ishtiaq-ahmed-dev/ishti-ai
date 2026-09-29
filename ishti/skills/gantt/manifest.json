@@ -1,0 +1,13 @@
+{
+  "name": "gantt",
+  "version": "1.0.0",
+  "description": "Turn a task list with durations (and optional dependencies) into a Gantt view: a Mermaid gantt block the dashboard renders, plus an ASCII bar chart. Sequencing respects stated dependencies; start dates are computed, not guessed.",
+  "route": "gantt chart of:, project plan from these tasks:, schedule these tasks into a gantt",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Productivity"
+}

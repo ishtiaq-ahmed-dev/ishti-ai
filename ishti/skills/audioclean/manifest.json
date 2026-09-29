@@ -1,0 +1,13 @@
+{
+  "name": "audioclean",
+  "version": "1.0.0",
+  "description": "Audio enhancement with FFmpeg: FFT denoise (afftdn) and/or EBU R128 loudness normalization (loudnorm) into data/clean/<name>.clean.wav. Originals untouched, output duration measured via ffprobe, ffmpeg errors shown verbatim.",
+  "route": "clean up the audio in D:/rec.wav, denoise D:/call.mp3, normalize the loudness of D:/x.wav, clean up and normalize D:/talk.wav",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T1",
+  "laya": false,
+  "scope": {"write": ["data/clean"], "net": [], "apps": []},
+  "category": "Media & Creative"
+}

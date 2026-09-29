@@ -1,10 +1,11 @@
 import type { ComponentProps } from "react";
 import { cn } from "@/lib/utils";
 
-type BrandVariant = "full" | "wordmark" | "icon" | "favicon" | "lockup";
+type BrandVariant = "full" | "wordmark" | "icon" | "favicon" | "lockup" | "squircle";
 
 export type IshtiBrandProps = Omit<ComponentProps<"svg">, "width" | "height"> & {
   variant?: BrandVariant;
+  shape?: "squircle" | "circle";
   size?: number | string;
   width?: number | string;
   height?: number | string;
@@ -42,6 +43,7 @@ const APP_ICON_SPARKLE_PATH =
 
 export function IshtiBrand({
   variant = "full",
+  shape = "squircle",
   size,
   width,
   height,
@@ -59,8 +61,8 @@ export function IshtiBrand({
   let resolvedWidth: number | string | undefined = width;
   let resolvedHeight: number | string | undefined = height;
 
-  if (variant === "icon" || variant === "favicon") {
-    const s = size ?? width ?? height ?? (variant === "icon" ? 36 : 24);
+  if (variant === "icon" || variant === "favicon" || variant === "squircle") {
+    const s = size ?? width ?? height ?? (variant === "favicon" ? 24 : 36);
     resolvedWidth = s;
     resolvedHeight = s;
   } else if (variant === "wordmark") {
@@ -106,8 +108,9 @@ export function IshtiBrand({
     }
   }
 
-  // 1. STANDALONE APP ICON (Circle + Centered Warm Amber Sparkle)
-  if (variant === "icon") {
+  // 1. STANDALONE APP ICON (Squircle with Round Corners or Circle)
+  if (variant === "icon" || variant === "squircle") {
+    const isSquircle = variant === "squircle" || shape === "squircle";
     return (
       <svg
         viewBox="0 0 512 512"
@@ -120,7 +123,11 @@ export function IshtiBrand({
         {...props}
       >
         {title && <title>{title}</title>}
-        <circle cx="256" cy="256" r="236" fill={NAVY_COLOR} />
+        {isSquircle ? (
+          <rect x="24" y="24" width="464" height="464" rx="108" fill={NAVY_COLOR} />
+        ) : (
+          <circle cx="256" cy="256" r="236" fill={NAVY_COLOR} />
+        )}
         <path d={APP_ICON_SPARKLE_PATH} fill={GOLD_COLOR} />
       </svg>
     );
@@ -182,7 +189,7 @@ export function IshtiBrand({
         {...(props as any)}
       >
         <svg viewBox="0 0 512 512" width={34} height={34} fill="none" className="shrink-0 drop-shadow-xs">
-          <circle cx="256" cy="256" r="236" fill={NAVY_COLOR} />
+          <rect x="24" y="24" width="464" height="464" rx="108" fill={NAVY_COLOR} />
           <path d={APP_ICON_SPARKLE_PATH} fill={GOLD_COLOR} />
         </svg>
         <div className="flex flex-col leading-none">

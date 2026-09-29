@@ -21,7 +21,8 @@ OPS = [  # (name, pattern) - first match wins
     ("clipboard_read", re.compile(r"\b(?:what(?:'s| is)\s+(?:in|on)\s+(?:my\s+|the\s+)?clipboard|read\s+(?:my\s+|the\s+)?clipboard|clipboard\s+content)", I)),
     ("volume", re.compile(r"\b(?:un)?mute\b|\bvolume\b|\bsound\s+(?:up|down)\b|\b(?:louder|quieter)\b", I)),
     ("brightness", re.compile(r"\bbrightness\b|\b(?:brighter|dimmer|dim\s+the\s+screen)\b", I)),
-    ("window", re.compile(r"\b(?P<act>minimi[sz]e|maximi[sz]e|restore|close)\s+(?:the\s+|my\s+)?(?P<app>.+?)(?:\s+window)?\s*$", I)),
+    # an app name is words (may contain dots/dashes), never math: 'maximize 5x + 3y' is optimize's
+    ("window", re.compile(r"\b(?P<act>minimi[sz]e|maximi[sz]e|restore|close)\s+(?:the\s+|my\s+)?(?P<app>[A-Za-z][A-Za-z0-9 ._/\\-]*?)(?:\s+window)?\s*$", I)),
     ("windows_list", re.compile(r"\b(?:which|what|list)\s+(?:windows|apps)\s+(?:are\s+)?open\b|\bopen\s+windows\b", I)),
     # process_kill never claims reflexive objects ("kill myself", "end it all") — those are distress language,
     # not a process name; moodlog's safety gate handles them before anything else.

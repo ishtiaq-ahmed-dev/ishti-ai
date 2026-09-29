@@ -1,0 +1,13 @@
+{
+  "name": "meme",
+  "version": "1.0.0",
+  "description": "Caption an image meme-style with PIL: top/bottom text in the classic white-with-black-outline style, wrapped and auto-sized, written to data/memes/. The base image can be a local file or a plain colour canvas.",
+  "route": "meme D:/cat.png top text bottom text, caption D:/x.png with ..., make a meme: ... | ...",
+  "needs": {"python": ["PIL"], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T1",
+  "laya": false,
+  "scope": {"write": ["data/memes"], "net": [], "apps": []},
+  "category": "Media & Creative"
+}

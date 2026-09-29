@@ -1,0 +1,13 @@
+{
+  "name": "metrics",
+  "version": "1.0.0",
+  "description": "Health-metric tracker (local SQLite): log weight, blood pressure, steps, sugar or any named metric; get averages over week/month, trend vs the previous period, and min/max. Numbers only — never diagnosis or dosage advice.",
+  "route": "log weight 82, my weight this month, blood pressure today 130 over 85, steps yesterday 8000, sugar trend",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Health"
+}

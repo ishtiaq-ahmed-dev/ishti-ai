@@ -1,0 +1,13 @@
+{
+  "name": "formula",
+  "version": "1.0.0",
+  "description": "Excel/Sheets formula answers computed with sympy: build a formula for a described calculation, explain what a pasted formula does, and evaluate ranges on given sample data. Verified by actually computing, not guessed from a cheat-sheet.",
+  "route": "excel formula for average of, what does =SUMIF do, formula to count unique, google sheets formula for",
+  "needs": {"python": ["sympy"], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Office"
+}

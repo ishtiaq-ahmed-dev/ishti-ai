@@ -1,0 +1,13 @@
+{
+  "name": "pantry",
+  "version": "1.0.0",
+  "description": "Pantry / expiry tracker (local SQLite): add items with quantities and expiry dates, see what expires within 3 days (computed from today's date, always shown), list the pantry, and remove used-up items. Nothing guessed, nothing invented.",
+  "route": "add milk to the pantry, expires 2026-10-05, what's expiring soon, pantry list, used up the milk",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Daily Life"
+}

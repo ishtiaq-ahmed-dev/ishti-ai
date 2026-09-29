@@ -1,0 +1,13 @@
+{
+  "name": "gametheory",
+  "version": "1.0.0",
+  "description": "2x2 game analysis from four payoff cells (TL/TR/BL/BR as row,column pairs): dominant strategies for each player, all pure-strategy Nash equilibria, and the mixed equilibrium verified numerically by player indifference - the formula is never trusted blindly. Degenerate cases are named, not glossed.",
+  "route": "analyze the game: TL 3,2; TR 1,1; BL 0,3; BR 2,0, game theory: TL -1,-1; TR -3,0; BL 0,-3; BR -2,-2",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Reasoning"
+}

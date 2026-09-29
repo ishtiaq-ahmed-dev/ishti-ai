@@ -1,0 +1,13 @@
+{
+  "name": "bayes",
+  "version": "1.0.0",
+  "description": "Exact Bayesian updating: prior + hit rate + specificity gives the true posterior with the odds/likelihood-ratio working shown (the 1%-prior/99%/95% test yields 16.67%, not 99%). Sequential 'update belief' requests chain the posterior; degenerate evidence that cannot move the posterior is refused.",
+  "route": "bayes: prior 1% sensitivity 99% specificity 95%, update belief: hit rate 90% false positive 10%, posterior with prior 0.02",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Reasoning"
+}

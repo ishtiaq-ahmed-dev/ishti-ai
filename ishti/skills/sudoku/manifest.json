@@ -1,0 +1,13 @@
+{
+  "name": "sudoku",
+  "version": "1.0.0",
+  "description": "Sudoku solver: 81-character grid (0 or . for empty), backtracking search, and every solution re-verified in code (all rows/columns/boxes plus givens preserved). Contradictory grids are proven unsolvable by exhaustion, never guessed; below 17 givens is refused as possibly non-unique.",
+  "route": "solve this sudoku: 530070000..., solve sudoku <81 chars>",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 13,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Reasoning"
+}

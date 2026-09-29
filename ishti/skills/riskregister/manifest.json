@@ -1,0 +1,13 @@
+{
+  "name": "riskregister",
+  "version": "1.0.0",
+  "description": "Risk register (local SQLite): log risks with likelihood 1-5 and impact 1-5, get the computed 1-25 risk score with a top-risks view, add mitigations, and close risks. Scores are computed, never guessed.",
+  "route": "log risk data loss likelihood 3 impact 5, my risk register, top risks, mitigate risk ..., close risk ...",
+  "needs": {"python": [], "models": [], "mcp": [], "apis": []},
+  "priority": 11,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Productivity"
+}

@@ -27,7 +27,7 @@ CLICK = re.compile(
     r"\b(?:(?:left|right|double)[\s-]+)?click\b(?!\s*(?:the\s+)?(?:link|button)\b.*\bbrowser\b)"
     r"|\\bpress\\s+(?:on\\s+)?(?:the\\s+)?[\"']?(?P<words1>[\\w ,'-]{2,40})[\"']?\\s*(?:button|on\\s+my\\s+screen)\\b", I)
 TYPE = re.compile(r"\btype\s+(?:this\s+|that\s+|the\s+)?(?P<text>[\"'].+[\"']|.+)?:?(?:\s+on\s+(?:my|the)\s+(?:pc|screen|computer))?\s*$", I)
-KEY = re.compile(r"\bpress\s+(?P<keys>(?:ctrl|alt|shift|win|windows|enter|esc|escape|tab|f\d{1,2}|[\w'])+(?:\s*\+\s*(?:ctrl|alt|shift|win|windows|enter|esc|escape|tab|f\d{1,2}|[\w']+))*)\b", I)
+KEY = re.compile(r"\bpress\s+(?P<keys>(?:ctrl|alt|shift|win|windows|enter|esc|escape|tab|f\d{1,2})\b(?:\s*[+ ]\s*(?:ctrl|alt|shift|win|windows|enter|esc|escape|tab|f\d{1,2}|[a-z0-9])\b)*)", I)  # must start with a named key: 'press release' is never a hotkey
 SCROLL = re.compile(r"\bscroll\s+(?P<dir>up|down)(?:\s+(?P<amount>\d+))?\b", I)
 MOVE = re.compile(r"\bmove\s+(?:the\s+)?mouse\s+(?:to|at)\s+(?P<x>\d+)\s*[, ]\s*(?P<y>\d+)\b", I)
 

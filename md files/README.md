@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="assets/ishti_full_wordmark.svg" alt="ISHTI: Personal AI Assistant" width="360" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../assets/ishti_logo_dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="../assets/ishti_logo.png">
+    <img src="../assets/ishti_logo.png" alt="ISHTI: Personal AI Assistant" width="460" />
+  </picture>
 </p>
 
 # ISHTI: local-first personal AI assistant

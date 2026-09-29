@@ -1,0 +1,13 @@
+{
+  "name": "doclayout",
+  "version": "1.0.0",
+  "description": "PDF layout analysis measured with pdfplumber: page count and size, text lines grouped by position, the largest-font title line, heading-like lines, ruled lines and detected tables per page. Scanned pages with no text layer are reported as scans, not empty analyses.",
+  "route": "layout of D:/docs/report.pdf, doc layout analysis of D:/forms/form.pdf, analyze the pdf D:/docs/invoice.pdf, structure of D:/docs/thesis.pdf",
+  "needs": {"python": ["pdfplumber"], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {"write": ["data"], "net": [], "apps": []},
+  "category": "Documents & Files"
+}

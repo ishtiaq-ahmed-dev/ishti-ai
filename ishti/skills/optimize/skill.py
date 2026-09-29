@@ -74,7 +74,7 @@ def _parse_constraints(rest):
             budget = float(m.group(1))
     if weights and budget is not None and not isinstance(budget, tuple):
         # turn the collected costs into a single weight row: sum(cost*var) <= budget
-        budget = tuple([w for w, _v in weights] + [v for _w, v in weights] + [budget])
+        budget = (tuple(weights), float(budget))     # ((var, cost), ...) <= budget
     return bounds, budget
 
 
@@ -86,10 +86,12 @@ def _lp(coeffs, sense, bounds, budget):
         c = [-x for x in c]
     A_ub, b_ub = [], []
     if isinstance(budget, tuple):
-        total = budget[-1]
-        pairs = list(zip(budget[0::2], budget[1::2]))  # [(weight, var), ...]
-        A_ub.append([next((float(w) for w, vv in pairs if vv == v), 0) for v in variables])
-        b_ub.append(total)
+        pairs, total = budget                            # ((var, cost), ...), budget
+        if pairs and not isinstance(pairs[0], tuple):    # legacy 2-var row (w1, v1, w2, v2, total)
+            w1, v1, w2, v2 = pairs[0], pairs[1], pairs[2], pairs[3]
+            pairs = [(v1, w1), (v2, w2)]
+        A_ub.append([next((float(c) for vv, c in pairs if vv == v), 0) for v in variables])
+        b_ub.append(float(total))
     elif budget is not None:
         pass  # a bare budget without per-item weights can't form a row; bounds still apply
     for v, b in bounds.items():
@@ -141,7 +143,7 @@ def solve_func(expr, lo, hi, sense):
         f(lo)  # sanity: it must evaluate
     except Exception:
         return f"Could not parse the expression `{expr}` (use e.g. x**2 - 4*x)."
-    sign = -1 if sense == "min" else 1
+    sign = 1 if sense == "min" else -1   # minimize f, or minimize -f for max
     res = minimize_scalar(lambda t: sign * f(t), bounds=(lo, hi), method="bounded")
     best = res.x
     val = f(best)

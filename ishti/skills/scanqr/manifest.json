@@ -1,0 +1,13 @@
+{
+  "name": "scanqr",
+  "version": "1.0.0",
+  "description": "QR codes, fully local: generate a QR for any text with a proper quiet zone (cv2 encoder, self-read verified via zxing-cpp) and scan/decode QRs or barcodes from an image file. This build's cv2 QR decoder is broken, so decoding uses the standalone zxing-cpp reader.",
+  "route": "qr code for https://x.pk, generate a qr for wifi: sid/pass, scan the qr in D:/ticket.png, read the qr D:/code.png, decode qr D:/x.png",
+  "needs": {"python": ["cv2", "zxingcpp"], "models": [], "mcp": [], "apis": []},
+  "priority": 14,
+  "status": "working",
+  "tier": "T1",
+  "laya": false,
+  "scope": {"write": ["data/qr"], "net": [], "apps": []},
+  "category": "Media & Creative"
+}
