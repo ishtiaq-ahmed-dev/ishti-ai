@@ -380,7 +380,7 @@
         </svg>
         Startup Issue Encountered
       </div>
-      <div id="error-msg" class="error-desc">Could not connect to assistant backend.</div>
+      <div id="error-msg" class="error-desc">ISHTI is having trouble starting.</div>
       <div class="error-actions">
         <button class="btn-action" onclick="viewLog()">View Log</button>
         <button class="btn-action btn-retry" onclick="retryBoot()">Retry</button>
@@ -509,7 +509,7 @@
       } catch (err) {
         const elapsed = (performance.now() - startTime) / 1000;
         if (elapsed > 40) {
-          showError("Backend Launch", "Assistant backend took too long to respond");
+          showError("Still starting", "ISHTI is taking longer than usual. You can wait a bit longer, or check the log.");
         }
       }
     }

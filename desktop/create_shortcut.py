@@ -1,4 +1,9 @@
-"""Creates the ISHTI desktop shortcuts (Start and Stop) for the current user's desktop."""
+"""Creates the ISHTI desktop shortcut (Start) for the current user's desktop.
+
+Owner request 2026-09-29: no "Stop ISHTI" desktop shortcut - stopping ISHTI belongs inside the app
+(the Shut down button / the window's X), which shuts down cleanly. Any old Stop shortcut on the
+desktop is removed here so stale ones disappear.
+"""
 import os
 import sys
 import win32com.client
@@ -43,19 +48,22 @@ def create_desktop_shortcuts():
     _setup_shortcut(ws, os.path.join(desktop, "Start ISHTI.lnk"), target, args, desc, ICON)
 
 
-def create_stop_shortcut():
-    """Stop: the full clean shutdown (process tree, GPU VRAM, browser sessions)."""
+def remove_stop_shortcut():
+    """Owner request 2026-09-29: the desktop has no Stop shortcut; the app's own Shut down button / X
+    closes ISHTI cleanly. Deletes any Stop ISHTI.lnk left by older versions."""
     ws = win32com.client.Dispatch("WScript.Shell")
     desktop = ws.SpecialFolders("Desktop")
     shortcut_path = os.path.join(desktop, "Stop ISHTI.lnk")
-
-    stop_bat = os.path.join(ROOT, "stop.bat")
-    target = stop_bat if os.path.exists(stop_bat) else os.path.join(ROOT, "venv", "Scripts", "python.exe")
-    args = "" if os.path.exists(stop_bat) else f'"{SHUTDOWN}"'
-
-    _setup_shortcut(ws, shortcut_path, target, args, "Stop ISHTI completely and release its resources", ICON)
+    if os.path.exists(shortcut_path):
+        try:
+            os.remove(shortcut_path)
+            print(f"[REMOVED] stale shortcut: {shortcut_path}")
+        except OSError as exc:
+            print(f"[WARN] could not remove {shortcut_path}: {exc}")
+    else:
+        print("[OK] no Stop ISHTI shortcut on the desktop")
 
 
 if __name__ == "__main__":
     create_desktop_shortcuts()
-    create_stop_shortcut()
+    remove_stop_shortcut()

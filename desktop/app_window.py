@@ -91,6 +91,15 @@ def _trigger_detached_shutdown():
             pass
 
 
+def _on_backend_lost():
+    """The backend stayed gone (external POST /api/shutdown, tray Stop, crash): close the window instead of
+    showing a dead app. No confirm dialog here - this is not the user's X click (found 2026-09-29)."""
+    global _shutting_down
+    _shutting_down = True                      # on_closing must not pop its exit dialog
+    _schedule_hard_exit(after_s=2.0)           # armed FIRST in case destroy blocks
+    _destroy_all_windows()
+
+
 def on_closing(*args, **kwargs):
     """Intercepts the native window Cross [X] button.
     Prompts the user: "Do you want to exit ISHTI?" with Yes/No buttons.
@@ -122,6 +131,7 @@ def on_closing(*args, **kwargs):
         )
         if res == IDYES:
             _trigger_detached_shutdown()
+            _schedule_hard_exit(after_s=1.5)   # guarantee the close even if the event is swallowed
             time.sleep(0.2)
             return True
         # User clicked "No" or closed dialog -> cancel window close
@@ -130,6 +140,32 @@ def on_closing(*args, **kwargs):
         print(f"[app_window] MessageBox error: {exc}", file=sys.stderr)
         _trigger_detached_shutdown()
         return True
+
+
+def _schedule_hard_exit(after_s=1.5):
+    """Last-resort close: end this process, the window dies with it.
+
+    Found 2026-09-29: the shutdown overlay reached 100% but the window stayed on screen - the JS ->
+    Python close call was not decisive. Cleanup is already running at that point (the detached
+    shutdown.py + the backend's own graceful stop + backend_watch in this process), so a hard exit
+    here only closes the shell; it never skips data work.
+    """
+    try:
+        threading.Timer(after_s, lambda: os._exit(0)).start()
+    except Exception:
+        os._exit(0)
+
+
+def _destroy_all_windows():
+    try:
+        import webview
+        for w in list(webview.windows):
+            try:
+                w.destroy()
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 
 class MainApi:
@@ -146,8 +182,13 @@ class MainApi:
 
     def force_close(self):
         _trigger_detached_shutdown()
-        if self.win:
-            self.win.destroy()
+        _schedule_hard_exit()           # armed FIRST: destroy() may block on the GUI thread
+        try:
+            if self.win:
+                self.win.destroy()
+        except Exception:
+            pass
+        _destroy_all_windows()          # in case the primary handle went stale
 
     def show_window(self):
         if self.win:
@@ -194,6 +235,10 @@ class SplashApi:
 def run_app_window():
     import webview
     from desktop.focus_ishti import is_running
+
+    # Exit instead of haunting a dead backend (external stop / crash) - see desktop/backend_watch.py.
+    from desktop import backend_watch
+    backend_watch.start(_on_backend_lost)
 
     main_api = MainApi()
     threading.Thread(target=apply_ishti_icons_daemon, daemon=True).start()

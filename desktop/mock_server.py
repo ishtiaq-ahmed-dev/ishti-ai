@@ -190,15 +190,16 @@ async def focus():
     return {"ok": True, "listeners": len(_active_websockets)}
 
 
+# Mirrors ishti/lifecycle.py SHUTDOWN_STEPS - plain-people labels (owner request 2026-09-29).
 SHUTDOWN_STEPS = [
-    ("stop_intake", "Not accepting new requests"),
-    ("cancel_tasks", "Finishing or cancelling running tasks"),
-    ("flush_data", "Saving your data"),
-    ("stop_voice", "Stopping the voice and microphone"),
-    ("unload_models", "Releasing the graphics card"),
-    ("close_browsers", "Closing ISHTI's browser tools"),
-    ("release_ports", "Closing the server"),
-    ("exit", "Goodbye"),
+    ("stop_intake", "Wrapping things up"),
+    ("cancel_tasks", "Finishing what ISHTI is doing"),
+    ("flush_data", "Saving your conversations and files"),
+    ("stop_voice", "Turning off the microphone"),
+    ("unload_models", "Resting the AI"),
+    ("close_browsers", "Closing the browser"),
+    ("release_ports", "Signing off"),
+    ("exit", "All done. Goodbye!"),
 ]
 
 

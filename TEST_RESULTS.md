@@ -317,3 +317,59 @@ module imports plus Whisper loading, and then a stall with an idle CPU on `test_
 GPU was full (see `test_dispatcher_state_flow`'s own `GpuBusy` line and the `nvidia-smi` numbers above). Every
 file passes when run on its own, and the one that fails says why. This is recorded as CD-17 (OPEN, environmental)
 rather than claimed as a pass.
+
+---
+
+# TEST_RESULTS - second test-harness pass (2026-09-29, later the same day, independent session)
+
+Question answered: is the documented one-command suite (`start.bat test` -> `python -m pytest`) actually
+runnable, and does the independent script harness agree? Everything below is measured on this box with
+`venv\Scripts\python`, raw exit codes inspected.
+
+| Check | Before | After |
+|---|---|---|
+| `python -m pytest --collect-only -q` (whole `tests/`) | did not finish: >180 s, then >300 s; one run on a single file exited **127** (= `0xC0000409`) with **0 bytes** of output | **exit 0 in 4 s** |
+| `python -m pytest` (whole `tests/`, offline) | could not be completed | **86 passed, 10 deselected, 1 warning, exit 0 in 117 s**; a repeat run took 356 s while the GPU was contended (CD-17) |
+| `venv\Scripts\python tests/test_lifecycle.py` | `TypeError: '_FakePopen' object does not support the context manager protocol`, then 110 s with a **real desktop window opened**, then stale-assertion failures | **exit 0 in 4 s**, no window opens |
+| `python tools/verify_all.py --only test:` | **21/24** passed - failed: `test_chat_digest`, `test_dispatcher_state_flow`, `test_lifecycle` | **24/24 passed in 372 s** |
+| collection side effects | `pytest --collect-only -q -s tests/test_browser_tabs.py` printed the script's own `[self-check] browser tab reuse OK ...`; `tests/test_whatsapp_context.py` loaded `ishti-qwen2.5:14b` during a "unit" run | no script-only module is imported; `tests/test_selfcheck_hygiene.py` guards it |
+
+New regression tests: `tests/test_selfcheck_hygiene.py` (2 tests) - one fails if a `tests/test_*.py` with no
+top-level `def test_*` is missing from `conftest.collect_ignore`; the other fails if an ignored module defines
+tests its `__main__` block no longer runs.
+
+Flakes seen once each in one full harness sequence and **not** reproduced afterwards (ISSUES.md CD-21):
+`test_chat_digest.py::test_n5_prompt_injection_does_not_change_behaviour` (0 failures in 20 isolated runs) and
+`test_dispatcher_state_flow.py::deep_research should have been routed` (green in the 24/24 run). They are
+recorded as environmental (CD-17 GPU contention), not as fixed.
+
+## 2026-09-29 (late) — desktop launch fix (Issues 31/32)
+
+| Check | Result | Evidence |
+|---|---|---|
+| Broken exe reproduced | CONFIRMED | launching `dist\ISHTI\ISHTI.exe` captured `ModuleNotFoundError: No module named 'json'` + zombie ISHTI.exe, no window |
+| Rebuilt bootstrap exe, launch cycle | PASS | exe -> ready ~20 s -> window "ISHTI - Intelligent Personal Assistant" -> `POST /api/chat` -> `final_answer: "PONG"` |
+| Missing-venv fallback dialog | PASS | simulated frozen root without venv: error dialog recorded, no spawn (offline test) |
+| External-stop orphan watcher | PASS | clean cycle: exe -> ready -> `POST /api/shutdown` -> **0** ISHTI processes after 35 s (venv pythonw trampoline doubling counted), port released, SQLite `integrity_check` ok |
+| `tests/test_desktop_bootstrap.py` | 5/5 PASS | AST-locked stdlib-only bootstrap + spec Analysis entry + frozen-root resolution (e2e exe smoke deselected by default) |
+| `tests/test_backend_watch.py` | 4/4 PASS | watcher silent-while-down / fires-after-grace / reset-on-recovery + wiring into launcher, tray, app window |
+| `tests/test_lifecycle.py` (script) | PASS | exit 0: Start idempotent, Stop verifies, OS shutdown detached |
+| `tests/test_shutdown_cleanliness.py` (script) | PASS | exit 0: 0 orphans, port released, DB integrity ok |
+| Full offline suite (`python -m pytest`) | PASS | 95 passed, 11 deselected, exit 0 in 196 s, re-run after the last code change |
+
+## 2026-09-30 — "Shut down did not close the app" (Issue 33) + plain-language UX (Issues 34/35)
+
+| Check | Result | Evidence |
+|---|---|---|
+| Bug reproduced | CONFIRMED | 2 measured runs: overlay at 100%, backend+tray exited, window stayed open the full 60 s |
+| Root cause identified | CONFIRMED | surviving window was "ISHTI (Not Responding)" - a wedged GUI thread never runs Python watcher threads |
+| Fix layer 1: shutdown flag handshake | PASS | backend writes `run/shutting_down.flag` at shutdown start; watcher closes the shell on sight (unit-tested) |
+| Fix layer 2: OS-level shell close | PASS | launcher registers shell pids (verified in registry: `[[45196, ..., 'launcher'], [9784, ..., 'tray']]`); shutdown calls `stop_shell()` - pid+creation-time kill, never kill-by-name, never the backend |
+| Fix layer 3: hard-exit timers | PASS | armed BEFORE any blocking destroy; launcher callback is a bare `os._exit(0)` (print-before-exit bug under pythonw found and fixed) |
+| Stale flag cleared on fresh boot | PASS | backend `start()` + launcher `main()` clear it; unit-tested |
+| **Live close proof** | **PASS** | exe -> ready -> Shut down: **windows 1 -> 0, processes 6 -> 0 within 8 s**, stable zero for 40 s, port released, 0 zombies |
+| Plain-language labels | PASS | `tests/test_shutdown_ux.py` jargon word-list (VRAM/RTX/GPU/orphaned/backend/ports/models/process tree) over every shutdown label - 6/6 |
+| Primary color instead of amber | PASS | overlay + model-switch toast use `accent` (the theme's primary); no amber in the shutdown overlay |
+| No "Stop ISHTI" desktop shortcut | PASS | script removes stale ones; executed - desktop now has only ISHTI.lnk + Start ISHTI.lnk |
+| Regression tests | PASS | `tests/test_backend_watch.py` 8/8, `tests/test_shutdown_ux.py` 6/6, `tests/test_desktop_bootstrap.py` 5/5 |
+| Full offline suite (after the last code change) | PASS | **105 passed, 11 deselected, 0 failed** in 337 s; one earlier run had `test_dispatcher_state_flow` fail once (the known CD-17 environmental flake) - it passed twice in isolation and in the final full run |

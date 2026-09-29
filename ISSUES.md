@@ -10,6 +10,66 @@ Status legend: **VERIFIED-FIXED** = fix confirmed in code and by a self-check/te
 
 ---
 
+### Issue 33: Shut down showed the overlay but the app window stayed open — VERIFIED-FIXED (found 2026-09-30)
+- **Severity**: P0 / Blocker (the owner's #1 complaint: "shut down did not close the app")
+- **Component**: `desktop/app_window.py`, `desktop/launcher.py`, `ishti/lifecycle.py`
+- **Evidence**: measured timeline - shutdown clicked, overlay reached 100% "Goodbye", backend and tray
+  exited, port released, but the window stayed open for the full 60 s observation (and again in a second
+  run). Third run caught the cause: the surviving window was **"ISHTI (Not Responding)"** - a wedged GUI
+  thread never runs the in-process watcher threads, so JS->Python close calls and Python watchers cannot
+  be trusted inside that process.
+- **Fix (three layers)**: (1) the backend writes `run/shutting_down.flag` the moment shutdown begins and
+  the desktop watcher closes the shell on seeing it; (2) the launcher registers its own + the tray's pids
+  in the run registry, and the shutdown sequence calls `stop_shell()` - an OS-level TerminateProcess by
+  recorded pid + creation time that needs no cooperation from a wedged window and never touches the
+  backend itself; (3) hard-exit timers armed before any blocking destroy call as last resort.
+- **Verified 2026-09-30**: exe -> ready -> Shut down -> **windows 1 -> 0 and processes 6 -> 0 within 8 s**,
+  stable at zero for 40 s, port released. Tests: `tests/test_backend_watch.py` (8 tests incl. the
+  flag handshake and the OS-level shell close).
+
+### Issue 34: shutdown / startup screens spoke programmer language in the wrong color — VERIFIED-FIXED (2026-09-30)
+- **Severity**: P2 / Medium (owner request: "wordings normal people" + "primary color is another but is used yellow")
+- **Evidence**: screenshot 2026-09-29 - shutdown overlay said "Releasing RTX 5070 Ti VRAM and stopping
+  services...", "Safe exit · Zero orphaned processes" in amber/yellow (not the primary accent color).
+- **Fix**: backend step labels and the overlay now use plain words ("Saving your conversations and files",
+  "Resting the AI", "All done. Goodbye!", "Everything is saved - see you soon!"); the overlay and the
+  model-switch toast use the primary (accent) color; the exit dialog no longer says "Clean GPU release";
+  splash errors no longer say "assistant backend". Locked by `tests/test_shutdown_ux.py` (jargon word-list
+  test over every shutdown label).
+
+### Issue 35: "Stop ISHTI" desktop shortcut removed — DONE (owner request 2026-09-30)
+- **Owner**: "the stop ishti is there also on desktop not need of that - clicking the app close or shut
+  down should properly close or stop the ishti". `desktop/create_shortcut.py` now creates only Start
+  shortcuts and **removes** any stale `Stop ISHTI.lnk` (executed: removed from the owner's desktop).
+  Stopping belongs inside the app (Shut down button / X) - which Issue 33's fix makes reliable.
+
+### Issue 31: clicking ISHTI.exe showed a Windows error instead of the app — VERIFIED-FIXED (found 2026-09-29)
+- **Severity**: P0 / Blocker (the app could not be started from the desktop at all)
+- **Component**: `dist\ISHTI\ISHTI.exe` (PyInstaller build of `desktop/launcher.py`), `ISHTI.spec`
+- **Evidence**: launching the exe captured `Traceback ... File "launcher.py", line 25 ... import json ->
+  ModuleNotFoundError: No module named 'json'`; `tasklist` showed a zombie ISHTI.exe, no window; `_internal`
+  contained only 18 files (no webview/pythonnet/requests), so the exe imported raw repo modules that need
+  stdlib/3rd-party modules it never bundled. The prior `urllib.request` hiddenimport (4b9346d) was symptom
+  patching, not a fix.
+- **Fix**: the exe is now a tiny stdlib-only bootstrap, `desktop/exe_bootstrap.py` (entry in `ISHTI.spec`),
+  which hands off to the one real launcher (`desktop/launcher.py`) under `venv\Scripts\pythonw.exe` and
+  exits; readable error dialog when the venv or launcher is missing. `tests/test_desktop_bootstrap.py`
+  AST-locks the stdlib-only rule so the exe cannot silently rot again.
+- **Verified 2026-09-29**: exe -> ready ~20 s -> window -> `/api/chat` answered `PONG` -> external stop ->
+  0 leftover processes, port released, DB integrity ok.
+
+### Issue 32: desktop processes orphaned after an external stop ("Stop is unreliable") — VERIFIED-FIXED (found 2026-09-29)
+- **Severity**: P1 / High (orphan pile-up: window on a dead backend, tray icons accumulated per launch)
+- **Component**: `desktop/launcher.py`, `desktop/tray.py`, `desktop/app_window.py`
+- **Evidence**: after `POST /api/shutdown` the backend and watchdog exited correctly, but 8 stale
+  `launcher.py`/`tray.py` processes from earlier launches remained (measured via Win32_Process CommandLine
+  + CreationDate); each new launch added another pair around whichever backend won the port race.
+- **Fix**: `desktop/backend_watch.py` - every desktop process that outlives the backend watches
+  `/api/health` and exits once the backend has been up and then stays gone >25 s (a watchdog restart dips
+  health for seconds, not minutes; a backend that never comes up does not fire - the splash owns that case).
+- **Verified 2026-09-29**: clean cycle exe -> ready -> external stop -> **0** ISHTI processes left
+  (venv pythonw trampoline doubling accounted for), listener released. Tests: `tests/test_backend_watch.py`.
+
 ### Issue 1: `automation.skill.run` crashes with TypeError on mismatched input — VERIFIED-FIXED
 - **Severity**: P1 / High
 - **Component**: `ishti/skills/automation/skill.py`
@@ -438,3 +498,19 @@ issue has a named regression test in `tests/test_chat_digest.py`; the command th
 | CD-17 | test environment | High (not fixable in code) | The one-command suite (`python -m pytest`) stalled on `tests/test_arch2_memory.py::test_memory_commands` with the CPU idle, because **another session owns the GPU**: `nvidia-smi` = `16303 MiB total, 14794 used, 1202 free`, Ollama holding `qwen3:14b` 9199 MB + `qwen2.5-c8k:3b` 2292 MB + `nomic-embed-text` 308 MB. The same contention makes `tests/test_dispatcher_state_flow.py` fail with its own message: `GpuBusy: ishti-qwen2.5:14b needs about 9.8 GB and only 0.0 GB is free within the 80% GPU budget`. Run alone, `test_arch2_memory.py` passes **17/17 in ~15 s** | the governor is behaving correctly (refusing a model it cannot fit); the tests assume a free GPU | **OPEN - environmental** (evidence + command in `TEST_RESULTS.md`; re-run on an idle box) |
 | CD-16 | cross-test hygiene | Med | `tests/test_chat_digest.py` re-points `ishti.rgraph.DB_PATH` and the digest store at temp files; if a later test in the same session used the relationship graph it would write into the test's scratch DB | module-level connection caches are global | FIXED in this pass (every test re-points both stores itself; nothing real is touched) |
 | CD-18 | test hygiene | Low (resolved during this pass, by someone else) | `tests/conftest.py` documents a guard - "fails if a new script-only module is added without being listed here" - as `tests/test_selfcheck_hygiene.py`, and at the moment I checked, that file was **not** in `tests/`, so the guard that keeps `collect_ignore` honest was missing and nothing noticed | the file was removed/never committed | **RESOLVED while this pass ran**: `tests/test_selfcheck_hygiene.py` (3846 bytes) and an updated `tests/conftest.py` appeared in the working tree from a concurrent session, uncommitted. I did not touch either file and left them unstaged so that session can commit its own work |
+
+---
+
+## Second test-harness pass (2026-09-29, later the same day, independent session)
+
+Found by running the documented one-command suite (`start.bat test` -> `python -m pytest`) and the independent
+script harness (`python tools/verify_all.py --only test:`) and reading the raw output, not the docs.
+
+| ID | Area | Severity | Evidence | Root cause | Status |
+|---|---|---|---|---|---|
+| CD-19 | test harness | High | `python -m pytest --collect-only -q` (whole `tests/`) did not finish - over 180 s, then over 300 s; one run of the same command on one file exited **127** (= `0xC0000409`, the whisper fail-fast `tests/test_stt_threads.py` exists to catch) and wrote **0 bytes**. The mechanism is visible with `-s`: `pytest --collect-only -q -s tests/test_browser_tabs.py` prints that script's own line `[self-check] browser tab reuse OK - parse, exact/host/domain match, reuse over navigate, safe fallbacks`, i.e. pytest's collection phase was EXECUTING the scripts. Nine files are standalone self-check scripts (0 top-level `def test_*`): browser_tabs, client_isolation, dispatcher_followups, multitopic, planner_messenger, shutdown_cleanliness, stt_threads, vram_governor_pressure, lifecycle. `test_whatsapp_context.py` is mixed - its module-level body ran and it printed `[models] LOAD: ishti-qwen2.5:14b`, so an "offline" run needed Ollama and a GPU | pytest imports every `test_*.py` it finds; only `test_lifecycle.py` was in `collect_ignore` | **FIXED** - `tests/conftest.py` now lists all nine plus `test_whatsapp_context.py` with the reason; new `tests/test_selfcheck_hygiene.py` (2 tests) fails if a script-only module is added without being listed, and fails if an ignored module's tests are no longer run by its `__main__` block. Measured after: collect-only **4 s**, full suite **86 passed, 10 deselected, 117 s**, and `verify_all --only test:` **24/24** |
+| CD-20 | test harness | High | `venv\Scripts\python tests/test_lifecycle.py` (a) died inside `subprocess.run` with `TypeError: '_FakePopen' object does not support the context manager protocol` - the double only accepted the constructor; (b) once past that it **opened a real pywebview desktop window** (110 s, `[pywebview] Error while processing splash_win...`) because `launcher.main()` calls the un-patched `run_app_window()`; (c) it then asserted the launcher spawns `startup.py`, which `desktop/launcher.py:91` no longer does (`pythonw -m ishti 8888` + `tray.py`), and that `start.bat` contains `focus_ishti.py`, which it does not (`start.bat` launches `dist\ISHTI\ISHTI.exe` or `desktop\launcher.py`) | the test pinned a launcher layout that was refactored (Issue 29), and its subprocess double was never completed - nothing caught it because the file is in `collect_ignore` and `verify_all` only kept the last 3 output lines | **FIXED** - the fake implements `__enter__`/`__exit__`/`communicate`/`poll`/`wait`/`terminate`/`kill`; the window is patched and asserted to open exactly once; assertions now check the real contract (one `-m ishti 8888`, one `tray.py`) and assert the `startup.py` banner is **absent**. Measured after: **exit 0 in 4 s** |
+| CD-21 | test harness | Med | In one full `verify_all --only test:` run two tests failed: `test_chat_digest.py::test_n5_prompt_injection_does_not_change_behaviour` and `test_dispatcher_state_flow.py` (`AssertionError: deep_research should have been routed`, 94 s in that run vs 35-39 s on a quiet one). Neither reproduces: n5 alone **0 failures in 20 runs**, whole file 3/3, script mode 2/2, harness item 3/3; `test_dispatcher_state_flow.py` 2/2 direct and green in the next full harness run (24/24) | both drive the LIVE model-assisted routing path, and the failing run coincided with the GPU contention recorded in CD-17 | **OPEN - environmental**, same class as CD-17. The assertion now prints what the router chose instead (`web_search=...`) so the next occurrence is diagnosable instead of opaque |
+
+CD-18 is closed by this pass: `tests/test_selfcheck_hygiene.py` is in the tree, tracked, and collected
+(`PASS test:test_selfcheck_hygiene`, 2 tests).

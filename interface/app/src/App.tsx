@@ -98,9 +98,9 @@ export default function App() {
   const executeShutdown = useCallback(() => {
     setIsShuttingDown(true);
     setShutdownProgress({
-      stage: "Finishing tasks",
+      stage: "Wrapping things up",
       progress: 0.25,
-      message: "Saving memory, conversations, and releasing models...",
+      message: "Saving everything and closing safely...",
     });
     const url = "/api/shutdown";
     if (navigator.sendBeacon) {
@@ -409,7 +409,7 @@ export default function App() {
 
                 <div className="mt-3 shrink-0 rounded-2xl bg-gradient-to-br from-indigo-600 via-blue-600 to-emerald-600 p-3 text-white shadow-sm">
                   <div className="flex items-center gap-1.5 text-xs font-bold leading-tight tracking-wide">
-                    <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+                    <Sparkles className="h-3.5 w-3.5 shrink-0 text-white" />
                     <span>Built and designed by ishtiaq ahmed</span>
                   </div>
                   <p className="mt-1 text-[10.5px] leading-snug text-white/85">
@@ -471,14 +471,13 @@ export default function App() {
             <div className="flex items-center gap-3">
               <div className="grid h-10 w-10 place-items-center rounded-xl bg-danger/15 text-danger shrink-0">
                 <Power className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="text-base font-semibold text-foreground">Do you want to exit ISHTI?</h3>
-                <p className="text-xs text-emerald-500 font-medium mt-0.5">All data is auto-saved • Clean GPU release</p>
-              </div>
+              </div>            <div>
+              <h3 className="text-base font-semibold text-foreground">Do you want to exit ISHTI?</h3>
+              <p className="text-xs text-emerald-500 font-medium mt-0.5">All data is auto-saved • Closes safely</p>
+            </div>
             </div>
             <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-              All your conversations, memories, and settings are continuously auto-saved. Exiting will cleanly terminate background processes, unload AI models to release GPU VRAM (RTX 5070 Ti), and close ISHTI.
+              All your conversations, memories, and settings are saved automatically. When you exit, ISHTI finishes what it is doing, saves everything, and closes safely. See you next time!
             </p>
 
             <div className="mt-4 pt-3 border-t border-border/40 flex items-center justify-between">
@@ -526,23 +525,23 @@ export default function App() {
       {/* Unified Shutdown Progress Overlay */}
       {isShuttingDown && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-300">
-          <div className="w-full max-w-sm rounded-2xl border border-amber-500/30 bg-background/95 p-6 shadow-2xl backdrop-blur-md flex flex-col items-center text-center">
-            <div className="relative mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-amber-500/10 text-amber-500 border border-amber-500/20">
-              <Sparkles className="h-7 w-7 animate-pulse text-amber-400" />
+          <div className="w-full max-w-sm rounded-2xl border border-accent/30 bg-background/95 p-6 shadow-2xl backdrop-blur-md flex flex-col items-center text-center">
+            <div className="relative mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-accent/10 text-accent border border-accent/20">
+              <Sparkles className="h-7 w-7 animate-pulse text-accent" />
             </div>
             <h3 className="text-base font-bold text-foreground">Shutting Down ISHTI</h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              {shutdownProgress?.message || "Releasing RTX 5070 Ti VRAM and stopping services..."}
+              {shutdownProgress?.message || "Saving your work and closing safely..."}
             </p>
 
             <div className="mt-5 w-full">
-              <div className="flex justify-between text-[11px] font-semibold text-amber-400 mb-1.5">
-                <span>{shutdownProgress?.stage || "Finishing tasks"}</span>
+              <div className="flex justify-between text-[11px] font-semibold text-accent mb-1.5">
+                <span>{shutdownProgress?.stage || "Wrapping things up"}</span>
                 <span>{Math.round((shutdownProgress?.progress || 0.25) * 100)}%</span>
               </div>
               <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
                 <motion.div
-                  className="h-full bg-gradient-to-r from-amber-500 to-amber-300 rounded-full"
+                  className="h-full bg-gradient-to-r from-accent to-accent/70 rounded-full"
                   initial={{ width: "25%" }}
                   animate={{ width: `${Math.min(100, Math.max(10, Math.round((shutdownProgress?.progress || 0.25) * 100)))}%` }}
                   transition={{ duration: 0.3 }}
@@ -550,7 +549,7 @@ export default function App() {
               </div>
             </div>
             <div className="mt-4 text-[10px] text-muted-foreground/75">
-              Safe exit · Zero orphaned processes
+              Everything is saved — see you soon!
             </div>
           </div>
         </div>
@@ -564,15 +563,15 @@ export default function App() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -20, scale: 0.95 }}
             transition={{ duration: 0.2 }}
-            className="fixed top-5 right-5 z-50 flex items-center gap-3 rounded-2xl border border-amber-500/30 bg-background/95 px-4 py-3 shadow-xl backdrop-blur-md max-w-sm"
+            className="fixed top-5 right-5 z-50 flex items-center gap-3 rounded-2xl border border-accent/30 bg-background/95 px-4 py-3 shadow-xl backdrop-blur-md max-w-sm"
           >
-            <div className="grid h-8 w-8 place-items-center rounded-xl bg-amber-500/15 text-amber-500 shrink-0">
+            <div className="grid h-8 w-8 place-items-center rounded-xl bg-accent/15 text-accent shrink-0">
               <Zap className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-xs font-semibold text-foreground">Switched to a lighter model to stay fast</div>
               <div className="text-[11px] text-muted-foreground truncate">
-                <span className="capitalize font-medium text-amber-400/90">{modelSwitchToast.role}</span>: {modelSwitchToast.from} → {modelSwitchToast.to}
+                <span className="capitalize font-medium text-accent/90">{modelSwitchToast.role}</span>: {modelSwitchToast.from} → {modelSwitchToast.to}
               </div>
             </div>
             <button

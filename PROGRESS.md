@@ -72,5 +72,68 @@ Legend: [x] done · [~] in progress · [ ] not started · BLOCKED = needs the ow
    `tools/chat_digest_sample.py`, `reports/`.
 2. Run: `venv\Scripts\python -m pytest tests/test_chat_digest.py -q` (offline, no Ollama needed).
 3. The skill never sends/replies/reacts/deletes anything — T0, read-only; sending stays T2.
+
+## Session 2026-09-29 (late) — desktop launch bug (owner report: "click Start ISHTI -> error")
+- [x] REPRODUCED: `dist\ISHTI\ISHTI.exe` died at launch with `ModuleNotFoundError: No module named 'json'`
+      (captured from the exe itself), left a zombie ISHTI.exe, no window.
+- [x] ROOT CAUSE: the exe froze `desktop/launcher.py` but bundled only 18 files in `_internal`; at runtime it
+      imported raw repo modules (`desktop/shutdown.py`) needing stdlib modules the exe never carried. The
+      earlier `urllib` hiddenimport commit (4b9346d) treated one symptom of a broken packaging strategy.
+- [x] FIXED (architectural): `ISHTI.exe` is now a tiny stdlib-only bootstrap (`desktop/exe_bootstrap.py`,
+      frozen per new `ISHTI.spec`) that hands off to the ONE real launcher (`desktop/launcher.py`) under
+      `venv\Scripts\pythonw.exe`. Readable error dialog if the venv/launcher is missing. No duplicated
+      lifecycle logic; the exe can no longer go stale when the venv gains a dependency.
+- [x] FIXED (found during verification): after an external `POST /api/shutdown`, the launcher, tray and app
+      window survived around the dead backend (orphan pile-up = the "unreliable Start/Stop" feel).
+      `desktop/backend_watch.py` now runs in all three; they exit once the backend has been up and then
+      stays gone >25 s (a watchdog restart dips health for seconds, not minutes).
+- [x] VERIFIED end-to-end: exe -> ready ~20 s -> window "ISHTI - Intelligent Personal Assistant" ->
+      `POST /api/chat` answered `PONG` -> `POST /api/shutdown` -> **0** leftover ISHTI processes (venv
+      pythonw trampoline doubling accounted for), port released, SQLite `integrity_check` ok, 0 exe zombies.
+- [x] REGRESSION TESTS: `tests/test_desktop_bootstrap.py` (AST-locks the stdlib-only bootstrap rule + spec
+      entry point + frozen-root resolution; e2e smoke marked e2e) and `tests/test_backend_watch.py`
+      (watcher grace/reset/silent-boot semantics + wiring into launcher/tray/app_window).
+- [x] `tests/test_lifecycle.py` + `tests/test_shutdown_cleanliness.py` re-run green after the lifecycle
+      changes; full offline pytest suite re-run green as the session's last action (see TEST_RESULTS.md).
+
+## Session 2026-09-30 — "Shut down did not close the app" + UX plain-language pass
+- [x] REPRODUCED twice with measured timelines: overlay hit 100% "Goodbye", backend + tray exited, port
+      released, but the window stayed open 60 s. Third run caught the cause: the survivor was
+      **"ISHTI (Not Responding)"** - a wedged GUI thread never runs Python watcher threads, so NO
+      in-process close path (JS bridge, watchers) can be trusted inside the shell.
+- [x] FIXED in three layers: (1) shutdown flag handshake - backend writes `run/shutting_down.flag` at
+      shutdown start; desktop watcher closes the shell on sight (no JS, no HTTP); (2) **OS-level shell
+      close** - launcher registers itself + tray in the run registry, the shutdown sequence calls
+      `stop_shell()` (TerminateProcess by recorded pid + creation time, never the backend); (3) hard-exit
+      timers armed before any blocking destroy call.
+- [x] Found + fixed on the way: the launcher's watcher callback printed before `os._exit` - under pythonw
+      sys.stdout is None, so the print raised and the watcher silently died (why the launcher survived
+      when the tray exited). Callback is now a bare `os._exit(0)`.
+- [x] Found + fixed: a stale flag from the previous run false-fired the watcher at next boot; the backend
+      `start()` and the launcher `main()` both clear it now.
+- [x] UX pass (owner request): shutdown step labels + overlay + exit dialog + splash errors now plain
+      language in the primary (accent) color - no RTX/VRAM/orphaned-processes wording anywhere user-facing.
+      Removed the desktop "Stop ISHTI" shortcut (script now removes stale ones too).
+- [x] VERIFIED: exe -> ready -> Shut down -> windows 1 -> 0 and processes 6 -> 0 within 8 s, stable zero
+      for 40 s, port free, no zombies. Registry shows `shell_pids` correctly recorded.
+- [x] Tests: `tests/test_backend_watch.py` (8: flag handshake, OS-level close, stale-flag, wiring),
+      `tests/test_shutdown_ux.py` (6: jargon-free labels, accent color, no Stop shortcut, guaranteed
+      close). Full offline suite re-run at the end of the session.
 4. The PDF path that works on this box is **Edge headless printing**; Playwright's own Chromium is not
    downloaded for the Python package (the code tries it first, then falls back automatically).
+
+## Second test-harness pass (2026-09-29, later the same day)
+- [x] Found and fixed the reason the documented one-command suite could not finish: pytest's collection phase
+      was **importing and executing** nine standalone self-check scripts (see `ISSUES.md` CD-19).
+      `tests/conftest.py` now ignores them with the reason; `tests/test_selfcheck_hygiene.py` (new) keeps the
+      list honest and also asserts that an ignored module's own `__main__` block still runs its tests.
+- [x] Fixed `tests/test_lifecycle.py` (CD-20): the subprocess double lacked the `subprocess.run()` protocol, the
+      test opened a **real** desktop window, and its launcher/`start.bat` assertions pinned a refactored layout.
+- [x] Re-measured: `pytest --collect-only` **4 s** (was >300 s / exit 127 = `0xC0000409`); full suite
+      **86 passed, 10 deselected, 117 s**; `tools/verify_all.py --only test:` **24/24** (was 21/24).
+- [x] CD-18 closed by `tests/test_selfcheck_hygiene.py` (it is now tracked and collected).
+- [ ] CD-17 / CD-21 stay OPEN - both are the same environmental cause (another session owns the GPU, so the
+      model-assisted routing tests can fail with `GpuBusy`); they need a quiet box, not a code change.
+- [x] WP7 commit + tag - done by the concurrent session: the chat-digest work is committed (`b5a2038
+      feat(chat_digest): the 24-hour chat digest (Section 4) + GFM-grade chat tables`) and tagged
+      **`chat-digest-2026-09-29`**; `git status` is clean apart from this pass's three doc files.

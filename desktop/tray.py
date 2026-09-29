@@ -113,6 +113,15 @@ def run_tray():
             time.sleep(2)
 
     threading.Thread(target=poll_state, daemon=True).start()
+
+    # Exit when the backend stays gone (external POST /api/shutdown, crash): a tray icon around a
+    # dead ISHTI is an orphan (found 2026-09-29).
+    try:
+        from desktop import backend_watch
+        backend_watch.start(lambda: icon.stop())
+    except Exception:
+        pass
+
     icon.run()
 
 

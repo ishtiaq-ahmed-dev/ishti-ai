@@ -36,6 +36,26 @@ LOG_FILE = os.path.join(LOG_DIR, "ishti.log")
 REGISTRY = os.path.join(RUN_DIR, "ishti.json")
 DATA = os.path.dirname(CONFIG["memory"]["db_path"])
 STOP_FLAG = os.path.join(DATA, "stop.flag")
+# Written the moment a shutdown begins so the desktop shell (window/tray) can close itself without
+# relying on the JS bridge - which failed in the field (overlay at 100%, window stayed, 2026-09-29).
+SHUTDOWN_FLAG = os.path.join(RUN_DIR, "shutting_down.flag")
+
+
+def _write_shutdown_flag():
+    """Best effort: the desktop watcher treats "flag exists" as "close the window now"."""
+    try:
+        os.makedirs(RUN_DIR, exist_ok=True)
+        with open(SHUTDOWN_FLAG, "w", encoding="utf-8") as f:
+            f.write(str(time.time()))
+    except OSError:
+        pass
+
+
+def clear_shutdown_flag():
+    try:
+        os.remove(SHUTDOWN_FLAG)
+    except OSError:
+        pass
 OLLAMA = (os.environ.get("ISHTI_OLLAMA_URL") or CONFIG["llm"]["base_url"]).rsplit("/v1", 1)[0]
 NOWIN = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 SHUTDOWN_HARD_S = 40  # the steps can add up to ~30 s in the worst case (cancel 8 s, unload 10 s per model, browsers 5 s)
@@ -298,6 +318,46 @@ def created(pid):
         return round(psutil.Process(int(pid)).create_time(), 2)
     except (psutil.Error, TypeError, ValueError):
         return None
+
+
+def record_shell_pids(entries):
+    """Register the desktop-side processes (launcher/window/tray) so a shutdown can close them at the OS
+    level. Needed because in-process close paths cannot be trusted: a wedged GUI thread (window showing
+    "ISHTI (Not Responding)") never runs the Python watcher threads - found live 2026-09-30."""
+    try:
+        registry(update={"shell_pids": [[int(pid), created(pid), str(tag)] for pid, tag in entries]})
+    except Exception:
+        pass
+
+
+def stop_shell():
+    """OS-level close of the recorded desktop shell (launcher window + tray), tree included, skipping
+    this process. Runs near the end of the shutdown sequence: by then all data work is done, so killing
+    the shell - even a wedged one that ignored every in-process close signal - is purely cleanup."""
+    entries = registry().get("shell_pids") or []
+    if not entries:
+        return
+    me = os.getpid()
+    for entry in entries:
+        try:
+            pid, ct = int(entry[0]), entry[1]
+        except (TypeError, ValueError, IndexError):
+            continue
+        if pid == me or not _alive(pid, "python", ct):
+            continue
+        try:
+            root = psutil.Process(pid)
+            procs = [root, *root.children(recursive=True)]
+            for p in procs:
+                if p.pid == me:      # never the backend itself
+                    continue
+                try:
+                    if "python" in p.name().lower():
+                        p.kill()
+                except psutil.Error:
+                    pass
+        except psutil.Error:
+            pass
 
 
 def _alive(pid, name=None, ct=None):
@@ -616,6 +676,7 @@ def _write_boot_metrics(timings, total):
 
 def start(port):
     """Called once the server object exists: logging is on, the job is set, the registry says who we are; boot runs in a thread."""
+    clear_shutdown_flag()          # a fresh boot must not see the previous run's shutdown flag
     _st["port"] = port
     wd = int(os.environ.get("ISHTI_WATCHDOG_PID") or 0) or None
     registry({"server_pid": os.getpid(), "server_ct": created(os.getpid()), "port": port, "started": time.time(),
@@ -624,10 +685,12 @@ def start(port):
 
 
 # ---------------------------------------------------------------- shutdown
-SHUTDOWN_STEPS = [("stop_intake", "Not accepting new requests"), ("cancel_tasks", "Finishing or cancelling running tasks"),
-                  ("flush_data", "Saving your data"), ("stop_voice", "Stopping the voice and microphone"),
-                  ("unload_models", "Releasing the graphics card"), ("close_browsers", "Closing ISHTI's browser tools"),
-                  ("release_ports", "Closing the server"), ("exit", "Goodbye")]
+# Labels here are shown to the owner on the shutdown screen: plain everyday words, no jargon
+# (owner request 2026-09-29: "these are for the programmers, not for the real user").
+SHUTDOWN_STEPS = [("stop_intake", "Wrapping things up"), ("cancel_tasks", "Finishing what ISHTI is doing"),
+                  ("flush_data", "Saving your conversations and files"), ("stop_voice", "Turning off the microphone"),
+                  ("unload_models", "Resting the AI"), ("close_browsers", "Closing the browser"),
+                  ("release_ports", "Signing off"), ("exit", "All done. Goodbye!")]
 
 
 def _progress(i, done=True, error=None):
@@ -646,6 +709,7 @@ def begin_shutdown(force=False):
             return {"state": _st["state"], "message": "ISHTI is already shutting down."}
         _shutdown["started"] = True
         _st["state"] = "shutting_down"
+    _write_shutdown_flag()
     from ishti import vram
     vram.stop()  # no admit/switch/upshift from now on: a model loaded after the unload step would stay pinned in VRAM
     if os.environ.get("ISHTI_WATCHDOG"):  # under the watchdog: tell it this exit is wanted (it would otherwise restart us)
@@ -685,6 +749,13 @@ def _shutdown_sequence(force):
     _step(3, stop_voice)
     _step(4, unload_models)
     _step(5, close_browsers)
+    # Close the desktop shell (window + tray) at the OS level: the owner's shutdown must visibly close
+    # the app even if the window's GUI thread is wedged (2026-09-30: overlay at 100%, frozen window
+    # survived every in-process close path). Data work is done above, so this is pure cleanup.
+    try:
+        stop_shell()
+    except Exception:
+        log.exception("shutdown: closing the desktop shell")
     # The last two events are sent BEFORE the port is really released: closing the listener also closes every
     # WebSocket, so a client could never receive them afterwards.
     _progress(6)

@@ -1,6 +1,9 @@
 """ISHTI Desktop Application Launcher & Process Supervisor.
 Handles singleton window focus, OS shutdown signals (CTRL_CLOSE, CTRL_LOGOFF, CTRL_SHUTDOWN),
 and launch of the isolated desktop app window.
+
+This module is executed by the venv interpreter, never frozen (desktop/exe_bootstrap.py is the
+ISHTI.exe entry point and hands off here; see that file's docstring for the packaging rationale).
 """
 import os
 import sys
@@ -23,6 +26,7 @@ if ROOT not in sys.path:
 
 from desktop.focus_ishti import is_running, focus_window, reveal_window
 from desktop.shutdown import shutdown
+from desktop import backend_watch
 
 
 def _get_pythonw():
@@ -69,6 +73,13 @@ except Exception:
 
 
 def main():
+    # 0. A flag left by the previous run must not close this fresh window the moment it opens.
+    try:
+        from desktop import backend_watch
+        backend_watch.clear_flag()
+    except Exception:
+        pass
+
     # 1. Singleton: an instance is already up (the server answers). Focus its window, or reopen the app window
     #    when it was closed - either way exit: starting a second startup.py is what duplicated ISHTI.
     if is_running():
@@ -95,11 +106,31 @@ def main():
     )
 
     # 2b. System tray icon: global mic ON/OFF + dashboard + Stop.
+    tray_pid = 0
     try:
         tray_py = os.path.join(ROOT, "desktop", "tray.py")
-        subprocess.Popen([python_exe, tray_py], cwd=ROOT, creationflags=flags)
+        tray_proc = subprocess.Popen([python_exe, tray_py], cwd=ROOT, creationflags=flags)
+        tray_pid = tray_proc.pid
     except Exception as exc:
         print(f"[launcher] tray icon unavailable ({exc}); dashboard/voice toggles still work")
+
+    # 2b'. Register this launcher + the tray with the backend's registry: at shutdown the backend
+    # closes them at the OS level (TerminateProcess needs no cooperation, so even a window whose GUI
+    # thread has wedged - "ISHTI (Not Responding)" - cannot survive the owner's Shut down click).
+    try:
+        from ishti import lifecycle
+        entries = [(os.getpid(), "launcher")]
+        if tray_pid:
+            entries.append((tray_pid, "tray"))
+        lifecycle.record_shell_pids(entries)
+    except Exception as exc:
+        print(f"[launcher] could not register shell pids ({exc}); watchers remain the fallback")
+
+    # 2c. Watch the backend: if it stays gone (external POST /api/shutdown, tray Stop, crash), this
+    # process exits instead of becoming an orphan around a dead ISHTI (found 2026-09-29).
+    # The callback must be ONLY os._exit: under pythonw sys.stdout is None, so a print() here raised
+    # AttributeError before the exit, the watcher swallowed it, and the window never closed.
+    backend_watch.start(lambda: os._exit(0))
 
     # 3. Launch the desktop GUI window directly (instant animated splash -> main window on ready)
     from desktop.app_window import run_app_window
