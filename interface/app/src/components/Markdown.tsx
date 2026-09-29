@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { CodeBlock } from "@/components/rare/code-block";
 
 // Safe, structured markdown parser for ISHTI answers: builds React elements with zero dangerouslySetInnerHTML.
@@ -47,9 +47,106 @@ function inline(text: string): ReactNode[] {
   return out;
 }
 
+// ---- tables (the digest and every other table answer) --------------------------------------------------
+// GFM rules a hand-rolled parser gets wrong and the chat digest made visible: an escaped pipe (\|) inside a
+// cell must not split it, every row must be padded to the header width, and Urdu/Pashto cells must lay out
+// right-to-left without flipping the rest of the table. Sticky header + copy-table come from the same need:
+// a 200-row digest is unusable without them.
+function splitRow(line: string): string[] {
+  const body = line.trim().replace(/^\|/, "").replace(/(?<!\\)\|$/, "");
+  const cells: string[] = [];
+  let cur = "";
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (ch === "\\" && i + 1 < body.length) {
+      cur += body[i + 1];
+      i++;
+      continue;
+    }
+    if (ch === "|") {
+      cells.push(cur.trim());
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  cells.push(cur.trim());
+  return cells;
+}
+
+function isDividerRow(line: string): boolean {
+  const cells = splitRow(line).map((c) => c.trim());
+  return cells.length > 0 && cells.every((c) => c.length > 0 && /^:?-+:?$/.test(c));
+}
+
+function DigestTable({ rows, no }: { rows: string[][]; no: number }) {
+  const [copied, setCopied] = useState(false);
+  const width = Math.max(...rows.map((r) => r.length), 1);
+  const head = rows[0] ?? [];
+  const body = rows.slice(1);
+  const copyTable = () => {
+    const text = rows.map((r) => r.join("\t")).join("\n");
+    void navigator.clipboard?.writeText(text).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <div className="my-3 min-w-0 max-w-full rounded-xl border border-border/80 bg-card/40 shadow-xs">
+      <div className="flex items-center justify-between gap-2 rounded-t-xl border-b border-border/70 bg-muted/50 px-2.5 py-1">
+        <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+          Table {no} · {body.length} row{body.length === 1 ? "" : "s"}
+        </span>
+        <button
+          type="button"
+          onClick={copyTable}
+          className="rounded-md border border-border/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {copied ? "Copied" : "Copy table"}
+        </button>
+      </div>
+      <div className="max-h-[70vh] max-w-full overflow-auto rounded-b-xl">
+        <table className="w-max min-w-full border-collapse text-left text-xs">
+          <thead className="bg-muted/95 sticky top-0 z-10 backdrop-blur">
+            <tr>
+              {head.map((c, k) => (
+                <th
+                  key={k}
+                  dir="auto"
+                  className="border-b border-border px-3.5 py-2 align-top font-semibold break-words whitespace-normal text-foreground"
+                  style={{ maxWidth: "22rem" }}
+                >
+                  {inline(c)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/60">
+            {body.map((row, rIdx) => (
+              <tr key={rIdx} className="align-top transition-colors hover:bg-muted/30">
+                {Array.from({ length: width }).map((_, cIdx) => (
+                  <td
+                    key={cIdx}
+                    dir="auto"
+                    className="px-3.5 py-2 align-top leading-snug break-words whitespace-normal text-foreground/90"
+                    style={{ maxWidth: "22rem" }}
+                  >
+                    {inline(row[cIdx] ?? "")}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export function Markdown({ text }: { text: string }) {
   const parts = text.split(/```(\w*)\n?([\s\S]*?)(?:```|$)/g);
   const blocks: ReactNode[] = [];
+  let tableNo = 0;
 
   for (let i = 0; i < parts.length; i += 3) {
     const prose = parts[i];
@@ -94,45 +191,8 @@ export function Markdown({ text }: { text: string }) {
 
       const flushTable = () => {
         if (tableRows.length) {
-          const [head, ...body] = tableRows;
-          blocks.push(
-            <div
-              key={`tbl-${i}-${blocks.length}`}
-              className="my-3 overflow-x-auto rounded-xl border border-border/80 bg-card/40 shadow-xs"
-            >
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-muted/70 text-foreground font-semibold border-b border-border">
-                  <tr>
-                    {head.map((c, k) => (
-                      <th
-                        key={k}
-                        className="px-3.5 py-2 font-semibold text-foreground tracking-tight whitespace-nowrap"
-                      >
-                        {inline(c)}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {body.map((row, rIdx) => (
-                    <tr
-                      key={rIdx}
-                      className="hover:bg-muted/30 transition-colors"
-                    >
-                      {row.map((cell, cIdx) => (
-                        <td
-                          key={cIdx}
-                          className="px-3.5 py-2 text-foreground/90 tabular-nums leading-snug"
-                        >
-                          {inline(cell)}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          );
+          tableNo += 1;
+          blocks.push(<DigestTable key={`tbl-${i}-${blocks.length}`} rows={tableRows} no={tableNo} />);
           tableRows = [];
         }
       };
@@ -145,17 +205,11 @@ export function Markdown({ text }: { text: string }) {
       lines.forEach((line, j) => {
         const trimmed = line.trim();
 
-        // 1. Table line detection
+        // 1. Table line detection (rows are split with escaped pipes honoured - see splitRow)
         if (/^\s*\|.*\|\s*$/.test(line)) {
           flushLists();
-          // Skip divider rows like |---|---| or |:---:|
-          if (!/^\s*\|[\s:|-]+\|\s*$/.test(line)) {
-            const cells = line
-              .trim()
-              .slice(1, -1)
-              .split("|")
-              .map((c) => c.trim());
-            tableRows.push(cells);
+          if (!isDividerRow(line)) {
+            tableRows.push(splitRow(line));
           }
           return;
         }

@@ -154,3 +154,58 @@ All metrics were directly measured on the host workstation (Windows 11 Pro, Inte
 - **Safety tiers intact**: **CONFIRMED** (T2 actions require explicit confirmation, repeat guard active, T3 actions blocked).
 - **No terminal window ever shown**: **CONFIRMED** (Native `dist\ISHTI\ISHTI.exe` built with `--noconsole`, all background processes spawned with `CREATE_NO_WINDOW`).
 - **Known Issue**: Feature gap in Chat UI for interactive file drag-and-drop / upload picker (Check D3), documented in `NEEDS.md` (#N9). Local path inputs remain fully functional.
+
+---
+
+## 7. Section 4 — 24-hour Chat Digest (added 2026-09-29, same session)
+
+### 7.1 Check table
+
+| Check ID | Result | Evidence |
+|---|---|---|
+| 4.1 trigger: "check the last 24 hours of all chats, groups and communities" routes to `chat_digest` | **PASS** | `router.route(...)` -> `chat_digest [rule, confidence 1.0]`; 4 new labels in `ishti/check.py`, full run `routing: 333/333 correct` |
+| 4.1 no routing theft ("check my whatsap ... which chat is unread") | **PASS** | same probe -> `whatsapp [rule 1.0]`; `tools/check_skills.py` exit 0 (329 labelled requests replayed) |
+| 4.1 read-only / T0 | **PASS** | manifest `tier: T0`, `scope.apps: false`; `test_n6_read_only_proof` (audit allow-list, store unchanged, no WhatsApp/browser import) |
+| 4.2 data source order + "which was used" logged | **PASS (1, 3)** | `data/chat_digest.md` header line "**Data source used:**"; store rows carry `source`; `ingest_export` parses both official formats |
+| 4.2 source 2 (read-only DOM of the open tab) | **PARTIAL** | `store.from_dom(...)` exists and is tested, but reading the real Chrome profile needs the live MCP extension session - not run in this pass |
+| 4.2 source 4 (Baileys / `whats-mcp`) | **NOT IMPLEMENTED by choice** | NEEDS N12: ban risk + npm supply-chain history; default OFF |
+| 4.3 coverage: 1:1, groups, community/announcement, archived, muted, unread | **PASS** | `test_n3` - 11/11 chats covered; archived+muted "Old Family Group" and "IMS Announcements" are analyzed, not skipped; every skip has a reason |
+| 4.3 window + timezone | **PASS** | `test_n2`; window label prints the local zone ("Pakistan Standard Time") and is configurable |
+| 4.4 map-reduce, 4 languages, names/numbers preserved | **PASS (deterministic path)** | per-chat classification + `chunks` counter; Urdu/Roman-Urdu/Pashto/emoji asserted in N7; the planner path exists but was not exercised live |
+| 4.4 every line references source message IDs | **PASS** | `drop_unsourced` + `test_n1` + adversarial forged-id probe |
+| 4.4 relationship only from the graph | **PASS** | `test_n4` + adversarial probe ("Uncle Karim", "Brother Group", "Sister" -> Unknown) |
+| 4.4 usefulness rubric High/Medium/Low/Noise + reason | **PASS** | `usefulness()`; reasons asserted; tunable in `data/chat_digest_config.json` |
+| 4.4 sensitive content neutralised, kept out of exports | **PASS** | `test_n12` - OTP and `sk-live-...` absent from markdown, DOCX and HTML |
+| 4.4 client isolation | **PASS by construction** | the digest writes only to `data/chat_digest.db` and `reports/`; it never touches `ishti/skills/clients` |
+| 4.5 four tables + top-5 + ignore-safely + drafts (never sent) | **PASS** | `test_n1` asserts every 4.5 header; drafts table is labelled "sending needs your yes (T2)" |
+| 4.6 in-chat rendering: scroll, sticky header, wrap, copy, RTL | **PASS** | `DigestTable` in `Markdown.tsx`; `npm run build` exit 0; bundle asserted in N8; report screenshotted at 1400 px and 680 px and both viewed |
+| 4.6 export on request (md/docx/pdf) into `reports/YYYY-MM-DD_HHmm_chat_digest.*` | **PASS** | `tools/chat_digest_sample.py` produced all three; the skill prints the exact path |
+| 4.6 "Open / Show in folder" button | **OPEN** | NEEDS N17 (path is printed instead) |
+| 4.6 scheduled daily digest | **NOT ENABLED** | NEEDS N14 - off by default by design |
+| 4.7 N1-N12 | **11 PASS, 1 PARTIAL** | N8 partial (needs the running app for a React screenshot), N10 structure PASS / visual BLOCKED; detail in `TEST_RESULTS.md` |
+| 5 no partial offload | **N/A for this feature** | the digest loads no model by default; the model-assisted line goes through `ishti.llm`, which is governed (and was not exercised in this pass) |
+| I safety tiers unchanged | **PASS** | digest is T0; nothing lowers a T2/T3 gate; drafts are never sent |
+| I prompt injection | **PASS** | `test_n5` + `ishti.untrusted` reuse; flagged count rises, structure and action counts do not |
+| O docs match reality | **PASS** | `ISSUES.md` CD-01..CD-16, `NEEDS.md` N12..N20, `TEST_RESULTS.md` (this section), `PROGRESS.md`, `PLAN.md` |
+
+### 7.2 Defects found by this pass and fixed (each with a regression test)
+CD-01 owner promise outranked the client's request · CD-02 "30 Sep" not parsed · CD-03 every Urdu message
+crashed (`IndexError`) · CD-04 "clause 7.3" read as a date · CD-05 that fix then ate real dates
+("dead**line**") · CD-06 Pashto word in the lookup but not the pattern · CD-07 the usefulness rubric never saw a
+deadline · CD-08 21 duplicate action rows · CD-09 `**` visible in the PDF · CD-10 the chat UI's table renderer ·
+CD-15 the test suite hung at collection on a mic-less PC. Full detail with evidence: `ISSUES.md`.
+
+### 7.3 Still open (all in NEEDS.md, none of them silent)
+N12 Baileys reader (not implemented, default off) · N13 other platforms · N14 scheduled digest · N16 reportlab ·
+N17 "Open / Show in folder" button · N18 visual DOCX render (no LibreOffice) · N19 lint is not a gate (1600
+pre-existing ruff findings) · N20 React screenshot in the live app.
+
+### 7.4 Verdict for this pass
+**READY WITH KNOWN ISSUES** for the chat digest itself: 17/17 tests, 6/6 module self-checks, live routing
+333/333, skill contracts clean, frontend build clean, a 3-page PDF whose pages were rasterised and visually
+inspected, and zero capability to send, reply, react, mark-read or delete anything.
+
+The project-wide verdict in section 6 stands unchanged (**READY WITH KNOWN ISSUES**). The one new
+project-level defect this pass fixed is CD-15 (the offline suite hung on this PC for 12+ minutes); it is
+fixed with bounded budgets and a skip-with-reason, and the full-suite result is recorded in
+`TEST_RESULTS.md`.

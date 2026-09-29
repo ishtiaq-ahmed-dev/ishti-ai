@@ -57,7 +57,8 @@ TOPIC_RE = {k: re.compile(v, re.I) for k, v in TOPIC_LEXICON.items()}
 SENSITIVE = {
     "health": r"\b(?:hospital|operation|surgery|diagnos|cancer|medicine|tabiyat|bimar|chemo|therapy)\b",
     "money": r"\b(?:transfer(?:red)?|loan|debt|salary|payment due|emi|installment|udhaar)\b",
-    "credentials": r"\b(?:otp|password|passcode|pin code|cnic|card number|cvv|verification code)\b",
+    "credentials": r"\b(?:otp|password|passcode|pin code|cnic|card number|cvv|verification code|"
+                   r"api[ _-]?key|secret key|access token|bearer)\b",
     "romance": r"\b(?:i love you|miss you|proposal|rishta|shaadi|marriage|engagement|mangni)\b",
     "religion": r"\b(?:blessing|sin|haram|halal|fatwa|namaz|roza)\b",
     "politics": r"\b(?:pti|pmln|election rigging|protest|dharna|govt|military)\b",
@@ -74,11 +75,16 @@ for _i, _m in enumerate(_MONTH_NAMES, start=1):
 WEEKDAYS = {d.lower(): i for i, d in enumerate(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
                                                 "Saturday", "Sunday"])}
 DATE_NUM = re.compile(r"\b(\d{1,2})[/\-.](\d{1,2})(?:[/\-.](\d{2,4}))?\b")
+# "clause 7.3", "item 4.2", "page 12.1" are document references, not dates - they must never become deadlines.
+NOT_A_DATE = re.compile(r"\b(?:clause|section|cl\.|sec\.|para|paragraph|item|rule|point|page|pg|line|version|ver|no|"
+                        r"number|step|article|figure|table|chapter|note|annex|schedule)\s*[#.]?\s*$", re.I)
+DATE_CTX = re.compile(r"\b(?:by|on|due|before|until|till|latest|deadline|submit|submission|assignment|"
+                      r"deliver|submitting|expires?)\s*$", re.I)
 DATE_WORD = re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\b|\b([A-Za-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?\b")
-REL_DAY = re.compile(r"\b(today|tomorrow|tonight|day after tomorrow|next week|aaj|kal|parsoon)\b|(?:آج|کل|پرسوں)",
-                     re.I)
+REL_DAY = re.compile(r"\b(today|tomorrow|tonight|day after tomorrow|next week|aaj|kal|parsoon|nan|sabaa)\b"
+                     r"|(آج|کل|پرسوں|نن|سبا)", re.I)
 REL_MAP = {"today": 0, "tonight": 0, "aaj": 0, "آج": 0, "kal": 1, "tomorrow": 1, "کل": 1, "سبا": 1,
-           "parsoon": 2, "day after tomorrow": 2, "پرسوں": 2, "next week": 7}
+           "sabaa": 1, "nan": 0, "نن": 0, "parsoon": 2, "day after tomorrow": 2, "پرسوں": 2, "next week": 7}
 ARABIC_SCRIPT = re.compile(r"[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]")
 EMOJI = re.compile("[\U0001F300-\U0001FAFF\u2600-\u27BF\uFE0F]")
 
@@ -105,8 +111,11 @@ def parse_deadline(text, win):
         days = REL_MAP.get(key, 0)
         d = (base + dt.timedelta(days=days)).date()
         return f"{d.isoformat()} ({d.strftime('%a')})", dt.datetime.combine(d, dt.time(23, 59)).timestamp()
-    m = DATE_NUM.search(text or "")
-    if m:
+    for m in DATE_NUM.finditer(text or ""):
+        before = (text or "")[:m.start()]
+        dotted = "." in m.group(0) and "/" not in m.group(0) and "-" not in m.group(0)
+        if NOT_A_DATE.search(before) or (dotted and not m.group(3) and not DATE_CTX.search(before)):
+            continue                       # a document reference, or a bare decimal - not a deadline
         day, mon = int(m.group(1)), int(m.group(2))
         year = int(m.group(3)) if m.group(3) else base.year
         if year < 100:
@@ -117,7 +126,7 @@ def parse_deadline(text, win):
                 d = d.replace(year=year + 1)
             return f"{d.isoformat()} ({d.strftime('%a')})", dt.datetime.combine(d, dt.time(23, 59)).timestamp()
         except ValueError:
-            pass
+            continue
     m = DATE_WORD.search(text or "")
     if m:
         try:
@@ -187,6 +196,28 @@ def classify(messages, rubric):
     return out
 
 
+def merge_duplicates(items):
+    """Twenty identical 'please confirm the milestone payment' rows are noise, not twenty tasks. Identical
+    (text, deadline) items in one chat collapse into one row that keeps every source id, so nothing is lost
+    and the report stays readable (this is what made the first sample PDF three pages long)."""
+    out, by_key = [], {}
+    for it in items:
+        key = (it.get("chat_id"), it.get("text"), it.get("deadline"), it.get("priority"))
+        kept = by_key.get(key)
+        if kept is None:
+            by_key[key] = it
+            out.append(it)
+            continue
+        kept["repeats"] = kept.get("repeats", 1) + 1
+        for sid in it.get("src", []):
+            if sid not in kept["src"] and len(kept["src"]) < 5:
+                kept["src"].append(sid)
+    for it in out:
+        if it.get("repeats", 1) > 1:
+            it["text"] = f"{it['text']} (repeated {it['repeats']}x in this chat)"
+    return out
+
+
 def drop_unsourced(items, valid_ids):
     """THE anti-hallucination gate: an item with no source, or a source not in the window, never reaches the
     owner. Returns (kept, dropped)."""
@@ -231,7 +262,8 @@ def usefulness(rows, actions, decisions, win, rubric):
     if _spam_ratio(rows) >= 0.5 or _forward_like(rows) >= max(3, rubric["usefulness"]["noise_forward_threshold"]):
         return "Noise", "mostly promos/forwards (repeated or promo-shaped text)"
     if all(r["social"] or not r["topics"] for r in rows):
-        return "Low", "social chatter, nothing to act on"
+        return "Low", ("social chatter, nothing to act on" if all(r["social"] for r in rows)
+                       else "no clear topic, nothing to act on")
     return "Medium", "information shared, nothing to act on"
 
 UNKNOWN_REL = "Unknown (not in my relationship data)"
@@ -329,10 +361,12 @@ def analyze_chat(chat_row, messages, rubric, use_llm=False, session=None):
             pri, rank = _priority(r, win, rubric)
             text = r["text"][:220]
             actions.append({"text": ("you said: " + text) if r["mine"] else text, "from": r["sender"],
-                            "deadline": r["deadline"] or "", "priority": pri, "src": [r["msg_id"]],
-                            "_ts": r["ts"], "_rank": rank, "mine": r["mine"], "sensitive": False,
+                            "deadline": r["deadline"] or "", "deadline_ts": r["deadline_ts"],
+                            "priority": pri, "src": [r["msg_id"]], "_ts": r["ts"], "_rank": rank,
+                            "mine": r["mine"], "sensitive": False,
                             "chat": chat_row["name"], "chat_id": chat_row["chat_id"]})
     actions, dropped_a = drop_unsourced(actions, valid)
+    actions = merge_duplicates(actions)
     decisions, dropped_d = drop_unsourced(decisions, valid)
     flagged, _ = drop_unsourced(flagged, valid)
 

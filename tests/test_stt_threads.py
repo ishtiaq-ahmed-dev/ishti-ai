@@ -57,14 +57,47 @@ assert nested == "nestednested" and len(voice.DECODE_THREADS) == 1
 
 # ---- 2. the self-checks that used to fail fast must exit 0 (raw Windows exit code) ------------------------------
 def exit_code(module, timeout=600):
-    p = subprocess.run([PY, "-m", module], cwd=ROOT, capture_output=True, text=True, timeout=timeout,
-                       encoding="utf-8", errors="replace")
-    return p.returncode, p.stdout + p.stderr
+    """Run a module self-check in its own process group. On timeout the WHOLE tree is killed with taskkill /T:
+    a grandchild that outlives its parent is exactly the orphan a test run must never leave behind."""
+    p = subprocess.Popen([PY, "-m", module], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         text=True, encoding="utf-8", errors="replace",
+                         creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+    try:
+        out, _ = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True, text=True, timeout=60,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        try:
+            p.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            pass
+        raise
+    return p.returncode, out
 
 
+def no_audio_device():
+    """True when this PC has no input that actually delivers audio (data/audio_devices.json records the
+    probe). `ishti.wake` waits for sound that never comes on such a machine - a mic-less box used to block the
+    whole test run for 2 x 600 s and look like a hang, so it is bounded and skipped with a reason instead."""
+    import json
+    try:
+        with open(os.path.join(ROOT, "data", "audio_devices.json"), encoding="utf-8") as f:
+            return not (json.load(f).get("usable_for_voice") or [])
+    except (OSError, ValueError):
+        return False
+
+
+skipped = []
 for module in ("ishti.wake", "ishti.voice"):
-    code, out = exit_code(module)
+    try:
+        code, out = exit_code(module, timeout=90 if module == "ishti.wake" else 300)
+    except subprocess.TimeoutExpired:
+        assert no_audio_device(), (f"{module} did not finish within its budget although this PC has a working "
+                                   "input - that is a real failure, not a missing microphone")
+        skipped.append(module)
+        continue
     assert code == 0, f"{module} exited {code} ({hex(code & 0xFFFFFFFF)}); a fail-fast is 0xC0000409\n{out[-800:]}"
     assert "[self-check]" in out, f"{module} did not finish its self-check\n{out[-500:]}"
 print(f"[self-check] stt threads OK - every decode on one thread, exceptions cross the queue, "
-      f"ishti.wake and ishti.voice exit 0 (no 0xC0000409 fail-fast)")
+      f"ishti.wake and ishti.voice exit 0 (no 0xC0000409 fail-fast)"
+      + (f"; SKIPPED {', '.join(skipped)} - no audio input on this PC (data/audio_devices.json)" if skipped else ""))

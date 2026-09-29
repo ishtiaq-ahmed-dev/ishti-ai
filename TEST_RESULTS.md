@@ -220,3 +220,100 @@ Core check: `python -m ishti.check` → `routing: 329/329 correct, median 0.2 ms
 
 Not done / not covered (see `NEEDS.md`): a live-microphone turn (no microphone on this PC), the owner's own quality prompts, and
 the desktop launcher (`startup.py` → window) end to end (Prompt 2's area; only its Ollama/model-ping duties were removed).
+
+---
+
+# TEST_RESULTS — 24-hour chat digest (Section 4.7) + chat-UI tables, 2026-09-29
+
+Every line below is copied from a run in this session. The dataset is **synthetic** (fake chats, fake people)
+and lives in `tests/test_chat_digest.py`; the real store and the real relationship graph are never touched
+(each test re-points both to `tmp_path`).
+
+## Commands and results
+
+| # | Command | Result |
+|---|---|---|
+| 1 | `venv\Scripts\python -m pytest tests\test_chat_digest.py -q` | **PASS — 17 passed, exit 0** (N1-N12 + 5 regressions) |
+| 2 | `venv\Scripts\python -m ishti.skills.chat_digest.store` | `[self-check] chat_digest.store OK - dedupe, inclusive window, export parse (both formats, 12h+24h clock, multiline, media placeholder, system lines dropped)` |
+| 3 | `venv\Scripts\python -m ishti.skills.chat_digest.window` | `[self-check] chat_digest.window OK - inclusive 24h window, 23:59 in / 24:01 out, timezone label` |
+| 4 | `venv\Scripts\python -m ishti.skills.chat_digest.analyze` | `[self-check] chat_digest.analyze OK - coverage reasons, deadline priority, noise rubric, relationship never guessed, every action sourced` |
+| 5 | `venv\Scripts\python -m ishti.skills.chat_digest.report` | `[self-check] chat_digest.report OK - GFM tables stay rectangular with escaped pipes, newlines, Urdu/emoji; malformed tables are detected; 300-row table valid` |
+| 6 | `venv\Scripts\python -m ishti.skills.chat_digest.export` | `[self-check] chat_digest.export OK - markdown, DOCX (8 cols x 3 rows, repeating header, RTL Urdu runs), HTML (thead repeats, dir=auto); PDF 2026-09-29_2022_chat_digest.pdf via msedge.exe, 1 page(s)` |
+| 7 | `venv\Scripts\python -m ishti.skills.chat_digest.skill` | `[self-check] chat_digest.skill OK - routing (specific, no overreach), report renders, PDF export saved, drafts are drafts only` |
+| 8 | `venv\Scripts\python tools\chat_digest_sample.py` | 3-page PDF via `msedge.exe` + 3 rasterised pages + wide/narrow screenshots + ground-truth JSON; `markdown tables: 0 problem(s)` |
+| 9 | `venv\Scripts\python -m ishti.check` (live routing) | **exit 0 — `routing: 333/333 correct, median 0.2 ms`** (was 329 before this pass; the 4 new labels are the digest's own phrasings) |
+| 10 | `venv\Scripts\python tools\check_skills.py --verbose` | **exit 0 — `120 skills, 232 assertions, 329 labelled requests replayed ... OK`**, including "no matcher steals another skill's requests" |
+| 11 | `cd interface\app && npm run build` | **exit 0** — `tsc -b` clean, `2328 modules transformed`, `dist/assets/index-*.js 1,011.13 kB (gzip 289.30 kB)` |
+| 12 | `venv\Scripts\python -m ruff check ishti\skills\chat_digest` | 56 findings, all in rule families that already exist in the codebase (`FURB167` re.I, `BLE001` broad except, `DTZ*` naive datetimes). `ruff check ishti` on the **pre-existing** tree reports **1600** - the new code matches house style; there is no ruff config in the repo (NEEDS N19) |
+
+## Section 4.7 checklist (N1-N12)
+
+| # | Requirement | Result | Evidence |
+|---|---|---|---|
+| N1 | recall + precision: every planted fact/decision/deadline present; every row cites a real in-window message | **PASS** | `test_n1_recall_and_precision` - parses the rendered tables and checks every source id against `store.messages_between` |
+| N2 | window boundary: 23:59 in, 24:01 out | **PASS** | `test_n2_window_boundary` - "Late Chat 23:59" analyzed with 1 message, "Too Old 24:01" skipped with the reason, plus a store-level check |
+| N3 | coverage matches the real chat list; skips named with a reason | **PASS** | `test_n3_coverage_table_matches_reality` - 11 chats in, 11 rows out, archived/muted/community all analyzed |
+| N4 | relationship only from the graph, else Unknown | **PASS** | `test_n4_relationship_only_from_the_graph` + adversarial probe: "Uncle Karim", "Brother Group", "Sister" all Unknown |
+| N5 | prompt injection changes nothing | **PASS** | `test_n5_prompt_injection_does_not_change_behaviour` - control vs evil: same chat/action/decision counts, +1 flagged, no leak of the payload |
+| N6 | read-only proof | **PASS** | `test_n6_read_only_proof` - audit rows show one allow-listed `chat_digest run (read-only, analysis only)` line at tier T0, store message count unchanged, no import of the WhatsApp/browser/MCP modules, `delete_chat` unreachable from the digest path |
+| N7 | markdown validity: 200+ rows, long cells, 3 scripts | **PASS** | `test_n7_markdown_validity_stress` - 210 chats, 220+ table rows, 400-char cells, `table_problems() == []`, rows only ever 5/6/8 columns, `\\|` escaped |
+| N8 | chat UI | **PARTIAL** | `test_n8_chat_ui_bundle_and_renderer` - the parser rules and the built bundle are verified; a screenshot of the **React** chat window needs the running app (NEEDS N20). The report itself was screenshotted at 1400 px and 680 px (Edge headless) and both were looked at |
+| N9 | PDF: generate, rasterise, inspect every page | **PASS** | `test_n9_pdf_pages_are_real` + `tools/chat_digest_sample.py`: 3 pages, PDF text contains "Chats found", "Table 1", "Unknown (not in my relationship data)", "Bilal Khan"; no page blank; **pages 1 and 2 were viewed as images** - header row repeats on page 2, Urdu cell renders right-to-left, nothing cut off |
+| N10 | DOCX: python-docx structure | **PASS (structure) / BLOCKED (visual)** | `test_n10_docx_structure` - 5 tables, column counts match the 4.5 headers, `w:tblHeader` on every header row, landscape, RTL runs. Visual DOCX render needs LibreOffice (NEEDS N18) |
+| N11 | performance 10 / 50 / 200 chats | **PASS** | `test_n11_performance_10_50_200_chats` - `[chat_digest] analysis+render seconds: {10: 0.006, 50: 0.027, 200: 0.108} (no model is loaded on this path)`; not quadratic |
+| N12 | privacy: sensitive excluded from exports, secrets redacted | **PASS** | `test_n12_privacy_and_redaction` - "4482" and `sk-live-…` absent from markdown, DOCX and HTML; the chat is marked `export_ok=False` and the report shows "Sensitive - open in chat to view" |
+
+## Extra checks run against the feature (not required, done anyway)
+
+| Check | Result | Evidence |
+|---|---|---|
+| Forged source ids are dropped | **PASS** | adversarial probe: `drop_unsourced` kept only `real-1`, dropped `fake-999` and the empty one |
+| Table torture: many `\|`, newlines, 900-char token, RTL, emoji | **PASS** | `table_problems() == []`, row widths {5, 6, 8} |
+| Chat budget of 2 with 6 chats | **PASS** | 4 skipped, each with "beyond the chat budget (2 chats) - raise max_chats to include it" |
+| `owner_names` config | **PASS** | "Ishtiaq" recognised as the owner, the action labelled "you said:" |
+| Sample coverage numbers | **PASS** | 11 found / 9 analyzed / 2 skipped, 239 messages, 9 actions, 1 decision, 1 injection flagged, 1 sensitive chat, 1 media item not analyzed |
+
+## Honest limits of this section
+- The adversarial review could not be delegated: the sub-agent tool returned an authentication error, so the
+  falsification pass above was run by me and is labelled as self-review, not independent verification.
+- N8/N10 are partial for the reasons in NEEDS N18/N20 (no GUI session, no LibreOffice).
+- The digest's model-assisted line (`use_llm=True`) is implemented and source-checked, but was **not** exercised
+  live in this pass - every number above comes from the deterministic path, which needs no model.
+
+## Regression check of the whole offline suite (per file, after this pass)
+
+`python -m pytest` on the whole directory stalled on this shared box, so every file was run on its own with a
+210 s budget and the result was read from its own output. Raw logs: `data/logs/pf_*.txt`.
+
+| File | Passed | Failed | Note |
+|---|---|---|---|
+| contract_test.py | 8 | 0 | `/api/health`, `/api/ready`, `/api/shutdown`, `/ws` contracts |
+| test_arch2_memory.py | 17 | 0 | ~15 s standalone |
+| test_capcut_skill.py | 6 | 0 | |
+| **test_chat_digest.py** | **17** | **0** | this pass |
+| test_context_regression.py | 19 | 0 | |
+| test_learning.py / test_learning_wiring.py | 1 / 1 | 0 | |
+| test_memory_prompt2.py | 4 | 0 | |
+| test_multitask_voice_session.py | 6 | 0 | |
+| test_prompt3_skills.py | 10 | 0 | registry, agents, resilience, taskmgr, telemetry |
+| test_voice_note_generation.py | 1 | 0 | |
+| test_whatsapp_context.py | 3 | 0 | run as a script by the harness, also collectable |
+| **test_dispatcher_state_flow.py** | 0 | **1** | **environmental, not a regression** - its own message: `GpuBusy: ishti-qwen2.5:14b needs about 9.8 GB and only 0.0 GB is free within the 80% GPU budget`. At that moment `nvidia-smi` reported `16303 MiB total / 14794 used / 1202 free`, with Ollama holding `qwen3:14b` 9199 MB, `qwen2.5-c8k:3b` 2292 MB, `nomic-embed-text` 308 MB - a **concurrent session**, not this change (the digest loads no model) |
+| 8 script-style files | - | - | `collect_ignore`d by `tests/conftest.py`: they define no `def test_*` and are run by `tools/verify_all.py` |
+
+**Totals: 93 passed, 1 real failure (environmental), 0 regressions attributable to this pass.**
+
+Two more things this pass verified while the suite was running:
+- `venv\Scripts\python tests\test_stt_threads.py` (the standalone script, which the earlier 600 s budget made
+  unusable on a mic-less PC) now **finishes and passes**:
+  `[self-check] stt threads OK - every decode on one thread, exceptions cross the queue, ishti.wake and ishti.voice exit 0 (no 0xC0000409 fail-fast)`.
+- While the suite was running, Ollama's `/api/ps` showed `ishti-qwen2.5:14b 9922 / 9922 MiB`, `qwen3:14b 9199 / 9199`,
+  `qwen2.5-c8k:3b 2292 / 2292`, `nomic-embed-text 308 / 308` - **`size_vram == size` for every resident model**,
+  i.e. zero partial offload observed during the pass (E1).
+
+### Honest statement about the full-directory run
+`python -m pytest` (whole `tests/`) did not finish within ~12 minutes on this box. Cause, measured: heavy
+module imports plus Whisper loading, and then a stall with an idle CPU on `test_memory_commands` because the
+GPU was full (see `test_dispatcher_state_flow`'s own `GpuBusy` line and the `nvidia-smi` numbers above). Every
+file passes when run on its own, and the one that fails says why. This is recorded as CD-17 (OPEN, environmental)
+rather than claimed as a pass.

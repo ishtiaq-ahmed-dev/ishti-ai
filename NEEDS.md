@@ -97,3 +97,60 @@ edited except `desktop/shutdown.py` (the stop routine, which is backend lifecycl
 - **Issue**: `vastsa/pi-desktop` is a standalone workstation application rather than an embeddable Python library with a stable agent API.
 - **Required Action**: Owner must clarify the desired integration mode: (a) document and run side-by-side, (b) launch via sub-process from ISHTI, or (c) adapt UI design elements.
 
+---
+
+# 24-hour Chat Digest (Section 4) — what is missing or needs the owner's decision (2026-09-29)
+
+The feature is built and tested; the items below are the parts I deliberately did **not** decide for you.
+
+## N12. Unofficial WhatsApp reader (Baileys / `whats-mcp`) — NOT implemented, default OFF
+Source 4 in the spec is deliberately not wired in. Before it can be: (a) an unofficial library can get the
+account restricted or banned; (b) the Baileys npm ecosystem has had a credential-stealing "anti-ban" package
+(April 2026) and a large malicious-fork campaign (September 2026) — so, if you ever approve it: the genuine
+package from the official repo, pinned version, source reviewed, no telemetry, never a random fork; (c) history
+is event-based, so only messages from connect time onward are available and media is not downloaded.
+*Needed:* your explicit yes. *Until then:* sources 1–3 only (local store, read-only DOM read of the open tab,
+official export).
+
+## N13. Other platforms for the digest
+Telegram / Discord / e-mail are **not** included. *Needed:* which platforms, and whether they may be read
+with the same T0 rules. *Until then:* WhatsApp only.
+
+## N14. Scheduled daily digest (spec 4.6, optional, off by default)
+*Needed:* the time you want it and the wording. *Until then:* nothing is scheduled; the skill runs only when
+you ask. If you want it, the reminders skill already has the machinery ("every morning at 8 ...").
+
+## N15. Rubric tuning and owner name
+`data/chat_digest_config.json` tunes the window (default 24 h), the timezone (default = system local), the chat
+budget (250) and the usefulness horizons. Your own name in the chats can be added as
+`{"owner_names": ["Ishtiaq"]}` so your messages are recognised as yours (they are already recognised when the
+export writes "You"). *Needed:* nothing, unless you want different values.
+
+## N16. `reportlab` is not installed
+The PDF is produced by Chromium/Edge headless printing (already in the stack, verified on this box: 3-page
+PDF + page rasterisation). `reportlab` is only the third fallback and WeasyPrint is deliberately avoided (GTK).
+*Needed:* nothing unless you want a ReportLab fallback: `venv\Scripts\python -m pip install reportlab`.
+
+## N17. "Open / Show in folder" button for exported reports
+The chat UI shows the exact path of every file written to `reports/`, but there is no button next to the
+message. *Needed:* a UI decision (a button that calls Explorer is a launch action; the skill itself stays
+T0/read-only). *Until then:* say "open the digest report" and I will print the path again.
+
+## N18. Visual DOCX check
+No LibreOffice and no Word automation on this box, so the DOCX could not be rendered to PDF and looked at.
+`python-docx` opens it and the structure is asserted (5 tables, column counts, `w:tblHeader` repeating header
+rows, landscape, RTL runs). *Needed:* LibreOffice (`winget install TheDocumentFoundation.LibreOffice`) if you
+want that last visual step.
+
+## N19. Lint is not a gate in this repo
+`ruff check ishti` reports 1600 findings on the pre-existing code and there is no ruff config in the repo, so
+"lint passes" cannot honestly be claimed. *Needed:* your OK to add a `ruff.toml` (select = a small, chosen
+rule set) and fix the pre-existing findings, or to leave lint as a non-gate.
+
+## N20. React renderer screenshot in the live app
+The table controls are verified in the built bundle and the report itself was screenshotted at 1400 px and
+680 px (Edge headless) — but a screenshot of the **React chat window** needs the running desktop app and a GUI
+session. *Needed:* start ISHTI and ask me to capture it, or take the screenshot yourself after asking for a
+digest.
+
+

@@ -91,6 +91,10 @@ LABELLED = [
     ("lock my pc", "desktop"), ("what is using the most memory", "desktop"),
     ("i study in imsciences", "owner"), ("where i stid ?", "owner"), ("what semester am i in?", "owner"),
     ("why your response is late", "owner"), ("check my whatsap and let me know which chat is unread", "whatsapp"),
+    # 2026-09-29 (Section 4): the 24-hour chat digest - read-only; "check my whatsapp" stays with whatsapp
+    ("check the last 24 hours of all my chats and give me a report", "chat_digest"), ("chat digest please", "chat_digest"),
+    ("open agent and check the last 24 hours of all chats, groups and communities", "chat_digest"),
+    ("make a pdf of the digest", "chat_digest"),
     # batch C (2026-09-28): vocab, recipe, subscriptions, networth, sleeplog, moodlog, stats
     ("add word serendipity: finding something good by accident", "vocab"),
     ("quiz my vocab", "vocab"), ("review my weakest words", "vocab"), ("vocab stats", "vocab"),

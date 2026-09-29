@@ -217,7 +217,9 @@ def to_html(md, title="ISHTI chat digest"):
             out.append("<p>" + "".join(f"<strong>{html_mod.escape(t)}</strong>" if b else html_mod.escape(t)
                                        for t, b in inline_parts(payload)) + "</p>")
         elif kind == "ul":
-            out.append("<ul>" + "".join(f"<li dir=\"auto\">{html_mod.escape(i)}</li>" for i in payload) + "</ul>")
+            out.append("<ul>" + "".join(
+                f"<li dir=\"auto\">" + "".join(f"<strong>{html_mod.escape(t)}</strong>" if b else html_mod.escape(t)
+                                               for t, b in inline_parts(i)) + "</li>" for i in payload) + "</ul>")
         elif kind == "table":
             header, body = payload[0], payload[1:]
             out.append("<table><thead><tr>"
