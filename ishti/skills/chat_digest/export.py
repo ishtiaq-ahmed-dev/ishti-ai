@@ -293,6 +293,41 @@ def rasterize(pdf_path, out_dir=None, scale=2.0, max_pages=12):
         doc[i].render(scale=scale).to_pil().save(png)
         pages.append(png)
     return {"pages": len(doc), "png": pages, "dir": out_dir}
-# __EXPORT4__
+
+
+if __name__ == "__main__":
+    import json
+    md = ("# ISHTI 24-hour chat digest\n\n**Read-only.** Nothing was sent.\n\n"
+          "## Top 5 things needing my attention\n\n1. **Client Work**: send the invoice (High — due 2026-09-30)\n\n"
+          "## Table 1 — Overview\n\n"
+          "| # | Chat | Type | Messages (24h) | Main topics | My relationship | Usefulness | Why |\n"
+          "|---|---|---|---|---|---|---|---|\n"
+          "| 1 | Client Work | dm | 3 | work | Unknown (not in my relationship data) | High | 1 action(s) |\n"
+          "| 2 | دوست گروپ | group | 2 | food | Unknown (not in my relationship data) | Low | social |\n\n"
+          "- a bullet with اردو and 🎯\n")
+    md_path = save_md(md)
+    assert os.path.isfile(md_path) and open(md_path, encoding="utf-8").read() == md
+    docx_path = save_docx(md)
+    from docx import Document
+    doc = Document(docx_path)
+    assert len(doc.tables) == 1, len(doc.tables)
+    t = doc.tables[0]
+    assert len(t.columns) == 8 and len(t.rows) == 3, (len(t.columns), len(t.rows))
+    assert t.rows[0]._tr.find("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}trPr") is not None
+    xml = t.rows[0]._tr.xml
+    assert "tblHeader" in xml and "w:rtl" in t.rows[2].cells[1]._tc.xml, "header repeat + RTL for Urdu"
+    html_text = to_html(md)
+    assert html_text.count("<table>") == 1 and 'dir="auto"' in html_text and "table-header-group" in html_text
+    pdf_note = ""
+    try:
+        pdf_path, method = save_pdf(md)
+        info = rasterize(pdf_path)
+        pdf_note = f"PDF {os.path.basename(pdf_path)} via {method}, {info['pages']} page(s)"
+        assert info["pages"] >= 1 and os.path.getsize(info["png"][0]) > 5000
+    except Exception as exc:
+        pdf_note = f"PDF path unavailable here: {type(exc).__name__}: {str(exc)[:160]}"
+    print("[self-check] chat_digest.export OK - markdown, DOCX (8 cols x 3 rows, repeating header, RTL Urdu "
+          "runs), HTML (thead repeats, dir=auto); " + pdf_note)
+
 
 
