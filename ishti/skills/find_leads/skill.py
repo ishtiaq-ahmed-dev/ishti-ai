@@ -120,7 +120,9 @@ def _scrapegraph_extract(page_text: str, what: dict) -> list[dict]:
     except Exception:
         return None
     cfg_graph = {
-        "llm": {"model": "ollama/qwen2.5", "base_url": "http://localhost:11434",
+        # exact tags that exist on this box ("ollama/qwen2.5" alone would 404 in ollama):
+        # 3b is the fast extraction model; the owner's bigger models stay free for chat
+        "llm": {"model": "ollama/qwen2.5:3b", "base_url": "http://localhost:11434",
                 "format": "json", "temperature": 0},
         "embeddings": {"model": "ollama/nomic-embed-text", "base_url": "http://localhost:11434"},
         "verbose": False, "headless": True,

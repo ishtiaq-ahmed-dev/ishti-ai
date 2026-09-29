@@ -66,7 +66,10 @@ def _run_turns():
         r1 = D.handle("Search about Sony WH-1000XM5", session_id="flow1")
         assert "WH-1000XM5" in r1["final_answer"] or seen["web_search"], (r1["final_answer"], seen)
         D.handle("go deep research the internet and find the cheapest price", session_id="flow1")
-        assert seen["deep_research"], "deep_research should have been routed"
+        # the message names the reason this can flake: routing is model-assisted, so a loaded/contended
+        # Ollama has been observed to pick web_search here instead (2026-09-29, full verify_all run)
+        assert seen["deep_research"], ("deep_research should have been routed; routed instead: "
+                                       f"web_search={seen['web_search']!r}")
         assert any("WH-1000XM5" in t for t in seen["deep_research"]), seen["deep_research"]
 
         # ---- T2 through the real dispatcher

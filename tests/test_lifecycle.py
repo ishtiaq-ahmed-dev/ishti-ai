@@ -14,11 +14,42 @@ from desktop import focus_ishti, launcher, shutdown
 real_is_running, real_focus, real_reveal = launcher.is_running, launcher.focus_window, launcher.reveal_window
 real_popen = launcher.subprocess.Popen
 spawned = []
+opened = []          # the desktop window: a test run must never open a real one
 
 
 class _FakePopen:
+    """The minimum subprocess.Popen surface launcher.main() needs.
+
+    The launcher spawns its children with subprocess.run(), which wraps Popen in a `with` block and then
+    calls communicate()/poll() - a fake that only accepts the constructor raises
+    `TypeError: '_FakePopen' object does not support the context manager protocol` inside subprocess.run.
+    """
+
     def __init__(self, args, **kw):
         spawned.append(list(args))
+        self.args = list(args)
+        self.returncode = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def communicate(self, *a, **k):
+        return ("", "")
+
+    def poll(self):
+        return 0
+
+    def wait(self, timeout=None):
+        return 0
+
+    def terminate(self):
+        pass
+
+    def kill(self):
+        pass
 
 
 try:
@@ -48,15 +79,28 @@ try:
     # nothing running -> this is the one case that starts ISHTI
     launcher.is_running = lambda *a, **k: False
     launcher.focus_window = lambda *a, **k: False
+    # The window must not actually open during a test: leaving run_app_window() un-patched made this file start a
+    # real pywebview splash window and take 110 s (2026-09-29). main() imports it at call time, so patching the
+    # module attribute is enough.
+    import desktop.app_window as app_window
+    real_run_app_window = app_window.run_app_window
+    app_window.run_app_window = lambda *a, **k: opened.append(True)
     try:
         launcher.main()
     except SystemExit:
         pass
-    # startup.py is launched exactly once; the system-tray icon (Section 7) is the one extra process allowed
-    startup_spawns = [s for s in spawned if s[-1].endswith("startup.py")]
+    finally:
+        app_window.run_app_window = real_run_app_window
+    # The backend is spawned headless exactly once (pythonw -m ishti 8888), plus the system-tray icon (Section 7).
+    # The old visible startup.py banner is gone from the launcher and must not come back.
+    backend_spawns = [s for s in spawned if s[1:3] == ["-m", "ishti"]]
     tray_spawns = [s for s in spawned if s[-1].endswith("tray.py")]
-    assert len(startup_spawns) == 1, spawned
-    assert len(tray_spawns) == 1 and "tray.py" in tray_spawns[0][-1], spawned
+    banner_spawns = [s for s in spawned if s[-1].endswith("startup.py")]
+    assert len(backend_spawns) == 1, spawned
+    assert backend_spawns[0][-1] == "8888", backend_spawns
+    assert len(tray_spawns) == 1, spawned
+    assert not banner_spawns, f"the visible startup.py banner came back: {banner_spawns}"
+    assert opened == [True], "the desktop window must be opened exactly once"
 finally:
     launcher.is_running, launcher.focus_window, launcher.reveal_window = real_is_running, real_focus, real_reveal
     launcher.subprocess.Popen = real_popen
@@ -68,9 +112,13 @@ real_dpop = launcher.subprocess.Popen
 detached = []
 
 
-class _DetachPopen:
+class _DetachPopen(_FakePopen):
+    """Same surface as _FakePopen, but records the detached spawn instead of the normal one."""
+
     def __init__(self, args, **kw):
         detached.append((list(args), kw.get("creationflags", 0)))
+        self.args = list(args)
+        self.returncode = 0
 
 
 try:
@@ -106,7 +154,15 @@ assert '@router.post("/api/shutdown")' in open(r"D:\ISHTI\ishti\lifecycle_api.py
 assert '@app.post("/api/shutdown")' not in open(server, encoding="utf-8").read(), "a second, competing shutdown path"
 
 # ---- 5. start.bat and stop.bat are wired to the singleton check and the full stop ---------------------------
-assert "focus_ishti.py" in open(r"D:\ISHTI\start.bat", encoding="utf-8").read()
+# start.bat no longer pokes focus_ishti.py directly: it launches desktop/launcher.py (or the packaged exe),
+# which owns the singleton check. What matters is that the no-argument branch cannot start a second instance
+# or open a console window.
+_start = open(r"D:\ISHTI\start.bat", encoding="utf-8").read()
+_launch_branch = _start.split(":handle_cli")[0]        # everything before the CLI sub-commands
+assert "desktop\\launcher.py" in _launch_branch, "start.bat must go through the singleton launcher"
+assert "dist\\ISHTI\\ISHTI.exe" in _launch_branch, "start.bat must prefer the packaged app (no console window)"
+assert "startup.py" not in _launch_branch, "the console-banner startup path is back in the no-argument branch"
+assert "focus_ishti.py" not in _launch_branch, "start.bat must not race the launcher's own singleton check"
 assert "shutdown.py" in open(r"D:\ISHTI\stop.bat", encoding="utf-8").read()
 # stop.bat -> desktop/shutdown.py: asks the backend for the graceful shutdown, then verifies the port and recorded pids are gone;
 # it kills only by recorded pid (never by matching process names / command lines)
