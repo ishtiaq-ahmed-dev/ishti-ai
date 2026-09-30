@@ -155,6 +155,13 @@ def happy_for(name, route):
         "abtest": "ab test of 120 out of 1000 vs 95 out of 1020",
         # automation RULE wants 'when X, do Y' shape; the bare route prose is not a rule
         "automation": "when a pdf appears in downloads, move it to D:/Docs",
+        # chart needs a REAL csv path (CHART3: 'line chart of <path>'); 'sales.csv' does not exist
+        "chart": "line chart of D:/ISHTI/metrics/ramp_table.csv",
+        # checklist: SHOW/LISTS shapes; 'checklist for' alone matches nothing
+        "checklist": "my checklist",
+        # clients: 'new client' alone asks a clarifying question - a valid reply; the dashboard
+        # phrasing in the preset matched no verb
+        "clients": "add client Ahmed via whatsapp, contact 0300-0000000",
         "web_search": "search for ISHTI local assistant github",
         "web_fetch": "fetch https://example.com",
         "owner": "what do you know about me",
