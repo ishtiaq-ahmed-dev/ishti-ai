@@ -189,4 +189,4 @@ reports/skills/<skill>.md. All runs with ISHTI_TEST_MODE=1.
 | web_fetch | DONE | 3 | 0 | 3 | 28.6-30.2 s | none | batch 2 |
 | reminders | DONE | 3 | 0 | 3 | 36.2-36.9 s | none | batch 2 |
 | apps | DONE | 4 | 1 (FIX-5 bogus happy row; N21 filed) | 3 | 4.0-4.2 s | none | generator preset fixed + regenerated |
-| video | in progress | 0 | - | - | - | - | batch 2 last |
+| video | DONE | 3 | 0 | 3 | 47.0-47.4 s | 9.4 GB shared, flat | batch 2; reviewer R1-R7 60/60 green |
