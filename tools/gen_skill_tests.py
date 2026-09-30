@@ -193,6 +193,14 @@ def happy_for(name, route):
         "quickcalc": "2000 with a 15% off",
         "redact": "redact D:/ISHTI/docs/redact_test.csv",
         "relationships": "what does my friend Sara like",
+        # security/sendlater/sleeplog: real accepted shapes (probed live)
+        "security": "check password strength of Tr0ub4dor&3",
+        "sendlater": "send an email to a@b.com tomorrow at 9 saying hi",
+        "sleeplog": "I slept 7 hours last night",
+        # skillsmith builds+tests a skill live (~60-110 s incl. coder model); honest-fail row
+        "skillsmith": "create a skill that converts pdf to text",
+        # standup SET wants 'field: text' shape
+        "standup": "set standup yesterday: fixed the login bug",
         "web_search": "search for ISHTI local assistant github",
         "web_fetch": "fetch https://example.com",
         "owner": "what do you know about me",
