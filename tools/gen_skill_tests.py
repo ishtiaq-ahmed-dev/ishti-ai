@@ -181,6 +181,11 @@ def happy_for(name, route):
         "lifelog": "I drank 3 glasses of water",
         "mailmerge": "mailmerge D:/ISHTI/docs/merge_contacts.csv: D:/ISHTI/docs/merge_template.txt",
         "media": "convert the image D:/ISHTI/assets/ishti_app_icon.png to jpg",
+        # meta/montecarlo: rows must match the ops' own regexes (probed live)
+        "meta": "check your skills",
+        "montecarlo": "monte carlo: portfolio 1000000 yearly return 7% +/- 12% for 20 years",
+        "moodlog": "rate my mood today 4",
+        "networth": "track asset bank account 200000",
         "web_search": "search for ISHTI local assistant github",
         "web_fetch": "fetch https://example.com",
         "owner": "what do you know about me",
