@@ -212,3 +212,17 @@ on_token=...) = real multi-turn + per-session isolation; T2 pending gate answere
 reminder set 7.16 s, calc first-token 11.19 s incl. model load; on_token fires on planner paths
 only - recorded as such). Governor observed downshifting planner under load: [vram]
 "ishti-qwen2.5:14b -> qwen2.5-c8k:7b" - model_switch events must be captured by the monitor.
+
+## QA Session 2026-09-30 — Prompt 3 COMPLETE
+- Phase 1: 12/12 scenarios × 3 consecutive greens (34 green runs, 0 failures) — metrics/scenario_*.jsonl.
+- Phase 2: audit window 3,458 s → 0 real T2 confirmations, 8 TEST-MODE BLOCKs, 8 KILL SWITCH rows;
+  0 partial offloads in every sampled window.
+- Phase 3: ramp 1/2/4/6/8/10 — 0 errors at every level, avg latency 2.28→7.52 s, VRAM peak 15,860 MB,
+  663 samples 0 partial offloads; metrics/ramp_table.csv.
+- Phase 4: Ollama kill → FIX-6 (orphan reaper, live-verified); mic toggle, 50-burst, crash isolation
+  clean; network/disk/sign-out BLOCKED (Q7).
+- Phase 5: 3×8-min soaks → FIX-7 (bounded task-result retention; A/B 2,860 MB → 21 MB); residual
+  ~3 GB OS settling attributed to model-server working sets (Q8, needs 24 h soak).
+- Final offline gate after all fixes: 109 passed, 1 skipped, 11 deselected.
+- Verdict: READY WITH KNOWN ISSUES (CONCURRENCY_REPORT.md) — full READY needs prompt-2 completion
+  (106 skills) + Q6 audio device + Q7 owner-run chaos.
