@@ -181,6 +181,7 @@ def happy_for(name, route):
         "lifelog": "I drank 3 glasses of water",
         "mailmerge": "mailmerge D:/ISHTI/docs/merge_contacts.csv: D:/ISHTI/docs/merge_template.txt",
         "media": "convert the image D:/ISHTI/assets/ishti_app_icon.png to jpg",
+        "mnemonic": "make a mnemonic for: red orange yellow green blue indigo violet",
         # meta/montecarlo: rows must match the ops' own regexes (probed live)
         "meta": "check your skills",
         "montecarlo": "monte carlo: portfolio 1000000 yearly return 7% +/- 12% for 20 years",
