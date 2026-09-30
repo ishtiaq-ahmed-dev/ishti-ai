@@ -201,6 +201,16 @@ def happy_for(name, route):
         "skillsmith": "create a skill that converts pdf to text",
         # standup SET wants 'field: text' shape
         "standup": "set standup yesterday: fixed the login bug",
+        # sensitivity NAME op only matches the 'f(x) =' form (probed); 'profit = 30*x - 1000' returns None
+        "sensitivity": "sensitivity analysis of f(x) = 30*x - 1000, x from 1 to 100",
+        # study FLASHCARDS wants a real file path
+        "study": "make flashcards from D:/ISHTI/docs/FINAL_REPORT.md",
+        "subscriptions": "track subscription netflix 1500 monthly",
+        # NOTE: canonical Wikipedia grid (row 2 is 600195000). The common transcription
+        # 006195000 is genuinely unsolvable and the skill correctly refuses it - adjudicated
+        # with an independent solver before pinning this preset.
+        "sudoku": "solve this sudoku: 530070000600195000098000060800060003400803001700020006060000280000419005000080079",
+        "textstats": "analyze this text: The quick brown fox jumps over the lazy dog. It was the best of times.",
         "web_search": "search for ISHTI local assistant github",
         "web_fetch": "fetch https://example.com",
         "owner": "what do you know about me",
