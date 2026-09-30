@@ -87,7 +87,23 @@ def _enqueue(rec: dict):
         try:
             out = rec["_fn"](rec)
             with _LOCK:
-                rec["result"] = out
+                # FIX-7 (QA prompt 3 soak): done records live up to MAX_TASKS (60) and
+                # list_tasks() serializes EVERY record for /api/tasks, so a full result on the
+                # record pins hundreds of MB (measured: 12 x 200 KB dict results -> RSS
+                # 18 -> 2,860 MB; 473-turn soak drifted +3.45 GB). Store a bounded preview.
+                # Callers needing the full value hold their own reference (agents.py fan-out
+                # reads its subtask dict from wait_all's returned record list before trim).
+                import json as _json
+                try:
+                    out_len = len(out if isinstance(out, str) else _json.dumps(out, default=str))
+                except Exception:
+                    out_len = 0
+                if out_len > 4000:
+                    head = out[:4000] if isinstance(out, str) else _json.dumps(out, default=str)[:4000]
+                    rec["result"] = (head + f" … [+{out_len - 4000} chars truncated by FIX-7]") \
+                        if isinstance(out, str) else {"preview": head, "note": "full result trimmed (FIX-7)"}
+                else:
+                    rec["result"] = out
                 rec["status"] = "done"
                 rec["progress"] = 1.0
                 rec["ended"] = time.time()

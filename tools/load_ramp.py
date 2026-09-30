@@ -37,6 +37,7 @@ WORKLOAD = [
 def main():
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 1
     window_s = int(sys.argv[2]) if len(sys.argv) > 2 else 180
+    tag = sys.argv[3] if len(sys.argv) > 3 else str(n)   # label for the metrics file (soak runs reuse a level)
     from tools.monitor import sample
     from ishti import dispatcher
 
@@ -69,7 +70,7 @@ def main():
             i += 1
             time.sleep(2.0)
 
-    out_path = os.path.join(ROOT, "metrics", f"ramp_level_{n}.jsonl")
+    out_path = os.path.join(ROOT, "metrics", f"ramp_level_{tag}.jsonl")
     threads = [threading.Thread(target=worker, args=(w,), daemon=True) for w in range(n)]
     t0 = time.time()
     with open(out_path, "a", encoding="utf-8") as f:
