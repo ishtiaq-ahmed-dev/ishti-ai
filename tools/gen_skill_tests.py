@@ -150,6 +150,9 @@ def happy_for(name, route):
         # exercises the full path (VERB -> launch_app -> focus_window) and returns the honest
         # 'couldn't open' reply with zero side effects - verified live before regenerating.
         "apps": "open ishti-nonexistent-app-xyz",
+        # abtest.run() requires the full fraction PAIR (its own contract: run the self-check rows);
+        # the bare route fragment 'ab test of' can never produce a reply
+        "abtest": "ab test of 120 out of 1000 vs 95 out of 1020",
         "web_search": "search for ISHTI local assistant github",
         "web_fetch": "fetch https://example.com",
         "owner": "what do you know about me",
