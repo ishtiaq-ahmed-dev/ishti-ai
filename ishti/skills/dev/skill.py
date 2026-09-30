@@ -23,7 +23,8 @@ OPS = [
     ("run_script", scaffold.RUN_SCRIPT),
     ("service", scaffold.SERVICE),
     ("run_code", re.compile(r"\b(?:run|execute)\s+(?:this|the\s+following|my)?\s*(?:python\s+)?(?:code|script|snippet)\b.*```", I | re.S)),
-    ("run_file", re.compile(r"\b(?:run|execute)\s+(?P<path>[A-Za-z]:\\[^\s\"']+\.py)\b", I)),
+    # FIX-8: both separators - users type D:/paths constantly
+    ("run_file", re.compile(r"\b(?:run|execute)\s+(?P<path>[A-Za-z]:[\\/][^\s\"']+\.py)\b", I)),
     ("git_push", re.compile(r"\bpush\s+(?:my\s+|the\s+)?(?:changes|code|commits?)?\b.*\b(?:to\s+github|git|remote|origin)?|\bgit\s+push\b", I)),
     ("git_commit", re.compile(r"\bcommit\s+(?:my\s+|the\s+|all\s+)?(?:changes|work|code)\b|\bgit\s+commit\b", I)),
     ("git_status", re.compile(r"\bgit\s+(?:status|log|diff)\b|\b(?:what(?:'s| has)?\s+changed|uncommitted\s+changes|recent\s+commits)\b", I)),

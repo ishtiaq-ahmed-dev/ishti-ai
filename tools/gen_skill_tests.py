@@ -162,6 +162,13 @@ def happy_for(name, route):
         # clients: 'new client' alone asks a clarifying question - a valid reply; the dashboard
         # phrasing in the preset matched no verb
         "clients": "add client Ahmed via whatsapp, contact 0300-0000000",
+        # desktop/dev/docs: the route prose is not a command; these rows hit real ops
+        "desktop": "what is on my screen",
+        "dev": "git status of D:/ISHTI",
+        "docs": "summarize D:/ISHTI/docs/FINAL_REPORT.md",
+        "extract": "extract all the links from https://example.com",
+        "fileops": "zip D:/ISHTI/docs",
+        "focus": "start a 25 minute focus sprint",
         "web_search": "search for ISHTI local assistant github",
         "web_fetch": "fetch https://example.com",
         "owner": "what do you know about me",

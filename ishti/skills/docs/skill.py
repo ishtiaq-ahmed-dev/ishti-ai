@@ -19,7 +19,9 @@ from ishti.skills import trace
 
 I = re.I
 DOC_EXT = (".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv", ".pptx", ".txt", ".md")
-PATH = re.compile(r"[A-Za-z]:\\[^\"'<>|?*\n]+?\.(?:pdf|docx?|xlsx?|csv|pptx|txt|md)\b", I)
+# FIX-8 (full-skill sweep): Windows accepts both separators; users type D:/path constantly and
+# the backslash-only pattern made docs.reply "give me the full path" for existing files.
+PATH = re.compile(r"[A-Za-z]:[\\/][^\"'<>|?*\n]+?\.(?:pdf|docx?|xlsx?|csv|pptx|txt|md)\b", I)
 HOME = os.path.join(os.path.expanduser("~"), "Documents", "ISHTI")
 NOTES = os.path.join(os.path.expanduser("~"), "Documents", "ISHTI Notes")
 OPS = [
