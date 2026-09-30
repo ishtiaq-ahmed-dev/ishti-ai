@@ -226,3 +226,18 @@ only - recorded as such). Governor observed downshifting planner under load: [vr
 - Final offline gate after all fixes: 109 passed, 1 skipped, 11 deselected.
 - Verdict: READY WITH KNOWN ISSUES (CONCURRENCY_REPORT.md) — full READY needs prompt-2 completion
   (106 skills) + Q6 audio device + Q7 owner-run chaos.
+
+## Session 2026-09-30 (late) — real desktop-icon E2E use test
+Launched via double-click of the user's actual desktop icon (os.startfile on ISHTI.lnk →
+ISHTI.exe bootstrap): backend port up in 12 s, window "ISHTI - Intelligent Personal Assistant"
+up, app self-reported ready at +28 s. Live tasks one-after-another through the REAL UI endpoint:
+weather 25.9 s (cold planner load), reminder 0.7 s, note 0.5 s, calc 1.8 s, file search 1.5 s,
+heavy web search 17.1 s (bounded, honest "no sources"), digest/bayes/folders/memory 8.6/1.4/1.2/0.1 s.
+Morning burst (4 tasks in 6 s): all correct, wall 14 s. Progress logs verified: /api/execute_stream
+emits received/route/step/tool events live. Machine lag: baseline 1% cpu/14.4 GB RAM; idle after
+all tasks 0.1-0.2% cpu, 20.9 GB (32%); brief 100% spikes are the dispatcher's warm_up thread
+(voice preload + torch import, one-off at boot) — settles by itself, no action needed. No lag
+during any task (peak 18.4% machine, single 84% sample during search page fetches). Window up,
+app responsive, left running for the owner. No product fixes required this session; observations
+only (Urdu rows in replies render as replacement glyphs in this console — encoding of the test
+harness, not the UI; the UI is browser-rendered UTF-8).
