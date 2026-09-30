@@ -185,4 +185,5 @@ reports/skills/<skill>.md. All runs with ISHTI_TEST_MODE=1.
 | weather | DONE | 4 | 0 | 3 | 30.0 s | none | batch 2; SearXNG-down fallback wait included |
 | bayes | DONE | 4 | 0 | 3 | 4.5 s | none | batch 2 |
 | chat_digest | DONE | 4 | 0 | 3 | 7.8 s | 10.0 GB shared | batch 2; curated 17-test suite also green |
-| web_fetch / web_search / reminders / apps / video | not started | - | - | - | - | - | batch 2 next |
+| web_search | DONE | 5 | 2 (FIX-3 harness UTF-8 decode; FIX-4 cascade budget) | 3 | ~358-376 s suite | none pinned | `--timeout 300`; per-turn search phase bounded 25 s |
+| web_fetch / reminders / apps / video | in progress | - | - | - | - | - | batch 2 next |
