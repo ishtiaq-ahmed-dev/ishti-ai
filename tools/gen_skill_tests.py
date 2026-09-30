@@ -153,6 +153,8 @@ def happy_for(name, route):
         # abtest.run() requires the full fraction PAIR (its own contract: run the self-check rows);
         # the bare route fragment 'ab test of' can never produce a reply
         "abtest": "ab test of 120 out of 1000 vs 95 out of 1020",
+        # automation RULE wants 'when X, do Y' shape; the bare route prose is not a rule
+        "automation": "when a pdf appears in downloads, move it to D:/Docs",
         "web_search": "search for ISHTI local assistant github",
         "web_fetch": "fetch https://example.com",
         "owner": "what do you know about me",
