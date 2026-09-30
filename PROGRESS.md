@@ -241,3 +241,15 @@ during any task (peak 18.4% machine, single 84% sample during search page fetche
 app responsive, left running for the owner. No product fixes required this session; observations
 only (Urdu rows in replies render as replacement glyphs in this console — encoding of the test
 harness, not the UI; the UI is browser-rendered UTF-8).
+
+## Skill QA mega-request — session 2026-09-30 (SKILL_LOOP_REPORT.md)
+- [x] ALL 120 skills through the harness loop: **119 at 3+ consecutive greens**, 1 red (shopping —
+      environment-blocked on Q9, honest-decline verified; FIX-11 in place).
+- [x] Fixes with regression tests: FIX-9 (mailmerge/redact/pdftables None.match crash class),
+      FIX-10 (meta health cache 72 s → cached; + fixed its never-executed regression test),
+      FIX-11 (shopping full search-manager cascade), FIX-12 (travel.run() matcher gate — was
+      browsing Google Travel on ANY input), ~50 gen presets matched to real probed ops.
+- [x] Sudoku "unsolvable" claim adjudicated with an independent solver: skill was right, the
+      common 006195000 transcription is genuinely unsolvable; preset pinned to the canonical grid.
+- [x] `SKILL_LOOP_REPORT.md` written (method, fixes, honest findings, harness notes).
+- [ ] Next: complete-app test, performance/efficiency/accuracy baselines, arch1 vs arch2 comparison.

@@ -182,3 +182,10 @@ Requirement already satisfied: colorama in d:\ishti\venv\lib\site-packages (from
 - 2026-09-30 13:53 [error] planners: ScopeError: the planners skill isn't allowed to write C:\Users\PC\Documents\ISHTI\Flashcards - general 2026-09-30.csv (outside its w - asked: "make flashcards"
 - 2026-09-30 14:03 [gap] skillsmith: couldn't generate a working 'pdf_to_text' skill (self-check kept failing) - asked: "create a skill that converts pdf to text"
 - 2026-09-30 14:04 [gap] skillsmith: couldn't generate a working 'temperature_conversion' skill (self-check kept failing) - asked: "build me a skill that converts temperatures"
+## Q10 (new, 2026-09-30): QA harness vs live-instance GPU contention
+Running skill QA batches while the live ISHTI instance (`python -m ishti 8888`) holds loaded models
+causes repeated GpuBusy failures in skills that need the vision/planner models (desktop screen-understand,
+travel, skillsmith). VRAM observed at 14.9/16.3 GB during contention; the app's own idle-unload freed it
+to 0.7 GB after ~4 min. Options for the owner: (a) accept "run QA batches when idle" as policy,
+(b) add a QA-mode VRAM handshake so the live instance preempts unloading, or (c) a config budget
+reserving a slice for QA runs. No code changed for this yet.
