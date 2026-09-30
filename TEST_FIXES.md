@@ -104,3 +104,29 @@ Format: one entry per fix - what failed, root cause, what changed, why it is not
   (dead SearXNG connect + browser launch + timeouts stack to ~40-60 s per cascade by worst-case
   arithmetic), the cascade and the whole search phase are now hard-bounded instead of unbounded.
   web_search runs with harness `--timeout 300` (config, as with owner/FIX-1).
+
+---
+
+## FIX-5 (2026-09-30) - `apps`: generated happy row was a status QUESTION the skill must decline
+
+- **Found by**: `tests/run_skill.py apps --runs 1` -> red: `test_happy_path` asserted
+  `run('is notepad running')` returns a reply, but apps.run() honestly returns None (it only handles
+  VERB-shaped "open/launch X" commands) - the assertion fired on correct behaviour.
+- **Root cause (2 lines)**: `tools/gen_skill_tests.py` preset the apps happy row from a
+  status-question phrasing, which no APP-CONTROL command skill may answer. Worse, the naive fix
+  ("open notepad") would REALLY LAUNCH Notepad: `desktop/computer_use.launch_app` has no
+  ISHTI_TEST_MODE guard and the dispatcher T2 gate does not apply to direct `run()` calls.
+- **Fix**: preset changed to `open ishti-nonexistent-app-xyz` - a VERB-matching request for an app
+  that does not exist: exercises the full path (VERB -> launch_app -> focus_window) and returns the
+  honest "Couldn't open ..." reply through run() AND the real dispatcher, with zero side effects
+  (launch_app: shutil.which miss -> error dict, no subprocess/startfile - verified live before
+  regenerating; focus_window only scans window titles and nothing matches).
+- **Underlying gap recorded, NOT fixed here**: NEEDS.md **N21** - computer_use's real actions
+  (launch/startfile/focus) have no ISHTI_TEST_MODE guard, so T2 app-control is only safe at the
+  dispatcher gate; the guard belongs in the agent like the T2 terminal-step block. Owner decision
+  where to put it (agent-level vs dispatcher-level).
+- **Regression**: the generator now emits the side-effect-free row for every future regeneration
+  (`python tools/gen_skill_tests.py` diff: tests/skills/apps/test_apps.py only). The apps sign-off
+  requires 3 consecutive harness greens on the corrected rows.
+- **Not cheating**: the old row asserted a contract no skill can satisfy (decline); the new row is
+  strictly harder - a real APP_CONTROL command whose reply must be produced. No assertion weakened.

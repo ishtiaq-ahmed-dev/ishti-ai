@@ -186,4 +186,7 @@ reports/skills/<skill>.md. All runs with ISHTI_TEST_MODE=1.
 | bayes | DONE | 4 | 0 | 3 | 4.5 s | none | batch 2 |
 | chat_digest | DONE | 4 | 0 | 3 | 7.8 s | 10.0 GB shared | batch 2; curated 17-test suite also green |
 | web_search | DONE | 5 | 2 (FIX-3 harness UTF-8 decode; FIX-4 cascade budget) | 3 | ~358-376 s suite | none pinned | `--timeout 300`; per-turn search phase bounded 25 s |
-| web_fetch / reminders / apps / video | in progress | - | - | - | - | - | batch 2 next |
+| web_fetch | DONE | 3 | 0 | 3 | 28.6-30.2 s | none | batch 2 |
+| reminders | DONE | 3 | 0 | 3 | 36.2-36.9 s | none | batch 2 |
+| apps | in progress | 1 | 1 (FIX-5 bogus happy row; N21 filed) | 0 | - | none | generator preset fixed, regen done |
+| video | not started | - | - | - | - | - | batch 2 last |

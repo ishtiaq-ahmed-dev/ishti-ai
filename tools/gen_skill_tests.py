@@ -143,7 +143,13 @@ def happy_for(name, route):
         "budget": "spent 250 on groceries today",
         "shopping": "compare price of usb c cable",
         "system": "how much RAM is free",
-        "apps": "is notepad running",
+        # FIX-5: 'is notepad running' is a status QUESTION - run() honestly declines it, so the
+        # generated happy row could never pass. A real 'open notepad' row would REALLY LAUNCH
+        # Notepad: desktop/computer_use.launch_app has no ISHTI_TEST_MODE guard (NEEDS.md N21),
+        # and the dispatcher T2 gate does not apply to direct run() calls. An unknown app name
+        # exercises the full path (VERB -> launch_app -> focus_window) and returns the honest
+        # 'couldn't open' reply with zero side effects - verified live before regenerating.
+        "apps": "open ishti-nonexistent-app-xyz",
         "web_search": "search for ISHTI local assistant github",
         "web_fetch": "fetch https://example.com",
         "owner": "what do you know about me",

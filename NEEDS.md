@@ -153,6 +153,15 @@ The table controls are verified in the built bundle and the report itself was sc
 session. *Needed:* start ISHTI and ask me to capture it, or take the screenshot yourself after asking for a
 digest.
 
+## N21. computer_use has no ISHTI_TEST_MODE guard on real actions
+`desktop/computer_use.py::launch_app` (aliases -> shutil.which -> `os.startfile`/subprocess, DETACHED) and
+`focus_window` execute for real regardless of `ISHTI_TEST_MODE=1` — the T2 block-at-last-step gate lives in
+the dispatcher only, so direct `run()` calls (any test, skill-to-skill hook) bypass it for app control.
+Found while fixing the `apps` generated suite (TEST_FIXES.md FIX-5): the only safe "open X" test row is a
+nonexistent app. *Needed:* owner decision — put the guard in the agent (like the T2 terminal block) or keep
+it dispatcher-level and document direct-call constraints; until then generated suites must never use a real
+app name in an "open X" row.
+
 
 
 ---
