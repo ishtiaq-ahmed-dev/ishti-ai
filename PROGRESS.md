@@ -196,3 +196,19 @@ batch-2 60/60 (tests/review/test_batch2_adversarial.py). Fixes this pass: FIX-1.
 needs-owner: N6 (stale planner model), N21 (computer_use TEST_MODE guard), Q5 (run `all` policy).
 tests/review added to pytest.ini norecursedirs (adversarial suites hit live models/network; run explicitly).
 Final offline gate after the last code change: **105 passed, 11 deselected, 0 failed** in 339 s.
+
+## QA Session 2026-09-30 - Prompt 3 of 3 (concurrency) - scope decision
+Prerequisite check at start: Prompt 1 complete (12 scenario YAMLs, harness, TEST_MODE); Prompt 2
+INCOMPLETE (14/120 skills DONE = batches 1-2 only; SKILL_LOOP_REPORT.md not yet written). The
+owner interrupted the stop-or-scope question, so work proceeds with the conservative interpretation:
+- Phases 1-5 run ONLY against the 14 proven skills; scenario steps that require unvetted skills
+  (deep_research, media, browser, shopping, whatsapp, trading, clients, killswitch e2e...) are
+  executed as far as the proven surface allows and are reported BLOCKED in CONCURRENCY_REPORT.md;
+  they cannot gate the READY verdict.
+- Missing hardware (microphone, sign-out) = BLOCKED with exact needs in NEEDS.md.
+Entry points proven by live probe (evidence in transcript): dispatcher.handle(text, session_id,
+on_token=...) = real multi-turn + per-session isolation; T2 pending gate answered by a follow-up
+"yes" -> TEST-MODE BLOCK logged; 3-task concurrent smoke all correct (weather open-meteo 7.76 s,
+reminder set 7.16 s, calc first-token 11.19 s incl. model load; on_token fires on planner paths
+only - recorded as such). Governor observed downshifting planner under load: [vram]
+"ishti-qwen2.5:14b -> qwen2.5-c8k:7b" - model_switch events must be captured by the monitor.
