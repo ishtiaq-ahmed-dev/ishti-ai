@@ -190,3 +190,25 @@ Implemented and wired into the T2 gate (block at the last step + audit record + 
 ## Q5. 120 per-skill suites take time to run in full
 `tests/run_skill.py all --runs 1` is hours (120 suites x net/model skills). *Needed:* your preference:
 run `all` nightly vs on-demand per skill. The curated 105-test offline suite stays the fast gate.
+
+## Q6. Voice/e2e rows need a GUI audio session (found in QA prompt 3)
+Scenario 5's mic/voice rows and the TTS announcement path (`ishti.voice.speak` / wake listener)
+run, but a spoken turn cannot be *verified* without an interactive audio session (no microphone
+is attached, N7; sessions here are headless). *Needed:* a mic or a loopback audio device plus an
+owner-run voice check. *Until then:* voice e2e rows are exercised at the dispatcher level and
+BLOCKED at the audio level in CONCURRENCY_REPORT.md.
+
+## Q7. Admin-gated chaos rows (found in QA prompt 3)
+Chaos rows "drop the network", "fill the sandbox disk quota", "slow the disk", "sign out of
+Windows" need administrator rights (firewall/netsh, quota settings, disk throttling, a second
+logon session). *Needed:* owner-run chaos with the manual steps, or a disposable VM snapshot.
+*Until then:* those rows are BLOCKED (metrics/chaos_results.json); the non-admin rows (Ollama
+kill, mic toggle, 50-burst, skill crash, kill switch, shutdown) all ran.
+
+## Q8. Residual RAM drift under sustained load (post FIX-7)
+FIX-7 removed the unbounded done-task retention (A/B: 12×200 KB tasks 18→2,860 MB became
+18→21 MB). Two consecutive 8-min soaks still show OS RAM settling ~3 GB higher after heavy
+load; per-process evidence attributes it to model servers' working sets (llama-server.exe
+~7.3 GB RSS across 3 processes, stable when idle) plus normal standby-cache behavior — NOT a
+per-turn leak (idle drift +28 MB over 20 s). *Needed:* a longer soak (24 h+) on the owner's
+schedule to confirm the plateau holds. *Until then:* reported as measured plateau, not a leak.
