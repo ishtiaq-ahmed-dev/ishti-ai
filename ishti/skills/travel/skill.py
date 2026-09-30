@@ -37,6 +37,12 @@ READY = {"flights": re.compile(r"(?:Rs|PKR|\$|USD|AED|€|£)\s?[\d,]{3,}|\b\d{1
 
 
 def run(text, session):
+    # FIX-12: run() had no matcher gate, so ANY input (including empty or nonsense) drove the real
+    # browser to Google Travel. Decline first; only matched rows reach the live page.
+    if not match(text):
+        trace(session, "travel", "declined: not a flights/hotels request", status="error")
+        return {"reply": "That doesn't look like a flights or hotels search. Try: \"find flights from Peshawar "
+                         "to Dubai\" or \"hotels in Dubai\" - I search and list options, I never book.", "sources": []}
     kind, url = query_url(text)
     with browser.LOCK:
         try:
