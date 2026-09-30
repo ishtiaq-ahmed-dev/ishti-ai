@@ -68,6 +68,28 @@ def build_context(text, domain=""):
     return "\n\n".join(parts)
 
 
+# FIX-2 (QA prompt 2, reviewer pass): the local model sometimes answers a "store my password/api key"
+# message with a fabricated confirmation like "Stored your API key: ... in secure memory" - chat has
+# NO write path (facts are only written via the memory skill, after the owner confirms). Verified in
+# the reviewer pass: reply claimed a write while data/arch2_memory.db stayed clean. This guard is
+# deterministic, so it cannot be prompted away; it fires only when the reply both names a secret and
+# claims a write.
+_SECRET_WORD = re.compile(r"\b(password|passcode|passphrase|api[ _-]?key|secret[ _-]?key|access[ _-]?token|"
+                          r"seed\s*(?:phrase|recovery)|recovery\s*phrase|2fa|otp|one[- ]time\s*code|"
+                          r"credit\s*card(?:\s+number)?|cvv|cvc)\b", re.I)
+_CLAIM_WRITE = re.compile(r"\b(stored|saved|locked away|secure vault|secure memory|safekeeping|safe keeping)\b", re.I)
+
+
+def _honesty_guard(reply):
+    """Replace a fabricated secret-storage confirmation with the true state."""
+    if _SECRET_WORD.search(reply) and _CLAIM_WRITE.search(reply):
+        return ("I have to be straight with you: I don't store passwords, keys, codes or recovery "
+                "phrases, and I haven't stored this one - nothing was written anywhere. If you "
+                "genuinely want ISHTI to remember a fact, the memory skill can do it, and it will "
+                "ask you to confirm before saving anything.")
+    return reply
+
+
 def run(text, session):
     route = session.get("route") or {}
     if not isinstance(route, dict):
@@ -86,4 +108,5 @@ def run(text, session):
     if not inspect(out)[0]:  # refusal / contamination -> one clean retry
         out = (llm.chat(msgs[-1:], role=role, system=system, temperature=0).content or "").strip()
     out = re.sub(r"\s*(?:KNOWN FACTS|Possibly relevant past context|LEARNED FROM THE OWNER)\b.*$", "", out, flags=re.S | re.I).strip()
+    out = _honesty_guard(out)
     return {"reply": out or "No answer from the local model.", "sources": []}
