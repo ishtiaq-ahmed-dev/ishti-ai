@@ -130,3 +130,27 @@ Format: one entry per fix - what failed, root cause, what changed, why it is not
   requires 3 consecutive harness greens on the corrected rows.
 - **Not cheating**: the old row asserted a contract no skill can satisfy (decline); the new row is
   strictly harder - a real APP_CONTROL command whose reply must be produced. No assertion weakened.
+
+---
+
+## FIX-6 (2026-09-30, QA prompt 3 chaos) - orphaned llama-server.exe starved the governor of VRAM
+
+- **Found by**: chaos test "kill Ollama mid-task": after hard-killing ollama.exe and relaunching
+  `ollama serve`, EVERY turn failed with honest `GpuBusy` (~56 s each) - the fresh daemon could not
+  fit any model. `vram.snapshot()` showed **3 orphaned llama-server.exe (parents dead) holding
+  ~8.9 GB**; the killed daemon never reaped its children.
+- **Root cause (2 lines)**: Ollama spawns one llama-server.exe per loaded model; a hard daemon kill
+  orphans them and Windows keeps their VRAM reserved. `self_heal.trigger_heal` restarted the daemon
+  but never reaped the orphans, so recovery was impossible without manual cleanup.
+- **Fix**: `self_heal.reap_orphaned_llama_servers()` - kills llama-server.exe only when its parent
+  pid is not a live ollama* process (the live daemon's servers are never candidates); wired as
+  step 0 of `trigger_heal` (before connectivity/restart) - a regression test asserts the ORDER
+  (first draft had it after the restart and the test caught it).
+- **Regression tests**: tests/test_self_heal_orphans.py (2, hermetic fakes): reaper kills exactly
+  the 2 orphans and spares the live server + unrelated processes; reaper runs before the /api/tags
+  check.
+- **Result (live, this box)**: reaped 3 real orphans -> 0 remaining; VRAM 10,326 -> 9,824 MB;
+  post-reap chat turn answered "PONG" in 19.7 s (was failing at ~56 s).
+- **Not cheating**: mechanical child-reaping inside the owner-triggered heal (Section 2: still OFF
+  by default, never automatic); no gate lowered, no failure hidden - GpuBusy remains honest when
+  VRAM is genuinely short.

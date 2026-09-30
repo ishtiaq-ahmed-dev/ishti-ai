@@ -99,6 +99,42 @@ def get_status() -> Dict[str, Any]:
         }
 
 
+def reap_orphaned_llama_servers() -> int:
+    """FIX-6: terminate llama-server.exe processes whose Ollama parent is gone.
+    A hard-killed ollama.exe leaves its model servers alive holding VRAM (measured: 3 orphans,
+    ~8.9 GB), after which every model load fails with honest GpuBusy. Only processes whose
+    parent pid is NOT a live ollama* process are touched; the live daemon's servers are never
+    candidates. Returns the number reaped. Purely mechanical child-reaping - it runs as part of
+    the owner-triggered heal, never automatically (Section 2 hard rules)."""
+    try:
+        import psutil
+    except ImportError:
+        return 0
+    ollama_pids = set()
+    servers = []
+    for p in psutil.process_iter(["pid", "name", "ppid"]):
+        try:
+            n = (p.info["name"] or "").lower()
+            if n.startswith("ollama") and "llama-server" not in n:
+                ollama_pids.add(p.info["pid"])
+            elif "llama-server" in n:
+                servers.append(p)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    reaped = 0
+    for p in servers:
+        try:
+            if p.info["ppid"] not in ollama_pids:
+                p.kill()
+                reaped += 1
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    if reaped:
+        record_candidate("ollama", f"reaped {reaped} orphaned llama-server.exe after an Ollama kill",
+                         "if models still fail to load, restart Ollama from the DOCTOR tab")
+    return reaped
+
+
 def trigger_heal() -> Dict[str, Any]:
     """
     On-demand self-healing run, triggered manually by the owner.
@@ -107,6 +143,18 @@ def trigger_heal() -> Dict[str, Any]:
     actions_taken: List[str] = []
     t0 = time.time()
     print("[self_heal] >>> Manual self-healing triggered by owner...")
+
+    # 0. FIX-6: hard-killing Ollama (crash, task-manager, chaos) orphans its llama-server.exe
+    # model servers; each holds its model's VRAM and the fresh daemon cannot fit anything
+    # (measured: 3 orphans holding ~8.9 GB -> honest GpuBusy on every turn). Reap the orphans
+    # (parent dead) FIRST, so the connectivity check below sees the world the new daemon will.
+    try:
+        n = reap_orphaned_llama_servers()
+        if n:
+            actions_taken.append(f"Reaped {n} orphaned llama-server.exe process(es) (killed Ollama's children)")
+            time.sleep(2.0)  # Windows returns VRAM to the adapter a beat later
+    except Exception as exc:
+        actions_taken.append(f"Orphan llama-server reaper: {exc}")
 
     # 1. Ollama & Model Subsystem
     try:
