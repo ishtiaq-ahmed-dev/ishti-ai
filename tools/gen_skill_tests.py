@@ -230,7 +230,7 @@ def happy_for(name, route):
         "deep_research": "research local-first AI assistants 2026",
         "video": "info about D:\\ISHTI\\assets\\ishti.ico",
         "browser": "open example.com in the browser",
-        "trading": "show my paper trading account",
+        "trading": "paper account",   # ops require the word 'paper'; 'show my paper trading account' matches none
         "terminal": "show the current directory",
     }
     if name in presets:
