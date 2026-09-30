@@ -169,6 +169,12 @@ def happy_for(name, route):
         "extract": "extract all the links from https://example.com",
         "fileops": "zip D:/ISHTI/docs",
         "focus": "start a 25 minute focus sprint",
+        # forecast: needs csv path + horizon ('forecast sales.csv next 6 months' lacks a real file)
+        "forecast": "forecast D:/ISHTI/metrics/ramp_table.csv next 6 months",
+        # gitops: commit/push need a repo path in the text ('commit my changes' has none -> decline)
+        "gitops": "git status of D:/ISHTI",
+        # imgcrop: needs a real image path
+        "imgcrop": "crop D:/ISHTI/data/charts/ramp_table-line.png to square",
         "web_search": "search for ISHTI local assistant github",
         "web_fetch": "fetch https://example.com",
         "owner": "what do you know about me",
