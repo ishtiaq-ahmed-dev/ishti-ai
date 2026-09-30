@@ -184,6 +184,9 @@ def run(text, session):
         return {"reply": masked + ("\n\nMasked: " + kinds if n else ""),
                 "sources": []}
     m = FILES.match(t)
+    if not m:
+        # FIX-9 class: run() reached without a matching shape -> decline, never crash
+        return None
     path = m.group("path").strip()
     preview = bool(m.group("preview")) or "show" in m.group("verb")
     return {"reply": redact_file(path, preview=preview, session=session),

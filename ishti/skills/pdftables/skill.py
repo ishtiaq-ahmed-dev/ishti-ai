@@ -73,6 +73,9 @@ def match(text):
 
 def run(text, session):
     m = FILES.match(text.strip())
+    if not m:
+        # FIX-9 class: decline instead of AttributeError when the shape doesn't match
+        return None
     trace(session, "pdftables", "extract")
     return {"reply": extract(m.group("path").strip().strip("\"'"), session), "sources": []}
 

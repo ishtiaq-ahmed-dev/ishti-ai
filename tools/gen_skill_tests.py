@@ -186,6 +186,13 @@ def happy_for(name, route):
         "montecarlo": "monte carlo: portfolio 1000000 yearly return 7% +/- 12% for 20 years",
         "moodlog": "rate my mood today 4",
         "networth": "track asset bank account 200000",
+        # real-arg rows (probed live): pdftables/redact need real files; quickcalc phrases must
+        # match its regexes; phishing needs a URL; relationships needs a question shape
+        "pdftables": "extract tables from D:/ISHTI/reports/2026-09-30_0933_chat_digest.pdf",
+        "phishing_check": "check this link http://example.com",
+        "quickcalc": "2000 with a 15% off",
+        "redact": "redact D:/ISHTI/docs/redact_test.csv",
+        "relationships": "what does my friend Sara like",
         "web_search": "search for ISHTI local assistant github",
         "web_fetch": "fetch https://example.com",
         "owner": "what do you know about me",
