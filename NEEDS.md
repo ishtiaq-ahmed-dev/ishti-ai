@@ -212,3 +212,13 @@ load; per-process evidence attributes it to model servers' working sets (llama-s
 ~7.3 GB RSS across 3 processes, stable when idle) plus normal standby-cache behavior — NOT a
 per-turn leak (idle drift +28 MB over 20 s). *Needed:* a longer soak (24 h+) on the owner's
 schedule to confirm the plateau holds. *Until then:* reported as measured plateau, not a leak.
+
+## Q9. SearXNG container has never been created on this box (QA full sweep)
+Docker Desktop is installed but the engine is down AND no `ishti-searxng` container exists, so
+the primary search provider is permanently unavailable; BingLite intermittently bot-walls
+(returned 0 for every query during one stretch). Shopping was found calling the SearXNG provider
+DIRECTLY (FIX-11: now uses the full manager cascade), but even the manager degrades to
+brand-homepage junk without SearXNG. *Needed:* owner decision — start Docker Desktop + create the
+container (`ishti/searxng/settings.yml` has the run line) or accept degraded search. Until then:
+shopping/lead-finder/travel rows that need real store results can only be tested for
+graceful-decline behaviour, not for priced results.

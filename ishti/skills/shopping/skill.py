@@ -196,7 +196,11 @@ def fetch(hit, product, brand, cur_rx):
 
 
 def compare(product, country, trace_fn=lambda *a: None):
-    from tools.web.search import SearxngSearchProvider
+    # FIX-11: the direct SearxngSearchProvider call returned 0 results whenever the local
+    # SearXNG container is down, so shopping silently found "0 store pages" and declined
+    # (measured: searxng direct 0, full manager 5). The manager's cascade (searxng -> bing
+    # -> wikipedia -> ...) is exactly what every other consumer uses.
+    from tools.web.search import get_search_manager
     first = product.split()[0].lower() if product.split() else ""
     brand = BRAND_OF.get(first, first)
     cur_rx = CURRENCY.get(country.lower()) or (("USD", r"(?:US)?\$\s?") if not country else None)
@@ -204,7 +208,8 @@ def compare(product, country, trace_fn=lambda *a: None):
     queries = [f"{product} price{where}", f"buy {product}{where} online", f"{product} {brand} official store{where}"]
     trace_fn("search", f"search stores: {' · '.join(queries)}")
     with cf.ThreadPoolExecutor(8) as pool:
-        hits = [h for batch in pool.map(lambda q: SearxngSearchProvider().search(q, 12), queries) for h in batch]
+        _mgr = get_search_manager()
+        hits = [h for batch in pool.map(lambda q: _mgr.search(q, 12), queries) for h in batch]
         seen, unique = set(), []
         for h in hits:
             if h.url not in seen:
