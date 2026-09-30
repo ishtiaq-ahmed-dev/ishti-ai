@@ -168,3 +168,21 @@ Rollback point: tag `pre-qa-suite1` (commit 9a001c1).
 - [x] NEEDS.md Q1-Q5 added.
 - [x] Final full-suite re-run after the last code change: **105 passed, 11 deselected, 0 failed** in 179 s.
       Prompt 1 of 3 is COMPLETE; prompts 2-3 can run from here (rollback tag `pre-qa-suite1`).
+
+## QA Session 2026-09-30 - Prompt 2 of 3 (skill loop: test -> fix -> retest)
+Rollback point: tag `pre-skill-loop2`. Loop = test via `tests/run_skill.py <skill> --runs 1` -> fix real
+bugs (TEST_FIXES.md) -> retest until 3 consecutive greens -> reviewer adversarial pass -> sign-off in
+reports/skills/<skill>.md. All runs with ISHTI_TEST_MODE=1.
+
+| Skill | Status | Attempts | Bugs fixed | Green runs | Latency | VRAM | Notes |
+|---|---|---|---|---|---|---|---|
+| system | DONE | 4 | 0 | 4 | 15.0-15.4 s | none | reviewer R1-R7 green |
+| files | DONE | 4 | 0 | 4 | 12.6-18.6 s | none | reviewer R1-R7 green |
+| folders | DONE | 4 | 0 | 4 | 4.5-4.6 s | none | reviewer R1-R7 green |
+| memory | DONE | 4 | 0 | 4 | 12.5-12.8 s | none | reviewer R1-R7 green |
+| chat | DONE | 7 | 1 (FIX-2 honesty guard) | 7 | 45.1-53.5 s | 9.8 GB shared | FIX-2 found by reviewer R2 bait |
+| owner | DONE | 11 | 2 (FIX-1 doctor budget; stale primary fallback) | 3 | ~262 s avg | none pinned | needs `--timeout 300`; earlier 90 s flap was harness config, not a test bug |
+| weather | DONE | 4 | 0 | 3 | 30.0 s | none | batch 2; SearXNG-down fallback wait included |
+| bayes | DONE | 4 | 0 | 3 | 4.5 s | none | batch 2 |
+| chat_digest | DONE | 4 | 0 | 3 | 7.8 s | 10.0 GB shared | batch 2; curated 17-test suite also green |
+| web_fetch / web_search / reminders / apps / video | not started | - | - | - | - | - | batch 2 next |
