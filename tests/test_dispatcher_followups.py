@@ -16,6 +16,7 @@ ROOT = r"D:\ISHTI"
 sys.path.insert(0, ROOT)
 
 import ishti.facts as facts_mod  # noqa: E402
+import ishti.test_mode  # noqa: E402
 from orchestrator.memory.user_profile import scratch_memory  # noqa: E402
 import ishti.dispatcher as D  # noqa: E402
 
@@ -50,7 +51,12 @@ with scratch_memory():
     D._remember = lambda *a, **k: None      # never write test chatter into the real Chroma memory
     D._learn = lambda *a, **k: None         # never learn facts from test text
     saved_route = D.route
-    saved_runs = {n: D.SKILLS[n].run for n in ("whatsapp", "browser", "chat")}
+    saved_candidate = D.planner.candidate
+    D.planner.candidate = lambda *a, **k: False   # the multi-step planner (added later) must not
+    # intercept these rows - this file tests the follow-up patterns + honesty layer through the
+    # route() stub, the same way it already isolates memory; without this the planner once ran a
+    # real deep_research pass for 'send hi to bhai' inside the test.
+    saved_runs = {n: D.SKILLS[n].run for n in ("notes", "whatsapp", "browser", "chat")}
     D.SKILLS["chat"].run = lambda text, s: {"reply": "ROUTED NORMALLY", "sources": []}
     D.route = lambda text, skills, exclude=None: {"skill": "chat", "confidence": 1.0, "source": "test"}
     try:
@@ -66,22 +72,38 @@ with scratch_memory():
         D.handle("talk to me in my own language", session_id="t1")
         assert D.preferred_language() is None, D.preferred_language()
 
-        # 3. a sticky pending: the owner's complaint is the same send flow, not a new request
+        # 3. a sticky pending: the owner's complaint is the same flow, not a new request.
+        # T0 skill (notes) on purpose: under ISHTI_TEST_MODE=1 the dispatcher blocks every T2 run
+        # (that is the safety contract, asserted in 3b) - the sticky-pending CONTRACT itself is
+        # tier-independent, so it is exercised through a skill the safety layer never intercepts.
         seen = []
-        D.SKILLS["whatsapp"].run = lambda text, s: (seen.append(text), None)[1]  # declines on purpose
+        D.SKILLS["notes"].run = lambda text, s: (seen.append(text), None)[1]  # declines on purpose
         D.SESSIONS["t2"] = {"id": "t2", "history": [], "last_entity": None,
-                            "pending": {"skill": "whatsapp", "sticky": True, "ask": "who"}}
+                            "pending": {"skill": "notes", "sticky": True, "ask": "what should the note say"}}
         res = D.handle("not sent yet send her now", session_id="t2")
-        assert seen == ["not sent yet send her now"], seen       # the send flow saw the complaint
+        assert seen == ["not sent yet send her now"], seen       # the skill saw the complaint
         assert D.SESSIONS["t2"]["pending"] is None               # declined -> the slot is released
         assert res["final_answer"] == "ROUTED NORMALLY", res     # ... and the message routes normally
 
+        # 3b. the same complaint against a T2 pending IS blocked under test mode - and the block
+        # itself is the asserted contract (it must reach the last step with the skill named)
+        if ishti.test_mode.enabled():
+            def _t2_stub(text, s):
+                seen.append(text)
+                return {"reply": "REAL SEND (must never happen)", "sources": []}
+            D.SKILLS["whatsapp"].run = _t2_stub
+            D.SESSIONS["t2b"] = {"id": "t2b", "history": [], "last_entity": None,
+                                 "pending": {"skill": "whatsapp", "sticky": True, "ask": "who"}}
+            res = D.handle("not sent yet send her now", session_id="t2b")
+            assert "test-mode" in res["final_answer"] and "stopped at the last step" in res["final_answer"], res
+            assert "REAL SEND" not in res["final_answer"], res   # the stub never ran
+
         # 4. a sticky pending whose question the owner answers stays the skill's
-        D.SKILLS["whatsapp"].run = lambda text, s: (seen.append(text), {"reply": "SENT (test)", "sources": []})[1]
+        D.SKILLS["notes"].run = lambda text, s: (seen.append(text), {"reply": "SAVED (test)", "sources": []})[1]
         D.SESSIONS["t3"] = {"id": "t3", "history": [], "last_entity": None,
-                            "pending": {"skill": "whatsapp", "sticky": True, "ask": "who"}}
+                            "pending": {"skill": "notes", "sticky": True, "ask": "what should the note say"}}
         res = D.handle("Yes the name is Bai.", session_id="t3")
-        assert seen[-1] == "Yes the name is Bai." and res["final_answer"] == "SENT (test)", res
+        assert seen[-1] == "Yes the name is Bai." and res["final_answer"] == "SAVED (test)", res
 
         # 5. no regression: a plain follow-up still drops a pending yes/no question (not sticky)
         seen.clear()
@@ -94,17 +116,22 @@ with scratch_memory():
         assert res["final_answer"] == "ROUTED NORMALLY", res
 
         # 6. tool honesty: an unverified action claim is followed by an explicit warning
-        D.route = lambda text, skills, exclude=None: {"skill": "whatsapp", "confidence": 1.0, "source": "test"}
-        D.SKILLS["whatsapp"].run = lambda text, s: {"reply": "Sent 'hi' to Bhai on WhatsApp.", "sources": [],
-                                                    "verified": False}
+        # (routed through the T0 chat stub: the honesty suffix is claim-shaped, not tier-shaped;
+        # a T2 route would be test-mode-blocked before its reply could carry the claim)
+        D.route = lambda text, skills, exclude=None: {"skill": "chat", "confidence": 1.0, "source": "test"}
+        # no_escalate: the dispatcher's own escape hatch - without it the (later-added) escalation
+        # hop saw the claim stub 'fall short' and ran a real deep_research pass inside the test
+        D.SKILLS["chat"].run = lambda text, s: {"reply": "Sent 'hi' to Bhai on WhatsApp.", "sources": [],
+                                                "verified": False, "no_escalate": True}
         D.SESSIONS["t5"] = {"id": "t5", "history": [], "last_entity": None, "pending": None}
         res = D.handle("send hi to bhai", session_id="t5")
         assert "couldn't confirm that actually went through" in res["final_answer"], res["final_answer"]
     finally:
         D._remember, D._learn, D.route = saved_remember, saved_learn, saved_route
+        D.planner.candidate = saved_candidate
         for n, run in saved_runs.items():
             D.SKILLS[n].run = run
-        for sid in ("t1", "t2", "t3", "t4", "t5"):
+        for sid in ("t1", "t2", "t2b", "t3", "t4", "t5"):
             D.SESSIONS.pop(sid, None)
         facts_mod._facts = saved
 
