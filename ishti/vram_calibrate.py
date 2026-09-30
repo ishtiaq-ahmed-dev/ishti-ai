@@ -4,7 +4,12 @@ For each rung (at the context the ladder gives it): unload everything, load it, 
 (size, size_vram, context) and the GPU's total used memory, run the fixed ISHTI test prompts for quality and tokens/s,
 then unload. Results go to data/vram.db (`model_footprints`, so the governor uses measured numbers from then on) and
 data/vram_calibration.json (the tables in MODEL_DECISIONS.md come from it).
-It takes over the GPU for a few minutes: run it with ISHTI stopped."""
+It takes over the GPU for a few minutes: run it with ISHTI stopped.
+
+Thinking models (a `thinking` capability in /api/show, e.g. Spark-X2.5) reason before answering, so the
+fixed quality prompts run with a larger token budget (NUM_PREDICT_THINKING) and are judged on the text
+AFTER the </think> stream - the 160-token cap was sized for non-thinking brains and truncated the
+reasoning mid-stream (measured: Spark needed 260 tokens for the json prompt, 962 for the table)."""
 import base64
 import io
 import json
@@ -19,6 +24,8 @@ import requests
 from ishti import vram
 
 OUT = os.path.join(vram.DATA, "vram_calibration.json")
+NUM_PREDICT_DEFAULT = 160     # non-thinking brains: answers fit well inside this (14B quality row, 29 Sep)
+NUM_PREDICT_THINKING = 2048   # thinking brains: room to reason first; the answer itself stays short
 PROMPTS = {
     "arithmetic": ("What is 17 times 23? Reply with just the number.", lambda t: "391" in t),
     "json": ('Extract JSON {"contact": "...", "message": "..."} from: send hi to ali on whatsapp. Output only JSON.',
@@ -36,6 +43,11 @@ def _json(t):
         return json.loads(m.group(0)) if m else {}
     except ValueError:
         return {}
+
+
+def _answer(text):
+    """The graded answer: everything after the thinking stream, when the model emits one."""
+    return text.rsplit("</think>", 1)[-1] if "</think>" in (text or "") else (text or "")
 
 
 def _image():
@@ -79,21 +91,23 @@ def measure(name, ctx):
             ttft.append((r.get("prompt_eval_duration", 0) + r.get("load_duration", 0)) / 1e6)
     res["tps"], res["ttft_ms"] = round(statistics.median(tps), 1), round(statistics.median(ttft))
     vram.record([entry], tps=res["tps"], delta_mb=res["gpu_delta_mb"])
+    caps = requests.post(vram.OLLAMA + "/api/show", json={"model": name}, timeout=15).json().get("capabilities", [])
+    think = "thinking" in caps
+    budget = NUM_PREDICT_THINKING if think else NUM_PREDICT_DEFAULT
     quality, notes = 0, []
     total = 0
     for key, (prompt, judge) in PROMPTS.items():
         total += 1
         try:
-            ok_q = bool(judge(generate(name, prompt, 160)["response"]))
+            ok_q = bool(judge(_answer(generate(name, prompt, budget)["response"])))
         except Exception:
             ok_q = False
         quality += ok_q
         notes.append(f"{key}:{'ok' if ok_q else 'FAIL'}")
-    caps = requests.post(vram.OLLAMA + "/api/show", json={"model": name}, timeout=15).json().get("capabilities", [])
     if "tools" in caps:
         total += 1
         try:
-            msg = requests.post(vram.OLLAMA + "/api/chat", json={"model": name, "stream": False, "tools": TOOL, "options": {"temperature": 0, "num_predict": 100},
+            msg = requests.post(vram.OLLAMA + "/api/chat", json={"model": name, "stream": False, "tools": TOOL, "options": {"temperature": 0, "num_predict": budget},
                                                                  "messages": [{"role": "user", "content": "What's the weather in Peshawar right now?"}]}, timeout=120).json()["message"]
             ok_t = any(c["function"]["name"] == "get_weather" for c in msg.get("tool_calls") or [])
         except Exception:
@@ -108,7 +122,8 @@ def measure(name, ctx):
             ok_v = False
         quality += ok_v
         notes.append(f"vision:{'ok' if ok_v else 'FAIL'}")
-    res.update(quality=f"{quality}/{total}", quality_detail=" ".join(notes))
+    res.update(quality=f"{quality}/{total}", quality_detail=" ".join(notes) + (f" [think@{budget}]" if think else ""),
+               think=think, quality_num_predict=budget)
     print("  ", {k: res[k] for k in ("size_vram_mb", "gpu_delta_mb", "load_s", "tps", "ttft_ms", "quality")}, res["quality_detail"], flush=True)
     vram.unload(name)
     return res
@@ -130,7 +145,7 @@ def main(only=None):
     json.dump(old + results, open(OUT, "w", encoding="utf-8"), indent=1)
     print("\n| model | ctx | GPU MiB | tok/s | first token ms | load s | quality |\n|---|---|---|---|---|---|---|")
     for r in results:
-        print(f"| {r['model']} | {r['num_ctx']} | {r['size_vram_mb']} | {r.get('tps', '-')} | {r.get('ttft_ms', '-')} | {r['load_s']} | {r.get('quality', 'not fully on GPU')} |")
+        print(f"| {r['model']} | {r['num_ctx']} | {r['size_vram_mb']} | {r.get('tps', '-')} | {r.get('ttft_ms', '-')} | {r['load_s']} | {r.get('quality', 'not fully on GPU')}{' (thinking)' if r.get('think') else ''} |")
 
 
 if __name__ == "__main__":

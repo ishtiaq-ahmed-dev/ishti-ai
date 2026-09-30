@@ -5,6 +5,22 @@ Every number below was measured here with `python -m ishti.vram_calibrate` (real
 prompts) and `tests/e2e_vram_lifecycle.py`; raw data: `data/vram_calibration.json`, `data/vram.db` (`model_footprints`).
 The policy lives in `models_ladder.yaml`; the code is `ishti/vram.py` (governor) and `ishti/lifecycle.py`.
 
+> **2026-09-30 update — new brain: Spark-X2.5-4B (unquantized F16), measured.** Ollama upgraded to 0.35.0
+> (0.31.2 could not run the `spark2_5` architecture; models/settings untouched by the upgrade).
+> The planner's rung 0 is now `ishti-spark2.5:4b` (F16 = unquantized, Apache-2.0, source chain and SHA-verified
+> local GGUF in `docs/MODEL_ACQUISITION_spark2.5.md`); the 14B drops to rung 1.
+> Measured (`python -m ishti.vram_calibrate ishti-spark2.5:4b`, in `data/vram.db`): **8165 MiB fully on GPU at
+> 8192 ctx, 84.6 tok/s, 43 ms first token, 3.3 s load** — ~2 GB lighter than the 14B and faster.
+> **Thinking model — quality 5/5 after the harness fix (2026-09-30, same day).** The calibrate harness's
+> 160-token cap (sized for the non-thinking 14B) truncated Spark's reasoning stream and recorded a misleading
+> 3/5. `ishti/vram_calibrate.py` now detects the `thinking` capability via /api/show, grades thinking brains at
+> a 2048-token budget, and judges only the text after `</think>` (an unchanged-logic control re-run of the 14B
+> reproduced its 5/5). Re-graded (data/vram_calibration.json, `think: true, quality_num_predict: 2048`):
+> Spark 5/5 — arithmetic, json, table, urdu, tool_call all ok. Thinking is per-request toggleable
+> (`"think": false` → direct answers, big voice-TTFS lever). The planner + Whisper headroom math from the
+> 29 Sep tables improves by ~2 GB; voice-session downshift now lands on the 14B (rung 1), not the 7B.
+> Everything below the update line describes the pre-Spark state.
+
 ## What changed since the 28 Sep version, and why (corrections first)
 
 | Earlier statement | What measurement shows |
