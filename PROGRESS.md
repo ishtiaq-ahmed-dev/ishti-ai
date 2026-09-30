@@ -190,3 +190,9 @@ reports/skills/<skill>.md. All runs with ISHTI_TEST_MODE=1.
 | reminders | DONE | 3 | 0 | 3 | 36.2-36.9 s | none | batch 2 |
 | apps | DONE | 4 | 1 (FIX-5 bogus happy row; N21 filed) | 3 | 4.0-4.2 s | none | generator preset fixed + regenerated |
 | video | DONE | 3 | 0 | 3 | 47.0-47.4 s | 9.4 GB shared, flat | batch 2; reviewer R1-R7 60/60 green |
+
+**Batch 2 COMPLETE (10/10 skills DONE).** Reviewer passes: batch-1 45/45 (tests/review/test_batch1_adversarial.py),
+batch-2 60/60 (tests/review/test_batch2_adversarial.py). Fixes this pass: FIX-1..FIX-5 (TEST_FIXES.md),
+needs-owner: N6 (stale planner model), N21 (computer_use TEST_MODE guard), Q5 (run `all` policy).
+tests/review added to pytest.ini norecursedirs (adversarial suites hit live models/network; run explicitly).
+Final offline gate after the last code change: **105 passed, 11 deselected, 0 failed** in 339 s.
