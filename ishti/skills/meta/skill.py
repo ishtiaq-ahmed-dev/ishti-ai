@@ -44,12 +44,29 @@ def run(text, session):
     return None
 
 
+_health_cache = {}   # mtime-sum -> (ts, reply); FIX-10: 72 s per call, no cache, re-run 4x per suite
+
+
 def op_health(text, session):
     from ishti.dispatcher import SKILLS
     here = os.path.join(ROOT, "ishti", "skills")
     names = [n for n in SKILLS if os.path.isfile(os.path.join(here, n, "skill.py"))
              and "__main__" in open(os.path.join(here, n, "skill.py"), encoding="utf-8").read()]
     trace(session, "selfcheck", f"running {len(names)} skill self-checks", status="start")
+
+    # FIX-10: a full pass costs ~72 s. Cache on the CONTENT of the skill files: identical
+    # sources cannot produce a different result, so repeat calls (the generated suite fires
+    # this row 4x; users repeat too) return instantly. Any skill.py edit changes the key.
+    import hashlib
+    stamp = hashlib.sha256()
+    for n in sorted(names):
+        p = os.path.join(here, n, "skill.py")
+        stamp.update(str(os.path.getmtime(p)).encode())
+    key = stamp.hexdigest()
+    if key in _health_cache and time.time() - _health_cache[key][0] < 900:
+        ts, cached = _health_cache[key]
+        trace(session, "selfcheck", "cached (skills unchanged)", status="done")
+        return cached
 
     def check(n):
         t0 = time.time()
@@ -67,7 +84,9 @@ def op_health(text, session):
     trace(session, "selfcheck", f"{ok}/{len(results)} passed", status="done" if ok == len(results) else "error")
     lines = [f"- {'✓' if good else '✗'} {n} ({secs:.0f} s)" + (f": {why}" if why else "") for n, good, why, secs in results]
     lines += [f"- ✗ {n} didn't load: {p}" for n, p in broken.items()]
-    return f"Skill health: {ok}/{len(results)} self-checks pass, {len(SKILLS) - len(broken)}/{len(SKILLS)} skills loaded.\n" + "\n".join(lines)
+    reply = f"Skill health: {ok}/{len(results)} self-checks pass, {len(SKILLS) - len(broken)}/{len(SKILLS)} skills loaded.\n" + "\n".join(lines)
+    _health_cache[key] = (time.time(), reply)
+    return reply
 
 
 def op_tasks(text, session):
