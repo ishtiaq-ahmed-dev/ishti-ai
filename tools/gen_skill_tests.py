@@ -172,7 +172,6 @@ def happy_for(name, route):
         "browser": "open example.com in the browser",
         "trading": "show my paper trading account",
         "terminal": "show the current directory",
-        "clients": "show my clients dashboard",
     }
     if name in presets:
         return presets[name]
