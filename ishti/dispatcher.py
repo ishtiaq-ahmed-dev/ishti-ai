@@ -599,14 +599,27 @@ def already_in(reply, lang):
     return False  # Roman Urdu: skills answer in English, always rewritten
 
 
+_TRANSLATOR_META = re.compile(r"\b(?:please\s+(?:provide|paste|give|share)|what\s+text|i\s+need\s+the\s+(?:original|text)"
+                              r"|which\s+text|provide\s+the\s+text)\b", re.I)
+
+
 def translate(text, to):
+    """FIX-13: the translator model occasionally ignores the payload and asks for input
+    ('Please provide the text...'), and that question USED TO REPLACE the real skill reply.
+    Retry once, and if the model still won't translate, return the original text - an
+    untranslated-but-correct answer beats a confused non-answer."""
     from ishti import llm
     # Gemma 3 (config role "translator") writes far better Urdu than Qwen 2.5, which mixes in Chinese characters.
     hint = (" In Urdu/Hindi, کل / कल (kal) with a future verb (ہوگا، ہوگی، گا / होगा, होगी) means tomorrow, with a past "
             "verb yesterday; it means 'all' only as کُل before a noun. In Pashto, سبا (saba) means tomorrow, نن (nan) today, "
             "پرون (paroon) yesterday, and پېښور is Peshawar." if to == "English" else "")
-    return llm.ask(f"Translate into {to}. Keep names, numbers, file paths, links and markdown exactly.{hint} Output only "
-                   f"the translation.\n\n{text}", role="translator", system=None, temperature=0, max_tokens=1200).strip() or text
+    prompt = f"Translate into {to}. Keep names, numbers, file paths, links and markdown exactly.{hint} Output only " \
+                   f"the translation.\n\n{text}"
+    for _ in range(2):
+        out = llm.ask(prompt, role="translator", system=None, temperature=0, max_tokens=1200).strip()
+        if out and not _TRANSLATOR_META.search(out):
+            return out
+    return text   # FIX-13: untranslated-but-correct beats a confused non-answer
 
 
 def _handle(text, sid, conv, s, events, t0, channel):
