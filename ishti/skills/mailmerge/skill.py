@@ -123,6 +123,10 @@ def run(text, session):
                           + (f"\n- ... and {len(files) - 15} more" if len(files) > 15 else "")),
                 "sources": []}
     m = MERGE.match(t)
+    if not m:
+        # FIX-9: run() can be reached with text match() accepted loosely (edge rows); a crash
+        # (AttributeError) here took down the whole request instead of a graceful decline.
+        return None
     trace(session, "mailmerge", "merge")
     path = m.group("path").strip().strip("\"'")
     return {"reply": merge(path, m.group("tmpl").strip().strip("\"'"), session), "sources": []}

@@ -175,6 +175,12 @@ def happy_for(name, route):
         "gitops": "git status of D:/ISHTI",
         # imgcrop: needs a real image path
         "imgcrop": "crop D:/ISHTI/data/charts/ramp_table-line.png to square",
+        # ledger/lifelog want first-person logged-statements; media wants verb + real path;
+        # mailmerge MERGE wants 'mailmerge <csv>: <template>' (both paths real)
+        "ledger": "spent 250 on groceries today",
+        "lifelog": "I drank 3 glasses of water",
+        "mailmerge": "mailmerge D:/ISHTI/docs/merge_contacts.csv: D:/ISHTI/docs/merge_template.txt",
+        "media": "convert the image D:/ISHTI/assets/ishti_app_icon.png to jpg",
         "web_search": "search for ISHTI local assistant github",
         "web_fetch": "fetch https://example.com",
         "owner": "what do you know about me",
