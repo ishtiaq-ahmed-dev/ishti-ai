@@ -188,5 +188,5 @@ reports/skills/<skill>.md. All runs with ISHTI_TEST_MODE=1.
 | web_search | DONE | 5 | 2 (FIX-3 harness UTF-8 decode; FIX-4 cascade budget) | 3 | ~358-376 s suite | none pinned | `--timeout 300`; per-turn search phase bounded 25 s |
 | web_fetch | DONE | 3 | 0 | 3 | 28.6-30.2 s | none | batch 2 |
 | reminders | DONE | 3 | 0 | 3 | 36.2-36.9 s | none | batch 2 |
-| apps | in progress | 1 | 1 (FIX-5 bogus happy row; N21 filed) | 0 | - | none | generator preset fixed, regen done |
-| video | not started | - | - | - | - | - | batch 2 last |
+| apps | DONE | 4 | 1 (FIX-5 bogus happy row; N21 filed) | 3 | 4.0-4.2 s | none | generator preset fixed + regenerated |
+| video | in progress | 0 | - | - | - | - | batch 2 last |
