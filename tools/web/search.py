@@ -533,7 +533,15 @@ class MultiProviderSearch:
         self.arxiv = ArxivSearchProvider()
         self.playwright = PlaywrightBrowserSearchProvider()
 
-    def search(self, query: str, max_results: int = 5) -> List[WebSearchResult]:
+    def search(self, query: str, max_results: int = 5, budget_s: float = None) -> List[WebSearchResult]:
+        """FIX-4 (QA prompt 2): with SearXNG down, the full cascade (searxng -> bing -> wikipedia ->
+        Playwright CHROME LAUNCH -> github) measured ~40-60 s per attempt, and deep_research repeats it
+        up to 3x - a chat turn hung for minutes. With budget_s set, the expensive browser-launch step is
+        skipped once the budget is spent; the cheap bounded providers still run. No provider behaviour
+        changes when budget_s is None (default)."""
+        deadline = time.time() + budget_s if budget_s else None
+        if deadline is not None and time.time() >= deadline:
+            return []  # budget already spent elsewhere - do not even start the cheap providers
         q_lower = query.lower()
 
         # Route 0: "latest version of X" - answer from the project's release feed, which
@@ -594,6 +602,11 @@ class MultiProviderSearch:
             return wiki_res
 
         # Step 3: Try Playwright Chrome Sandbox
+        if deadline is not None and time.time() >= deadline:
+            # A Chrome launch is seconds of start-up even on a good day; past the budget it only adds
+            # latency to an answer that is already going to say "nothing found".
+            print(f"[MultiProviderSearch] budget {budget_s}s spent, skipping Playwright/GitHub fallback for '{query}'")
+            return []
         print(f"[MultiProviderSearch] Cascading to Playwright Chrome search for '{query}'...")
         pw_res = self.playwright.search(targeted_query, max_results=max_results)
         if pw_res:

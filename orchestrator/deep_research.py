@@ -34,6 +34,7 @@ os.makedirs(RESEARCH_MEM_DIR, exist_ok=True)
 
 
 READ_BUDGET_S = 4.0
+SEARCH_BUDGET_S = 25.0  # FIX-4: one provider cascade must not eat a whole chat turn (measured 40-60 s with SearXNG down)
 MAX_REWORDS = 2  # reformulations after the first search before "no confident match"
 BLOCKED = re.compile(r"enable javascript|access denied|are you a robot|captcha|verify you are human|subscribe to (?:continue|read)|"
                      r"sign in to (?:continue|read)|403 forbidden|404 not found|page not found|just a moment\.\.\.")
@@ -78,15 +79,21 @@ class DeepResearchEngine:
 
         # Self-verifying loop: search -> read -> keep only pages that really answer the question; if none do,
         # reword the query and try again (at most MAX_REWORDS times), then say so instead of guessing.
+        # FIX-4: the whole search phase shares ONE budget. Previously every attempt could walk the full
+        # provider cascade on its own clock, so with SearXNG down one chat turn measured 130+ s
+        # (3 cascades + 2 reword model calls). Past the deadline: an honest "couldn't find" immediately.
+        deadline = time.time() + SEARCH_BUDGET_S
         tried, skipped, good = [], [], []
         query = search_query
         for attempt in range(MAX_REWORDS + 1):
+            if attempt and time.time() >= deadline:
+                break
             tried.append(query)
             self.emit("status_change", {"state": "SEARCHING", "detail": ("Searching the internet for: " if not attempt
                                                                          else "Trying a different search: ") + query})
-            results = self.search_manager.search(query, max_results=6)
+            results = self.search_manager.search(query, max_results=6, budget_s=max(0.0, deadline - time.time()))
             if not results and not attempt:
-                results = self.search_manager.search(user_prompt, max_results=6)
+                results = self.search_manager.search(user_prompt, max_results=6, budget_s=max(0.0, deadline - time.time()))
             if results:
                 # Drop sources that do not address the query (dictionary pages, unrelated products).
                 relevant = filter_sources(query, [r.to_dict() | {"_obj": r} for r in results])
@@ -105,7 +112,7 @@ class DeepResearchEngine:
                         self.emit("status_change", {"state": "VERIFYING", "detail": f"Skipped {pg['domain']}: {why}"})
                 if good:
                     break
-            if attempt < MAX_REWORDS:
+            if attempt < MAX_REWORDS and time.time() < deadline:
                 query = self._reword(user_prompt, tried, skipped)
 
         if not good:

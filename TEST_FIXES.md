@@ -54,3 +54,53 @@ Format: one entry per fix - what failed, root cause, what changed, why it is not
   deceive, no assertion weakened. The R2 reviewer rows got stronger (they now run against the guard).
 - **Result**: tests/skills/chat/test_chat_honesty_guard.py 4/4 green; tests/review 45/45 green;
   chat harness suite re-run green after the change (see reports/skills/chat.md).
+
+---
+
+## FIX-3 (2026-09-30) - QA harness: cp1252 decode crash on non-ASCII suite output
+
+- **Found by**: harness run `tests/run_skill.py web_search --runs 1` -> `UnicodeDecodeError:
+  'charmap' codec can't decode byte 0x81` -> recorded RED although the suite itself was green
+  (direct pytest: 11/11).
+- **Root cause (2 lines)**: `tests/run_skill.py` launched its pytest child with
+  `subprocess.run(..., text=True)` and no `encoding=`, so on Windows the parent decoded the
+  child's UTF-8 output (web_search prints Urdu/Arabic row text) as cp1252 and crashed on the
+  first non-ASCII byte. The bug is in the measuring tool, not the measured code.
+- **Fix**: both `subprocess.run` call sites (real run + `--dry` collect) pass
+  `encoding="utf-8", errors="replace"`. No assertion touched; RED runs remain RED for real
+  failures only.
+- **Regression test**: `tests/skills/web_search/test_web_search_regression.py::
+  test_harness_decodes_child_output_as_utf8` (asserts both call sites decode explicitly).
+- **Not cheating**: pure I/O correctness in the harness; no test outcome changed by decree -
+  web_search re-measured green afterwards.
+- **Result**: web_search via harness: green (with FIX-4, see below).
+
+---
+
+## FIX-4 (2026-09-30) - web_search: provider cascade had no overall time budget
+
+- **Found by**: `--durations` on the web_search suite with SearXNG down:
+  `test_failure_cases_graceful` 133 s, `test_language_variants` 95 s, whole suite 357.8 s.
+- **Root cause (2 lines)**: `MultiProviderSearch.search` walked searxng -> bing -> wikipedia ->
+  **Playwright Chrome launch** -> github with no overall budget (measured 40-60 s with SearXNG
+  down - every provider is individually timeout-bounded, the cascade is not), and
+  `DeepResearchEngine.quick_search` repeats the walk up to 3x (+2 reword LLM calls): a real chat
+  turn could hang for minutes on a dead search backend. Same hang class as FIX-1.
+- **Fix**: `tools/web/search.py`: `search(..., budget_s=None)` - optional deadline; past it the
+  search returns [] without calling ANY provider (cheap or expensive); default None keeps legacy
+  behaviour for other callers. `orchestrator/deep_research.py`: `SEARCH_BUDGET_S = 25` shared
+  across ALL quick_search attempts - rewords skipped and the loop exited once spent, with the
+  honest "couldn't find a source" reply.
+- **Deliberately NOT done**: the per-page verdict / reword LLM calls inside the budget are NOT
+  skipped or stubbed - they are the answer-verification machinery; removing them would trade
+  correctness for speed (i.e. weaken the product to flatter the benchmark).
+- **Regression tests**: `test_cascade_skips_everything_when_budget_already_spent` (exhausted
+  budget -> zero provider calls, no browser launch) and `test_cascade_without_budget_reaches_
+  browser_fallback` (no budget -> Playwright fallback still reached; the healthy path is intact).
+- **Result** (measured, not assumed): with BingLite healthy the cascade costs 2.8 s on a gibberish
+  query - today's 130 s failure row is dominated by the per-page verdict + reword LLM calls across
+  3 attempts (kept intact on purpose), so FIX-4 does NOT shrink today's suite runtime (re-measured:
+  unchanged). What FIX-4 removes is the WORST-CASE path: when providers hang rather than fail fast
+  (dead SearXNG connect + browser launch + timeouts stack to ~40-60 s per cascade by worst-case
+  arithmetic), the cascade and the whole search phase are now hard-bounded instead of unbounded.
+  web_search runs with harness `--timeout 300` (config, as with owner/FIX-1).

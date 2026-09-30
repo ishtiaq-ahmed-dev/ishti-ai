@@ -69,7 +69,8 @@ def run_one(skill, runs, timeout_s, dry):
         return {"feature": skill, "status": "no-suite", "runs": []}
     if dry:
         tests = subprocess.run([sys.executable, "-m", "pytest", suite_dir, "--collect-only", "-q"],
-                               capture_output=True, text=True, timeout=60)
+                               capture_output=True, text=True, encoding="utf-8", errors="replace",
+                               timeout=60)
         n = len([l for l in tests.stdout.splitlines() if l.startswith("<")]) or \
             sum(1 for l in tests.stdout.splitlines() if "::" in l)
         return {"feature": skill, "status": "dry-run", "would_run_tests": n, "runs": []}
@@ -82,7 +83,8 @@ def run_one(skill, runs, timeout_s, dry):
         proc = subprocess.run(
             [sys.executable, "-m", "pytest", suite_dir, "-q", "--timeout", str(timeout_s),
              "--no-header", "-x", "--tb=line"],      # pytest-timeout self-registers; -p double-registers
-            capture_output=True, text=True, timeout=timeout_s * 4 + 60, env=env, cwd=ROOT)
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=timeout_s * 4 + 60, env=env, cwd=ROOT)
         dur = round(time.time() - t0, 1)
         tail = [l for l in (proc.stdout or "").splitlines() if l.strip()][-3:]
         passed = proc.returncode == 0
