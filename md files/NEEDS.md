@@ -189,3 +189,9 @@ travel, skillsmith). VRAM observed at 14.9/16.3 GB during contention; the app's 
 to 0.7 GB after ~4 min. Options for the owner: (a) accept "run QA batches when idle" as policy,
 (b) add a QA-mode VRAM handshake so the live instance preempts unloading, or (c) a config budget
 reserving a slice for QA runs. No code changed for this yet.
+
+- 2026-09-30 19:01 [error] web_search: GpuBusy: The graphics card is busy: ishti-qwen2.5:14b needs about 9.7 GB and only 1.0 GB is free within the 80% GPU budget (in us - asked: "send hi to bhai"
+Update to Q10 (same day): measured coexistence limit — with qwen3:14b (9.0 GB) loaded, gemma3:4b
+(2.7 GB, the translator) cannot load under the 80% budget (only ~1 GB free). Language-locked users
+on arch2 get correct-but-untranslated replies; any arch2 + arch1-role mix flaps. See
+PERFORMANCE_REPORT.md for numbers and the proposed fixes (translator gate is the big one).

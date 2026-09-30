@@ -253,3 +253,14 @@ harness, not the UI; the UI is browser-rendered UTF-8).
       common 006195000 transcription is genuinely unsolvable; preset pinned to the canonical grid.
 - [x] `SKILL_LOOP_REPORT.md` written (method, fixes, honest findings, harness notes).
 - [ ] Next: complete-app test, performance/efficiency/accuracy baselines, arch1 vs arch2 comparison.
+
+## Mega-request completion — session 2026-09-30 (later blocks)
+- [x] Both architectures tested head-to-head (ARCH_COMPARE_REPORT.md): 19/20 checks each on the
+      same 20 rows through the real dispatcher; arch2 mean 1.3 s vs arch1 7.2 s (median 0.9 vs 1.4);
+      raw data in reports/arch_compare_results.json, driver tools/arch_compare.py (kill-safe).
+- [x] FIX-13 found by the comparison and fixed with regression tests: with the owner's language
+      lock set, a confused translator reply used to REPLACE the skill's correct answer.
+- [x] Complete-app test: pytest suite 114/114 + tools/verify_all.py 149/149 (was 148/149 — the
+      dispatcher follow-ups replay predated test mode/planner/escalation; fixed, contracts kept).
+- [x] Performance baselines (PERFORMANCE_REPORT.md): model cold/warm loads, per-path latency,
+      translator tax 1–6 s per reply, GPU coexistence limits + top 3 improvements (owner call).
