@@ -1,0 +1,24 @@
+{
+  "name": "security_scan",
+  "version": "1.0.0",
+  "description": "Local security scanner for ISHTI's own surfaces (ECC AgentShield design, MIT): audits skill manifests (tier vs tests, wildcard network scope, disabled drift), skill code (dynamic code, shell=True, plaintext secrets, verify=False, cleartext HTTP), MCP server config (odd launch commands, secrets in args), and tracked files that should never be in git. Read-only, deterministic, offline - no cloud scanner, no npm install. Findings carry severity + exact file:line + a fix suggestion; 'security scan fix' applies ONLY the safe, explicit one-line suggestions after a yes.",
+  "route": "security scan, scan ishti for security issues, security-scan the skills, audit skill manifests and mcp config for security, check for secrets in the repo",
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 20,
+  "status": "disabled",
+  "tier": "T1",
+  "laya": false,
+  "scope": {
+    "write": ["data"],
+    "net": [],
+    "apps": false
+  },
+  "category": "Security & Privacy",
+  "path": "ishti/skills/security_scan",
+  "test_file": "tests/skills/security_scan/test_security_scan.py"
+}

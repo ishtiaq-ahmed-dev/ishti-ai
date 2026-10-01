@@ -165,12 +165,12 @@ if __name__ == "__main__":
     bad = os.path.join(tmp, "bad.py")
     open(bad, "w", encoding="utf-8").write(
         "import pickle, subprocess, hashlib, yaml, random\n"
-        "API_KEY = 'sk-live-1234567890'\n"
-        "password = 'hunter2secret'\n"
+        "API_KEY = 'sk-live-1234567890'\n"  # nosec - deliberate scan fixture (written to tmp, never imported)
+        "password = 'hunter2secret'\n"  # nosec - deliberate scan fixture
         "def go(cmd):\n"
-        "    return subprocess.run(cmd, shell=True)\n"
+        "    return subprocess.run(cmd, shell=True)\n"  # nosec - deliberate scan fixture
         "def bad(data):\n"
-        "    return pickle.loads(data)\n"
+        "    return pickle.loads(data)\n"  # nosec - deliberate scan fixture
         "def query(user):\n"
         "    q = f\"SELECT * FROM users WHERE name = '{user}'\"\n"
         "    return hashlib.md5(b'x')\n"
