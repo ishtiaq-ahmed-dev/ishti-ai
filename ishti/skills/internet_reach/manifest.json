@@ -1,0 +1,24 @@
+{
+  "name": "internet_reach",
+  "version": "1.0.0",
+  "description": "ISHTI's capability layer for the internet (Agent-Reach design, MIT): an ordered backend registry per platform with REAL probes ('reach doctor' / 'reach doctor json' tells which channel works, which backend is active, and the exact repair command), SSRF-guarded download for link transcription (local faster-whisper - nothing leaves the PC), local RSS/web reads, a JSON formatter, and OPT-IN login-state channels that are OFF until the owner enables them (enablement sends nothing; ISHTI never touches browser cookies). Safe-by-default: environment checks only, advisory update check, no auto-install (installs are T2).",
+  "route": "internet reach doctor, which channels work or why is youtube/github/rss/bilibili broken, reach status json, check my internet channels, transcribe this video or podcast link, format this json, reach version",
+  "needs": {
+    "python": ["requests"],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 25,
+  "status": "disabled",
+  "tier": "T1",
+  "laya": false,
+  "scope": {
+    "write": ["data"],
+    "net": ["r.jina.ai", "youtube.com", "youtu.be", "github.com", "api.github.com", "v2ex.com", "xueqiu.com", "feeds.bbci.co.uk"],
+    "apps": false
+  },
+  "category": "Web & Internet",
+  "path": "ishti/skills/internet_reach",
+  "test_file": "tests/skills/internet_reach/test_internet_reach.py"
+}
