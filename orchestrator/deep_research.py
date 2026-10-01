@@ -18,7 +18,7 @@ import concurrent.futures
 from typing import Dict, Any, List, Optional, Callable
 import requests
 
-ROOT_DIR = r"D:\ISHTI"
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 

@@ -75,7 +75,7 @@ def build_system_prompt(
 
 if __name__ == "__main__":
     import sys, os
-    sys.path.insert(0, r"D:\ISHTI")
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from orchestrator.memory.user_profile import get_user_memory
 
     mem = get_user_memory().format_for_llm("weather")

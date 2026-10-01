@@ -17,7 +17,7 @@ import subprocess
 import requests
 import webbrowser
 
-ROOT_DIR = r"D:\ISHTI"
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
@@ -26,7 +26,7 @@ from voice.tts import speak, speakable
 from orchestrator.memory.user_profile import get_user_memory
 
 CHROME_EXE = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-PROFILE_DIR = r"D:\ISHTI\data\chrome_profile"
+PROFILE_DIR = os.path.join(ROOT_DIR, "data", "chrome_profile")
 
 
 def print_banner():

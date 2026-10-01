@@ -8,7 +8,7 @@ import os
 import sys
 import win32com.client
 
-ROOT = r"D:\ISHTI"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PYTHONW = os.path.join(ROOT, "venv", "Scripts", "pythonw.exe")
 LAUNCHER = os.path.join(ROOT, "desktop", "launcher.py")
 SHUTDOWN = os.path.join(ROOT, "desktop", "shutdown.py")

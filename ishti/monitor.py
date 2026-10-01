@@ -19,7 +19,8 @@ import time
 
 from ishti import CONFIG
 
-DB_PATH = CONFIG.get("memory", {}).get("db_path", r"D:\ISHTI\data\ishti.db")
+DB_PATH = CONFIG.get("memory", {}).get(
+    "db_path", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "ishti.db"))
 CORRECTIONS_PATH = os.path.join(os.path.dirname(DB_PATH), "corrections.jsonl")
 _lock = threading.Lock()
 

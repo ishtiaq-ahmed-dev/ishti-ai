@@ -17,7 +17,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, Fil
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
-ROOT_DIR = r"D:\ISHTI"
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
@@ -260,7 +260,7 @@ def get_status():  # a plain def: FastAPI runs it in a thread; it makes blocking
         "fast_model": fast,
         "fallback_model": fallback,
         "installed_models": installed,
-        "browser_profile": r"D:\ISHTI\data\chrome_profile",
+        "browser_profile": os.path.join(ROOT_DIR, "data", "chrome_profile"),
         "isolation_verified": True,
         "skills_count": len(skills),
         "skills": skills,

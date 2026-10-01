@@ -44,7 +44,7 @@ except ImportError:
     win32con = None
     win32process = None
 
-ROOT_DIR = r"D:\ISHTI"
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(ROOT_DIR, "data")
 USER_PROFILE_DIR = os.environ.get("USERPROFILE", r"C:\Users\PC")
 

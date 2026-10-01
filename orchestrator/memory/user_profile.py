@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, asdict, field
 
-ROOT_DIR = r"D:\ISHTI"
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MEMORY_DIR = os.path.join(ROOT_DIR, "orchestrator", "memory")
 USER_PROFILE_PATH = os.path.join(MEMORY_DIR, "user_profile.json")
 PREFERENCES_PATH = os.path.join(MEMORY_DIR, "preferences.json")

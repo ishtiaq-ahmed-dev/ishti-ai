@@ -12,7 +12,7 @@ import uuid
 import re
 from typing import Dict, Any, List, Optional
 
-ROOT_DIR = r"D:\ISHTI"
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SESSIONS_DIR = os.path.join(ROOT_DIR, "data", "sessions")
 os.makedirs(SESSIONS_DIR, exist_ok=True)
 

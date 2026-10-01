@@ -200,3 +200,4 @@ PERFORMANCE_REPORT.md for numbers and the proposed fixes (translator gate is the
 - 2026-10-01 17:23 [error] scanqr: pip couldn't install zxingcpp: ERROR: Could not find a version that satisfies the requirement zxingcpp (from versions: none)
 ERROR: No matching distribution found for zxingcpp
  - asked: "auto-install"
+- 2026-10-01 19:58 [error] planners: JSONDecodeError: Expecting value: line 1 column 1 (char 0) - asked: "make flashcards"

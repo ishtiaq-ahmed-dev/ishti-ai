@@ -276,10 +276,12 @@ def main():
         assert acc >= 0.85, f"routing accuracy {acc:.0%} < 85%"
         assert not router.laya_error, router.laya_error
 
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # the checkout, wherever it lives
+    drive = root.split(":")[0] + ":"
     sid = "check_" + os.urandom(3).hex()
     loop = [
-        (r"Project ISHTI is on D: at D:\ISHTI", "memory", "Saved"),
-        ("where is the ishti project?", "memory", r"D:\ISHTI"),
+        (f"Project ISHTI is on {drive} at {root}", "memory", "Saved"),
+        ("where is the ishti project?", "memory", root),
         ("ISHTI is now working", "memory", "is working"),
         ("what's the weather tomorrow?", "weather", "open-meteo"),
         ("what is 17 times 23? reply with just the number", "chat", "391"),

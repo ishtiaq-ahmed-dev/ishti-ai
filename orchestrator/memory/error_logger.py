@@ -12,7 +12,7 @@ import traceback
 import uuid
 from typing import Dict, Any, List, Optional
 
-ROOT_DIR = r"D:\ISHTI"
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LOGS_DIR = os.path.join(ROOT_DIR, "data", "logs")
 ERROR_JSON_PATH = os.path.join(LOGS_DIR, "error_records.json")
 ERROR_MD_PATH = os.path.join(LOGS_DIR, "error_records.md")

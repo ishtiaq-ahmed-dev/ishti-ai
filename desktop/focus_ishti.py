@@ -2,7 +2,7 @@
 import os
 import sys
 
-ROOT = r"D:\ISHTI"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
@@ -104,7 +104,7 @@ def reveal_window() -> bool:
             return True
 
         chrome_exe = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-        profile = r"D:\ISHTI\data\chrome_profile"
+        profile = os.path.join(ROOT, "data", "chrome_profile")
         url = "http://127.0.0.1:8888"
         if os.path.exists(chrome_exe):
             subprocess.Popen([

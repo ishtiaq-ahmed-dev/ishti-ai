@@ -1,4 +1,4 @@
-"""Files skill: PC file search (user folders + D:\ISHTI), short answer with paths."""
+"""Files skill: PC file search (user folders + the ISHTI checkout), short answer with paths."""
 import re
 
 from ishti.skills import trace
