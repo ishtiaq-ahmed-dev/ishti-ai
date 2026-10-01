@@ -15,7 +15,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PIP_NAME = {"PIL": "pillow", "docx": "python-docx", "pptx": "python-pptx", "cv2": "opencv-python", "yaml": "pyyaml",
             "win32gui": "pywin32", "win32api": "pywin32", "bs4": "beautifulsoup4", "yt_dlp": "yt-dlp",
             "screen_brightness_control": "screen-brightness-control", "faster_whisper": "faster-whisper",
-            "sklearn": "scikit-learn", "pypdfium2": "pypdfium2", "rapidocr_onnxruntime": "rapidocr_onnxruntime"}
+            "sklearn": "scikit-learn", "pypdfium2": "pypdfium2", "rapidocr_onnxruntime": "rapidocr_onnxruntime",
+            "zxingcpp": "zxing-cpp"}
 
 
 def install_missing(skill, modules, runner=None):

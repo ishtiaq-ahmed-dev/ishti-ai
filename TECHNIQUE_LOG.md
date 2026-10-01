@@ -12,12 +12,14 @@ Noise floor: import ~8%, skills_load ~1.5%, route ~20% (CPU scaling), TTS ~13% �
 |---|---|---|---|---|---|---|---|
 | K1 | Lazy OpenAI client in `ishti/llm.py` (`_get_client()` created on first use; `from openai import OpenAI` moved inside it) | `skills_load` (boot/import cost paid by 26 skill modules) | 1174.04 ms | 655.12 ms | **−44.2%** | importtime: `openai` = 589 ms cumulative, imported at module top only for client construction; no external consumer of `llm._client` (grep-verified) | `_work/bench_after_lazy_client.json`; perf_guard PASS (all benches within noise, skills_load −44%); full offline suite green (`_work/suite_after_lazyclient.log`, 184 passed); commit `eedb20e` |
 | K2 | Lazy MCP hub in `ishti/skills/browser/skill.py` (`get_hub()` now a call-time shim importing `ishti.mcp_client` on first use) | `skills_load` (the `mcp` package = 362 ms cumulative, imported at boot via the module-level import) | 655.12 ms | 358.43 ms | **−45.3%** (cumulative **−69.5%** vs baseline) | importtime post-K1: `mcp` = 362 ms, `ishti.mcp_client` = 403 ms; all `get_hub()` call sites are inside functions; tests patch `skill.get_hub` as a module attribute (shim preserves that) | `_work/bench_after_lazy_mcp.json`; perf_guard PASS; full offline suite green (`_work/suite_after_lazymcp2.log`); commit `c3dbb91` |
+| K3 | `ishti/audit.py::_db` now returns a cached per-thread connection (keyed by thread+path, created once) with `journal_mode=WAL` + `synchronous=NORMAL` | per-request fixed cost (audit.record ran per request with a fresh connection + CREATE TABLE + commit-fsync) | handle() 26.84 ms | 17.03 ms | **−36%** of the request path; `audit.record` isolated 12 ms → **0.018 ms** | new `bench_handle` (dispatcher end-to-end, sandboxed stores, LLM mocked) + same-process A/B with record() stubbed; connections previously never closed (`with sqlite3.connect` only commits) and leaked until GC | 3 consecutive full-suite greens (`_work/suite_c2_repeat/final2/final3.log`); Cycle 2 commit |
+| K4 | `ishti/dispatcher.py::_inflight` no longer reads+writes `inflight.json` on the reply path (was 2 reads + 2 writes per request): state kept in memory, one coalescing daemon thread writes behind | per-request fixed cost (~6 ms of file IO + AV scanning per close; the file is a crash-recovery HINT) | handle() 17.03 ms | **4.05 ms** | **−85% cumulative** (26.84 → 4.05) | same-process A/B with `_inflight` stubbed (6 ms delta); worst case the recovery note is a few writes stale at a crash — best-effort by design | 3 consecutive full-suite greens; Cycle 2 commit |
 
 ## Reverted
 
 | # | Change | Measurement | Reason |
 |---|---|---|---|
-| (none yet) | | | |
+| F1 (investigation, no revert needed) | digest N5 flake (`test_chat_digest.py::test_n5_prompt_injection_does_not_change_behaviour`) | 2 sightings in ~8 full-suite-context runs; 0/27 focused reproductions (solo ×10, both file orders, 5-file combo ×3, pre-change bisect ×7); failing chat index differs each sighting (5, then 7); path is pure functions over isolated temp DBs (`use_llm=False`) | Verdict: rare WAL-on-Windows write-contention flake under full-suite load, unrelated to K3/K4. Documented, not asserted away; re-test if it recurs, with `-p no:randomly --tb=long -vv` |
 
 ## Rejected before touching code (measured, not worth changing)
 
@@ -30,6 +32,12 @@ Noise floor: import ~8%, skills_load ~1.5%, route ~20% (CPU scaling), TTS ~13% �
 
 - Remaining ~250–300 ms of `skills_load` is the genuine import of 122 `skill.py` modules — the floor without per-skill refactors (K2's projected ~260 ms nearly reached: 358 ms).
 - `voice_tts` (Piper, CPU) 420 ms median with ~13% run-to-run noise — no local lever found (onnxruntime GPU offload for piper-tts is not supported by the installed package); rejected without a code change.
+
+## Cycle 2 additions (2026-10-01)
+- **New benchmark**: `bench_handle` in tools/bench_opt.py — dispatcher.handle() end-to-end in a sandboxed interpreter (facts/conversation/semantic re-pointed to temp dirs, LLM mocked). Reflex path median 26.84 ms → **4.05 ms** after K3+K4; rule-routed skill path (system skill) ~180 ms = genuine psutil measurement work (`cpu_percent(interval=0.1)` is deliberate), not overhead.
+- **Usage data** (route_log, 3091 routed requests): 121 distinct skills used; ~100 have ≤2 uses. Lazy skill imports stay rejected — the cost would move onto the reply path of the first use.
+- **Rejected after measurement**: `facts.log_route` (0.14 ms) and `facts.set` — owner-data DBs keep full durability (no WAL/NORMAL change there, unlike the audit log).
+- **B3 (bug fix)**: `PIP_NAME["zxingcpp"] = "zxing-cpp"` — scanqr's auto-install always failed because the import name isn't the PyPI name (found via a runtime NEEDS.md error entry).
 
 ## Session note (2026-10-01)
 - Bench→suite interference found and fixed: bench_opt left the planner resident in VRAM; a later arch2 test's live LLM call then downshifted `qwen3:14b → qwen2.5-c8k:3b` and failed its assertion. bench_opt now restores VRAM (quick mode unloads the planner; full mode unloads everything it loaded).

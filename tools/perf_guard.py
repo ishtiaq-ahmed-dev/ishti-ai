@@ -25,6 +25,8 @@ BENCHES = {
     "reflex_ms|median": ("reflex.answer()", False, 0.50),
     "llm_gen|median_tok_s": ("planner tok/s (warm)", True, 0.15),
     "llm_gen|median_wall_s": ("planner wall s (warm)", False, 0.15),
+    "handle_reflex_ms|median": ("dispatcher.handle reflex (mocked LLM)", False, 0.30),
+    "handle_skill_ms|median": ("dispatcher.handle rule skill (mocked LLM)", False, 0.30),
     "voice_stt_ms|median": ("whisper warm decode", False, 0.15),
     "voice_tts_ms|median": ("piper synthesize", False, 0.25),
 }
@@ -43,7 +45,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--baseline", required=True, help="bench_opt JSON measured on the pre-change tree")
     ap.add_argument("--current", default=None, help="reuse an already-measured current JSON instead of benching now")
-    ap.add_argument("--full", action="store_true", help="bench the full set (default: quick set present in the baseline)")
+    ap.add_argument("--full", action="store_true", help="bench the full set incl. GPU/model-swap benches")
+    ap.add_argument("--quick", action="store_true", help="bench only import/route/reflex (no skills_load, no handle)")
     ap.add_argument("--tolerance", type=float, default=None, help="override the per-benchmark tolerances with one value")
     args = ap.parse_args()
 
@@ -53,9 +56,16 @@ def main():
         with open(args.current, encoding="utf-8") as f:
             cur = json.load(f)
     else:
-        quick = [] if args.full else ["--quick"]
+        # handle (request path) and skills_load run in the default bench; --full adds the
+        # model-swapping / GPU benches (translate, whisper, piper) on top. --quick is still
+        # honoured for the fastest possible check.
+        extra = []
+        if args.full:
+            extra = ["--full"]
+        elif args.quick:
+            extra = ["--quick"]
         out_json = os.path.join(os.getcwd(), "_work", "perf_guard_current.json")
-        cmd = [sys.executable, "-m", "tools.bench_opt", "--json", out_json, *quick]
+        cmd = [sys.executable, "-m", "tools.bench_opt", "--json", out_json, *extra]
         print("[perf_guard] benching:", " ".join(cmd))
         r = subprocess.run(cmd, cwd=os.path.dirname(HERE), capture_output=True, text=True)
         sys.stdout.write(r.stdout)
@@ -80,11 +90,14 @@ def main():
         failed |= bad
         rows.append((label, b, c, change, ("REGRESSION" if bad else "ok")))
 
+    def fmt(v):
+        return f"{v:.4g}" if isinstance(v, (int, float)) else ("-" if v is None else str(v)[:12])
+
     w = max(len(r[0]) for r in rows) + 2
     print(f"\n{'benchmark'.ljust(w)}{'baseline':>12}{'current':>12}{'change':>10}  verdict")
     for label, b, c, ch, verdict in rows:
         chs = f"{ch:+.1%}" if ch is not None else "-"
-        print(f"{label.ljust(w)}{b!s:>12}{c!s:>12}{chs:>10}  {verdict}")
+        print(f"{label.ljust(w)}{fmt(b):>12}{fmt(c):>12}{chs:>10}  {verdict}")
     print("\n[perf_guard] PASS - no regression beyond tolerance" if not failed
           else "\n[perf_guard] FAIL - revert the change or fix the regression before keeping it")
     sys.exit(1 if failed else 0)
