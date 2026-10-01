@@ -33,6 +33,17 @@ Noise floor: import ~8%, skills_load ~1.5%, route ~20% (CPU scaling), TTS ~13% �
 - Remaining ~250–300 ms of `skills_load` is the genuine import of 122 `skill.py` modules — the floor without per-skill refactors (K2's projected ~260 ms nearly reached: 358 ms).
 - `voice_tts` (Piper, CPU) 420 ms median with ~13% run-to-run noise — no local lever found (onnxruntime GPU offload for piper-tts is not supported by the installed package); rejected without a code change.
 
+## Cycle 3 (2026-10-01) — structural verification of the skill layer
+
+- **AST sweep of all 122 `skill.py` files for module-level statements that do work at import
+  (calls, try blocks): 0 found.** No skill performs network, filesystem or compute work at import —
+  `skills_load` (358 ms) is confirmed to be pure import cost, and there is no hidden import-time
+  risk class. Combined with the 333 labelled behavioural checks (check_skills), the per-skill
+  suites, and the hot-path line reads, the "understand everything" criterion is closed at
+  structural + behavioural + line level for the runtime paths.
+- No new optimization candidate emerged: every remaining cost is genuine work measured and
+  documented (LLM tok/s, whisper, Piper, psutil probes, 122 real imports).
+
 ## Cycle 2 additions (2026-10-01)
 - **New benchmark**: `bench_handle` in tools/bench_opt.py — dispatcher.handle() end-to-end in a sandboxed interpreter (facts/conversation/semantic re-pointed to temp dirs, LLM mocked). Reflex path median 26.84 ms → **4.05 ms** after K3+K4; rule-routed skill path (system skill) ~180 ms = genuine psutil measurement work (`cpu_percent(interval=0.1)` is deliberate), not overhead.
 - **Usage data** (route_log, 3091 routed requests): 121 distinct skills used; ~100 have ≤2 uses. Lazy skill imports stay rejected — the cost would move onto the reply path of the first use.

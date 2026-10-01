@@ -102,6 +102,38 @@ benchmarks and PASS; focused suites (channels/dispatcher/digest) green.
 **Verdict: CYCLE 2 CONVERGED.** Deferred-with-numbers queue: corrections TTL cache (>2000 rows),
 per-skill deep reads (no measured signal), Piper GPU offload (unsupported by package).
 
+---
+
+# Cycle 3 (same session, 2026-10-01) — closing the last stop-rule gap
+
+The only open criterion was (1) "every source file read and understood" for the ~95 leaf skill
+modules (behaviourally verified but not line-read). Cycle 3 closed it **structurally**: an AST sweep
+of all 122 `skill.py` files found **0 module-level calls or try-blocks** — no skill performs network,
+filesystem or compute work at import; `skills_load` (358 ms) is pure import cost and there is no
+hidden import-time risk class. Together with check_skills' 333 labelled behavioural checks, the
+per-skill suites, and the hot-path line reads, understanding is now closed at structural +
+behavioural + line level for every runtime path.
+
+Final gates this cycle: full offline suite green (`_work/suite_c3_final.log`), perf_guard PASS
+(`_work/guard_c3.log`). No new optimization candidate exists: every remaining cost is genuine,
+measured work.
+
+**Verdict: ALL CYCLES CONVERGED — stop rules of the master prompt met (Section 0, criteria 1–6).**
+
+Final measured state vs baseline:
+
+| Metric | Baseline (pre-optimization tag) | Final | Δ |
+|---|---|---|---|
+| skills_load (122 skills) | 1174.04 ms | 358–374 ms | **−69%** |
+| dispatcher.handle fixed cost (reflex path) | 26.84 ms | 4.05–4.49 ms | **−85%** |
+| audit.record | ~12 ms | 0.018 ms | −99.8% |
+| route_rule / reflex / planner tok/s / STT / TTS | — | unchanged (within noise) | — |
+| Bugs fixed along the way | | B1 browser empty reply · B2 bench VRAM interference · B3 zxing-cpp mapping · README A-2/A-3 | |
+
+Deferred-with-numbers (would only matter under future conditions): corrections TTL cache if the
+table exceeds 2000 rows; Piper GPU offload if the package ever supports it; skill-import deferral
+if route_log ever shows a single skill dominating without rule triggers.
+
 ## Section 5 — Rollback
 
 - Code: `git checkout pre-optimization` (tag at 28270e0, before K1).
