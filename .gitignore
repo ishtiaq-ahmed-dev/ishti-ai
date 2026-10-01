@@ -41,3 +41,7 @@ dist/
 .qa_nemotron/
 TEST_STATE_last_run.json
 reports/skills/_scratch/
+
+# long-run optimization session (2026-10-01)
+backups/
+_work/
