@@ -189,11 +189,18 @@ def register(name) -> dict:
                                        f"(a new skill must arrive DISABLED)"}
     if not os.path.isfile(os.path.join(folder, "skill.py")):
         return {"ok": False, "reason": "draft has no skill.py"}
+    # A FIRST registration has nothing to back up yet (the folder does not exist), so this returns "".
+    # That is only the right answer for an UPDATE, where the live folder is the previous version.
     backup = _backup(name, m.get("version", "0.1.0"))
     out = skillsmith.install_folder(folder, m, "ISHTI skill_creator")
     src = os.path.join(ROOT, "ishti", "skills", name, "manifest.json")
     if not os.path.isfile(src):
         return {"ok": False, "reason": str(out)}
+    if not backup:
+        # Snapshot what we just installed, otherwise a first registration has NOTHING to roll back to and
+        # rollback() honestly reports "no backup exists yet". Found by
+        # test_rollback_restores_the_previous_version; ISSUES.md SC-24.
+        backup = _backup(name, m.get("version", "0.1.0"))
     record(name, status="disabled", installed=True, backup=backup)
     return {"ok": True, "message": str(out), "installed_to": src, "backup": backup,
             "status": "disabled", "note": "registered DISABLED - enabling needs the owner's explicit yes"}

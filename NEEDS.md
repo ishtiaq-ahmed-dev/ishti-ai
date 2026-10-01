@@ -297,6 +297,22 @@ the integrator instead of in parallel. *Needed:* nothing from you — recorded s
 resident block (privacy, `RESEARCH.md` R5 S5). `detail()` carries the name. *Needed:* your confirmation of the
 wording (N21) before it is stated as fact anywhere.
 
+## N30. Two sessions were working in this workspace at the same time — deliverables were overwritten
+Partway through this pass, **another agent session** (working on "Remote Control (Telegram + WhatsApp) +
+cua") committed 5 commits into the same repo: `0f1bb99`, `eedb20e`, `c3dbb91`, `e8a6cfc`, `8f740d9`, `cfd005b`.
+Consequences observed, not guessed:
+- `git commit -am`-style commits from that session **swept my in-flight, uncommitted files into its commits**;
+- it **archived my plan** to `IMPLEMENTATION_PLAN_skillcreator.md` and took the canonical
+  `IMPLEMENTATION_PLAN.md` name;
+- it **overwrote `RESEARCH.md` (73,080 → 31,311 bytes) and `FINAL_REPORT.md`** with its own content;
+- it appended its own `N21`–`N26`, so **`NEEDS.md` now has two different `N21` entries** and two `N22`–`N26` ranges.
+My code, tests and my sections in `PROGRESS.md`, `ISSUES.md`, `TEST_RESULTS.md` and `NEEDS.md` were **not**
+damaged, and the restored copies `RESEARCH_skillcreator.md` (72,634 B) and `FINAL_REPORT_skillcreator.md`
+hold the originals. I deliberately did **not** overwrite the other session's files.
+*Needed:* your decision on (a) which of the two sessions is canonical for the shared deliverable names, and
+(b) how the `NEEDS.md` numbering collision should be resolved (this section uses N21–N30, theirs uses
+N21–N26). *Until then:* both sessions' reports exist side by side under distinct filenames.
+
 
 ---
 

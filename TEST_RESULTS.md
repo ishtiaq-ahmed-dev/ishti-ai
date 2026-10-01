@@ -426,7 +426,7 @@ false alarms before I checked `tools/verify_all.py`).
 | `shell=True` | **6** | ISSUES.md SC-07 |
 | Hardcoded `D:\ISHTI` in shipped code | **16** | ISSUES.md SC-08 |
 | Committed secrets | **none** (`git ls-files data` = 0; 3 candidates classified by shape, no value printed) | ISSUES.md SC-09 |
-| Self-knowledge paraphrases recognised | **28 / 28**, 0 false positives (EN, Urdu, Pashto, Roman-Urdu) | `scratch/check_paraphrases.py` |
+| Self-knowledge paraphrases recognised | **28 / 28**, 0 false positives (EN, Urdu, Pashto, Roman-Urdu) | `tools/check_paraphrases.py` |
 
 ## 4. Partial offload — the hard gate
 
