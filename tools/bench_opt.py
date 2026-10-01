@@ -99,15 +99,23 @@ def _generate(model, prompt, num_predict=64, keep_alive=None):
             "eval_count": eval_count}
 
 
+def unload_model(model):
+    """Drop a model from Ollama's VRAM (keep_alive=0) so measurements leave no residue."""
+    import requests
+    base = os.environ.get("ISHTI_OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+    try:
+        requests.post(f"{base}/api/generate", json={"model": model, "prompt": "", "keep_alive": 0}, timeout=60)
+    except requests.RequestException:
+        pass
+
+
 def bench_llm(model, n=5, num_predict=64, prompt="List five colours, one per line.", unload_after=False):
     """Warm the model once (load excluded from later runs), then n timed generations; medians over the warm runs.
     unload_after: drop it again (keep_alive=0) so the next benchmark starts from the same VRAM state."""
     _generate(model, "warm up", num_predict=8)
     runs = [_generate(model, prompt, num_predict=num_predict) for _ in range(n)]
     if unload_after:
-        import requests
-        base = os.environ.get("ISHTI_OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
-        requests.post(f"{base}/api/generate", json={"model": model, "prompt": "", "keep_alive": 0}, timeout=60)
+        unload_model(model)
     return runs
 
 
@@ -180,6 +188,9 @@ def main():
                           "median_tok_s": median([r["tok_s"] for r in runs if r["tok_s"]]),
                           "median_wall_s": median([r["wall_s"] for r in runs]),
                           "median_load_s": median([r["load_s"] for r in runs])}
+        if not args.full:
+            unload_model(planner)  # quick mode leaves VRAM as it found it (a resident planner
+            # downshifts later tests' models: bench -> suite interference, found 2026-10-01)
         if args.full:
             from ishti import CONFIG
             tr = CONFIG["llm"]["models"].get("translator", "gemma3:4b")
@@ -203,6 +214,9 @@ def main():
         ps = requests.get(f"{base}/api/ps", timeout=5).json().get("models", [])
         out["ollama_loaded"] = [{"name": m["name"], "size_vram_mb": round(m["size_vram"] / 2**20),
                                  "full": m["size_vram"] >= m["size"]} for m in ps]
+        if args.full:  # the full run measured all its models; leave nothing resident behind it
+            for m in ps:
+                unload_model(m["name"])
     except Exception as exc:
         out["ollama_loaded"] = [{"error": str(exc)}]
 

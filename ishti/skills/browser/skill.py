@@ -10,7 +10,6 @@ import uuid
 from urllib.parse import urlsplit
 
 from ishti import CONFIG, llm
-from ishti.mcp_client import get_hub
 from ishti.skills import answer_of, trace
 from ishti.untrusted import guard, scan
 from orchestrator.intent_detector import IntentDetector
@@ -52,6 +51,16 @@ CAPTCHA = re.compile(r"recaptcha|hcaptcha|captcha|verify you are (?:a )?human|ar
                      r"press and hold|i'm not a robot", re.I)
 # One page per Chrome profile: parallel tasks take turns in the browser (re-entrant for WhatsApp -> browser).
 LOCK = threading.RLock()
+
+
+def get_hub():
+    """The MCP browser hub, imported on first use. (Measured 2026-10-01, -X importtime:
+    importing ishti.mcp_client pulls the `mcp` package for ~362 ms cumulative, and skills_load
+    imports every skill.py at boot - so the module-level import made every ISHTI start pay for
+    the browser stack even when the browser is never used. Same singleton as before, deferred.)
+"""
+    from ishti.mcp_client import get_hub as _get_hub
+    return _get_hub()
 
 
 def wait_download(since, timeout=60, folder=DOWNLOADS):
