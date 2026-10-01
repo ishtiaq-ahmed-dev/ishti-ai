@@ -343,3 +343,29 @@ lost). Legend: [x] done · [~] in progress · [ ] not started · BLOCKED = needs
 `tests/test_selfmodel.py` · `tests/skills/skill_creator/` · `tests/test_router_lifecycle_flags.py` ·
 `tools/skill_creator_run.py` · `FINAL_REPORT.md`.
 
+
+---
+
+# Session 2026-10-01 (remote-control mega-request; heartbeat) — RESUMED under the long-run optimize prompt
+
+State at resume: channels core DONE+committed (client/poller/approvals/policy/security/gate/output/
+media/whatsapp/service/api - every module self-check green), server.py wired (remote attach + /api/health
+remote section), docs/API_CONTRACT.md §11 written. Remaining to close this stream: mock-Telegram acceptance
+tests (13), cua feasibility file + desktop_control skeleton, Settings UI section, catalog/matrix, reports.
+Ollama is DOWN since session start (not started by me - rule) => live VRAM/model measurements BLOCKED (N24).
+Then: new master prompt Cycle 1 starts from a clean, tagged tree.
+
+## Remote-control session close-out (2026-10-01)
+- WP0 checkpoint: prior skill_creator/selfmodel work committed; tag `ishti-pre-remote-20261001` (978c9a5).
+- PHASE 1 RESEARCH.md: R1-R5 (Telegram transport+library decision, WhatsApp modes+ban risk, trycua/cua
+  package+license audit, security design, grounding options). VERIFIED sources + dates; local facts measured.
+- PHASE 2 IMPLEMENTATION_PLAN.md: 13 WPs, exclusive file ownership, deviations documented.
+- PHASE 3 BUILD: ishti/channels/ (11 modules, self-checks green), server wiring + /api/health remote
+  section, contract §11, Settings → Remote Control UI (npm build green), desktop_control skill
+  (disabled skeleton, 7 tests 3x green).
+- PHASE 4 TESTS: tests/test_channels.py 13/13 PASS ×3 consecutive greens vs mock Bot API; full offline
+  suite 184 passed / 0 failed; check_skills 122 skills 0 problems.
+- FIX->RETEST loop: 8 bugs found by tests (table in TEST_RESULTS.md), each fixed + re-run green.
+- Reports: TEST_RESULTS.md (gate table), CUA_FEASIBILITY.md (GO/PARTIAL/NO-GO/BLOCKED per component),
+  NEEDS.md N22-N26, FEATURE_CATALOG.md + TEST_MATRIX.md rows.
+- Final commit + tag `remote-20261001`. Then: new long-run optimize master prompt starts Cycle 1.

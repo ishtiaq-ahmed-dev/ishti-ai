@@ -51,3 +51,22 @@ T2 confirmation during the run window. Proven on 3 features (weather, bayes, cha
 1. `pytest` (105 offline, curated) 2. Layer 0 skill suites 3. Layer 1 (scratch stores)
 4. Layer 2 with Ollama + VRAM rule 5. Layer 3 (net/OS, offline-failure rows) 6. Layer 4 T2 under
 test mode 7. scenarios (prompt 3).
+
+## Remote Control rows (2026-10-01)
+| Row | Feature | Pass rule | Evidence | State |
+|---|---|---|---|---|
+| RC-1 | strangers/groups/channels/forwarded ignored as data | nothing routed; capped alert; audit rows | tests/test_channels.py test_1 | PASS |
+| RC-2 | T2 step-up approval | action-bound, single-use, expiring; replay+mismatch refused | test_2 | PASS |
+| RC-3 | remote-forbidden refused; policy not remotely editable | 6 categories refused; allowlist unchanged | test_3 | PASS |
+| RC-4 | prompt injection stays data | quoted instructions never routed/executed | test_4 | PASS |
+| RC-5 | stale commands expire | queued-while-off message not executed | test_5 | PASS |
+| RC-6 | /kill /lock /unlock under load | killswitch runs; locked refuses; PIN lockout persists | test_6 | PASS |
+| RC-7 | rate limit + restart idempotency + clean shutdown | 429-free throttling; no re-execution; no orphan poller | test_7 | PASS |
+| RC-8 | chunking, big-table CSV, voice-in, image-in | <=3800-char chunks; attachment; local STT; vision path | test_8 | PASS |
+| RC-9 | no secrets in logs/git/replies | audit masked; token never in exceptions/git (outside test mocks) | test_9 | PASS |
+| RC-10 | sensitive-output redaction | finance/client data minimized + "open on PC" | test_10 | PASS |
+| RC-11 | WhatsApp default OFF, designated-only | nothing read/sent while OFF; other chats never parsed; 3s pacing | test_11 | PASS |
+| RC-12 | audit attribution | every remote action carries channel + session | test_12 | PASS |
+| RC-13 | concurrent desktop + remote | 5+5 interleaved, both channels correct; no model loads in channel layer | test_13 | PASS |
+| RC-14 | desktop_control gates | manifest-disabled; blocked apps; T2 gate; kill abort | tests/skills/desktop_control | PASS (3x green) |
+| RC-15 | real bot end-to-end | same suite against the real Telegram API | NEEDS N22 token | BLOCKED |

@@ -297,3 +297,42 @@ the integrator instead of in parallel. *Needed:* nothing from you — recorded s
 resident block (privacy, `RESEARCH.md` R5 S5). `detail()` carries the name. *Needed:* your confirmation of the
 wording (N21) before it is stated as fact anywhere.
 
+
+---
+
+# Remote Control + cua (2026-10-01) — what is missing or needs the owner
+
+## N22. Telegram bot token + pairing (BLOCKS real-network tests and the live channel)
+*Needed:* create the bot with @BotFather, paste the token in Settings → Remote Control → Telegram
+(stored in Windows Credential Manager via DPAPI — never in files/logs/git), then click "Pair Telegram"
+and send `/pair <code>` to the bot from your own account (that records your numeric ID).
+*Until then:* the whole 13-test suite runs against a mock Bot API (`tests/mock_telegram.py`) — the real
+bot re-runs the same suite. Channel stays OFF.
+
+## N23. WhatsApp mode decision
+Mode 1 (built, default OFF): read/reply ONLY in your own "Message yourself" chat through the already-open
+WhatsApp Web tab, human-paced, every send T2-gated. Risk (honest): browser automation of your own account
+can get it restricted; unofficial libraries were NOT used and stay refused by default (April/September 2026
+malware campaigns documented in RESEARCH.md R2). Official Business Cloud API: needs a public webhook + Meta
+account — breaks the no-inbound-ports/local-only design; documented in R2, not built.
+*Needed:* your explicit yes (Settings → Remote Control → WhatsApp) for mode 1, or nothing happens.
+
+## N24. Ollama was down all session — live VRAM/grounding rows unmeasured
+`curl http://127.0.0.1:11434/api/version` → connection refused (2026-10-01); per the safety rules I do not
+start the model server un-supervised. *Needed:* start ISHTI/Ollama once, then I re-run the VRAM-adjacent
+rows (voice STT through the governor, image-in tiers, any cua grounding) with measurements. Until then
+those rows are BLOCKED, not failed — no partial-offload observations were possible (no model loaded).
+
+## N25. cua-driver install approval (read-before-run gate)
+Installing `cua-driver` (official repo only, version pinned) runs an upstream PowerShell installer
+(`irm https://cua.ai/driver/install.ps1 | iex`). The installer script will be downloaded, read and
+reviewed before execution, but executing an upstream installer on your PC is your call (T2-equivalent).
+AGPL components (`cua-agent[omni]`, `cua-som`, `cua-perception`) stay excluded unless you explicitly
+approve them. Lume/Fleets/cloud: permanently excluded (Apple-Silicon-only / cloud).
+*Needed:* your yes + a pinned release; until then desktop_control stays a disabled skeleton and
+CUA_FEASIBILITY.md marks rows BLOCKED.
+
+## N26. cua-bench tooling (optional, deferred)
+`cua-bench` needs Python 3.12+ + `uv` (this venv: 3.11.9). An isolated tool venv is possible but adds a
+dependency chain for benchmarking only. *Needed:* your preference; until then custom local benchmarks are
+deferred without prejudice.

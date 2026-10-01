@@ -509,3 +509,57 @@ can be admitted and lets the governor step the planner down — note the governo
 *will* do that (run #2), so the current gate is stricter than necessary. Recorded as `NEEDS.md` N22 and
 `ISSUES.md` SC-23. The refusal direction is the safe one, so nothing was weakened to make a test pass.
 
+
+---
+
+# Remote Control (Telegram + WhatsApp) + cua — 2026-10-01
+
+Scope: master prompt "Remote Control (Telegram + WhatsApp) and trycua/cua features".
+Machine: Windows 11 Pro 25H2, RTX 5070 Ti 16 GB, 64 GB RAM, Python 3.11.9. Rollback: tag `ishti-pre-remote-20261001` (commit 978c9a5).
+
+## Gate table (master prompt tests 1-13)
+
+| # | Test | Result | Evidence (command → output) |
+|---|---|---|---|
+| 1 | Unknown user / group / channel / forwarded ignored, logged, owner alerted | **PASS** | `pytest tests/test_channels.py::test_1...` → 0 dispatches, audit rows `ignored non-private chat` + unknown-sender alert, forwarded acknowledged as data |
+| 2 | T2 step-up: recap+buttons; approve once; replay/expired/mismatch fail | **PASS** | test_2 → approval consumed exactly once; `can't be used` on replay+expiry; approving A cannot approve B; approve feeds "yes" into that session only |
+| 3 | Remote-forbidden refused; remote_policy.yaml not remotely editable | **PASS** | test_3 → 6 categories refused by name; allowlist unchanged after a policy-edit attempt |
+| 4 | Prompt injection in message text stays data | **PASS** | test_4 → injected "send files/disable gate/approve all" routed as text only, never executed |
+| 5 | Stale queued command expired, not executed | **PASS** | test_5 (1 h old) → expiry reply, 0 dispatches; poller.flush_stale drops old queue at boot |
+| 6 | /kill + /lock under load; /unlock needs PIN; lockout after wrong PINs | **PASS** | test_6 → real killswitch ran (mic OFF hook visible in log); locked refuses; 5 wrong PINs ⇒ 900 s lockout persisting in state file |
+| 7 | Rate limit; no re-execution after restart; no orphan poller | **PASS** | test_7 → throttled with notice; Poller(db) restart does not re-execute update 100; `p.stop()` joins (kick trick) |
+| 8 | Chunking; big table as CSV; voice-in transcription; image-in | **PASS** | test_8 → ≤3800-char chunks; CSV attachment produced; `ishti.voice.transcribe` path exercised; image saved + description request |
+| 9 | No secrets in logs/config/git/crash paths | **PASS** | test_9 → audit masked via redact ctx; BotAPIError carries no token; `git grep <token> -- ':(exclude)tests/*'` → empty |
+| 10 | Sensitive-output policy redacts client/finance data | **PASS** | test_10 → amounts/emails/phones masked + "(minimized … open ISHTI on the PC)" |
+| 11 | WhatsApp self-chat mode: default OFF; other chats never read; human-paced | **PASS** | test_11 → disabled: nothing read/sent; wrong open chat: parse skipped; ≥3 s paced sends |
+| 12 | Audit attributes every action to channel + message/session | **PASS** | test_12 → `remote message received`/`remote reply sent` rows with channel=telegram, session=tg:<id> |
+| 13 | Works alongside desktop chat + background tasks; no partial offload | **PASS** | test_13 → 5 remote + 5 desktop interleaved all correct; channel layer imports no model machinery (structural assert). Zero partial-offload observations this session: **no model was loaded at all** (Ollama down — N24), VRAM sampler uninvolved |
+
+Result: **13/13 PASS** (mock Telegram Bot API; the same suite re-runs against the real bot once N22 lands).
+
+## Other measured results
+- Full offline suite after the final merge: `pytest --timeout=600` → **184 passed, 12 deselected, 0 failed** in 242 s.
+- Module self-checks (each ends with asserts): channels.{policy,security,approvals,telegram_client,poller,gate,output,media,whatsapp_channel,service,api} → all green (raw output in transcript).
+- `tools/check_skills.py` → **122 skills, 236 assertions, 333 labelled requests, 0 problems** (desktop_control added).
+- desktop_control suite: **7 passed** × 3 consecutive runs.
+- Frontend: `npm run build` → exit 0 (built in ~3.3 s; bundle size warning pre-exists).
+- API contract: §11 written; `ishti/channels/api.py` self-check validates status/policy/token-guard/enable/pairing/pin over TestClient (401 without bearer, exactly like check_remote_auth expects for remote callers).
+
+## Bugs found by tests this session (all fixed with regression coverage)
+| Bug | Root cause | Fix |
+|---|---|---|
+| audit.record(channel=…) TypeError | repo's audit takes channel/session from thread context, not kwargs | channels now wrap calls in `audit.context(...)` (gate/approvals/poller/media) |
+| test_6 lockout never triggered in full run | per-test-module rate limiter kept refilling across tests; fixture reset + per-test bucket | fixture clears `_limiters`; test 7 owns limiter coverage |
+| approval expiry untestable below 5 s | `max(5, ttl)` floor | exact TTL honoured |
+| classifier tripped on quoted injection text | quotes are DATA, not requests | `_strip_quotes` before matching (tested) |
+| `secrets` block missed "api key is:" phrasing | colon-style regex too narrow | word + "is/are/:/=" and key-shaped patterns |
+| deadlocked policy self-check | `save()` re-entered non-reentrant lock | RLock |
+| poller stop hung on a hanging long poll | no kick; thread joined until timeout | timeout=0 kicker thread releases the poll |
+| flowise test order-dependence (pre-existing) | settings pollution from earlier test | test resets its precondition |
+
+## BLOCKED (owner/environment; details in NEEDS.md)
+| Item | Why |
+|---|---|
+| Real-bot end-to-end run (RC-15) | N22: token via @BotFather + pairing produces the owner's numeric ID |
+| cua-driver install + 5-task protocol | owner-gated installer (read-before-run); N24/N25 |
+| Live VRAM/grounding measurements | N24: Ollama not running all session (not started by me, per safety rules) |
