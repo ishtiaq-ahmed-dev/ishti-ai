@@ -1,0 +1,20 @@
+# Spark-X2.5-4B as the ISHTI brain (planner role).
+# ollama create ishti-spark2.5:4b -f ishti/spark2.5.Modelfile
+#
+# Source chain: XHToken/Spark-X2.5-4B (Apache-2.0) -> ollama.com/maternion/spark-x2.5:4b-f16
+#   F16 = the UNQUANTIZED build (arch spark2_5, 4.11B params, 8.2 GB; the official runtime
+#   carries the spark2_5 compatibility patches Ollama 0.31.2 needs - a plain
+#   `ollama create` from the raw HF GGUF fails validation without them).
+#   The same-weights raw HF GGUF is kept locally (SHA256 8cecf405...a14, verified):
+#     models/gguf/Spark-X2.5-4B/Spark-X2.5-4B.gguf  (XHToken/Spark-X2.5-4B-GGUF @ 9826e0be)
+#   HF safetensors copy for offline LoRA/QLoRA (orchestrator/finetune.py):
+#     models/hf/Spark-X2.5-4B/  (XHToken/Spark-X2.5-4B @ 0bcb3567)
+#
+# num_ctx 8192 for the same reason as planner.Modelfile: the /v1 API cannot set num_ctx
+# per request, and ISHTI's prompts (system + history + search context) need it.
+# Author-recommended sampling (temp 1.0, top_p 0.95, top_k 0) is already embedded in the
+# upstream manifest and is inherited here.
+FROM maternion/spark-x2.5:4b-f16
+PARAMETER num_ctx 8192
+# keep_alive is per-request, not a Modelfile parameter: ISHTI's models.used() re-posts
+# keep_alive -1 for the pinned planner role (MODEL_DECISIONS.md).

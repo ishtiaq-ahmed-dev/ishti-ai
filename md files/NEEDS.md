@@ -195,3 +195,5 @@ Update to Q10 (same day): measured coexistence limit — with qwen3:14b (9.0 GB)
 (2.7 GB, the translator) cannot load under the 80% budget (only ~1 GB free). Language-locked users
 on arch2 get correct-but-untranslated replies; any arch2 + arch1-role mix flaps. See
 PERFORMANCE_REPORT.md for numbers and the proposed fixes (translator gate is the big one).
+
+- 2026-10-01 08:39 [gap] skill_creator: a blocked (T3) action: live trade - ISHTI will not do this, and no confirmation unblocks it - asked: "place a live trade on my broker account"
