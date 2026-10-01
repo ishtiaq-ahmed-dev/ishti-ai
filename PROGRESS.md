@@ -369,3 +369,47 @@ Then: new master prompt Cycle 1 starts from a clean, tagged tree.
 - Reports: TEST_RESULTS.md (gate table), CUA_FEASIBILITY.md (GO/PARTIAL/NO-GO/BLOCKED per component),
   NEEDS.md N22-N26, FEATURE_CATALOG.md + TEST_MATRIX.md rows.
 - Final commit + tag `remote-20261001`. Then: new long-run optimize master prompt starts Cycle 1.
+
+
+---
+
+# Session 2026-10-01 (long-run optimize master prompt; Cycle 1) — RESUMED TWICE, cycle CONVERGED
+
+## Phase 0 - baseline (all measured, all committed)
+- Tag `pre-optimization` (28270e0) AFTER committing the two channel files the remote tag missed
+  (api.py/service.py were untracked though server.py imports them - rollback tag would have been broken).
+- Data backup `backups/pre-optimization_20261001/` (1059 files, 35 SQLite via sqlite3.backup API,
+  0 errors). ENVIRONMENT.md, OPTIMIZATION_BASELINE.md (3 bench runs + noise table), tools/bench_opt.py,
+  tools/perf_guard.py. Ollama UP all session (owner-started; never restarted by me).
+- Full offline suite baseline: 184 passed / 12 e2e-deselected / 0 failed.
+
+## Phase 1 - understand (CODEMAP.md)
+- 727 in-scope .py files / 242,255 lines inventoried via AST docstring extraction -> CODEMAP.md.
+- Deep line-by-line read of the runtime hot path: 25+ core modules incl. dispatcher (1489 L),
+  llm, router, scope, skills loader, audit, facts, semantic, planner, voice, vram, lifecycle,
+  killswitch, reflex, corrections, selfmodel, resilience, test_mode, mic_control, core/state,
+  core/resolver, untrusted, wake, talk, agents, channels/service, telemetry.
+
+## Phase 2 - README audit (README_AUDIT.md)
+- 21 promises verified; A-2 (README setup missing ishti-spark2.5:4b) + A-3 (browser-profile wording)
+  FIXED in README.md + md files/README.md; A-1 (duplicate README) documented. TEST_STATE.json is the
+  QA harness's own record - left untouched.
+
+## Phase 3 - optimize loop (TECHNIQUE_LOG.md; measure -> change -> measure -> keep/revert)
+- K1 KEEP: lazy OpenAI client (ishti/llm.py) - skills_load 1174.04 -> 655.12 ms (-44.2%), importtime
+  attributed openai = 589 ms paid by 26 skill modules. perf_guard PASS, suite green, eedb20e.
+- K2 KEEP: lazy MCP hub (ishti/skills/browser/skill.py) - skills_load 655 -> 358.43 ms (-45.3%,
+  cumulative -69.5%), mcp package = 362 ms paid at every boot. perf_guard PASS, suite green, c3dbb91.
+- Rejected with numbers: manifest caching (games the bench only), lazy skill imports (moves cost
+  onto the reply path), corrections cache (0.007 ms - no gain today), Piper GPU offload (unsupported).
+- Bugs found by verification: B1 browser empty-reply flake (model answered only a Thai/CJK junk line;
+  llm.clean emptied it) FIXED in _summary; B2 bench->suite VRAM interference (resident planner
+  downshifted later live tests' models) FIXED in tools/bench_opt.py (restores VRAM).
+
+## Phase 4/5 - verify + close (OPTIMIZATION_SCORECARD.md, ARCHITECTURE.md, docs/arch/*)
+- Gates: perf_guard PASS after each keep; full suite green after each keep; check_skills 122 skills
+  236 assertions 333 labelled requests OK; python -m ishti.check PASS LIVE (routing 333/333, memory,
+  weather, LLM, plan, remote auth). TEST_STATE.json left as the QA record.
+- Verdict: CYCLE 1 CONVERGED (scorecard Section 4). Deferred with numbers: corrections TTL cache
+  (if table > 2000 rows), per-skill deep-read of the 122 skill.py (no measured signal).
+- Rollback: code tag `pre-optimization`; data backups/pre-optimization_20261001/.

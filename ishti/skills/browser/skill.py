@@ -458,10 +458,15 @@ def _summary(msgs, log):
     # heading, then "Learn more" -> IANA), and the answer must come from whichever page shows it
     earlier = f"Previous page (excerpt):\n{pages[-2][:1500]}\n\n" if len(pages) > 1 else ""
     done = "\n".join(log) or "(no browser actions ran)"
-    return llm.ask(f"Owner's request: {request}\n\nBrowser actions that actually ran, in order:\n{done}\n\n{earlier}"
-                   f"Current page (excerpt):\n{(pages or [''])[-1][-3000:]}\n\nAnswer the owner in 1-3 short sentences "
-                   "from whichever of these pages answers the request. Report only what the actions and pages show; if "
-                   "part of the request was not done, say which part.", temperature=0, max_tokens=200)
+    out = llm.ask(f"Owner's request: {request}\n\nBrowser actions that actually ran, in order:\n{done}\n\n{earlier}"
+                  f"Current page (excerpt):\n{(pages or [''])[-1][-3000:]}\n\nAnswer the owner in 1-3 short sentences "
+                  "from whichever of these pages answers the request. Report only what the actions and pages show; if "
+                  "part of the request was not done, say which part.", temperature=0, max_tokens=200)
+    # The model occasionally writes only a Thai/CJK junk line (llm.clean drops it) - an empty string
+    # must never be the owner-facing answer (found by the per-skill suite's failure rows, 2026-10-01).
+    if not out.strip():
+        out = "I opened the browser but couldn't read anything useful from the page for that request."
+    return out
 
 
 def _loop(session, msgs, log, steps_left):
