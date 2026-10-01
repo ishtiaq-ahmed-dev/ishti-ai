@@ -129,3 +129,68 @@ every Critical/High issue fixed or in NEEDS.md with the exact missing thing.
 - **N24** start Ollama/ISHTI once so the cua/grounding live measurements can run.
 - **N25** (owner-approval gate) enabling any AGPL cua perception component — default: excluded.
 - Nothing in this plan deletes data, changes a T2/T3 rule, or needs a purchase.
+
+---
+
+# PART 2 — 5-REPO FEATURE INTEGRATION (open-dots, ECC, hey-jev, Agent-Reach, coucou)
+
+Appended **before any integration feature code**, per the master prompt. Session 2026-10-01.
+Evidence chain: `VENDOR_PINS.md` (pins+licenses) -> `docs/repos/*.md` (reads) -> `REPO_FEATURE_MATRIX.md`
+(128 rows, dispositions) -> `COMPLETENESS_AUDIT.md` (Passes A/B/C, unmapped=0, run 1) -> `RESEARCH.md R6`.
+
+## P0. Deviations from the master prompt, documented (same protocol as Part 1)
+
+1. **Branching**: one integration branch `feat/repo-integration` (created) + rollback tag
+   `pre-repo-integration` (created at 0f6bb1f) instead of one branch per work package — single live
+   checkout that must keep serving the owner's desktop app; isolation is by exclusive file ownership,
+   one logical change per commit (established repo protocol, Part 1 deviation #1).
+2. **Roles, not separate agents**: this workspace has no sub-agent launcher (verified: no codebuff/freebuff
+   CLI on PATH); the mandated roles (repo-reader, blind reviewer, mechanical auditor, researcher,
+   planner, builder, tester, peer reviewer, security reviewer, completeness gate) are executed as
+   **separate sequential passes with independent artifacts** (Pass B/C scripts never read the matrix).
+3. **hey-jev has NO LICENSE** -> no source text may be copied; only behaviours re-implemented as
+   original ISHTI code (NEEDS.md owner-outreach note).
+4. **coucou assets are all-rights-reserved** -> original ISHTI mascot/sounds only.
+5. `vendor/` is git-ignored with pins in `VENDOR_PINS.md` (upstream code is read-only reference, not ISHTI code).
+
+## P1. Goals
+
+| # | Goal | Success looks like |
+|---|---|---|
+| RG1 | Every one of the 128 matrix rows has a final disposition AND evidence (test ID green 3x, or proved-skip in NEEDS.md). | FINAL_REPORT per-repo tables; REVIEW_SIGNOFF. |
+| RG2 | Completeness stays unmapped=0 at project end (re-run of both audit scripts vs newest upstream). | COMPLETENESS_AUDIT.md run 2. |
+| RG3 | New capability lands as real ISHTI code: `internet_reach` skill, `security_scan` skill, overlay shell, gateway receipts, voice improvements — each smaller than the sum of the repos. | FEATURE_CATALOG rows + tests. |
+| RG4 | IMPROVE rows carry measured before/after numbers. | TEST_RESULTS.md IMPROVE tables (no unmeasured numbers). |
+| RG5 | Local-only + safety invariants hold with all OPT-INs off (network-monitored). | Security suite in P4/P5. |
+
+## P2. Work packages (owner-pass, exclusive files, dependencies, proof, risk, rollback)
+
+| WP | Deliverable (matrix rows) | Owner-pass | Files it may touch (exclusive) | Depends | Proof (test IDs) | Risk | Rollback |
+|---|---|---|---|---|---|---|---|
+| WP-OD | Gateway receipts + action IDs + expiry (OD-03..06), redaction merge (OD-16), governed local `/search` via SearXNG (OD-14), workspace path confinement hardening (OD-15), auth/session hardening notes (OD-12/23) | Gateway/Core | `ishti/channels/approvals.py` (extend), new `ishti/gateway.py`, `ishti/audit.py` (extend), `tests/test_gateway_receipts.py`, `tests/test_governed_search.py` | P0 | T-OD-03..06, T-OD-14..16 green 3x; replay/forgery/A-vs-B tests | Medium (safety-adjacent — additive only, no gate lowered) | `git checkout --` those files |
+| WP-ECC | `security_scan` skill (ECC-06), review/security-review sub-agent roles wired into skill review (ECC-01), quality-gate hook for skill PRs (ECC-04), model-route merge (ECC-13), doctor+repair extension (ECC-12), plan view (ECC-08), session schema (ECC-09) | Security/Review | new `ishti/skills/security_scan/`, `ishti/skills/review/` (or roles in `ishti/agents.py`), `tests/skills/test_security_scan.py`, `orchestrator/doctor.py` (extend), `docs/SESSION_SCHEMA.md` | P0 | T-ECC-01/04/06/12/13 green; seeded-bad-config detection; no npm supply-chain install | Low-Med | delete new skill folder |
+| WP-JEV | Vocabulary biasing (JEV-08), duration-parser merge (JEV-17), PTT + dictation mode local (JEV-02/03), wake improvements (JEV-01), apps say/heard_as (JEV-07), typed-gate clarify semantics (JEV-05), speak-first ordering (JEV-09/13) | Voice | `ishti/voice.py`, `ishti/wake.py`, `ishti/mic_control.py`, `ishti/skills/reminders/` (parser), `ishti/skills/apps/` (aliases), new `ishti/dictation.py`, `tests/test_voice_vocabulary.py`, `tests/test_dictation.py`, `tests/test_duration_parser.py` | P0 | T-JEV-01/03/07/08/17 measured before/after; mic-OFF captures nothing; barge-in ~150 ms preserved | Med (voice regressions) | git checkout |
+| WP-REACH | `internet_reach` skill: channel/backend registry + probes (R01), doctor+json (R02), local transcribe with SSRF guards (R19), format/read helpers (R03..R06, R14..R16, R28), OPT-IN login channels OFF (R07..R13, R17, R18, R20, R30), UTF-8 subprocess helper (R26), skill aliases (R22) | Skills/Reach | new `ishti/skills/internet_reach/`, `tests/skills/test_internet_reach.py` | P0 | T-R01..06, R14, R16, R19, R22..24, R26, R28, R29 green; login channels asserted inert by default | Low-Med | delete skill folder |
+| WP-COUCOU | Overlay shell (C01), approvals surface (C02/C04), session pills (C03/C14), file drop (C06/C18), named-pipe IPC + relay (C12/C13/C21), log scrub (C16), tray merge (C17), safe links (C22), original mascot (C10/C11), pills (C08, OPT-IN) | Overlay/Desktop | new `desktop/overlay/`, `ishti/overlay_pipe.py`, `ishti/hooks_relay.py`, `desktop/tray.py` (extend), `tests/test_overlay_pipe.py`, `tests/test_relay_never_blocks.py` | WP-OD (C02 reuses receipts) | T-C01/02/03/04/06/12/13/16/17/22 green; owner-only pipe test; hook <300 ms exit; idle CPU measured | Med (window/TUI regressions) | delete `desktop/overlay/` |
+| WP-INTEGRATE | FEATURE_CATALOG/self-model/API_CONTRACT/THIRD_PARTY_NOTICES updates, OPT-IN consent screen text, catalog of new skills, docs | Integrator | `FEATURE_CATALOG.md`, `docs/API_CONTRACT.md`, `THIRD_PARTY_NOTICES.md`, `SKILLS_INVENTORY.md`, `PROGRESS.md`, `ISSUES.md` | all | regen scripts exit 0; contract tests green | Low | git checkout |
+| WP-TEST | Per-feature + per-repo acceptance + security + lifecycle + concurrency suites -> TEST_RESULTS | Tester | `tests/test_repo_integration.py`, `tests/test_security_suite.py`, `TEST_RESULTS.md` | WPs | 3 consecutive green runs per test ID | Low | — |
+| WP-REVIEW | Peer + security + completeness re-run + signoff | Reviewer | `REVIEW_SIGNOFF.md`, `COMPLETENESS_AUDIT.md` (run 2), `FINAL_REPORT.md` | WP-TEST | unmapped=0 re-proved; PASS/FAIL per repo | Low | — |
+
+Merge order (sequential, full offline suite after each):
+WP-OD -> WP-REACH -> WP-ECC -> WP-JEV -> WP-INTEGRATE(partial) -> WP-COUCOU -> WP-TEST -> WP-REVIEW.
+
+## P3. Acceptance criteria (repo-integration gate)
+
+- Matrix: 0 rows without final disposition + evidence; all IMPROVE rows carry before/after numbers.
+- Completeness: unmapped = 0 on re-run (both scripts) against pinned **and newest** upstream commits.
+- Tests: every PORT/ADAPT/IMPROVE/OPT-IN row's test ID green **3 consecutive runs**; all SKIP rows in NEEDS.md with proof.
+- Security: approval replay/forgery/A-vs-B fail; injection via fetched web content, file-drop content, and install-doc text cannot trigger actions; pipe owner-only; overlay not spoofable; tokens never in logs/git; OPT-INs inert; **no cloud calls with OPT-INs off (network-monitored)**.
+- Voice: mic default OFF captures nothing; barge-in preserved; vocabulary before/after measured; wake CPU measured.
+- Lifecycle: zero orphan processes/ports (20x), SQLite `integrity_check` OK, zero partial offload.
+- Full regression green; Critical/High issues fixed or in NEEDS.md with the exact missing thing.
+
+## P4. Owner decisions (never assumed)
+
+- OPT-IN connectors/pills/channels: implemented OFF; enabled only by owner action (consent screen).
+- hey-jev permission request (no license) — NEEDS.md.
+- Nothing in this part deletes data, changes a T2/T3 rule, or needs a purchase -> **build proceeds**.

@@ -286,3 +286,61 @@ on Windows the driver's accessibility/UIA usage is the vendor's approach — WP-
 rather than trusting the claim. License facts in R3 §A.
 
 ---
+
+
+# R6 — 5-repo feature integration (open-dots, ECC, hey-jev, Agent-Reach, coucou)
+
+Session 2026-10-01 (repo-integration pass). Pins: `VENDOR_PINS.md`; full reads: `docs/repos/*.md`;
+feature inventory: `REPO_FEATURE_MATRIX.md` (128 rows); anti-miss diff: `COMPLETENESS_AUDIT.md`.
+Claims below are VERIFIED (source + date, incl. measured local commands) or marked otherwise.
+
+## A. Approval-gateway merge design (VERIFIED local + code)
+
+- ISHTI already has single-use approvals: `ishti/channels/approvals.py` — `confirm(approval_id, action_id, sender_ok=True) -> True exactly once, before expiry`, with self-checks that **approving A cannot approve B**, **replay fails**, **expired fails** (lines 38-104, read 2026-10-01). This is *stronger* than open-dots' broker (in-process futures + 120 s timeout, `approval_broker.py`).
+- open-dots' extra value = **receipts**: every lifecycle step emits a persisted audit event (`approval.opened/approved/denied/expired`, `action.requested/started/completed/failed`, `redact_sensitive()` on all payloads) and the executor **consumes the pending entry before calling the adapter** (`action_gateway.py` `_execute_once`), so a cancelled approval can never re-dispatch.
+- Merge design (WP-OD): keep ISHTI's store; add (1) `action_id` = `req-<uuid>` bound to the approval record, (2) receipt events written through `ishti/audit.py` for every transition, (3) consume-before-adapter invariant asserted in a unit test mirroring open-dots' cancellation test, (4) configurable expiry (default 120 s, matching open-dots). T2 semantics unchanged — receipts are additive; no gate is lowered.
+
+## B. Windows named-pipe IPC for the overlay (VERIFIED sources, retrieved 2026-10-01)
+
+- Default pipe ACLs are permissive (default security descriptor when `lpSecurityAttributes = NULL`); an owner-only pipe needs an explicit security descriptor — *Named Pipe Security and Access Rights*, https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights (retrieved 2026-10-01); `CreateNamedPipe` docs, https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createnamedpipea (same date).
+- Local-only IPC: pass `PIPE_REJECT_REMOTE_CLIENTS` (supported flag, same CreateNamedPipe docs) + a DACL granting read/write only to the current user SID — mirrors coucou's `\\.\pipe\coucou-<user-SID>` + "limited to your own user account, with size and time limits" (coucou CHANGELOG #16, in-repo, 2026-10-01).
+- Python implementation path: pywin32 (`win32pipe`/`win32security`) is already available because ISHTI uses `win32gui` (lifelog skill) — VERIFIED via `FEATURE_CATALOG.md` dependency column, 2026-10-01; runtime import to be confirmed by the WP-COUCOU test.
+- Security test target: a second OS user (or a process with an explicitly different token) must get `ACCESS_DENIED` on connect; same-user non-ISHTI process behaviour documented (allowed by coucou's model, restricted by ours to the ISHTI SID + a per-session nonce).
+
+## C. Overlay window behaviour on Windows (VERIFIED sources, retrieved 2026-10-01)
+
+- Never-steal-focus: `WS_EX_NOACTIVATE` makes a window non-activatable even on click (Microsoft Q&A / Win32 extended styles discussion, https://learn.microsoft.com/en-us/answers/questions/905270/prevent-the-window-from-stealing-focus, retrieved 2026-10-01).
+- Click-through when idle: `WS_EX_TRANSPARENT` (+ `WS_EX_LAYERED` for per-pixel/colour-key transparency); MS guidance suggests `WS_EX_LAYERED` for transparent-window click-through (https://learn.microsoft.com/en-us/answers/questions/2153247/directcomposition-click-through-in-transparent-are, retrieved 2026-10-01). Pitfall documented in the same threads: a `WS_EX_TRANSPARENT` window with buttons passes clicks through — so the overlay *toggles* the style: transparent+no-activate when idle, interactive when opened (coucou's `hidden -> petit -> home` FSM, `windows/src/island/fsm.ts`).
+- ISHTI implementation vehicle: the desktop shell is **pywebview + local web UI on 127.0.0.1:8888** (`desktop/app_window.py`, read 2026-10-01), so the overlay is a separate borderless `tkinter` topmost window extended with the ctypes styles above (no new dependency; Tauri would add a second build toolchain — coucou's Tauri choice is documented in `docs/repos/coucou.md`).
+- DPI/multi-monitor pitfalls (UNVERIFIED until measured): per-monitor DPI v2 awareness for the top-centre anchor; hover-peek hit-testing via `WM_NCHITTEST`-equivalent (tk: enter/leave on a transparent strip); measured in T-C01 tests.
+
+## D. Isolated computer runtime on this Windows box (MEASURED 2026-10-01)
+
+- `docker ps` -> `ishti-searxng searxng/searxng` running; `wsl --status` -> Default Distribution: docker-desktop, Default Version: 2. **Docker Desktop with WSL2 backend works right now** (command output above). Consequence: open-dots' OD-09/10/11 map cleanly onto Docker: Linux container (Playwright-style image) keeps **seccomp default profile, read-only rootfs, --memory/--cpus/--pids-limit, per-assistant workspace mount** — same knobs open-dots uses (`server/app/config.py` COMPUTER_DOCKER_*).
+- OS edition: `Microsoft Windows 11 Pro` (measured). Windows Sandbox is edition-supported on Pro but the feature query needs elevation (`Get-WindowsOptionalFeature: The requested operation requires elevation`, measured) — recorded as BLOCKED-with-exact-need in NEEDS.md only if Docker turns out to be insufficient; Docker is the chosen primary (no elevation, already running).
+- Risk: Docker Desktop's default seccomp profile is the *engine's*, not open-dots' custom file — OD-11 becomes "verify default profile active + add resource limits + read-only", tested, not assumed.
+
+## E. Wake-word / always-on listening cost (design; measured in Phase 5)
+
+- hey-jev measures nothing; ISHTI must: T-JEV-01/T-voice tests record CPU% + RAM of the wake path with mic ON vs OFF, and confirm **mic default OFF captures nothing** (master-prompt invariant). No number is claimed here before it is measured.
+
+## F. Login-state browsing risks (VERIFIED in-repo)
+
+- Agent-Reach's own security table: cookie channels (Twitter, XHS, Reddit, Facebook, Instagram) carry **account-ban risk** and cookies = full login authority; their recommendation is dedicated burner accounts (agent-reach README "安全性"/Cookie section, in-repo 2026-10-01). Their honesty notes: XHS login is NOT performed by the tool; OpenCLI only reuses sessions the user already controls; Twitter cookies are export-only.
+- Consequence for ISHTI (WP-REACH): every login-state channel = OPT-IN row, OFF by default, read-only verbs, consent text repeats the ban-risk warning verbatim, credentials in Credential Manager only, and personal data never flows to a connector the owner has not enabled.
+
+## G. Voice vocabulary biasing approach (design; measured in Phase 5)
+
+- hey-jev's proven-in-their-tree pattern = **post-transcription regex correction** from `vocabulary.json` (`{Word: [misheard, ...]}`) applied to transcript + `heard_as` app-name swap *before* the decision stage; they also stream an `initial_prompt` to Whisper for command mode (`COMMAND_PROMPT`) but drop the prompt in wake mode because Whisper echoes it (documented in `siri.py` comments — in-repo, 2026-10-01).
+- ISHTI ADAPT: same two layers over local faster-whisper (initial_prompt + post-correction), applied to English/Urdu/Roman-Urdu passes; the before/after metric = mishear rate on a fixed test utterance set (T-JEV-08), not claimed until run.
+
+## H. OPT-IN inventory (all default OFF, keys in Windows Credential Manager)
+
+| Item | Row | Why cloud/account |
+|---|---|---|
+| Composio-style connectors / GitHub issue create | OD-07/08 | hosted OAuth + GitHub auth |
+| Remote computer service | OD-22 | third-party cloud runtime |
+| Twitter/Reddit/FB/IG/XHS/LinkedIn/Boss login-state channels | REACH-07..13,17,20 | account ToS/ban risk |
+| Exa search + mcporter MCP gateway | REACH-18/30 | cloud search/MCP |
+| ECC hosted Pro/GitHub App/Discord bot | ECC-17 | third-party accounts (SKIP row) |
+| coucou integration pills (Stripe/Notion/Vercel/Resend/Cal.com/n8n/GitHub) | COU-08 | API keys of third-party services (n8n may be local) |

@@ -352,3 +352,77 @@ CUA_FEASIBILITY.md marks rows BLOCKED.
 `cua-bench` needs Python 3.12+ + `uv` (this venv: 3.11.9). An isolated tool venv is possible but adds a
 dependency chain for benchmarking only. *Needed:* your preference; until then custom local benchmarks are
 deferred without prejudice.
+
+---
+
+# 5-REPO INTEGRATION (session 2026-10-01) — SKIP-WITH-PROOF rows + owner asks
+
+Every SKIP-WITH-PROOF row of `REPO_FEATURE_MATRIX.md` with its proof. None of these skip hard work;
+each is impossible, not-allowed, or platform-absurd on this PC.
+
+## N27. ECC-17 — ECC Discord bot / GitHub App / ECC Pro cloud
+Proof: they are community/cloud products of the ECC project (README links discord.gg, github.com/apps/
+ecc-tools, ecc.tools/pricing, retrieved 2026-10-01) requiring third-party accounts and publishing an
+ISHTI instance publicly; no runtime meaning for a local-first single-user assistant. *Needed:* nothing
+unless you want a public community bot — that would be its own project.
+
+## N28. ECC-30 — ECC's release CI/publishing pipeline
+Proof: `scripts/release.sh`, `scripts/ci/`, release gates target npm + GitHub-App publishing cadence;
+ISHTI has no package-registry release train (repo builds locally, `start.bat`/`ISHTI.spec`). *Needed:*
+only if you decide ISHTI should publish releases — then we design our own pipeline.
+
+## N29. JEV-22 — hey-jev py2app macOS packaging
+Proof: `setup.py` uses py2app + `.icns` + `NSMicrophoneUsageDescription`/`NSAppleEventsUsageDescription`
+plist keys — macOS-only build tooling; Windows packaging already exists (desktop/exe_bootstrap,
+ISHTI.spec). Nothing to port. *Needed:* nothing.
+
+## N30. JEV-23 — hey-jev cloud calls (TypeSafe Jev, Fish Audio, OpenRouter, OpenAI)
+Proof: master-prompt local-only invariant (no cloud LLM/STT/TTS in the running app). Each capability is
+replaced piecewise: typed decisions -> ISHTI Laya/local router (JEV-05), TTS -> local Fish Speech
+(JEV-09), dictation STT -> local faster-whisper (JEV-03), Q&A -> local planner (JEV-10). *Needed:*
+nothing — unless you explicitly opt into a cloud connector later (its own OPT-IN flow).
+
+## N31. R27 — agent-reach install.md/update.md "paste-URL-to-your-agent" flow
+Proof: master-prompt supply-chain rule treats those docs as untrusted text; executing them blindly is
+exactly the vector they warn about elsewhere (ECC warns of impersonation repos too). ISHTI gets the
+vetted capability as `internet_reach` skill code under the normal T2 skill-install gate instead.
+*Needed:* nothing.
+
+## N32. COU-05 — jump to the session's terminal window (macOS feature)
+Proof: implemented with macOS AppleScript window management (coucou mac sources); coucou's own
+Windows build lists it as "not in this version" (windows/README.md, in-repo 2026-10-01). ISHTI already
+has `desktop/focus_ishti.py` for bringing its own window forward. *Needed:* nothing, or we design a
+Windows terminal-jump as a separate feature request.
+
+## N33. COU-09 — drag-Mochi-onto-window context attach (macOS feature)
+Proof: macOS Accessibility/AppleScript implementation; absent from coucou's Windows build. ISHTI's
+existing `screen_understand` skill already answers "what's in this window" from a captured region —
+the capability exists without the macOS mechanism. *Needed:* nothing.
+
+## N34. COU-19 — built-in chat with Claude (Anthropic cloud API)
+Proof: master-prompt local-only invariant; ISHTI's chat skill runs on the local model already, i.e.
+strictly better for a local-first assistant. The overlay's chat UI is kept but wired to the local
+planner. *Needed:* nothing.
+
+## N35. COU-20 — macOS notch app (SwiftUI/App Store build)
+Proof: hardware/platform-only — MacBook notch + Xcode + App Store entitlements
+(`NotchBuddy/Resources/*.entitlements`, xcodegen project); this PC is Windows 11 Pro. The idea is
+covered by the Windows top-edge island (COU-01). *Needed:* nothing.
+
+## N36. hey-jev has NO LICENSE (owner ask)
+The repo ships no LICENSE; default all-rights-reserved applies. We therefore re-implement only
+behaviours as original code and copy no source text. *Needed:* optional — if you want certainty (or
+to contribute improvements upstream), contact the author asking for an MIT/permissive license; we
+continue meanwhile on the clean-room-behaviour path.
+
+## N37. Windows Sandbox feature query needs elevation (conditional)
+Measured 2026-10-01: edition is Windows 11 Pro (supports it) but `Get-WindowsOptionalFeature -Online`
+requires elevation. Chosen isolation path is Docker/WSL2 (already running, no elevation), so this is
+BLOCKED only *if* Docker proves insufficient in T-OD-09..11. *Needed:* your approval of an elevated
+`Enable-WindowsOptionalFeature -Online -FeatureName Containers-DisposableClientVM` — only then.
+
+## N38. OPT-IN surfaces awaiting owner enablement (by design, default OFF)
+OD-07/08 connectors, OD-22 remote computer, REACH login-state channels (Twitter/Reddit/FB/IG/XHS/
+LinkedIn/Boss), REACH Exa/mcporter, COU-08 integration pills. Implemented but inert; each needs your
+explicit enablement + keys in Credential Manager before it can send anything, and personal data never
+flows to a connector you have not enabled. *Needed:* nothing until you want one.
