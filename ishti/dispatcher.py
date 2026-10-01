@@ -328,6 +328,12 @@ def fell_short(question, reply, skill, s) -> bool:
     """Did the answer hand the problem back? Phrase check first; for information skills also ask the
     local model whether the reply states what was actually asked (a number, name, date...) - one word,
     ~0.4 s on the already-loaded planner model."""
+    reply = str(reply or "")  # a skill can return no reply at all; never crash the check on None
+    if not reply.strip():
+        # Blank is the worst way to hand the problem back: it answered nothing - and the escalation
+        # loop used to treat it as a BETTER answer that replaced a real one (2026-10-01 sweep: a blank
+        # fallback beat web_search's honest "couldn't find" reply, leaving an empty bubble).
+        return True
     if FELL_SHORT.search(reply):
         return True
     # the browser engine already re-checks the request against the actions that really ran (its CHECK loop and
@@ -518,7 +524,7 @@ def _run(text, s, dec):
                 # tool honesty: a skill that knows it could not confirm an action must never sound like it did
                 out["reply"] = str(out["reply"]) + "\n\n(I couldn't confirm that actually went through - please check.)"
                 s["trace"](type="tool", name="verify", label="the action couldn't be confirmed, so I said so", status="error")
-            s["trace"](type="step", skill=name, status="done", summary=out["reply"][:160])
+            s["trace"](type="step", skill=name, status="done", summary=str(out.get("reply") or "")[:160])
             break
         s["trace"](type="step", skill=name, status="skip", summary=f"{name} passed it on")
         tried.add(name)
@@ -922,7 +928,7 @@ def _handle(text, sid, conv, s, events, t0, channel):
         for _hop in range(2):
             nxt = ESCALATE.get(current)
             if (nxt not in SKILLS or nxt in tried or s.get("pending") or out.get("no_escalate")
-                    or dec.get("source") in ("pending", "correction") or not fell_short(text, out["reply"], current, s)):
+                    or dec.get("source") in ("pending", "correction") or not fell_short(text, out.get("reply"), current, s)):
                 break
             # Don't hand the owner a "couldn't / visit this site yourself": try the next capable skill.
             s["trace"](type="escalate", frm=current, to=nxt, why=f"{current} fell short, so I'm trying {nxt}.")
@@ -930,13 +936,13 @@ def _handle(text, sid, conv, s, events, t0, channel):
             tried.add(nxt)
             current = nxt
             # only a better answer replaces the first one; a fallback that also misses is discarded
-            if out2 and not fell_short(text, out2["reply"], nxt, s):
+            if out2 and not fell_short(text, out2.get("reply"), nxt, s):
                 name, out = n2, {**out2, "sources": out.get("sources", []) + out2.get("sources", [])}
                 break
 
     if s.get("injected"):  # second layer: nothing from injected text survives into the answer
-        out["reply"] = clean_reply(out["reply"], s["injected"])
-    out["reply"] += note_for_owner(s)
+        out["reply"] = clean_reply(out.get("reply"), s["injected"])
+    out["reply"] = str(out.get("reply") or "") + note_for_owner(s)  # reply-less skill results never crash the close-out
     if lang and not already_in(out["reply"], lang):
         s["trace"](type="tool", name="translate", label=f"answer in {lang.split(' (')[0]}", status="done")
         out["reply"] = translate(out["reply"], lang)
@@ -997,6 +1003,10 @@ def _arch2_consolidate(text, reply, name, channel):
 
 def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
     """Close a request: trace, history, persistence, background memory, and the response dict."""
+    if not str(out.get("reply") or "").strip():  # last line of defence: a blank bubble is never an answer
+        out["reply"] = ("I couldn't put a usable answer together for that. Please try rephrasing it, "
+                        "or ask again in a moment.")
+        s["trace"](type="tool", name="reply", label="the skill returned no text, so I said so", status="error")
     reply = out["reply"]
     out["sources"] = main_sources(reply, out.get("sources"))
     if RECOVER and not s.get("recovered"):  # ISHTI restarted mid-task last time: say what didn't finish
