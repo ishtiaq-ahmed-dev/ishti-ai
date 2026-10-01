@@ -25,6 +25,11 @@ if ROOT_DIR not in sys.path:
 from tools.web.search import get_search_manager, WebSearchResult
 from tools.web.fetch import WebFetcher
 from orchestrator.model_router import ModelRouter
+
+# Longest owner question that is ever sent onward (search URLs, page-verdict prompts and the
+# synthesis prompt all embed it). A real question is never this long; anything bigger is garbage
+# and the honest answer is the same either way.
+MAX_QUERY_CHARS = 300
 from ishti.untrusted import fence, guard
 from tools.web.relevance import filter_sources
 from orchestrator.memory.user_profile import get_user_memory
@@ -72,7 +77,13 @@ class DeepResearchEngine:
         """
         Quick Search: For single factual current queries.
         1 search query -> read top sources -> synthesize answer with citations.
+
+        Every derived query is clamped: a pathological input (5000 chars of garbage from an
+        auto-QA row) previously flowed unclamped into the search URL AND the synthesis prompt,
+        where it exceeded the 8k LLM context and crashed the turn with an uncaught 400.
         """
+        if len(user_prompt) > MAX_QUERY_CHARS:
+            user_prompt = user_prompt[:MAX_QUERY_CHARS]
         # Clean query, then localise it if it is a "near me / local" question.
         search_query = re.sub(r"^(what\s+is\s+the|what's\s+the|who\s+is|tell\s+me\s+about|search\s+(?:for|on|the))\s+", "", user_prompt, flags=re.IGNORECASE).strip(" ?.")
         search_query = self._localize(search_query)
@@ -88,7 +99,7 @@ class DeepResearchEngine:
         for attempt in range(MAX_REWORDS + 1):
             if attempt and time.time() >= deadline:
                 break
-            tried.append(query)
+            tried.append(query[:120])  # bounded: `tried` feeds a prompt; a giant query must not bloat it
             self.emit("status_change", {"state": "SEARCHING", "detail": ("Searching the internet for: " if not attempt
                                                                          else "Trying a different search: ") + query})
             results = self.search_manager.search(query, max_results=6, budget_s=max(0.0, deadline - time.time()))
@@ -103,7 +114,7 @@ class DeepResearchEngine:
                 pages = self._read(top)
                 self.emit("status_change", {"state": "RESEARCHING", "detail": "Reading through them now..."})
                 with concurrent.futures.ThreadPoolExecutor(max_workers=len(pages) or 1) as pool:
-                    verdicts = list(pool.map(lambda pg: self._page_verdict(user_prompt, pg), pages))
+                    verdicts = list(pool.map(lambda pg: self._page_verdict(user_prompt[:MAX_QUERY_CHARS], pg), pages))
                 for pg, (ok, why) in zip(pages, verdicts):
                     if ok:
                         good.append(pg)
@@ -113,7 +124,7 @@ class DeepResearchEngine:
                 if good:
                     break
             if attempt < MAX_REWORDS and time.time() < deadline:
-                query = self._reword(user_prompt, tried, skipped)
+                query = self._reword(user_prompt, tried, skipped)[:MAX_QUERY_CHARS]
 
         if not good:
             return {

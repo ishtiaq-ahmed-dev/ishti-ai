@@ -103,6 +103,30 @@ class ModelRouter:
             from ishti import vram
             vram.release(lease)
 
+    def _installed_alternative(self, name: str) -> str:
+        """SC-02/Issue-21 class: a configured model that is not installed (e.g. qwen3:30b-a3b in
+        orchestrator/config.json) must not degrade every answer to raw source cards. Resolve to the
+        configured fallback when it is installed, else the largest installed model of the same family.
+        Tags are cached for 60 s; any failure returns `name` unchanged (never blocks an answer)."""
+        try:
+            now = time.time()
+            if now - getattr(self, "_tags_at", 0.0) > 60:
+                self._tags = self.get_installed_models()
+                self._tags_at = now
+            installed = getattr(self, "_tags", None) or []
+            usable = [m for m in installed if not m.startswith(("nomic-embed", "all-minilm"))] or installed
+            if not usable or name in usable:
+                return name
+            fallback = self.get_model("fallback")
+            if fallback in usable and fallback != name:
+                return fallback
+            fam = name.split(":")[0].split("-")[0]  # "qwen3:30b-a3b" -> "qwen3"
+            same = [m for m in usable if fam and fam in m] or usable
+            sizes = self.get_model_sizes()
+            return max(same, key=lambda m: sizes.get(m, 0))
+        except Exception:
+            return name
+
     def generate(
         self,
         user_content: str,
@@ -142,9 +166,19 @@ class ModelRouter:
             from ishti import vram
             if type(exc) is vram.GpuBusy:  # refused (busy / missing model / cannot fit): the raw call would OOM or 404
                 print(f"[ModelRouter] generate refused: {exc}")
-                return ""
-            model_name = requested  # governor unreachable (Ollama down): proceed as before, degraded
-            print(f"[ModelRouter] VRAM governor skipped ({type(exc).__name__}: {exc})")
+                alt = self._installed_alternative(requested)
+                if alt != requested:  # the configured name does not exist here: answer with one that does
+                    print(f"[ModelRouter] {requested} is not installed - using {alt}")
+                    try:
+                        guard, lease, model_name = self._admit(alt)
+                    except Exception as exc2:
+                        print(f"[ModelRouter] {alt} refused too: {exc2}")
+                        return ""
+                else:
+                    return ""
+            else:
+                model_name = requested  # governor unreachable (Ollama down): proceed as before, degraded
+                print(f"[ModelRouter] VRAM governor skipped ({type(exc).__name__}: {exc})")
         try:
             # streamed, so the kill switch can stop a long report at the next token (closing the stream ends it)
             with requests.post(
