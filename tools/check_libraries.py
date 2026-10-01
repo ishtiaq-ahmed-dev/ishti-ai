@@ -16,6 +16,7 @@ import importlib.metadata
 import inspect
 import json
 import os
+import shutil
 import subprocess
 import sys
 
@@ -149,7 +150,12 @@ def main():
             problems.append(f"mcp_servers.{server}: no @playwright/mcp package pinned")
             continue
         try:
-            p = subprocess.run(f"npx --yes {pkg} --help", capture_output=True, text=True, timeout=240, shell=True)
+            # no shell=True: pkg comes from config.json, so build an argv and resolve npx on PATH
+            # (a shell string would make any interpolated value a command-injection path)
+            npx = shutil.which("npx") or shutil.which("npx.cmd")
+            if not npx:
+                raise FileNotFoundError("npx not found on PATH")
+            p = subprocess.run([npx, "--yes", pkg, "--help"], capture_output=True, text=True, timeout=240)
             text = (p.stdout or "") + (p.stderr or "")
             missing = [f for f in flags if f not in text]
             print(f"  browser MCP {server}: {pkg} {flags} -> " + ("all present" if not missing else f"MISSING {missing}"))
