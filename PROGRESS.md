@@ -413,3 +413,34 @@ Then: new master prompt Cycle 1 starts from a clean, tagged tree.
 - Verdict: CYCLE 1 CONVERGED (scorecard Section 4). Deferred with numbers: corrections TTL cache
   (if table > 2000 rows), per-skill deep-read of the 122 skill.py (no measured signal).
 - Rollback: code tag `pre-optimization`; data backups/pre-optimization_20261001/.
+
+
+---
+
+# Cycles 2-3 (same session, later on 2026-10-01) — request path, structural closure, ALL CYCLES CONVERGED
+
+## Cycle 2 - the request path (a dimension Cycle 1 never measured)
+- New bench_handle in tools/bench_opt.py: dispatcher.handle() end-to-end, sandboxed stores, LLM mocked.
+  Found the fixed per-request cost: 26.84 ms (100x the 0.24 ms route).
+- A/B breakdown: audit.record ~12 ms (fresh SQLite connection + CREATE TABLE per record; 'with connect()'
+  never closed, connections leaked), _inflight file IO ~6 ms (2 reads + 2 writes of inflight.json/request).
+- K3 KEEP: audit cached per-thread connection + WAL + synchronous=NORMAL (pure log) -> record 0.018 ms.
+- K4 KEEP: _inflight in-memory + coalescing writer thread -> handle() 4.05 ms (-85% cumulative).
+- B3: PIP_NAME zxingcpp -> zxing-cpp (scanqr auto-install never worked; found via NEEDS.md runtime entry).
+- 3 consecutive full-suite greens; perf_guard extended with handle keys; guard PASS.
+- F1: digest N5 flake investigated to root-cause class (WAL-on-Windows under full-suite load;
+  0/27 focused reproductions incl. pre-change bisect) - documented, not asserted away.
+- API_CONTRACT SS11 verified endpoint-by-endpoint (11/11 + recent key).
+- route_log usage data: 3091 requests, 121 skills used -> lazy skill imports stay rejected.
+
+## Cycle 3 - closing the last stop-rule gap
+- AST sweep of all 122 skill.py: 0 module-level calls/try blocks - no import-time work anywhere in
+  the skill layer; skills_load is pure import cost. Understanding now closed at structural +
+  behavioural (333 labelled requests) + line level (hot path).
+
+## Final state (tag optimization-20261001 -> dd25ea3)
+- skills_load 1174 -> 358-374 ms (-69%); handle() 26.8 -> 4.1 ms (-85%); audit.record 12 -> 0.018 ms.
+- route/reflex/planner/STT/TTS unchanged (within noise) - they were already honest work.
+- All 6 master-prompt stop criteria met; deferred-with-numbers list in OPTIMIZATION_SCORECARD.md.
+- Note: the owner committed dd1b198/32afeae in parallel mid-session (skill_creator + my K3/K4 code
+  files) - both merged cleanly; nothing lost.
