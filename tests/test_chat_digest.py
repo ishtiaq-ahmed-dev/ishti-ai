@@ -348,6 +348,35 @@ def test_n9_pdf_pages_are_real(tmp_path):
         assert dark > len(pixels) * 0.001, f"page {png} looks blank"
     assert info["pages"] <= 12, f"{info['pages']} pages for one digest is not sane"
 
+def test_n9b_pdf_still_renders_without_any_browser(tmp_path, monkeypatch):
+    """CD-12: the reportlab path was only a detection stub, so a digest could not become a PDF on a
+    machine with no printable browser. With Playwright AND Edge/Chrome forced unusable the report must
+    still come out as a real, non-blank landscape PDF - and name the engine that produced it."""
+    from ishti.skills.chat_digest import export
+    pw = pytest.importorskip("playwright.sync_api")
+
+    def no_browser(*_a, **_k):
+        raise RuntimeError("no browser here (forced by the test)")
+
+    monkeypatch.setattr(pw, "sync_playwright", no_browser)
+    monkeypatch.setattr(export, "_find_chrome", lambda: "")
+    d = digest(tmp_path / "data")
+    path, method = export.save_pdf(d["md"], path=os.path.join(str(tmp_path), "fallback.pdf"))
+    assert method.startswith("reportlab"), method
+    assert os.path.getsize(path) > 3000
+    info = export.rasterize(path, out_dir=os.path.join(str(tmp_path), "png"))
+    assert 1 <= info["pages"] <= 12, info
+    import pypdfium2 as pdfium
+    doc = pdfium.PdfDocument(path)
+    text = re.sub(r"\s+", " ", "".join(doc[i].get_textpage().get_text_range() for i in range(len(doc))))
+    for expect in ("Chats found", "Bilal Khan"):
+        assert expect in text, f"{expect!r} is missing from the reportlab PDF"
+    from PIL import Image
+    for png in info["png"]:
+        pixels = Image.open(png).convert("L").tobytes()
+        assert sum(1 for px in pixels if px < 200) > len(pixels) * 0.001, f"page {png} looks blank"
+
+
 # ------------------------------------------------------------------ N10 DOCX
 
 def test_n10_docx_structure(tmp_path):

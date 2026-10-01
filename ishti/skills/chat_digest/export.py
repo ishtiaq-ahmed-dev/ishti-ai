@@ -3,7 +3,9 @@
 PDF path, in the order the master prompt asks for:
   1. Playwright Chromium print (already in the stack: `playwright` + its bundled Chromium).
   2. The installed Edge/Chrome binary in headless print-to-pdf mode (no GTK, no extra download).
-  3. ReportLab, only if it happens to be installed (it is NOT in this venv - recorded in NEEDS.md).
+  3. ReportLab (pure Python, no browser at all) - the last resort, so a digest still becomes a PDF on a
+     machine where neither Playwright nor Edge/Chrome can print. Landscape A4 like the other paths, an
+     Arabic-capable font so Urdu/Pashto cells stay readable, repeating table headers.
 WeasyPrint is deliberately not used: it needs GTK on Windows.
 Landscape A4, repeating header rows (thead display:table-header-group / w:tblHeader), wrapped cells and an
 Urdu/Pashto-capable font stack are set in both DOCX and the HTML that becomes the PDF.
@@ -275,12 +277,78 @@ def save_pdf(md, path=None, when=None):
             reasons.append(f"{os.path.basename(chrome)}: {type(exc).__name__}: {exc}")
     else:
         reasons.append("no Edge/Chrome binary found")
-    try:                                    # optional third path, only if the owner installed it
-        from reportlab.pdfgen import canvas  # noqa: F401
-        reasons.append("reportlab is installed but the HTML/DOCX exports are the supported path")
-    except Exception:
-        reasons.append("reportlab not installed")
+    try:                                    # last resort: pure-Python render, no browser involved
+        return _pdf_via_reportlab(md, path)
+    except Exception as exc:
+        reasons.append(f"reportlab: {type(exc).__name__}: {exc}")
     raise RuntimeError("could not produce a PDF - " + " | ".join(reasons[:3]))
+
+
+def _rich(text):
+    """reportlab's mini-markup: **bold** only, everything else escaped."""
+    return "".join(f"<b>{html_mod.escape(t)}</b>" if bold else html_mod.escape(t)
+                   for t, bold in inline_parts(text))
+
+
+def _pdf_via_reportlab(md, path):
+    """Render the report with reportlab alone (LANDSCAPE A4, same as the browser paths). A Windows
+    Arabic-capable TTF is registered when present, otherwise Helvetica (which will show boxes for
+    Urdu/Pashto - the reason the browser paths come first). -> (path, engine-name) like the others."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    font = "Helvetica"
+    for candidate in (r"C:\Windows\Fonts\tahoma.ttf", r"C:\Windows\Fonts\arial.ttf",
+                      r"C:\Windows\Fonts\segoeui.ttf"):
+        if os.path.isfile(candidate):
+            try:
+                pdfmetrics.registerFont(TTFont("ishti-report", candidate))
+                font = "ishti-report"
+                break
+            except Exception:
+                continue
+    base = getSampleStyleSheet()
+    h1 = ParagraphStyle("h1i", parent=base["Heading1"], fontName=font, fontSize=15, spaceAfter=6)
+    h2 = ParagraphStyle("h2i", parent=base["Heading2"], fontName=font, fontSize=12, spaceAfter=4)
+    body = ParagraphStyle("bodyi", parent=base["BodyText"], fontName=font, fontSize=9, leading=12)
+    cell = ParagraphStyle("celli", parent=body, fontSize=8, leading=10)
+
+    flow = []
+    for kind, payload in markdown_to_blocks(md):
+        if kind == "h1":
+            flow.append(Paragraph(html_mod.escape(payload), h1))
+        elif kind == "h2":
+            flow.append(Paragraph(html_mod.escape(payload), h2))
+        elif kind == "p":
+            flow.append(Paragraph(_rich(payload), body))
+        elif kind == "ul":
+            flow += [Paragraph("&bull; " + _rich(item), body) for item in payload]
+        elif kind == "table":
+            header, rows = payload[0], payload[1:]
+            width = landscape(A4)[0] - 24 * mm
+            cols = max(1, len(header))
+            data = [[Paragraph(f"<b>{html_mod.escape(h)}</b>", cell) for h in header]]
+            data += [[Paragraph(html_mod.escape(c), cell)
+                      for c in (list(row) + [""] * cols)[:cols]] for row in rows]
+            table = Table(data, colWidths=[width / cols] * cols, repeatRows=1)  # header repeats per page
+            table.setStyle(TableStyle([
+                ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
+            ]))
+            flow += [Spacer(1, 3), table, Spacer(1, 4)]
+
+    doc = SimpleDocTemplate(path, pagesize=landscape(A4), title="ISHTI chat digest",
+                            leftMargin=12 * mm, rightMargin=12 * mm, topMargin=12 * mm, bottomMargin=12 * mm)
+    doc.build(flow or [Paragraph("(empty report)", body)])
+    if not (os.path.isfile(path) and os.path.getsize(path) > 1000):
+        raise RuntimeError("no PDF produced")
+    return path, f"reportlab ({os.path.basename(font if font != 'Helvetica' else 'Helvetica')})"
 
 
 def rasterize(pdf_path, out_dir=None, scale=2.0, max_pages=12):
