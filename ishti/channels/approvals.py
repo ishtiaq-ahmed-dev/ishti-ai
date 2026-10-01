@@ -23,6 +23,9 @@ def new(action_id: str, recap: str, channel: str = "telegram", ttl_s: int | None
         _expire_locked()
         _store[aid] = {"action": action_id, "recap": recap, "expires": time.time() + ttl,
                        "used": False, "channel": channel, "created": time.time()}
+    # Receipt (open-dots OD-04): the OPEN event must exist in the audit before any decision can,
+    # so a denied/expired approval is always provable as "it was asked, nobody answered".
+    _audit("approval.opened", f"{action_id} ({aid}) ttl={ttl:.0f}s channel={channel}")
     return aid
 
 
@@ -54,7 +57,7 @@ def deny(approval_id: str) -> bool:
     with _lock:
         rec = _store.pop(approval_id, None)
     if rec:
-        _audit("approval.denied", rec["action"])
+        _audit("approval.denied", f"{rec['action']} ({approval_id})")
         return True
     return False
 
@@ -70,7 +73,19 @@ def _expire_locked():
     now = time.time()
     for aid in [a for a, r in _store.items() if r["expires"] < now]:
         rec = _store.pop(aid)
-        _audit("approval.expired", rec["action"])
+        _audit("approval.expired", f"{rec['action']} ({aid})")
+
+
+def receipts(since: float = 0.0, limit: int = 200) -> list[tuple]:
+    """Approval lifecycle receipts (opened/approved/denied/expired/mismatch), newest first.
+
+    Read-only surface for the ISHTI Overlay approvals queue, the audit panel, and tests:
+    every row is (ts, initiator, skill, action, detail, tier, confirmed, request, channel)
+    from the audit log, filtered to approval.* events. Secrets are already masked at write time.
+    """
+    from ishti import audit
+    return [row for row in audit.query(since=since, limit=500)
+            if str(row[3]).startswith("approval.")][:limit]
 
 
 def _audit(action: str, detail: str):
