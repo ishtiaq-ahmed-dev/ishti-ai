@@ -159,6 +159,56 @@ def bench_tts(n=5):
     return xs
 
 
+def bench_handle(n=60):
+    """dispatcher.handle() end-to-end in a fresh interpreter with SANDBOXED stores (facts/conversation/
+    semantic in temp dirs) and the LLM mocked - measures the real per-request overhead (View, pending
+    cascade, audit, routing, skill run, _finish persistence) without touching owner data or the GPU.
+    Two texts: a reflex command (routing skipped) and a rule-routed local skill (psutil-based)."""
+    setup = (
+        "import os, tempfile, sys\n"
+        "tmp = tempfile.mkdtemp()\n"
+        "import ishti.facts as F\n"
+        "F._facts = F.Facts(os.path.join(tmp, 'f.db'))\n"
+        "import ishti.llm as L\n"
+        "L.ask = lambda *a, **k: 'ok'\n"
+        "L.chat = lambda *a, **k: type('M', (), {'content': 'ok', 'tool_calls': None})()\n"
+        "import ishti.semantic as S\n"
+        "S.get_semantic = lambda path=None: S.Semantic(os.path.join(tmp, 'chroma'))\n"
+        "import ishti.dispatcher as D\n"
+        "class _CM:\n"
+        "    active_session_id = 'bench'\n"
+        "    def new_chat(self, *a): return 'bench'\n"
+        "    def add_message(self, *a, **k): pass\n"
+        "D.get_conversation_manager = lambda: _CM()\n"
+        "D.SESSIONS.clear()\n"
+        "D._inflight('bench')\n"
+        "D._inflight('bench')\n"
+    )
+    run = (
+        "import time\n"
+        "texts = ['what time is it', 'how much ram am I using']\n"
+        "out = {}\n"
+        "for t in texts:\n"
+        "    D.handle(t, 'bench')  # warm: skills/stores loaded\n"
+        "    xs = []\n"
+        "    for _ in range({n}):\n"
+        "        t0 = time.perf_counter()\n"
+        "        D.handle(t, 'bench')\n"
+        "        xs.append((time.perf_counter() - t0) * 1000)\n"
+        "    out[t] = xs\n"
+        "import json\n"
+        "print(json.dumps(out))\n"
+    ).replace("{n}", str(n))
+    code = setup + run
+    out = subprocess.run([PY, "-c", code], capture_output=True, text=True, cwd=ROOT, creationflags=NOWIN, timeout=600)
+    if out.returncode != 0:
+        print(out.stderr[-1500:])
+        return None
+    import json as _json
+    raw = _json.loads(out.stdout.strip().splitlines()[-1])
+    return {k: sorted(v)[len(v) // 2] for k, v in raw.items()}  # medians
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--json", default=None, help="write the full result JSON here")
@@ -178,6 +228,17 @@ def main():
     out["route_rule_ms"] = {"runs": xs, "median": median(xs), "skills": nskills}
     print("[bench] reflex ...", flush=True)
     out["reflex_ms"] = {"runs": bench_reflex(), "median": median(bench_reflex())}
+    if not args.quick:
+        print("[bench] dispatcher.handle (sandboxed, LLM mocked) ...", flush=True)
+        try:
+            h = bench_handle()
+            if h:
+                out["handle_reflex_ms"] = {"median": h["what time is it"]}
+                out["handle_skill_ms"] = {"median": h["how much ram am I using"]}
+                print(f"[bench] handle_reflex_ms: median {out['handle_reflex_ms']['median']}")
+                print(f"[bench] handle_skill_ms: median {out['handle_skill_ms']['median']}")
+        except Exception as exc:
+            out["handle_error"] = f"{type(exc).__name__}: {exc}"
 
     if not args.quick:
         from ishti import llm

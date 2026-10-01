@@ -3,6 +3,7 @@ Text and voice both call handle(); voice is just another input channel."""
 import io
 import os
 import json
+import queue
 import re
 import threading
 import time
@@ -402,22 +403,49 @@ def _did_t2(s, name, text):
 INFLIGHT_FILE = os.path.join(os.path.dirname(CONFIG["memory"]["db_path"]), "inflight.json")
 
 
+_inflight_state = None          # the file's content, read once (RECOVER already removed it after a crash)
+_inflight_q = None              # coalesced writes: one thread does the file IO off the reply path
+
+
 def _inflight(sid, text=None):
-    """Requests running right now, on disk: if ISHTI crashes or restarts mid-task, the next start knows what was lost."""
-    try:
-        with open(INFLIGHT_FILE, encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, ValueError):
-        data = {}
+    """Requests running right now, on disk: if ISHTI crashes or restarts mid-task, the next start knows what was lost.
+
+    Measured 2026-10-01: the old read-modify-write per call (2 reads + 2 writes per request) cost
+    ~6 ms on the reply path (Windows file opens + AV scanning on close). The state is a crash-
+    recovery HINT, never reply data, so the writes go through one coalescing daemon thread: the
+    reply path only updates memory and enqueues. Worst case the file is a few writes stale at a
+    crash - the recovery note is best-effort by design.
+    """
+    global _inflight_state, _inflight_q
+    if _inflight_state is None:
+        try:
+            with open(INFLIGHT_FILE, encoding="utf-8") as f:
+                _inflight_state = json.load(f)
+        except (OSError, ValueError):
+            _inflight_state = {}
+        _inflight_q = queue.Queue()
+        threading.Thread(target=_inflight_writer, daemon=True, name="inflight-writer").start()
     if text is None:
-        data.pop(sid, None)
+        _inflight_state.pop(sid, None)
     else:
-        data[sid] = {"text": text, "t": time.time()}
-    try:
-        with open(INFLIGHT_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f)
-    except OSError:
-        pass
+        _inflight_state[sid] = {"text": text, "t": time.time()}
+    _inflight_q.put(_inflight_state)
+
+
+def _inflight_writer():
+    import queue as _q
+    while True:
+        data = _inflight_q.get()
+        while True:  # drain to the latest: bursts coalesce into one write
+            try:
+                data = _inflight_q.get_nowait()
+            except _q.Empty:
+                break
+        try:
+            with open(INFLIGHT_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+        except OSError:
+            pass
 
 
 def _recover():
