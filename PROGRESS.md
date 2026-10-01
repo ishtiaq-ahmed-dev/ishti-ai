@@ -444,3 +444,16 @@ Then: new master prompt Cycle 1 starts from a clean, tagged tree.
 - All 6 master-prompt stop criteria met; deferred-with-numbers list in OPTIMIZATION_SCORECARD.md.
 - Note: the owner committed dd1b198/32afeae in parallel mid-session (skill_creator + my K3/K4 code
   files) - both merged cleanly; nothing lost.
+
+## Sweep session - "resolve every remaining issue" (2026-10-01)
+- Every open row in NEEDS.md / md files/NEEDS.md / ISSUES.md / TEST_STATE.json triaged {code, doc,
+  owner}; 13 code fixes shipped with evidence (SW-01..SW-13) - full write-up in SWEEP_REPORT.md.
+- SW-13, found while finishing the interrupted repro: the dispatcher accepted a BLANK escalated reply
+  as a better answer than web_search's honest miss -> empty bubble. fell_short("") now counts as
+  falling short, _finish() nets any still-blank reply, and reply-less skill dicts no longer KeyError
+  the close-out (0c97bf9; tests/test_dispatcher_blank_answer.py, 4 offline tests).
+- Environment, not code: SearXNG's host port mapping was dead after a host reboot
+  (docker restart ishti-searxng -> HTTP 200); Ollama VRAM cleared between suites before every gate.
+- Still open by design (owner decision or per-site judgement), listed plainly in SWEEP_REPORT.md
+  section 4: CD-11 ruff, CD-13, Issue 30, SC-05/06/11, Issue 22/24, SC-23, SC-10, Q10, N22-N26,
+  Need 2/3/13, and the F1 digest flake (characterised, deliberately not weakened).

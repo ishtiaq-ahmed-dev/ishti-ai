@@ -559,11 +559,29 @@ this PC on 2026-09-30/10-01 with the commands shown; nothing is asserted from re
 
 - **SC-05/SC-06/SC-07 counts are heuristics** from `Select-String`, not an AST walk; a hand-written parser could
   change every number. Each row names the command so the number can be re-derived.
-- Whether the 10 skills without a self-check (SC-04) are *broken* or merely unverified is **not established** —
-  nobody ran them.
+- ~~Whether the 10 skills without a self-check (SC-04) are *broken* or merely unverified is **not
+  established** — nobody ran them.~~ **CLOSED 2026-10-01**: all 10 now carry a self-check and each was run
+  (`apps`, `capcut`, `chat`, `deep_research`, `files`, `owner`, `system`, `video`, `weather`, `web_search`);
+  their per-skill suites are declared in the manifests — see SWEEP_REPORT.md SW-05.
 - The two `GpuBusy` failures in `md files/NEEDS.md` (the CD-17/CD-21 class) were **not** reproduced: the GPU
   was shared with the research phase, and a deliberate reproduction needs exclusive access.
 - **Codegen quality was not measured.** The serialised GPU window for real code generation (the three
   acceptance tasks of the master prompt) was **not run** in this pass, so no claim is made about what
   `ishti-qwen2.5-coder:14b` actually produces for a real skill — see `NEEDS.md`.
+
+---
+
+# Session 2026-10-01 (second pass) - "resolve every remaining issue"
+
+The full matrix — what was found, the evidence, the root cause, the fix and the residual OPEN list — is in
+**`SWEEP_REPORT.md`** (rows SW-01..SW-13). Headlines: 13 concrete defects found and fixed (planners
+flashcards crash + scope wall, orchestrator loads bypassing the VRAM governor, ModelRouter answering from a
+model that is not installed, an unclamped research query overflowing the 8k context, a condense step that
+could blank a good report, SC-03/04 coverage, SC-07, SC-08, SC-13, the invalid-escape class, capcut's
+doubled backslashes, the reportlab PDF path that never existed, and - found while re-running the interrupted
+repro - a **blank escalated reply winning over a real answer** (the empty bubble: `fell_short("")` said
+"not short", so the dispatcher kept it; `_finish` now nets any blank reply and the escalation slot only
+accepts text). All gates green afterwards: 2x full
+offline suite, `check_skills` 122/236/333, LIVE `python -m ishti.check`, full `perf_guard` PASS. Rows that
+remain open are listed in SWEEP_REPORT.md section 4 with the reason each is not a code fix.
 

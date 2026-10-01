@@ -20,6 +20,7 @@ Noise floor: import ~8%, skills_load ~1.5%, route ~20% (CPU scaling), TTS ~13% �
 | # | Change | Measurement | Reason |
 |---|---|---|---|
 | F1 (investigation, no revert needed) | digest N5 flake (`test_chat_digest.py::test_n5_prompt_injection_does_not_change_behaviour`) | 2 sightings in ~8 full-suite-context runs; 0/27 focused reproductions (solo ×10, both file orders, 5-file combo ×3, pre-change bisect ×7); failing chat index differs each sighting (5, then 7); path is pure functions over isolated temp DBs (`use_llm=False`) | Verdict: rare WAL-on-Windows write-contention flake under full-suite load, unrelated to K3/K4. Documented, not asserted away; re-test if it recurs, with `-p no:randomly --tb=long -vv` |
+| F1 (third sighting, 2026-10-01 sweep) | same digest N5 flake | failed once inside a full-suite run AND once focused immediately after a full-suite run; the next 17 focused runs were green | Refines the class: not confined to in-suite load - it can fire in the disk-churn window right after a suite (AV/indexer scanning the temp DBs). Test deliberately unchanged; the sweep report records the sighting |
 
 ## Rejected before touching code (measured, not worth changing)
 
