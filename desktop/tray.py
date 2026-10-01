@@ -48,6 +48,29 @@ def _open_dashboard():
     webbrowser.open("http://127.0.0.1:8888")
 
 
+def set_paused(paused: bool) -> bool:
+    """COU-17: one Pause means mic + overlay relay together (and Resume undoes both).
+    The mic item in the tray keeps showing the real mic state, so pause is visible."""
+    from ishti import hooks_relay, mic_control
+    if paused:
+        mic_control.mic_off("tray pause", by="tray")
+        hooks_relay.set_paused(True)
+    else:
+        hooks_relay.set_paused(False)
+        mic_control.mic_on(by="tray")
+    return hooks_relay.paused()
+
+
+def quit_all(icon=None):
+    """Graceful shutdown first, then the icon goes - never an orphan process (COU-17)."""
+    _stop_all()
+    if icon is not None:
+        try:
+            icon.stop()
+        except Exception:
+            pass
+
+
 def _stop_all():
     from desktop.shutdown import shutdown
     threading.Thread(target=shutdown, daemon=True).start()
@@ -82,15 +105,25 @@ def run_tray():
     def menu_open(icon, item):
         _open_dashboard()
 
+    def menu_pause(icon, item):
+        set_paused(True)
+        _notify("ISHTI paused", "Microphone off, overlay relay paused.")
+
+    def menu_resume(icon, item):
+        set_paused(False)
+        _notify("ISHTI resumed", "Microphone and overlay relay are live.")
+
     def menu_quit(icon, item):
-        _stop_all()
-        icon.stop()
+        quit_all(icon)
 
     icon = pystray.Icon("ISHTI", _icon_image(state["on"]), "ISHTI - mic OFF",
                         menu=pystray.Menu(
                             pystray.MenuItem("Microphone ON", menu_mic_on),
                             pystray.MenuItem("Microphone OFF", menu_mic_off),
                             pystray.MenuItem("Toggle microphone", menu_mic_toggle),
+                            pystray.Menu.SEPARATOR,
+                            pystray.MenuItem("Pause (mic + overlay)", menu_pause),
+                            pystray.MenuItem("Resume", menu_resume),
                             pystray.Menu.SEPARATOR,
                             pystray.MenuItem("Open dashboard", menu_open),
                             pystray.MenuItem("Stop ISHTI", menu_quit),
