@@ -158,8 +158,8 @@ class Poller:
             self.last_error = f"gate error: {type(exc).__name__}: {str(exc)[:150]}"
             try:
                 from ishti import audit
-                audit.record("remote gate error", f"update {uid}: {type(exc).__name__}: {str(exc)[:120]}",
-                             skill="channels")
+                with audit.context(skill="channels", initiator="unknown", channel="telegram"):
+                    audit.record("remote gate error", f"update {uid}: {type(exc).__name__}: {str(exc)[:120]}")
             except Exception:
                 pass
         finally:
@@ -195,10 +195,10 @@ class Poller:
                 try:
                     from ishti import audit
                     m = upd.get("message") or {}
-                    audit.record("remote command expired (stale)",
-                                 f"update {uid}, sent {now - (m.get('date') or now):.0f}s ago",
-                                 skill="channels", initiator="owner",
-                                 channel="telegram", session=f"tg:{(m.get('chat') or {}).get('id')}")
+                    with audit.context(skill="channels", initiator="owner", channel="telegram",
+                                       session=f"tg:{(m.get('chat') or {}).get('id')}"):
+                        audit.record("remote command expired (stale)",
+                                     f"update {uid}, sent {now - (m.get('date') or now):.0f}s ago")
                 except Exception:
                     pass
             else:

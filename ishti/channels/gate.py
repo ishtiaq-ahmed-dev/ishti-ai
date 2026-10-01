@@ -52,8 +52,10 @@ _alerts = []  # timestamps of recent unknown-sender alerts (per-hour cap)
 
 def _audit(action: str, detail: str = "", *, channel: str = "telegram", session: str = "",
            initiator: str = "owner", skill: str = "channels"):
+    """Attribution goes through the thread context (audit.record reads channel/session from it)."""
     from ishti import audit
-    audit.record(action, detail, skill=skill, initiator=initiator, channel=channel, session=session)
+    with audit.context(channel=channel, session=session, skill=skill, initiator=initiator):
+        audit.record(action, detail)
 
 
 def _alert(kind: str, detail: str):
@@ -71,6 +73,13 @@ def _alert(kind: str, detail: str):
     except Exception:
         pass
     return True
+
+
+_QUOTE = re.compile(r'"[^"]{3,}"|“[^”]{3,}”|«[^»]{3,}»')  # quoted spans are DATA, not requests
+
+
+def _strip_quotes(text: str) -> str:
+    return _QUOTE.sub(" [quoted data] ", text or "")
 
 
 # ------------------------------------------------------------------ update handlers
@@ -230,7 +239,7 @@ class Gate:
                 self.send(chat_id, "Unlocked.")
                 _audit("remote unlock", "", session=f"tg:{chat_id}")
             else:
-                n = security.register_pin_failure()
+                n = security.register_pin_failure()  # late-bound: tests can patch it
                 self.send(chat_id, f"Wrong PIN ({n} failed attempt(s); {security.LOCKOUT_N} locks me "
                                    f"for {security.LOCKOUT_S // 60} min).")
                 _audit("unlock refused (wrong PIN)", f"attempt {n}", session=f"tg:{chat_id}")
@@ -368,8 +377,9 @@ class Gate:
     # ------------------------------------------------------------ helpers
     @staticmethod
     def classify_forbidden(text: str) -> str | None:
+        clean = _strip_quotes(text)  # quoted content (pages, chats, quotes) is data - never a request
         for cat, rx in FORBIDDEN:
-            if rx.search(text):
+            if rx.search(clean):
                 return cat
         return None
 

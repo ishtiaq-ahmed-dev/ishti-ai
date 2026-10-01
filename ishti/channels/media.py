@@ -63,7 +63,8 @@ def _voice(v: dict, client) -> str:
         return "[the voice note transcribed to nothing]"
     try:
         from ishti import audit
-        audit.record("remote voice note transcribed", f"{len(text)} chars", skill="channels")
+        with audit.context(skill="channels", channel="telegram"):
+            audit.record("remote voice note transcribed", f"{len(text)} chars")
     except Exception:
         pass
     return text

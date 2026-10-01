@@ -76,7 +76,8 @@ def _expire_locked():
 def _audit(action: str, detail: str):
     try:
         from ishti import audit
-        audit.record(action, detail, skill="channels", initiator="owner", channel="remote-gate")
+        with audit.context(skill="channels", initiator="owner", channel="remote-gate"):
+            audit.record(action, detail)
     except Exception:
         pass
 

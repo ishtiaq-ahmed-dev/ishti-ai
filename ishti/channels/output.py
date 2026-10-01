@@ -54,7 +54,12 @@ def redact_text(text: str, cats: dict) -> tuple[str, list[str]]:
 
 def block_markers(text: str, cats: dict) -> bool:
     """True when the reply visibly contains blocked-category content (secrets, profile...)."""
-    if cats.get("secrets") == "block" and re.search(r"(?i)\b(?:api[_ ]?key|token|password|passphrase|secret)\b\s*[:=]", text):
+    if cats.get("secrets") == "block" and re.search(
+            r"(?i)\b(?:api[_ ]?key|apikey|token|password|passphrase|secret|credential)\b"  # the word...
+            r"[^\n]{0,24}?\b(?:is|are|was|[:]|=)\b"                                          # ...followed by 'is'/colon
+            r"|\b(?:sk|pk|rk)-[A-Za-z0-9]{12,}"                                              # ...or a key-shaped string
+            r"|\b\d{6,12}:[A-Za-z0-9_-]{20,}\b",                                             # ...or a bot-token shape
+            text):
         return True
     return False
 
