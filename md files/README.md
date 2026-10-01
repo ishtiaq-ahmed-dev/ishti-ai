@@ -40,6 +40,7 @@ ollama pull qwen2.5-coder:14b
 ollama pull nomic-embed-text
 ollama create ishti-qwen2.5:14b -f ishti\planner.Modelfile
 ollama create ishti-qwen2.5-coder:14b -f ishti\coder.Modelfile
+ollama create ishti-spark2.5:4b -f ishti\spark2.5.Modelfile   :: the configured planner (ishti/config.json -> llm.models.planner)
 venv\Scripts\python -m piper.download_voices en_US-lessac-medium --data-dir data\piper
 docker run -d --name ishti-searxng --restart unless-stopped -p 127.0.0.1:8890:8080 -v D:/ISHTI/ishti/searxng:/etc/searxng -e SEARXNG_SECRET=<random hex> searxng/searxng
 ```
@@ -115,5 +116,5 @@ Each skill is a folder with a manifest:
 - Consequential actions (buy, pay, send, submit, post, delete, log in, Enter on a submit form) stop and wait for an explicit "yes". A timeout or error means **no**.
 - Unknown app names are refused rather than passed to a shell. Shell commands from the legacy planner always need confirmation.
 - Remote/tunnelled requests need the token in `data/api_token` (see `remote/tunnel_setup.md`); only unproxied localhost is trusted.
-- The browser runs in its own profile (`data/mcp_browser_profile`), never your daily Chrome profile.
+- The browser defaults to its own profile (`data/mcp_browser_profile`); the owner may additionally map their own Chrome profiles per server (main/login) in Settings -> browser_profiles, which the browser skill then uses for those sessions.
 - The HUD mic records locally and is transcribed by whisper on this PC (Chrome's Web Speech API, which sends audio to Google, was removed).

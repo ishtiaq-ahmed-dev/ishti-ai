@@ -1,0 +1,737 @@
+# CODEMAP — what every source file is (docstring-first; generated 2026-10-01)
+
+Source of truth: `_work/codemap_raw.json` (727 files, 242,255 lines, AST-extracted docstrings).
+Dependency order (who imports whom): ishti/__init__ (CONFIG) -> audit/facts/events -> llm (vram governor) ->
+scope (hooks) -> skills loader -> router -> planner -> dispatcher (installs scope+propagate, owns /api/*) ->
+interface/web_ui/server.py (FastAPI app, mounts everything). Voice chain: voice (STT/TTS) -> talk -> wake.
+GPU chain: gpu.slot -> vram (governor, ladders) -> models (pinned/evictable).
+
+## ./ — 727 files, 242255 lines
+
+- `./.qa_nemotron/transformers_main/transformers/__init__.py` (876L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/_typing.py` (185L) — Typing helpers shared across the Transformers library.
+- `./.qa_nemotron/transformers_main/transformers/activations.py` (369L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/audio_utils.py` (1520L) — Audio processing functions to extract features from audio waveforms. This code is pure numpy to support all fr
+- `./.qa_nemotron/transformers_main/transformers/backbone_utils.py` (387L) — Collection of utils to be used by backbones and their components.
+- `./.qa_nemotron/transformers_main/transformers/cache_utils.py` (2162L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/cli/__init__.py` (13L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/cli/add_new_model_like.py` (779L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/cli/chat.py` (689L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/cli/download.py` (40L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/cli/serve.py` (249L) — CLI entry point for `transformers serve`.
+- `./.qa_nemotron/transformers_main/transformers/cli/serving/__init__.py` (17L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/cli/serving/chat_completion.py` (439L) — Handler for the /v1/chat/completions endpoint.
+- `./.qa_nemotron/transformers_main/transformers/cli/serving/completion.py` (275L) — Handler for the /v1/completions endpoint (OpenAI legacy Completions API).
+- `./.qa_nemotron/transformers_main/transformers/cli/serving/model_manager.py` (535L) — Model loading, caching, and lifecycle management.
+- `./.qa_nemotron/transformers_main/transformers/cli/serving/response.py` (772L) — Handler for the /v1/responses endpoint (OpenAI Responses API).
+- `./.qa_nemotron/transformers_main/transformers/cli/serving/server.py` (149L) — FastAPI app factory.
+- `./.qa_nemotron/transformers_main/transformers/cli/serving/transcription.py` (192L) — Handler for the /v1/audio/transcriptions endpoint.
+- `./.qa_nemotron/transformers_main/transformers/cli/serving/utils.py` (1269L) — Shared types, constants, and utilities for the serving layer.
+- `./.qa_nemotron/transformers_main/transformers/cli/system.py` (139L) — Contains commands to print information about the environment and version.
+- `./.qa_nemotron/transformers_main/transformers/cli/transformers.py` (41L) — Transformers CLI.
+- `./.qa_nemotron/transformers_main/transformers/configuration_utils.py` (1566L) — Configuration base class and utilities.
+- `./.qa_nemotron/transformers_main/transformers/conversion_mapping.py` (2127L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/convert_slow_tokenizer.py` (2095L) — Utilities to convert slow tokenizers in their fast tokenizers counterparts.
+- `./.qa_nemotron/transformers_main/transformers/convert_slow_tokenizers_checkpoints_to_fast.py` (149L) — Convert slow tokenizers checkpoints in fast (serialization format of the `tokenizers` library)
+- `./.qa_nemotron/transformers_main/transformers/core_model_loading.py` (1858L) — Core helpers for loading model checkpoints.
+- `./.qa_nemotron/transformers_main/transformers/debug_utils.py` (348L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/dependency_versions_check.py` (62L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/dependency_versions_table.py` (92L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/distributed/__init__.py` (53L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/distributed/configuration_utils.py` (99L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/distributed/fsdp.py` (276L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/distributed/mixin.py` (278L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/distributed/pipeline_parallel.py` (283L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/distributed/sharding_utils.py` (331L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/distributed/tensor_parallel.py` (850L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/distributed/utils.py` (352L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/dynamic_module_utils.py` (849L) — Utilities to dynamically load objects from the Hub.
+- `./.qa_nemotron/transformers_main/transformers/exporters/__init__.py` (21L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/exporters/auto.py` (188L) — Auto exporter factory for HuggingFace exporters.
+- `./.qa_nemotron/transformers_main/transformers/exporters/base.py` (205L) — Abstract base class for all Transformers exporters.
+- `./.qa_nemotron/transformers_main/transformers/exporters/configs.py` (217L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/exporters/exporter_dynamo.py` (716L) — Dynamo exporter.
+- `./.qa_nemotron/transformers_main/transformers/exporters/exporter_executorch.py` (1401L) — ExecuTorch exporter.
+- `./.qa_nemotron/transformers_main/transformers/exporters/exporter_onnx.py` (1177L) — ONNX exporter.
+- `./.qa_nemotron/transformers_main/transformers/exporters/exporter_openvino.py` (2243L) — OpenVINO exporter.
+- `./.qa_nemotron/transformers_main/transformers/exporters/utils.py` (1246L) — Shared export utilities used by all exporter backends.
+- `./.qa_nemotron/transformers_main/transformers/feature_extraction_sequence_utils.py` (387L) — Sequence feature extraction class for common feature extractors to preprocess sequences.
+- `./.qa_nemotron/transformers_main/transformers/feature_extraction_utils.py` (688L) — Feature extraction saving/loading class for common feature extractors.
+- `./.qa_nemotron/transformers_main/transformers/file_utils.py` (105L) — File utilities: utilities related to download and cache models
+- `./.qa_nemotron/transformers_main/transformers/fusion_mapping.py` (270L) — Fusion registration helpers.
+- `./.qa_nemotron/transformers_main/transformers/generation/__init__.py` (221L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/generation/candidate_generator.py` (1770L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/generation/configuration_utils.py` (1914L) — Generation configuration class and utilities.
+- `./.qa_nemotron/transformers_main/transformers/generation/continuous_batching/__init__.py` (29L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/generation/continuous_batching/cache.py` (681L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/generation/continuous_batching/cache_allocators/__init__.py` (17L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/generation/continuous_batching/cache_allocators/cache_allocator.py` (368L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/generation/continuous_batching/cache_allocators/cache_pool.py` (136L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/generation/continuous_batching/cache_allocators/full_attention.py` (233L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/generation/continuous_batching/cache_allocators/sliding_attention.py` (181L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/generation/continuous_batching/cb_logits_processors.py` (328L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/generation/continuous_batching/continuous_api.py` (1469L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/generation/continuous_batching/distributed.py` (207L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/generation/continuous_batching/initialization.py` (313L) — Resolves a `ContinuousBatchingConfig` into a fully-specified config ready for cache and runner creation. Each 
+- `./.qa_nemotron/transformers_main/transformers/generation/continuous_batching/input_outputs.py` (831L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/generation/continuous_batching/model_runner.py` (331L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/generation/continuous_batching/offloading_manager.py` (393L) — Centralized offloading logic for continuous batching.
+- `./.qa_nemotron/transformers_main/transformers/generation/continuous_batching/requests.py` (379L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/generation/continuous_batching/scheduler.py` (408L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/generation/continuous_batching/utils.py` (253L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/generation/logits_process.py` (3238L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/generation/stopping_criteria.py` (643L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/generation/streamers.py` (406L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/generation/utils.py` (4420L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/generation/watermarking.py` (550L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/hf_argparser.py` (428L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/hyperparameter_search.py` (123L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/image_processing_backends.py` (667L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/image_processing_base.py` (510L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/image_processing_outputs.py` (39L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/image_processing_utils.py` (697L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/image_transforms.py` (1102L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/image_utils.py` (1076L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/initialization.py` (340L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/__init__.py` (316L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/accelerate.py` (1023L) — Some of the functions here are derived from the `accelerate` library, with some tweaks for better performances
+- `./.qa_nemotron/transformers_main/transformers/integrations/aqlm.py` (70L) — AQLM (Additive Quantization of Language Model) integration file
+- `./.qa_nemotron/transformers_main/transformers/integrations/awq.py` (119L) — AWQ (Activation aware Weight Quantization) integration file
+- `./.qa_nemotron/transformers_main/transformers/integrations/bitnet.py` (391L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/bitsandbytes.py` (349L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/compressed_tensors.py` (382L) — CompressedTensors integration file
+- `./.qa_nemotron/transformers_main/transformers/integrations/deepgemm.py` (939L) — DeepGEMM integration: fused grouped GEMM kernels from `kernels-community/deep-gemm`.
+- `./.qa_nemotron/transformers_main/transformers/integrations/deepspeed.py` (746L) — Integration with Deepspeed
+- `./.qa_nemotron/transformers_main/transformers/integrations/eager_paged.py` (83L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/eetq.py` (123L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/executorch.py` (1144L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/fbgemm_fp8.py` (324L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/finegrained_fp8.py` (1143L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/flash_attention.py` (102L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/flash_paged.py` (150L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/flex_attention.py` (368L) — Partially inspired by torchtune's flex attention implementation
+- `./.qa_nemotron/transformers_main/transformers/integrations/fouroversix.py` (77L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/fp_quant.py` (145L) — FP-Quant integration file
+- `./.qa_nemotron/transformers_main/transformers/integrations/fsdp.py` (24L) — Backward-compatible re-exports. Prefer ``transformers.distributed.fsdp``.
+- `./.qa_nemotron/transformers_main/transformers/integrations/gemma_quant.py` (249L) — Quantized layers for Gemma: INT2/4/8 packed-weight Linear and Embedding, plus SRQ (Static Range Quantization) 
+- `./.qa_nemotron/transformers_main/transformers/integrations/ggml.py` (372L) — Integration with GGML / The file is copied and adapted from https://github.com/99991/pygguf with extra methods
+- `./.qa_nemotron/transformers_main/transformers/integrations/gguf/__init__.py` (46L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/gguf/dequant.py` (690L) — Dequantizing GGUF blocks with torch ops.
+- `./.qa_nemotron/transformers_main/transformers/integrations/gguf/gguf_config_mapping.py` (104L) — Rebuilding a model config from a GGUF file's metadata.
+- `./.qa_nemotron/transformers_main/transformers/integrations/gguf/gguf_conversion_mapping.py` (439L) — GGUF -> transformers weight conversion mappings, one entry per architecture.
+- `./.qa_nemotron/transformers_main/transformers/integrations/gguf/gguf_tokenizer_mapping.py` (284L) — Building a tokenizer from a GGUF file's metadata.
+- `./.qa_nemotron/transformers_main/transformers/integrations/gguf/kernels.py` (173L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/gguf/reader.py` (228L) — Reading a GGUF file: architecture, tensor types, and tensors keyed by their GGUF names.
+- `./.qa_nemotron/transformers_main/transformers/integrations/gguf/utils.py` (299L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/heterogeneity/__init__.py` (22L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/heterogeneity/configuration_utils.py` (399L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/higgs.py` (632L) — HIGGS through FLUTE (Flexible Lookup Table Engine for LUT-quantized LLMs) integration file
+- `./.qa_nemotron/transformers_main/transformers/integrations/hqq.py` (129L) — HQQ (Half-Quadratic Quantization) integration file
+- `./.qa_nemotron/transformers_main/transformers/integrations/hub_kernels.py` (1246L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/integration_utils.py` (2679L) — Integrations with other Python libraries.
+- `./.qa_nemotron/transformers_main/transformers/integrations/liger.py` (53L) — Liger Kernel integration for applying optimized Triton kernels to transformer models.
+- `./.qa_nemotron/transformers_main/transformers/integrations/metal_quantization.py` (300L) — Metal affine quantization integration for transformers.
+- `./.qa_nemotron/transformers_main/transformers/integrations/mistral/__init__.py` (39L) — Mistral native format integration: tekken tokenizer conversion.
+- `./.qa_nemotron/transformers_main/transformers/integrations/mistral/constants.py` (38L) — Lightweight constants for the Mistral native-format integration.
+- `./.qa_nemotron/transformers_main/transformers/integrations/mistral/tokenizer.py` (530L) — Conversion between Mistral tekken tokenizers and HuggingFace tokenizer formats.
+- `./.qa_nemotron/transformers_main/transformers/integrations/moe.py` (602L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/msa_attention.py` (262L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/mxfp4.py` (589L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/neftune.py` (114L) — NEFTune: Noisy Embeddings for Fine-Tuning.
+- `./.qa_nemotron/transformers_main/transformers/integrations/npu_flash_attention.py` (143L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/nvfp4.py` (177L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/peft.py` (701L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/quanto.py` (119L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/quark.py` (36L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/sdpa_attention.py` (170L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/sdpa_paged.py` (74L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/sinq.py` (173L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/sonicmoe.py` (219L) — SonicMoE integration: fused MoE using CuteDSL kernels from `kernels-community/sonic-moe`.
+- `./.qa_nemotron/transformers_main/transformers/integrations/spqr.py` (74L) — SpQR (Sparse-Quantized Representation) integration file
+- `./.qa_nemotron/transformers_main/transformers/integrations/tensor_parallel.py` (93L) — Backward-compatibility shim for the tensor parallel API.
+- `./.qa_nemotron/transformers_main/transformers/integrations/tiktoken.py` (53L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/torchao.py` (233L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/tpu.py` (239L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/integrations/vptq.py` (82L) — VPTQ (Vector Post-Training Quantization) integration file
+- `./.qa_nemotron/transformers_main/transformers/loss/__init__.py` (13L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/loss/loss_d_fine.py` (373L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/loss/loss_deformable_detr.py` (201L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/loss/loss_deimv2.py` (261L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/loss/loss_for_object_detection.py` (570L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/loss/loss_grounding_dino.py` (294L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/loss/loss_lw_detr.py` (359L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/loss/loss_rf_detr.py` (472L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/loss/loss_rnnt.py` (106L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/loss/loss_rt_detr.py` (474L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/loss/loss_tdt.py` (193L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/loss/loss_utils.py` (201L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/masking_utils.py` (1601L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/model_debugging_utils.py` (449L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/modelcard.py` (586L) — Configuration base class and utilities.
+- `./.qa_nemotron/transformers_main/transformers/modeling_attn_mask_utils.py` (503L) — IMPORTANT NOTICE: Every class and function in this file is deprecated in favor of using the much more general 
+- `./.qa_nemotron/transformers_main/transformers/modeling_flash_attention_utils.py` (840L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/modeling_gguf_pytorch_utils.py` (816L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/modeling_layers.py` (682L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/modeling_outputs.py` (1662L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/modeling_rope_utils.py` (1135L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/modeling_utils.py` (5169L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/monkey_patching.py` (371L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/optimization.py` (1342L) — PyTorch optimization for BERT model.
+- `./.qa_nemotron/transformers_main/transformers/pipelines/__init__.py` (1124L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/any_to_any.py` (519L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/audio_classification.py` (260L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/audio_utils.py` (295L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/automatic_speech_recognition.py` (745L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/base.py` (1396L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/depth_estimation.py` (145L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/document_question_answering.py` (649L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/feature_extraction.py` (88L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/fill_mask.py` (259L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/image_classification.py` (230L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/image_feature_extraction.py` (115L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/image_segmentation.py` (223L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/image_text_to_text.py` (485L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/keypoint_matching.py` (176L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/mask_generation.py` (335L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/object_detection.py` (197L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/pt_utils.py` (323L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/table_question_answering.py` (382L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/text_classification.py` (219L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/text_generation.py` (507L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/text_to_audio.py` (351L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/token_classification.py` (622L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/video_classification.py` (200L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/zero_shot_audio_classification.py` (160L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/zero_shot_classification.py` (261L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/zero_shot_image_classification.py` (195L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/pipelines/zero_shot_object_detection.py` (242L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/processing_utils.py` (2430L) — Processing saving/loading class for common processors.
+- `./.qa_nemotron/transformers_main/transformers/pytorch_utils.py` (255L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/__init__.py` (16L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/auto.py` (391L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/base.py` (346L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_aqlm.py` (75L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_auto_round.py` (71L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_awq.py` (97L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_bitnet.py` (124L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_bnb_4bit.py` (187L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_bnb_8bit.py` (178L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_compressed_tensors.py` (226L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_eetq.py` (110L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_fbgemm_fp8.py` (206L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_finegrained_fp8.py` (306L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_fouroversix.py` (123L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_fp_quant.py` (164L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_gemma.py` (75L) — HfQuantizer implementation for pre-quantized Gemma checkpoints.
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_gguf.py` (197L) — Keeping GGUF weights in their blocks instead of unpacking them at load time.
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_gptq.py` (111L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_higgs.py` (178L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_hqq.py` (264L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_metal.py` (130L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_mxfp4.py` (317L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_nvfp4.py` (122L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_quanto.py` (122L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_quark.py` (104L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_sinq.py` (262L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_spqr.py` (81L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_torchao.py` (228L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizer_vptq.py` (75L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/quantizers/quantizers_utils.py` (68L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/safetensors_conversion.py` (116L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/testing_utils.py` (4917L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/time_series_utils.py` (225L) — Time series distributional output classes and utilities.
+- `./.qa_nemotron/transformers_main/transformers/tokenization_mistral_common.py` (1736L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/tokenization_python.py` (1424L) — Tokenization classes for python tokenizers. For fast tokenizers (provided by HuggingFace's tokenizers library)
+- `./.qa_nemotron/transformers_main/transformers/tokenization_utils_base.py` (3690L) — Base classes common to both the slow and the fast tokenization classes: PreTrainedTokenizerBase (host all the 
+- `./.qa_nemotron/transformers_main/transformers/tokenization_utils_sentencepiece.py` (315L) — SentencePiece-based tokenization class for loading from sentencepiece.model files.
+- `./.qa_nemotron/transformers_main/transformers/tokenization_utils_tokenizers.py` (1514L) — Tokenization classes for fast tokenizers (provided by HuggingFace's tokenizers library). For slow (python) tok
+- `./.qa_nemotron/transformers_main/transformers/trainer.py` (4642L) — The Trainer class, to easily train a 🤗 Transformers from scratch or finetune it on a new task.
+- `./.qa_nemotron/transformers_main/transformers/trainer_callback.py` (784L) — Callbacks to use with the Trainer class and customize the training loop.
+- `./.qa_nemotron/transformers_main/transformers/trainer_jit_checkpoint.py` (125L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/trainer_optimizer.py` (628L) — Optimizer utilities for the Trainer class.
+- `./.qa_nemotron/transformers_main/transformers/trainer_pt_utils.py` (1659L) — Torch utilities for the Trainer class.
+- `./.qa_nemotron/transformers_main/transformers/trainer_seq2seq.py` (392L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/trainer_utils.py` (1262L) — PyTorch-independent utilities for the Trainer class.
+- `./.qa_nemotron/transformers_main/transformers/training_args.py` (2920L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/training_args_seq2seq.py` (94L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/__init__.py` (352L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/attention_visualizer.py` (255L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/auto_docstring.py` (4818L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/backbone_utils.py` (19L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/chat_parsing/__init__.py` (20L) — Response parsing: convert model-emitted text into the assistant-message dict used by chat templates, driven by
+- `./.qa_nemotron/transformers_main/transformers/utils/chat_parsing/content_parsers.py` (249L) — This file contains the parsers used by chat response parsing. Each parser takes a chunk of captured text and p
+- `./.qa_nemotron/transformers_main/transformers/utils/chat_parsing/response_parser.py` (402L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/chat_parsing/response_templates.py` (241L) — Template loading and validation for response_template dicts.
+- `./.qa_nemotron/transformers_main/transformers/utils/chat_template_utils.py` (632L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/constants.py` (6L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/deprecation.py` (175L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/doc.py` (1091L) — Doc utilities: Utilities related to documentation
+- `./.qa_nemotron/transformers_main/transformers/utils/dummy_detectron2_objects.py` (11L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/dummy_essentia_and_librosa_and_pretty_midi_and_scipy_and_torch_objects.py` (23L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/dummy_mistral_common_objects.py` (9L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/dummy_music_objects.py` (16L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/dummy_pt_objects.py` (488L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/dummy_sentencepiece_and_tokenizers_objects.py` (9L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/dummy_speech_objects.py` (16L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/dummy_timm_and_torchvision_objects.py` (9L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/dummy_tokenizers_objects.py` (9L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/dummy_torchaudio_objects.py` (30L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/dummy_torchvision_objects.py` (16L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/dummy_vision_objects.py` (23L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/generic.py` (1210L) — Generic utilities
+- `./.qa_nemotron/transformers_main/transformers/utils/hp_naming.py` (162L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/hub.py` (1049L) — Hub utilities: utilities related to download and cache models
+- `./.qa_nemotron/transformers_main/transformers/utils/import_utils.py` (3390L) — Import utilities: Utilities related to imports and our lazy inits.
+- `./.qa_nemotron/transformers_main/transformers/utils/kernel_config.py` (339L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/loading_report.py` (318L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/logging.py` (441L) — Logging utilities.
+- `./.qa_nemotron/transformers_main/transformers/utils/network_logging.py` (485L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/notebook.py` (408L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/output_capturing.py` (318L) — Contains the logic for automatic additional output capture with our forward decorators. This mostly describe t
+- `./.qa_nemotron/transformers_main/transformers/utils/peft_utils.py` (114L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/pytest_helpers.py` (111L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/quantization_config.py` (2105L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/sentencepiece_model_pb2.py` (1511L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/sentencepiece_model_pb2_new.py` (47L) — Generated protocol buffer code.
+- `./.qa_nemotron/transformers_main/transformers/utils/type_validators.py` (270L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/utils/versions.py` (116L) — Utilities for working with package versions
+- `./.qa_nemotron/transformers_main/transformers/video_processing_utils.py` (795L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/video_utils.py` (927L) — (no docstring)
+- `./.qa_nemotron/transformers_main/transformers/vision_utils.py` (379L) — Vision utility functions for pre-computing very dynamic and data-dependent tensors that can break model graph 
+- `./interface/web_ui/server.py` (1412L) — ISHTI Web UI Server & Real-Time Orchestration Bridge FastAPI + WebSocket server providing the futuristic JARVI
+- `./ishti/__init__.py` (23L) — ISHTI core: dispatcher, local LLM, memory, routing, skills. Runs 100% locally.
+- `./ishti/__main__.py` (20L) — python -m ishti [port]  ->  web HUD + dispatcher on http://127.0.0.1:8888
+- `./ishti/agents.py` (441L) — Multi-agent orchestration (Part C): a supervisor decomposes the owner's request, specialist agents execute the
+- `./ishti/arch2/__init__.py` (13L) — ARCH2: the user's two-pass architecture (spec 2026-09-28).
+- `./ishti/arch2/consolidate.py` (319L) — ARCH2 memory consolidation (spec section 12): after each conversation a lightweight extraction pass decides wh
+- `./ishti/arch2/jsonio.py` (97L) — Robust JSON from the local model (Ollama structured outputs, hardened).
+- `./ishti/arch2/memory.py` (729L) — ARCH2 memory: the model is not the memory.
+- `./ishti/arch2/people.py` (365L) — Person records (C2) + identity disambiguation (C5, J3).
+- `./ishti/arch2/pipeline.py` (250L) — ARCH2 pipeline - the spec's two-pass architecture, stage by stage.
+- `./ishti/arch2/registry.py` (85L) — Which architecture answers right now: exactly one owner of that state.
+- `./ishti/arch2/retrieval.py` (164L) — ARCH2 memory retrieval (spec section 14):
+- `./ishti/audit.py` (135L) — Action audit log with attribution (A3): every action ISHTI takes, and WHO initiated it.
+- `./ishti/channels/__init__.py` (24L) — ISHTI channels — remote control without inbound ports.
+- `./ishti/channels/api.py` (261L) — HTTP side of the remote channels (docs/API_CONTRACT.md §11). attach(app) wires:   routes    /api/remote/status
+- `./ishti/channels/approvals.py` (109L) — Single-use, expiring, action-bound T2 step-up approvals (WP-A3; design R4 §3).
+- `./ishti/channels/gate.py` (462L) — The remote gate (WP-A3): everything a remote update is allowed to do, decided HERE.
+- `./ishti/channels/media.py` (172L) — Inbound media for remote channels (WP-A4): voice notes, photos, documents.
+- `./ishti/channels/output.py` (195L) — Output layer for remote channels (WP-A4): privacy honesty, chunking, attachments.
+- `./ishti/channels/policy.py` (122L) — remote_policy.yaml — the remote control's permission sheet (LOCAL-EDITABLE ONLY).
+- `./ishti/channels/poller.py` (285L) — The single Telegram long-polling loop (WP-A1; design R1 A, D1).
+- `./ishti/channels/security.py` (305L) — Channel security: pairing, allowlist, DPAPI secret store, rate limiting, lock state.
+- `./ishti/channels/service.py` (168L) — Channel service (WP-A6): one lifecycle owner for every remote channel.
+- `./ishti/channels/telegram_client.py` (194L) — Raw Telegram Bot API client over httpx (decision D2 in RESEARCH.md R1: zero new dependencies).
+- `./ishti/channels/whatsapp_channel.py` (236L) — WhatsApp adapter (WP-A5) — default OFF, self-chat only, human-paced (R2 mode 1).
+- `./ishti/check.py` (339L) — End-to-end check of the core loop against real Ollama/Laya, with a throwaway memory DB. python -m ishti.check 
+- `./ishti/clone.py` (83L) — The owner's own voice for things sent in his name (WhatsApp voice notes).
+- `./ishti/core/__init__.py` (14L) — ISHTI core: the Prompt-1 layer every architecture composes from.
+- `./ishti/core/architectures.py` (343L) — Architecture Registry (Part C) — switchable architectures, no code edits.
+- `./ishti/core/assemble.py` (168L) — Context assembly (Parts E3/E4): one ordered template with per-section token budgets.
+- `./ishti/core/context.py` (104L) — Context-window management (Part D4).
+- `./ishti/core/incognito.py` (54L) — Incognito mode (Part H3): a conversation that writes nothing to memory.
+- `./ishti/core/logutil.py` (103L) — Structured JSON logging with secret/PII redaction (E1).
+- `./ishti/core/migrations.py` (199L) — Versioned schema migrations for ISHTI's SQLite stores (Part A4).
+- `./ishti/core/pipeline.py` (208L) — Pipeline stage interfaces (Part B) — every stage swappable from Settings.
+- `./ishti/core/resolver.py` (181L) — Query Resolution / Rewriting (Part D2) — the critical-bug fix.
+- `./ishti/core/settings.py` (444L) — Typed Settings system (Part C4).
+- `./ishti/core/state.py` (465L) — Conversation State Manager (Part D1).
+- `./ishti/core/tools.py` (207L) — Tool execution stage (B4) + confirmation policy (E3/Rule 6) + validation stage (B5).
+- `./ishti/core/vault.py` (383L) — The vault: encryption at rest for the memory stores (Part A3) + backup/export/import.
+- `./ishti/corrections.py` (87L) — Learning from corrections (D4). "That should have been the browser" re-runs the request with that skill (the d
+- `./ishti/diarize.py` (135L) — Speaker diarization ("who said what"): Whisper segments -> SpeechBrain ECAPA speaker embeddings -> clustering.
+- `./ishti/dispatcher.py` (1489L) — Dispatcher: request -> route (rules / Laya) -> skill -> reply. Text and voice both call handle(); voice is jus
+- `./ishti/duck.py` (97L) — Audio ducking (B5): while ISHTI speaks, other apps' sound (music, a video) drops to DUCK_LEVEL and comes back 
+- `./ishti/events.py` (55L) — Backend event bus for /ws/events (docs/API_CONTRACT.md): any thread publishes, the server's subscriber fans ou
+- `./ishti/facts.py` (113L) — Exact fact store (SQLite). One row per (entity, attribute): a change updates the row in place and keeps the ol
+- `./ishti/flowise_client.py` (138L) — Flowise adapter (Part E1): call local Flowise flows over their prediction API.
+- `./ishti/ftlog.py` (202L) — Behavior-data collection for the brain fine-tuning pipeline (Part 3).
+- `./ishti/gpu.py` (83L) — GPU work queue (D2): heavy GPU jobs take turns and only start with enough free VRAM.
+- `./ishti/health.py` (134L) — Health loop (A1): every few minutes, cheap checks of what ISHTI depends on, so a degrading component is flagge
+- `./ishti/killswitch.py` (184L) — Hard kill switch (A2): one call stops EVERYTHING and returns ISHTI to idle - no confirmation, no delay. Differ
+- `./ishti/leads.py` (196L) — Leads store (Part E4): business leads live HERE — a dedicated table, deliberately NOT in personal memory (they
+- `./ishti/learning/__init__.py` (20L) — Reinforcement-like learning for ISHTI (see docs/LEARNING_SYSTEM.md).
+- `./ishti/learning/dashboard.py` (304L) — Dashboard aggregation and HTTP endpoint support (docs/LEARNING_INTERFACE.md section 2 & 4).
+- `./ishti/learning/dataset.py` (138L) — Offline training dataset curation and export (spec 20, 21, 22).
+- `./ishti/learning/entities.py` (141L) — Entity separation, disambiguation, and contact tracking (spec 25, 26).
+- `./ishti/learning/errors.py` (330L) — Error analysis: turn a complaint/correction into a classified error and a stable signature.
+- `./ishti/learning/feedback.py` (166L) — Feedback detection, attribution, and reinforcement reward assignment (spec 5, 6, 7, 16).
+- `./ishti/learning/lessons.py` (788L) — Lesson store: what ISHTI has learned, with evidence, confidence, scope and precedence.
+- `./ishti/learning/observe.py` (154L) — Turn observation and multi-step task logging (docs/LEARNING_INTERFACE.md section 2).
+- `./ishti/learning/policy.py` (117L) — Policy check and parameter overriding (spec 13, 27, 28).
+- `./ishti/learning/reflect.py` (190L) — Reflection: turn a turn's outcome into a sentence ISHTI can act on next time.
+- `./ishti/learning/selfeval.py` (74L) — Self-evaluation and confirmation gate before risky actions (spec 15, 29).
+- `./ishti/learning/store.py` (283L) — Learning store: one SQLite file (data/learning.db) for the whole learning loop.
+- `./ishti/learning/workflows.py` (94L) — Workflow mining and procedure caching (spec 19).
+- `./ishti/lifecycle.py` (897L) — Lifecycle: ONE state machine (starting -> ready -> shutting_down -> stopped), real boot stages, single instanc
+- `./ishti/lifecycle_api.py` (223L) — HTTP + WebSocket side of docs/API_CONTRACT.md: /api/ready, /api/vram, /api/shutdown, /ws/events, /api/focus an
+- `./ishti/llm.py` (250L) — Single entry point to the local LLM (Ollama's OpenAI-compatible /v1 endpoint). Model names come from config.js
+- `./ishti/manage.py` (452L) — Settings -> Models & voices: choose, delete (free space) and download again - language models, the speech reco
+- `./ishti/mcp_client.py` (147L) — Thin MCP client. Each configured server (config.json "mcp_servers") runs as one long-lived stdio session on a 
+- `./ishti/mic_control.py` (250L) — Global microphone control (Section 7): ON/OFF for the always-on wake-word listener.
+- `./ishti/models.py` (227L) — Strict GPU model residency & eviction (Section 6).
+- `./ishti/monitor.py` (215L) — Live conversation monitoring for issues and mistakes (Section 3).
+- `./ishti/obscura.py` (160L) — Obscura engine integration (Section 8): the Rust headless browser as the DEFAULT engine for research/reading -
+- `./ishti/ocr.py` (143L) — Local OCR without the vision model: exact text from images, the screen and scanned PDFs.   1. Windows' own OCR
+- `./ishti/planner.py` (189L) — Multi-skill plans: "check the latest Ollama version and remember it" -> web_search, then memory; "check the we
+- `./ishti/reflex.py` (99L) — Reflex table (B7): a few unambiguous instant commands answered locally, skipping routing and the model. Narrow
+- `./ishti/resilience.py` (265L) — Resilience core (Part G): failure classification, retry with backoff+jitter, circuit breakers, fallbacks, chec
+- `./ishti/rgraph.py` (642L) — Relationship memory graph (SQLite-backed, temporal, privacy-first).
+- `./ishti/router.py` (110L) — Fast routing before any LLM call: deterministic skill triggers, then Laya typed decisions, then the default sk
+- `./ishti/scope.py` (248L) — Skill permission scoping (A5): what each skill may reach, declared in its manifest and enforced here.
+- `./ishti/self_heal.py` (272L) — Self-healing mode controller (Section 2).
+- `./ishti/selfmodel.py` (481L) — The self-model: what ISHTI knows about itself, measured live rather than remembered.
+- `./ishti/semantic.py` (84L) — Semantic memory (ChromaDB + local Ollama embeddings) for general context and past conversation. Fuzzy by natur
+- `./ishti/skill_lifecycle.py` (280L) — Skill lifecycle engine — the "never stops learning" layer (Voyager/MUSE/Prime-Agent pattern, ISHTI-shaped).
+- `./ishti/skills/__init__.py` (250L) — Skill loader. Each skill is a folder: manifest.json + skill.py exposing run(text, session).
+- `./ishti/skills/abtest/skill.py` (120L) — A/B test analysis (inventory domain 6 #21): the two-proportion z-test, computed exactly.
+- `./ishti/skills/apps/skill.py` (36L) — Apps skill: launch or focus desktop applications.
+- `./ishti/skills/argumentcheck/skill.py` (92L) — Fallacy detection (inventory domain 6 #19): heuristic flags, honestly labelled candidates.
+- `./ishti/skills/audioclean/skill.py` (118L) — Audio enhancement (inventory domain 2 #9): FFmpeg denoise + loudness normalization.
+- `./ishti/skills/audiomark/skill.py` (120L) — Audio bookmarking (inventory domain 2 #19): timestamped notes into long recordings.
+- `./ishti/skills/audioquality/skill.py` (106L) — Audio quality report (inventory domain 2 #25): ffprobe facts, plain-language verdict.
+- `./ishti/skills/automation/skill.py` (266L) — Automation: "when X, do Y" rules, checked every 20 s by one background thread the server starts.
+- `./ishti/skills/bayes/skill.py` (144L) — Bayesian updating (inventory domain 6 #35): exact posteriors, no vibes.
+- `./ishti/skills/braintrain/skill.py` (111L) — Braintrain skill: the conversational front of orchestrator/finetune.py (Part 3).
+- `./ishti/skills/budget/skill.py` (148L) — Local budget ledger (SQLite in data/budget.db — nothing leaves the PC).
+- `./ishti/skills/calc/skill.py` (131L) — Exact math (sympy) — deterministic, no LLM arithmetic.
+- `./ishti/skills/calendar/skill.py` (242L) — ISHTI's own calendar (no Outlook account is set up on this PC): add events with a clash warning, list a day or
+- `./ishti/skills/capcut/skill.py` (284L) — CapCut Skill: Full programmatic and conversational control of CapCut & JianYing (剪映). Powered by capcut-cli an
+- `./ishti/skills/chapters/skill.py` (123L) — Video chapters (inventory domain 4 #12): scene changes -> chapter timestamps.
+- `./ishti/skills/chart/skill.py` (180L) — Chart generation (inventory domain 8 #33): a CSV column -> a real PNG on disk.
+- `./ishti/skills/chat/skill.py` (112L) — Chat skill: local LLM answer. Exact facts are injected first and win; semantic recall that mentions the same e
+- `./ishti/skills/chat_digest/analyze.py` (531L) — Analysis for the 24h digest (4.4): per-chat map, cross-chat rollup, local only, nothing invented.
+- `./ishti/skills/chat_digest/export.py` (335L) — Exports for the digest (4.6): markdown, DOCX and PDF - all local, all in reports/.
+- `./ishti/skills/chat_digest/report.py` (222L) — The digest report as real markdown tables (4.5) - plus the checker that proves they are valid.
+- `./ishti/skills/chat_digest/skill.py` (157L) — The 24-hour chat digest (Section 4) - T0, READ-ONLY.
+- `./ishti/skills/chat_digest/store.py` (296L) — Chat-digest message store (data/chat_digest.db) - what ISHTI already SAW, nothing more.
+- `./ishti/skills/chat_digest/window.py` (103L) — The rolling 24-hour window (4.3 / N2) - and the boundary rule, stated once so it can be tested.
+- `./ishti/skills/checklist/skill.py` (152L) — Persistent checklists (local SQLite, data/checklists.db).
+- `./ishti/skills/chromakey/skill.py` (104L) — Green-screen removal (inventory domain 4 #15): ffmpeg chromakey/colorkey.
+- `./ishti/skills/citation/skill.py` (47L) — Reference formatting (local model): messy reference -> clean APA / MLA / Harvard / IEEE.
+- `./ishti/skills/clients/skill.py` (531L) — CRM / client management skill.
+- `./ishti/skills/contacts/skill.py` (76L) — Duplicate contacts, merged with Google Contacts' own "Merge and fix" (it already matches names, numbers and em
+- `./ishti/skills/dataprep/skill.py` (128L) — Data-quality prep (inventory domain 8 #1-5): profile a CSV and say exactly what to clean.
+- `./ishti/skills/deep_research/skill.py` (58L) — Deep research skill: the existing multi-query research engine, as its own skill.
+- `./ishti/skills/desktop_control/skill.py` (182L) — desktop_control skill (WP-B2) — INERT until the cua-driver exists and the owner enables it.
+- `./ishti/skills/dev/scaffold.py` (181L) — Project boilerplate and Windows services.
+- `./ishti/skills/dev/skill.py` (269L) — Development: run code (the owner's own snippet in a sandbox folder, or a project script), git status/log/diff,
+- `./ishti/skills/devops/skill.py` (254L) — DevOps/CI template generator (inventory domain 7 #16-18 + #19 IaC).
+- `./ishti/skills/digest/skill.py` (90L) — The daily brief: today's weather, the next prayer, today's reminders, the markets watchlist, top headlines and
+- `./ishti/skills/doclayout/skill.py` (144L) — Document layout analysis (inventory domain 3 #10): pdfplumber, measured, no guessing.
+- `./ishti/skills/docs/forms.py` (199L) — PDF form filling and invoices.
+- `./ishti/skills/docs/skill.py` (410L) — Documents, PDF and Office - pikepdf/pypdf, pdfplumber, python-docx, python-pptx, pandas/openpyxl, matplotlib, 
+- `./ishti/skills/email/skill.py` (187L) — Gmail in the owner's Chrome Profile 10 (already signed in): unread mail, open and summarise one, search mail, 
+- `./ishti/skills/extract/skill.py` (223L) — Full-page scroll, extraction and filing (C4).
+- `./ishti/skills/fileops/skill.py` (468L) — File operations beyond organizing: batch rename (preview -> yes -> undo), zip/7z make and extract, duplicate f
+- `./ishti/skills/files/skill.py` (36L) — Files skill: PC file search (user folders + D:\ISHTI), short answer with paths.
+- `./ishti/skills/find_leads/skill.py` (309L) — Lead finder (Part E4): natural language -> search -> scrape -> structured leads -> dedupe -> verify -> rank ->
+- `./ishti/skills/focus/skill.py` (214L) — Focus sprints (Pomodoro): "start a 25 minute focus sprint on the thesis", "how long is left", "stop the sprint
+- `./ishti/skills/folders/skill.py` (295L) — Folders skill: questions about a folder, and organizing one.   "how many pdfs are in my downloads folder"  /  
+- `./ishti/skills/folders/smart.py` (115L) — Organize by what files ARE, not just their extension.
+- `./ishti/skills/forecast/skill.py` (229L) — Trend forecasting on CSV time series (inventory domain 6 #31/32, 8 #9/11).
+- `./ishti/skills/formula/skill.py` (154L) — Spreadsheet formula assistant (inventory domain 9 #14): build, explain, verify.
+- `./ishti/skills/gametheory/skill.py` (122L) — Game theory 2x2 (inventory domain 6 #25): dominance, pure & mixed Nash equilibria.
+- `./ishti/skills/gantt/skill.py` (118L) — Gantt builder (inventory domain 15 #7): tasks with durations -> a computed schedule.
+- `./ishti/skills/gemini/skill.py` (144L) — Image and video generation with Google Gemini, in the owner's own Chrome (the main profile, signed in to Gemin
+- `./ishti/skills/gitops/skill.py` (229L) — Git operations, safe subset (inventory domain 7 #33).
+- `./ishti/skills/goaltrack/skill.py` (198L) — Goal tracker (inventory domain 17 #6, 20 #26/#30/#476/#480): targets and progress, exact.
+- `./ishti/skills/habits/skill.py` (150L) — Habit tracker (local SQLite, data/habits.db).
+- `./ishti/skills/highlights/skill.py` (124L) — Video highlights (inventory domain 4 #5): loudest audio moments as candidate highlights.
+- `./ishti/skills/imgcrop/skill.py` (169L) — Image cropping (inventory domain 4 #30): computed crops, originals untouched.
+- `./ishti/skills/imgquality/skill.py` (142L) — Image quality assessment (inventory domain 4 #19): measured, not guessed.
+- `./ishti/skills/infographic/skill.py` (135L) — Infographic stat panels (inventory domain 3 #32): matplotlib, exact numbers on the image.
+- `./ishti/skills/kanban/skill.py` (153L) — Personal kanban (inventory domain 15 #8): todo → doing → done, with a WIP guard.
+- `./ishti/skills/learning/skill.py` (54L) — Learning skill: natural language querying and inspection of learned lessons, mistakes, and settings.
+- `./ishti/skills/ledger/skill.py` (226L) — Money the owner tracks: expenses ("I spent 500 on groceries"), spending reports by category and period, monthl
+- `./ishti/skills/legaldoc/skill.py` (180L) — Legal document drafting ASSISTANCE (inventory domain 1 #20): templates, not advice.
+- `./ishti/skills/lifelog/skill.py` (206L) — Personal logs (tracking only - never medical advice): water, sleep, exercise, habits, and screen time. "I dran
+- `./ishti/skills/mailmerge/skill.py` (172L) — Mail merge (inventory domain 9 #25 / 12 #10): one template, many personalized drafts.
+- `./ishti/skills/markets/data.py` (234L) — Live market data from free sources (no keys) and a technical analyzer.
+- `./ishti/skills/markets/research.py` (492L) — Research desk: "should I buy OGDC?", "research nvidia", "how much bitcoin should I buy with 200k?"
+- `./ishti/skills/markets/skill.py` (302L) — Markets: live stocks (US/global via yfinance, PSX via the exchange), crypto, gold/silver and currency rates, p
+- `./ishti/skills/media/skill.py` (631L) — Audio, video extras and images - thin wrappers over FFmpeg, faster-whisper, Piper and Pillow.
+- `./ishti/skills/meetingcost/skill.py` (83L) — Meeting cost (inventory domain 14 #20): people × minutes × rate, exactly.
+- `./ishti/skills/meme/skill.py` (146L) — Meme captions (inventory domain 4 #31): text on an image, classic style, computed layout.
+- `./ishti/skills/memory/skill.py` (281L) — Memory skill: front-end to the exact fact store.
+- `./ishti/skills/meta/skill.py` (291L) — About ISHTI itself: skill health (runs every skill's self-check), what it has logged as missing (NEEDS.md), wh
+- `./ishti/skills/mnemonic/skill.py` (51L) — Memory aids (local model): mnemonics for lists, memory-palace walks, peg systems.
+- `./ishti/skills/montecarlo/skill.py` (138L) — Monte Carlo simulation (inventory domain 6 #34): seeded, reproducible, honestly bounded.
+- `./ishti/skills/moodlog/skill.py` (170L) — Mood log (local SQLite, data/moodlog.db) — deterministic.
+- `./ishti/skills/networth/skill.py` (162L) — Net worth (local SQLite, data/networth.db) — deterministic arithmetic.
+- `./ishti/skills/notes/skill.py` (131L) — Quick personal notes (local SQLite, data/notes.db).
+- `./ishti/skills/okr/skill.py` (185L) — OKR tracker (inventory domain 15 #13): objectives, measurable key results, roll-up.
+- `./ishti/skills/online_fallback/skill.py` (151L) — Online fallback: a job this PC can't do locally (remove a background, upscale, convert a rare format...) done 
+- `./ishti/skills/optimize/skill.py` (199L) — Optimization (inventory domain 6 #7): small problems solved exactly, not vibes.
+- `./ishti/skills/owner/skill.py` (254L) — Owner commands: audio on/off, who am I, what do you know about me, what can you do, run diagnostics. Also: per
+- `./ishti/skills/palette/skill.py` (110L) — Color palette extraction (inventory domain 4 #18): an image's dominant colors, exactly.
+- `./ishti/skills/pantry/skill.py` (143L) — Pantry / expiry tracker (inventory domain 18): what's in the kitchen, what expires soon.
+- `./ishti/skills/pdftables/skill.py` (145L) — PDF table extraction (inventory domain 9 #2, 13 pivot-adjacent): PDF tables -> CSV files.
+- `./ishti/skills/phishing_check/skill.py` (100L) — Phishing & suspicious-link analysis (deterministic heuristics; never opens the link).
+- `./ishti/skills/planners/skill.py` (189L) — Things the local model writes for the owner, saved to Documents\ISHTI: flashcards (CSV that Anki imports), a q
+- `./ishti/skills/pressrel/skill.py` (95L) — Press release, product description, FAQ (inventory domain 1 #23, #24, #25).
+- `./ishti/skills/prioritize/skill.py` (183L) — Eisenhower prioritization (inventory domain 15 #2): sort the task pile into what to do first.
+- `./ishti/skills/quickcalc/skill.py` (120L) — Everyday micro-calculations (deterministic — no LLM arithmetic).
+- `./ishti/skills/recipe/skill.py` (82L) — Recipe suggestions (local model): ingredients you have -> what to cook.
+- `./ishti/skills/redact/skill.py` (242L) — Redaction (inventory domain 9 #30 / 20 #25): strip sensitive data from text, CSV or PDF.
+- `./ishti/skills/registry.py` (223L) — Skill Registry (Part A1-A3): one record per skill, retrieved by the router.
+- `./ishti/skills/relationships/skill.py` (236L) — Relationships skill: the conversational front-end of ishti/rgraph.py.
+- `./ishti/skills/reminders/skill.py` (273L) — Reminders and timers.   "remind me in 20 minutes to call Ali" / "remind me at 5pm to stretch" / "remind me tom
+- `./ishti/skills/resumeparse/skill.py` (173L) — Resume parser (inventory domain 9 #7): a CV (PDF/text) -> structured JSON, locally.
+- `./ishti/skills/riskregister/skill.py` (213L) — Risk register (inventory domain 30 #18): scored risks with likelihood × impact.
+- `./ishti/skills/scanqr/skill.py` (127L) — QR codes (inventory domain 3 #9): generate and read, entirely local.
+- `./ishti/skills/screen_control/skill.py` (175L) — Screen control (Section: real screen understanding + interaction).
+- `./ishti/skills/screen_understand/skill.py` (88L) — Screen understanding (read-only): screenshot -> exact text (OCR) + meaning (local vision model).
+- `./ishti/skills/security/skill.py` (342L) — Security: password strength and breach check, file encryption, the credential vault.
+- `./ishti/skills/sendlater/skill.py` (198L) — Send-later (inventory domain 12 #7): schedule an email to go out at a future time.
+- `./ishti/skills/sensitivity/skill.py` (94L) — Sensitivity analysis (inventory domain 6 #33): one variable at a time, exact math.
+- `./ishti/skills/shopping/skill.py` (276L) — Shopping: the cheapest price for a product at official and verified stores, as a comparison table with links.
+- `./ishti/skills/skill_creator/design.py` (194L) — Stage 3 - risk & feasibility: say plainly what can be done, and name exactly what is missing.
+- `./ishti/skills/skill_creator/drafts.py` (335L) — Draft lifecycle: everything happens in `ishti/skills/_drafts/<name>/` until the owner says yes.
+- `./ishti/skills/skill_creator/gap.py` (160L) — Stage 1 - gap detection: is there actually no skill for this? (ask at most ONE clarifying question).
+- `./ishti/skills/skill_creator/research.py` (250L) — Stage 2 - research (T0, read-only): find the best open-source approach BEFORE writing any code.
+- `./ishti/skills/skill_creator/sandbox.py` (176L) — Run one AI-generated script under a hard budget: a per-run Windows Job Object (RESEARCH.md R2, tested live).
+- `./ishti/skills/skill_creator/skill.py` (507L) — skill_creator - ISHTI's self-extending pipeline: research -> design -> build -> test -> do -> save.
+- `./ishti/skills/skill_creator/vetting.py` (358L) — Vet a dependency before it is pinned: zero installs (RESEARCH.md R3 - every step below was tested on this PC).
+- `./ishti/skills/skillsmith/skill.py` (246L) — Grow ISHTI: install a skill from a GitHub repo, or have the coder model build a new one - never silently.
+- `./ishti/skills/sleeplog/skill.py` (152L) — Sleep log (local SQLite, data/sleeplog.db) — deterministic.
+- `./ishti/skills/speedtest/skill.py` (134L) — Internet speed test: latency, jitter, download and upload against Cloudflare's free speed endpoints (speed.clo
+- `./ishti/skills/standup/skill.py` (150L) — Standup notes (inventory domain 15 #10): fill three lines, get a paste-ready post.
+- `./ishti/skills/stats/skill.py` (184L) — CSV data analysis (pandas — exact numbers, no LLM arithmetic).
+- `./ishti/skills/study/skill.py` (109L) — Study tools (local models, ISHTI's own planner).
+- `./ishti/skills/subscriptions/skill.py` (191L) — Subscription tracker (local SQLite, data/subscriptions.db) — deterministic.
+- `./ishti/skills/sudoku/skill.py` (157L) — Sudoku solver (inventory domain 6 #9): backtracking, every solution re-verified.
+- `./ishti/skills/symptomlog/skill.py` (199L) — Symptom diary (inventory domain 16 #3): record and summarise, never diagnose.
+- `./ishti/skills/system/skill.py` (31L) — System skill: hardware telemetry, short.
+- `./ishti/skills/taskctl/skill.py` (40L) — Background task control (D4): voice/text commands over ishti.taskmgr. The manager's handle_command does the pa
+- `./ishti/skills/terminal/skill.py` (170L) — Sandboxed terminal execution (B5): a restricted subprocess — never a shell — with allow/deny lists from Settin
+- `./ishti/skills/textstats/skill.py` (145L) — Text analysis without any model (deterministic, instant, offline).
+- `./ishti/skills/timeline/skill.py` (113L) — Timeline builder (inventory domain 3 #37): a pile of dated lines -> a chronological timeline.
+- `./ishti/skills/trading/skill.py` (352L) — Paper trading: the execution half of the markets desk, on simulated money only.
+- `./ishti/skills/travel/skill.py` (82L) — Flights and hotels via Google Flights / Google Hotels in the owner's main Chrome profile. Bot-protected travel
+- `./ishti/skills/utilities/skill.py` (207L) — Everyday utilities: prayer times (Aladhan, Karachi method, Hanafi Asr), translate, define a word, unit and cur
+- `./ishti/skills/video/pro.py` (387L) — Professional, ad-style edit of one clip - the way an editor would cut it, not a single text stamp:
+- `./ishti/skills/video/skill.py` (201L) — Video skill: the local LLM turns the request into one FFmpeg operation (JSON), then tools/video/video_editor.p
+- `./ishti/skills/vocab/skill.py` (173L) — Vocabulary building (local SQLite, data/vocab.db) — deterministic.
+- `./ishti/skills/vulnscan/skill.py` (205L) — Static vulnerability scan (inventory domain 11 #9): Python code, parsed but NEVER executed.
+- `./ishti/skills/weather/skill.py` (32L) — Weather skill: wraps tools/web/weather.py (Open-Meteo, verified payload).
+- `./ishti/skills/web_fetch/skill.py` (231L) — Web fetch skill: read the URL in the request and answer from it. When the owner points at a site to find somet
+- `./ishti/skills/web_search/skill.py` (98L) — Web search skill: wraps the existing, live-verified quick_search pipeline.
+- `./ishti/skills/webtools/browser_data.py` (219L) — Chrome data housekeeping for the owner's own profiles: cache, cookies, bookmarks.
+- `./ishti/skills/webtools/skill.py` (263L) — Web extras: download a file from a link, watch a page and announce when it changes, open several links at once
+- `./ishti/skills/whatsapp/skill.py` (749L) — WhatsApp skill: WhatsApp Web in the owner's Chrome Profile 9.
+- `./ishti/skills/workflows/skill.py` (120L) — Named webhooks: "run my backup workflow" POSTs to a URL the owner saved - an n8n workflow, a Home Assistant au
+- `./ishti/skills/writing/skill.py` (97L) — Writing workbench (local LLM only — everything stays on this PC).
+- `./ishti/talk.py` (328L) — Real-time speech out: the reply is spoken sentence by sentence while the model is still writing it, and the pl
+- `./ishti/taskmgr.py` (337L) — Task manager (Part D): background tasks the owner can keep chatting through.
+- `./ishti/telemetry.py` (288L) — Observability core (Part H): per-stage latency metrics, token/tool/agent counters, an on-demand eval harness w
+- `./ishti/test_mode.py` (102L) — ISHTI_TEST_MODE=1 - the global safety switch for automated testing (QA pass 2026-09-30).
+- `./ishti/untrusted.py` (156L) — Prompt-injection defence (A4): text ISHTI didn't write - web pages, search results, PDFs and documents, emails
+- `./ishti/voice.py` (680L) — Voice channel: faster-whisper STT on the GPU and Piper TTS, both local. Voice is only another input channel: t
+- `./ishti/vram.py` (1065L) — VRAM governor: no model is ever left partially offloaded.
+- `./ishti/vram_calibrate.py` (152L) — Measure every installed ladder rung on THIS GPU: python -m ishti.vram_calibrate [model ...]
+- `./ishti/wake.py` (570L) — Hands-free, real-time voice: openWakeWord ("hey jarvis" model, CPU) -> record until Silero VAD hears silence (
+- `./ishti/watchdog.py` (208L) — Watchdog (A1) + the kill-switch hotkey (A2), in their own process so both work even if the server hangs.
+- `./tests/conftest.py` (50L) — Pytest collection config (Prompt 4 QA).
+- `./tests/contract_test.py` (218L) — Automated API & WebSocket Contract Conformance Test Suite (Phase B). Validates docs/API_CONTRACT.md against th
+- `./tests/download_whisper_turbo.py` (44L) — Fetch the CTranslate2 build of whisper large-v3-turbo (~1.6 GB) into D:\ISHTI\data\models\whisper-large-v3-tur
+- `./tests/e2e_vram_lifecycle.py` (640L) — Real-hardware tests for the VRAM governor + lifecycle (docs/API_CONTRACT.md, models_ladder.yaml). NOT pytest: 
+- `./tests/fixtures/qa_report.py` (39L) — Reusable scratch sandbox for QA per-skill loops (prompt 2).
+- `./tests/kv_cache_probe.py` (113L) — KV-cache type / flash-attention probe on a PRIVATE Ollama (port 11501, same model store; the real Ollama is un
+- `./tests/measure_stt.py` (160L) — Measure faster-whisper latency per pattern, so every choice in ishti/config.json + ishti/voice.py is evidence.
+- `./tests/mock_telegram.py` (164L) — Mock Telegram Bot API for offline acceptance tests (WP-C1; master prompt: "mock Telegram Bot API server + a re
+- `./tests/mocks.py` (61L) — Shared test mocks: a deterministic LLM and deterministic tools so the whole suite runs fast, offline and ident
+- `./tests/review/test_batch1_adversarial.py` (151L) — REVIEWER adversarial pass for Batch 1 (QA prompt 2): red-team system, files, folders, memory, chat, owner thro
+- `./tests/review/test_batch2_adversarial.py` (168L) — REVIEWER adversarial pass for Batch 2 (QA prompt 2): red-team weather, bayes, chat_digest, web_fetch, web_sear
+- `./tests/run_skill.py` (160L) — QA harness (QA prompt 1, Step 3): run per-skill suites and track state.
+- `./tests/skills/abtest/test_abtest.py` (101L) — AUTO-GENERATED per-skill suite for `abtest` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. 
+- `./tests/skills/apps/test_apps.py` (101L) — AUTO-GENERATED per-skill suite for `apps` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. Ti
+- `./tests/skills/argumentcheck/test_argumentcheck.py` (101L) — AUTO-GENERATED per-skill suite for `argumentcheck` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tes
+- `./tests/skills/audioclean/test_audioclean.py` (101L) — AUTO-GENERATED per-skill suite for `audioclean` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.
+- `./tests/skills/audiomark/test_audiomark.py` (101L) — AUTO-GENERATED per-skill suite for `audiomark` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.p
+- `./tests/skills/audioquality/test_audioquality.py` (101L) — AUTO-GENERATED per-skill suite for `audioquality` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_test
+- `./tests/skills/automation/test_automation.py` (101L) — AUTO-GENERATED per-skill suite for `automation` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.
+- `./tests/skills/bayes/test_bayes.py` (101L) — AUTO-GENERATED per-skill suite for `bayes` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. T
+- `./tests/skills/braintrain/test_braintrain.py` (101L) — AUTO-GENERATED per-skill suite for `braintrain` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.
+- `./tests/skills/budget/test_budget.py` (101L) — AUTO-GENERATED per-skill suite for `budget` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. 
+- `./tests/skills/calc/test_calc.py` (101L) — AUTO-GENERATED per-skill suite for `calc` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. Ti
+- `./tests/skills/calendar/test_calendar.py` (101L) — AUTO-GENERATED per-skill suite for `calendar` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py
+- `./tests/skills/capcut/test_capcut.py` (101L) — AUTO-GENERATED per-skill suite for `capcut` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. 
+- `./tests/skills/chapters/test_chapters.py` (101L) — AUTO-GENERATED per-skill suite for `chapters` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py
+- `./tests/skills/chart/test_chart.py` (101L) — AUTO-GENERATED per-skill suite for `chart` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. T
+- `./tests/skills/chat/test_chat.py` (101L) — AUTO-GENERATED per-skill suite for `chat` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. Ti
+- `./tests/skills/chat/test_chat_honesty_guard.py` (74L) — FIX-2 regression (QA prompt 2 reviewer pass): chat must never confirm storing secrets.
+- `./tests/skills/chat_digest/test_chat_digest.py` (101L) — AUTO-GENERATED per-skill suite for `chat_digest` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests
+- `./tests/skills/checklist/test_checklist.py` (101L) — AUTO-GENERATED per-skill suite for `checklist` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.p
+- `./tests/skills/chromakey/test_chromakey.py` (101L) — AUTO-GENERATED per-skill suite for `chromakey` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.p
+- `./tests/skills/citation/test_citation.py` (101L) — AUTO-GENERATED per-skill suite for `citation` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py
+- `./tests/skills/clients/test_clients.py` (101L) — AUTO-GENERATED per-skill suite for `clients` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py.
+- `./tests/skills/contacts/test_contacts.py` (101L) — AUTO-GENERATED per-skill suite for `contacts` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py
+- `./tests/skills/dataprep/test_dataprep.py` (101L) — AUTO-GENERATED per-skill suite for `dataprep` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py
+- `./tests/skills/deep_research/test_deep_research.py` (101L) — AUTO-GENERATED per-skill suite for `deep_research` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tes
+- `./tests/skills/desktop_control/test_desktop_control.py` (87L) — desktop_control skill suite (generated-suite convention: happy/language/edge/failure/safety).
+- `./tests/skills/dev/test_dev.py` (101L) — AUTO-GENERATED per-skill suite for `dev` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. Tie
+- `./tests/skills/devops/test_devops.py` (101L) — AUTO-GENERATED per-skill suite for `devops` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. 
+- `./tests/skills/digest/test_digest.py` (101L) — AUTO-GENERATED per-skill suite for `digest` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. 
+- `./tests/skills/doclayout/test_doclayout.py` (101L) — AUTO-GENERATED per-skill suite for `doclayout` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.p
+- `./tests/skills/docs/test_docs.py` (101L) — AUTO-GENERATED per-skill suite for `docs` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. Ti
+- `./tests/skills/docs/test_docs_paths.py` (27L) — FIX-8 regression: Windows path regexes must accept forward slashes.
+- `./tests/skills/email/test_email.py` (101L) — AUTO-GENERATED per-skill suite for `email` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. T
+- `./tests/skills/extract/test_extract.py` (101L) — AUTO-GENERATED per-skill suite for `extract` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py.
+- `./tests/skills/fileops/test_fileops.py` (101L) — AUTO-GENERATED per-skill suite for `fileops` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py.
+- `./tests/skills/files/test_files.py` (101L) — AUTO-GENERATED per-skill suite for `files` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. T
+- `./tests/skills/find_leads/test_find_leads.py` (101L) — AUTO-GENERATED per-skill suite for `find_leads` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.
+- `./tests/skills/focus/test_focus.py` (101L) — AUTO-GENERATED per-skill suite for `focus` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. T
+- `./tests/skills/folders/test_folders.py` (101L) — AUTO-GENERATED per-skill suite for `folders` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py.
+- `./tests/skills/forecast/test_forecast.py` (101L) — AUTO-GENERATED per-skill suite for `forecast` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py
+- `./tests/skills/formula/test_formula.py` (101L) — AUTO-GENERATED per-skill suite for `formula` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py.
+- `./tests/skills/gametheory/test_gametheory.py` (101L) — AUTO-GENERATED per-skill suite for `gametheory` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.
+- `./tests/skills/gantt/test_gantt.py` (101L) — AUTO-GENERATED per-skill suite for `gantt` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. T
+- `./tests/skills/gemini/test_gemini.py` (101L) — AUTO-GENERATED per-skill suite for `gemini` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. 
+- `./tests/skills/gitops/test_gitops.py` (101L) — AUTO-GENERATED per-skill suite for `gitops` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. 
+- `./tests/skills/goaltrack/test_goaltrack.py` (101L) — AUTO-GENERATED per-skill suite for `goaltrack` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.p
+- `./tests/skills/habits/test_habits.py` (101L) — AUTO-GENERATED per-skill suite for `habits` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. 
+- `./tests/skills/highlights/test_highlights.py` (101L) — AUTO-GENERATED per-skill suite for `highlights` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.
+- `./tests/skills/imgcrop/test_imgcrop.py` (101L) — AUTO-GENERATED per-skill suite for `imgcrop` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py.
+- `./tests/skills/imgquality/test_imgquality.py` (101L) — AUTO-GENERATED per-skill suite for `imgquality` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.
+- `./tests/skills/infographic/test_infographic.py` (101L) — AUTO-GENERATED per-skill suite for `infographic` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests
+- `./tests/skills/kanban/test_kanban.py` (101L) — AUTO-GENERATED per-skill suite for `kanban` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. 
+- `./tests/skills/learning/test_learning.py` (101L) — AUTO-GENERATED per-skill suite for `learning` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py
+- `./tests/skills/ledger/test_ledger.py` (101L) — AUTO-GENERATED per-skill suite for `ledger` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. 
+- `./tests/skills/legaldoc/test_legaldoc.py` (101L) — AUTO-GENERATED per-skill suite for `legaldoc` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py
+- `./tests/skills/lifelog/test_lifelog.py` (101L) — AUTO-GENERATED per-skill suite for `lifelog` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py.
+- `./tests/skills/mailmerge/test_mailmerge.py` (101L) — AUTO-GENERATED per-skill suite for `mailmerge` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.p
+- `./tests/skills/markets/test_markets.py` (101L) — AUTO-GENERATED per-skill suite for `markets` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py.
+- `./tests/skills/media/test_media.py` (101L) — AUTO-GENERATED per-skill suite for `media` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. T
+- `./tests/skills/meetingcost/test_meetingcost.py` (101L) — AUTO-GENERATED per-skill suite for `meetingcost` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests
+- `./tests/skills/meme/test_meme.py` (101L) — AUTO-GENERATED per-skill suite for `meme` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. Ti
+- `./tests/skills/memory/test_memory.py` (101L) — AUTO-GENERATED per-skill suite for `memory` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. 
+- `./tests/skills/meta/test_meta.py` (101L) — AUTO-GENERATED per-skill suite for `meta` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. Ti
+- `./tests/skills/meta/test_meta_cache.py` (45L) — FIX-10 regression: op_health must cache identical-skill-set results.
+- `./tests/skills/mnemonic/test_mnemonic.py` (101L) — AUTO-GENERATED per-skill suite for `mnemonic` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py
+- `./tests/skills/montecarlo/test_montecarlo.py` (101L) — AUTO-GENERATED per-skill suite for `montecarlo` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.
+- `./tests/skills/moodlog/test_moodlog.py` (101L) — AUTO-GENERATED per-skill suite for `moodlog` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py.
+- `./tests/skills/networth/test_networth.py` (101L) — AUTO-GENERATED per-skill suite for `networth` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py
+- `./tests/skills/notes/test_notes.py` (101L) — AUTO-GENERATED per-skill suite for `notes` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. T
+- `./tests/skills/okr/test_okr.py` (101L) — AUTO-GENERATED per-skill suite for `okr` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. Tie
+- `./tests/skills/online_fallback/test_online_fallback.py` (101L) — AUTO-GENERATED per-skill suite for `online_fallback` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_t
+- `./tests/skills/optimize/test_optimize.py` (101L) — AUTO-GENERATED per-skill suite for `optimize` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py
+- `./tests/skills/owner/test_owner.py` (101L) — AUTO-GENERATED per-skill suite for `owner` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. T
+- `./tests/skills/owner/test_owner_doctor.py` (47L) — Regression for the `owner` doctor timeout bug (prompt 2, skill loop 2026-09-30).
+- `./tests/skills/palette/test_palette.py` (101L) — AUTO-GENERATED per-skill suite for `palette` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py.
+- `./tests/skills/pantry/test_pantry.py` (101L) — AUTO-GENERATED per-skill suite for `pantry` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. 
+- `./tests/skills/pdftables/test_pdftables.py` (101L) — AUTO-GENERATED per-skill suite for `pdftables` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.p
+- `./tests/skills/phishing_check/test_phishing_check.py` (101L) — AUTO-GENERATED per-skill suite for `phishing_check` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_te
+- `./tests/skills/planners/test_planners.py` (101L) — AUTO-GENERATED per-skill suite for `planners` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py
+- `./tests/skills/pressrel/test_pressrel.py` (101L) — AUTO-GENERATED per-skill suite for `pressrel` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py
+- `./tests/skills/prioritize/test_prioritize.py` (101L) — AUTO-GENERATED per-skill suite for `prioritize` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.
+- `./tests/skills/quickcalc/test_quickcalc.py` (101L) — AUTO-GENERATED per-skill suite for `quickcalc` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.p
+- `./tests/skills/recipe/test_recipe.py` (101L) — AUTO-GENERATED per-skill suite for `recipe` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. 
+- `./tests/skills/redact/test_redact.py` (101L) — AUTO-GENERATED per-skill suite for `redact` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. 
+- `./tests/skills/redact/test_redact_no_crash.py` (27L) — FIX-9 class regression: redact/pdftables run() must decline, never AttributeError.
+- `./tests/skills/relationships/test_relationships.py` (101L) — AUTO-GENERATED per-skill suite for `relationships` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tes
+- `./tests/skills/reminders/test_reminders.py` (101L) — AUTO-GENERATED per-skill suite for `reminders` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.p
+- `./tests/skills/resumeparse/test_resumeparse.py` (101L) — AUTO-GENERATED per-skill suite for `resumeparse` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests
+- `./tests/skills/riskregister/test_riskregister.py` (101L) — AUTO-GENERATED per-skill suite for `riskregister` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_test
+- `./tests/skills/scanqr/test_scanqr.py` (101L) — AUTO-GENERATED per-skill suite for `scanqr` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. 
+- `./tests/skills/screen_control/test_screen_control.py` (101L) — AUTO-GENERATED per-skill suite for `screen_control` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_te
+- `./tests/skills/screen_understand/test_screen_understand.py` (101L) — AUTO-GENERATED per-skill suite for `screen_understand` (QA prompt 1, Step 2) - regenerate with tools/gen_skill
+- `./tests/skills/security/test_security.py` (101L) — AUTO-GENERATED per-skill suite for `security` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py
+- `./tests/skills/sendlater/test_sendlater.py` (101L) — AUTO-GENERATED per-skill suite for `sendlater` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.p
+- `./tests/skills/sensitivity/test_sensitivity.py` (101L) — AUTO-GENERATED per-skill suite for `sensitivity` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests
+- `./tests/skills/shopping/test_shopping.py` (101L) — AUTO-GENERATED per-skill suite for `shopping` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py
+- `./tests/skills/skill_creator/test_skill_creator_core.py` (374L) — Acceptance suite for skill_creator (WP-D1, master prompt acceptance tests 1-8).     venv\Scripts\python tests\
+- `./tests/skills/skillsmith/test_skillsmith.py` (101L) — AUTO-GENERATED per-skill suite for `skillsmith` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.
+- `./tests/skills/sleeplog/test_sleeplog.py` (101L) — AUTO-GENERATED per-skill suite for `sleeplog` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py
+- `./tests/skills/speedtest/test_speedtest.py` (101L) — AUTO-GENERATED per-skill suite for `speedtest` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.p
+- `./tests/skills/standup/test_standup.py` (101L) — AUTO-GENERATED per-skill suite for `standup` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py.
+- `./tests/skills/stats/test_stats.py` (101L) — AUTO-GENERATED per-skill suite for `stats` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. T
+- `./tests/skills/study/test_study.py` (101L) — AUTO-GENERATED per-skill suite for `study` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. T
+- `./tests/skills/subscriptions/test_subscriptions.py` (101L) — AUTO-GENERATED per-skill suite for `subscriptions` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tes
+- `./tests/skills/sudoku/test_sudoku.py` (101L) — AUTO-GENERATED per-skill suite for `sudoku` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. 
+- `./tests/skills/symptomlog/test_symptomlog.py` (101L) — AUTO-GENERATED per-skill suite for `symptomlog` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.
+- `./tests/skills/system/test_system.py` (101L) — AUTO-GENERATED per-skill suite for `system` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. 
+- `./tests/skills/taskctl/test_taskctl.py` (101L) — AUTO-GENERATED per-skill suite for `taskctl` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py.
+- `./tests/skills/terminal/test_terminal.py` (101L) — AUTO-GENERATED per-skill suite for `terminal` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py
+- `./tests/skills/textstats/test_textstats.py` (101L) — AUTO-GENERATED per-skill suite for `textstats` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.p
+- `./tests/skills/timeline/test_timeline.py` (101L) — AUTO-GENERATED per-skill suite for `timeline` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py
+- `./tests/skills/trading/test_trading.py` (101L) — AUTO-GENERATED per-skill suite for `trading` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py.
+- `./tests/skills/travel/test_travel.py` (101L) — AUTO-GENERATED per-skill suite for `travel` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. 
+- `./tests/skills/travel/test_travel_decline.py` (42L) — FIX-12 regression: travel.run() must gate on match() and decline, never open the browser.
+- `./tests/skills/utilities/test_utilities.py` (101L) — AUTO-GENERATED per-skill suite for `utilities` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.p
+- `./tests/skills/video/test_video.py` (101L) — AUTO-GENERATED per-skill suite for `video` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. T
+- `./tests/skills/vocab/test_vocab.py` (101L) — AUTO-GENERATED per-skill suite for `vocab` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py. T
+- `./tests/skills/vulnscan/test_vulnscan.py` (101L) — AUTO-GENERATED per-skill suite for `vulnscan` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py
+- `./tests/skills/weather/test_weather.py` (101L) — AUTO-GENERATED per-skill suite for `weather` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py.
+- `./tests/skills/web_fetch/test_web_fetch.py` (101L) — AUTO-GENERATED per-skill suite for `web_fetch` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.p
+- `./tests/skills/web_search/test_web_search.py` (101L) — AUTO-GENERATED per-skill suite for `web_search` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.
+- `./tests/skills/web_search/test_web_search_regression.py` (72L) — FIX-3 + FIX-4 regressions (QA prompt 2, web_search batch).
+- `./tests/skills/webtools/test_webtools.py` (101L) — AUTO-GENERATED per-skill suite for `webtools` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py
+- `./tests/skills/whatsapp/test_whatsapp.py` (101L) — AUTO-GENERATED per-skill suite for `whatsapp` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py
+- `./tests/skills/workflows/test_workflows.py` (101L) — AUTO-GENERATED per-skill suite for `workflows` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.p
+- `./tests/skills/writing/test_writing.py` (101L) — AUTO-GENERATED per-skill suite for `writing` (QA prompt 1, Step 2) - regenerate with tools/gen_skill_tests.py.
+- `./tests/test_arch2_memory.py` (352L) — ARCH2 tests: everything that runs WITHOUT Ollama / Chroma / a GPU.
+- `./tests/test_backend_watch.py` (144L) — Regression for the orphaned desktop processes after an external stop (found 2026-09-29).
+- `./tests/test_browser_tabs.py` (166L) — Tests for browser-skill tab reuse (issue 6): tabs() parsing of real browser_tabs output, find_tab() matching (
+- `./tests/test_capcut_skill.py` (103L) — Tests for CapCut skill and capcut-cli integration: Verifies trigger matching, project listing, doctor prefligh
+- `./tests/test_channels.py` (415L) — Acceptance tests for the remote-control channels (WP-C1): the master prompt's tests 1-13, all against the mock
+- `./tests/test_chat_digest.py` (499L) — Chat digest tests (Section 4.7 / N1-N12) on a SYNTHETIC dataset with known ground truth.
+- `./tests/test_client_isolation.py` (118L) — Cross-client leakage and privacy boundaries, adversarially.
+- `./tests/test_context_regression.py` (293L) — REGRESSION TESTS T1-T7 (Part D6) — the critical-bug fix must never break again.
+- `./tests/test_desktop_bootstrap.py` (122L) — Regression for the "ISHTI.exe opens an error instead of the app" bug (found 2026-09-29).
+- `./tests/test_dispatcher_followups.py` (141L) — Isolated replay tests for the dispatcher's Issue-1 fixes (no network, no owner memory touched):
+- `./tests/test_dispatcher_state_flow.py` (114L) — INTEGRATION: the dispatcher with the resolver wired in (Part D2/D3 end to end).
+- `./tests/test_dispatcher_translate_guard.py` (64L) — FIX-13 regression: a confused translator must never replace a real skill reply.
+- `./tests/test_learning.py` (144L) — Integration test suite for ISHTI offline-first learning system (docs/LEARNING_INTERFACE.md section 6).
+- `./tests/test_learning_wiring.py` (124L) — Wiring test for the agentic learning loop (docs/LEARNING_INTERFACE.md section 6b).
+- `./tests/test_lifecycle.py` (188L) — Tests for the lifecycle pass (issues 2/3): Start is idempotent (a second Start focuses, never duplicates), Sto
+- `./tests/test_lifecycle_contract.py` (232L) — Contract test: docs/API_CONTRACT.md vs a REAL running backend (needs Ollama + the GPU; run explicitly):
+- `./tests/test_memory_prompt2.py` (374L) — PROMPT 2 required tests (Parts J1-J14) — memory, relationship graph, reinforcement-like learning.
+- `./tests/test_multitask_voice_session.py` (254L) — Explicit verification test for Sections 1 & 6 (and 2-5, 7): Runs a real multi-task voice session (translation 
+- `./tests/test_multitopic.py` (166L) — Multi-tasking: many topics on the go in ONE conversation, at the same time.
+- `./tests/test_planner_messenger.py` (56L) — Regression test: one WhatsApp messenger request must stay ONE task, even when it asks for several messages.
+- `./tests/test_prompt3_skills.py` (350L) — PROMPT 3 tests: Skill Registry, resilience, task manager, multi-agent orchestrator, Flowise, find_leads, termi
+- `./tests/test_router_lifecycle_flags.py` (145L) — Regression tests (WP-C1): the router must honour skill lifecycle statuses and the owner's Disable button.
+- `./tests/test_self_heal_orphans.py` (79L) — FIX-6 regression (QA prompt 3 chaos): orphaned llama-server.exe must be reapable.
+- `./tests/test_selfcheck_hygiene.py` (90L) — Guard: pytest's collection phase must never import a standalone self-check script.
+- `./tests/test_selfmodel.py` (167L) — Acceptance suite for the self-model (WP-D2, master prompt acceptance tests 10-12).
+- `./tests/test_shutdown_cleanliness.py` (130L) — Phase B5 & C4: Full Shutdown and Process Cleanup Verification Test. Verifies: 1. POST /api/shutdown executes a
+- `./tests/test_shutdown_ux.py` (91L) — Regression for the owner's shutdown UX requests (2026-09-29).
+- `./tests/test_stt_accuracy.py` (148L) — Accuracy and latency benchmark for STT (Issue 7): Tests faster-whisper with whisper-large-v3-turbo on RTX 5070
+- `./tests/test_stt_threads.py` (103L) — Regression test for the 2026-09-27 audit's P0: whisper was decoded from two threads (the live partials ran on 
+- `./tests/test_taskmgr_result_retention.py` (65L) — FIX-7 regression (QA prompt 3 soak): done-task records must not pin unbounded results.
+- `./tests/test_voice_note_generation.py` (28L) — Test voice note generation (Issue 5): TTS synthesis, Opus .ogg encoding, and document upload routing.
+- `./tests/test_vram_governor_pressure.py` (68L) — Phase B4: VRAM Governor Pressure, Downshift, and No-Offload Verification Test. Tests admitting a heavy vision 
+- `./tests/test_whatsapp_context.py` (207L) — Tests for the WhatsApp skill behaviour pass (issues 4/5/6): chat-context parsing for replies, verified send re
+- `./tools/analyze_metrics.py` (66L) — QA prompt 3: turn ramp metrics into the report table + chart-ready CSV.
+- `./tools/arch_compare.py` (169L) — ARCH1 vs ARCH2 head-to-head (QA mega-request: "test both architectures").
+- `./tools/chat_digest_sample.py` (79L) — Build the chat-digest samples from the SYNTHETIC dataset (no real chats, no real people).
+- `./tools/check_libraries.py` (172L) — Library audit: do the calls ISHTI makes actually exist in the installed libraries?
+- `./tools/check_skills.py` (156L) — Skills & Data audit: does every skill match its manifest, its dependencies and its own route?
+- `./tools/flowise_key_probe.py` (30L) — Probe how Flowise 3.0.5's /apikey endpoint authenticates (status + body, no secrets printed).
+- `./tools/flowise_make_flow.py` (158L) — Create + verify the local Flowise chatflow for ISHTI (idempotent).
+- `./tools/flowise_wire.py` (96L) — Wire Flowise into ISHTI end-to-end (one shot, idempotent).
+- `./tools/gen_feature_catalog.py` (173L) — Regenerate FEATURE_CATALOG.md from the skill manifests (source of truth) + verified core modules.
+- `./tools/gen_scenarios.py` (230L) — Write the 12 concurrent-testing scenarios (QA prompt 1, Step 4) into tests/scenarios/*.yaml.
+- `./tools/gen_skill_catalog.py` (137L) — Generate docs/SKILL_CATALOG.md from the live Skill Registry (Part A4).
+- `./tools/gen_skill_tests.py` (280L) — Generate per-skill test files under tests/skills/<skill>/test_<skill>.py (QA prompt 1, Step 2).
+- `./tools/generate_brand_assets.py` (424L) — Generate official ISHTI brand assets with refined kerning, floating sparkle, lighter tagline, warmer amber-gol
+- `./tools/load_ramp.py` (111L) — QA prompt 3 phase 3: fixed mixed workload at N simultaneous tasks, monitored live.
+- `./tools/monitor.py` (121L) — Monitor-Agent for QA prompt 3 (prompt rule: sample every second; evidence only).
+- `./tools/probe_arch2_qwen3.py` (32L) — Live probe: prove qwen3:14b now answers through ISHTI's arch2 path.
+- `./tools/probe_audio_devices.py` (64L) — NEEDS 16: enumerate every audio INPUT device on this PC and record hard evidence of which can actually deliver
+- `./tools/run_scenarios.py` (288L) — QA prompt 3: run tests/scenarios/*.yaml against the REAL interface like a person.
+- `./tools/skill_creator_run.py` (121L) — Run the skill_creator pipeline for real, on one task, and record what happened.
+- `./tools/smoke_reverify.py` (362L) — Re-verification smoke: every skill is routed AND executed live with real inputs.
+- `./tools/soak_analysis.py` (67L) — QA prompt 3 phase 5: soak drift analysis over metrics/ramp_level_<tag>.jsonl.
+- `./tools/verify_all.py` (80L) — Run every ISHTI self-check and test in one pass, and report a table.
+- `./tools/video/__init__.py` (6L) — ISHTI Video Tools Package
+- `./tools/video/capcut_controller.py` (334L) — ISHTI CapCut Controller: High-level Python interface to capcut-cli. Allows full programmatic control of CapCut
+- `./tools/video/video_editor.py` (577L) — ISHTI Video Automation & Editing Engine Leverages FFmpeg & FFprobe with NVIDIA NVENC GPU hardware acceleration
+- `./tools/web/__init__.py` (19L) — ISHTI Web Capabilities Registry Exposes unified web search, web fetch, content extraction, and multi-provider 
+- `./tools/web/extract.py` (61L) — ISHTI Content Extractor Parses raw HTML into clean, structured readable text while stripping boilerplate, scri
+- `./tools/web/fetch.py` (91L) — ISHTI Resilient Web Fetcher Retrieves online page content using a cascade of methods: 1. Fast direct HTTP fetc
+- `./tools/web/provider.py` (61L) — ISHTI Web Search Provider Abstraction Defines the unified data contracts and abstract interfaces for web searc
+- `./tools/web/relevance.py` (179L) — ISHTI Source Relevance Filter.
+- `./tools/web/search.py` (662L) — ISHTI Multi-Provider Search Registry Integrates Bing Lite, GitHub API, Wikipedia API, arXiv API, DuckDuckGo fa
+- `./tools/web/weather.py` (143L) — ISHTI Weather - real data, no scraping, no LLM prose.
