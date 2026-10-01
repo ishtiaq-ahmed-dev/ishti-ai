@@ -238,7 +238,8 @@ def transcribe(audio, language: str | None = None) -> str:
                 seconds=len(pcm) / RATE)
     _last_use = time.time()
     _schedule_unload()
-    return text
+    from ishti import stt_vocab
+    return stt_vocab.apply(text)  # post-STT vocabulary correction (JEV-08): mishearings -> canonical words
 
 
 LAST = {"language": None, "confidence": 0.0, "seconds": 0.0}  # of the latest transcript (the voice loop reads it)

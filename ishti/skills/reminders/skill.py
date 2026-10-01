@@ -25,6 +25,16 @@ TOMORROW_ONLY = re.compile(r"\btomorrow\b", I)
 # Repeating schedules: "every day at 9", "every weekday at 8:30", "every monday at 10", "every 2 hours".
 # With "remind me" it's a reminder; without, the request itself runs at that time ("every morning at 8 give me my brief").
 DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+# ---- spoken durations (WP-JEV JEV-17) -------------------------------------------------
+_NUMW = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+         "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+         "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17,
+         "eighteen": 18, "nineteen": 19, "twenty": 20, "thirty": 30, "forty": 40, "fourty": 40,
+         "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90, "quarter": 15}
+_DUR_UNIT = {"second": 1, "sec": 1, "s": 1, "minute": 60, "min": 60, "m": 60,
+             "hour": 3600, "hr": 3600, "h": 3600, "day": 86400}
+_DUR_CLAUSE = re.compile(r"\b(?:in|for|after)\s+(?P<clause>[^,]+?)(?=\s+(?:to|that|about|please|then|now)\b|[.!?]|$)", I)
+_DUR_PAIR = re.compile(r"(\d+(?:\.\d+)?)\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|[smh])\b", I)
 RECUR = re.compile(r"\b(?:every|each)\s+(?P<per>day|morning|evening|night|weekday|month|(?:mon|tues|wednes|thurs|fri|satur|sun)day|"
                    r"(?P<n>\d+)\s*(?P<u>minutes?|mins?|hours?|hrs?))\b|\b(?P<monthly>monthly)\b", I)
 DAY_OF_MONTH = re.compile(r"\b(?:on\s+)?(?:the\s+)?(?P<d>[12]?\d|3[01])(?:st|nd|rd|th)\b", I)
@@ -91,8 +101,54 @@ def next_due(due, repeat, now):
     return d.timestamp()
 
 
+def _duration_seconds(text: str):
+    """Spoken-duration vocabulary (WP-JEV / matrix JEV-17; behaviour adopted from hey-jev's
+    parse_duration, original implementation): 'twenty five minutes', 'a couple of', 'a few',
+    'an hour and a half', 'an hour 30 minutes', 'three quarters of an hour'. Returns total seconds
+    or None (then the caller falls back to the IN/AT/LLM paths exactly as before)."""
+    m = _DUR_CLAUSE.search(text)
+    if not m:
+        return None
+    c = " " + m.group("clause").lower() + " "
+    c = re.sub(r"\b(?:three|3)\s+quarters?\s+of\s+(?:an?\s+)?hours?\b", "45 minutes", c)
+    c = re.sub(r"\b(?:a\s+|one\s+)?quarters?\s+of\s+(?:an?\s+)?hours?\b", "15 minutes", c)
+    # 'an hour and a half' / '2 hours and a half'  ->  '1.5 hour' / '2.5 hours'
+    c = re.sub(r"\b(an?|one|\d+(?:\.\d+)?)\s+(seconds?|secs?|minutes?|mins?|hours?|hrs?)\s+and\s+a\s+half\b",
+               lambda g: f"{_qty(g.group(1)) + 0.5} {g.group(2)}", c)
+    # '1 and a half hours' -> '1.5 hours'
+    c = re.sub(r"\b(an?|one|\d+(?:\.\d+)?)\s+and\s+a\s+half\s+(seconds?|secs?|minutes?|mins?|hours?|hrs?)\b",
+               lambda g: f"{_qty(g.group(1)) + 0.5} {g.group(2)}", c)
+    # 'half an hour' -> '0.5 hour'
+    c = re.sub(r"\bhalf\s+an?\s+(seconds?|secs?|minutes?|mins?|hours?|hrs?)\b", r"0.5 \1", c)
+    c = re.sub(r"\b(?:a\s+)?couple(?:\s+of)?\b", "2", c)
+    c = re.sub(r"\ba\s+few\b", "3", c)
+    words = c.replace("-", " ").split()
+    out = []
+    for w in words:
+        if w in _NUMW:
+            out.append(str(_NUMW[w]))
+        else:
+            out.append(w)
+    c = " " + " ".join(out) + " "
+    # spoken tens+ones landed as adjacent digits: '20 5 minutes' -> '25 minutes'
+    c = re.sub(r"\b(\d{2})\s+(\d)\b(?=\s*(?:seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|[smh])\b)",
+               lambda g: str(int(g.group(1)) + int(g.group(2))), c)
+    total = 0.0
+    found = False
+    for num, unit in _DUR_PAIR.findall(c):
+        found = True
+        total += float(num) * _DUR_UNIT[unit.rstrip("s") if len(unit) > 1 else unit]
+    return int(total) if found and total > 0 else None
+
+
+def _qty(tok: str) -> float:
+    return float(_NUMW.get(tok, tok))
+
+
 def when(text, now: dt.datetime):
     """Due datetime from common phrasings, or None (then the LLM tries)."""
+    if secs := _duration_seconds(text):        # spoken numbers first (JEV-17), then the digit forms
+        return now + dt.timedelta(seconds=secs)
     if m := IN.search(text):
         n = m["n"].lower()
         n = 0.5 if n.startswith("half") else 1.0 if n in ("a", "an", "one") else float(n)
@@ -235,6 +291,11 @@ if __name__ == "__main__":
     now = dt.datetime(2026, 9, 26, 14, 0)
     assert when("remind me in 20 minutes to call Ali", now) == now + dt.timedelta(minutes=20)
     assert when("set a timer for half an hour", now) == now + dt.timedelta(minutes=30)
+    # WP-JEV spoken-duration vocabulary (JEV-17)
+    assert when("set a timer for twenty five minutes", now) == now + dt.timedelta(minutes=25)
+    assert when("remind me in a few minutes to check", now) == now + dt.timedelta(minutes=3)
+    assert when("remind me in an hour and a half to leave", now) == now + dt.timedelta(minutes=90)
+    assert when("set a timer for three quarters of an hour", now) == now + dt.timedelta(minutes=45)
     assert when("remind me at 5pm to stretch", now).hour == 17
     assert when("remind me at 5 to stretch", now).hour == 17            # 5 said at 14:00 = 17:00
     assert when("remind me at 9am to x", now).day == 27                  # passed today -> tomorrow
