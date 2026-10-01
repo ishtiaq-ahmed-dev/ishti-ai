@@ -70,6 +70,39 @@ class ModelRouter:
             return ollama_cfg.get("coding_model", "qwen2.5:14b")
         return ollama_cfg.get("primary_model", "qwen2.5:14b")
 
+    def _admit(self, model_name: str):
+        """Route a model load through ISHTI's VRAM governor before any raw /api/generate
+        (Issue 23: direct loads evicted the planner / split models across GPU and CPU - the
+        27 Sep 01:30 cudaMalloc class). -> (guard, lease, effective_model); raises vram.GpuBusy
+        when the model cannot be admitted. Degrades to ungoverned only if the governor itself
+        is unreachable (same policy as ishti.llm._create)."""
+        from ishti import vram
+        guard = vram.busy(model_name)  # marked BEFORE the governor looks
+        guard.__enter__()
+        try:
+            res = vram.admit(model_name, job=f"orchestrator with {model_name}")
+            if not res.get("ok"):
+                raise vram.GpuBusy("The graphics card is busy: " + str(res.get("queued", "model cannot fit")))
+            effective = res.get("model") or model_name  # the governor may answer with another rung
+            return guard, res.get("lease"), effective
+        except vram.GpuBusy:
+            guard.__exit__(None, None, None)
+            raise
+        except requests.HTTPError as exc:  # Ollama refused the load (missing model / OOM): never send the raw call
+            guard.__exit__(None, None, None)
+            raise vram.GpuBusy(
+                f"The model could not be loaded onto the graphics card ({exc.response.status_code if exc.response is not None else 'error'})."
+            ) from exc
+        except BaseException:
+            guard.__exit__(None, None, None)
+            raise
+
+    def _release(self, guard, lease) -> None:
+        guard.__exit__(None, None, None)
+        if lease:
+            from ishti import vram
+            vram.release(lease)
+
     def generate(
         self,
         user_content: str,
@@ -101,13 +134,23 @@ class ModelRouter:
             system = f"{system}\n\n{RULE}"
         from ishti import killswitch, models
         killswitch.check()
-        models.used(self.get_model(role))
+        guard = lease = None
+        requested = self.get_model(role)
+        try:
+            guard, lease, model_name = self._admit(requested)
+        except Exception as exc:
+            from ishti import vram
+            if type(exc) is vram.GpuBusy:  # refused (busy / missing model / cannot fit): the raw call would OOM or 404
+                print(f"[ModelRouter] generate refused: {exc}")
+                return ""
+            model_name = requested  # governor unreachable (Ollama down): proceed as before, degraded
+            print(f"[ModelRouter] VRAM governor skipped ({type(exc).__name__}: {exc})")
         try:
             # streamed, so the kill switch can stop a long report at the next token (closing the stream ends it)
             with requests.post(
                 f"{self.host}/api/generate",
                 json={
-                    "model": self.get_model(role),
+                    "model": model_name,
                     "system": system,
                     "prompt": user_content,
                     "stream": True,
@@ -126,11 +169,15 @@ class ModelRouter:
                         parts.append(chunk.get("response", ""))
                         if chunk.get("done"):
                             break
+                models.used(model_name)  # usage decides how long the model stays in VRAM
                 return "".join(parts).strip()
         except Exception as exc:
             if type(exc).__name__ == "Cancelled":
                 raise
             print(f"[ModelRouter] generate failed: {exc}")
+        finally:
+            if guard is not None:
+                self._release(guard, lease)
         return ""
 
     def benchmark_model(self, model_name: str) -> Dict[str, Any]:
@@ -143,60 +190,67 @@ class ModelRouter:
         print(f"\n[ModelRouter] Benchmarking '{model_name}'...")
         scores = {"json_tool": 0, "planning": 0, "speed_wps": 0.0, "latency_s": 0.0}
         total_time = 0.0
-
-        # Test 1: Strict JSON Tool Calling
-        prompt_tool = (
-            "You are an AI assistant. Return ONLY a valid JSON object with keys: "
-            "'tool_name' (string, value 'search_web'), and 'parameters' (dict with key 'query' and value 'local weather'). "
-            "Do NOT include markdown formatting or extra text."
-        )
         try:
-            t0 = time.time()
-            res = requests.post(
-                f"{self.host}/api/generate",
-                json={"model": model_name, "prompt": prompt_tool, "stream": False, "options": {"temperature": 0.1}},
-                timeout=25,
+            guard, lease, model_name = self._admit(model_name)  # a benchmark must never OOM a resident model
+        except Exception as exc:
+            print(f"[ModelRouter] Benchmarking '{model_name}' skipped - VRAM governor: {exc}")
+            return scores
+        try:
+            # Test 1: Strict JSON Tool Calling
+            prompt_tool = (
+                "You are an AI assistant. Return ONLY a valid JSON object with keys: "
+                "'tool_name' (string, value 'search_web'), and 'parameters' (dict with key 'query' and value 'local weather'). "
+                "Do NOT include markdown formatting or extra text."
             )
-            elapsed = time.time() - t0
-            total_time += elapsed
-            if res.status_code == 200:
-                content = res.json().get("response", "").strip()
-                # Clean code fences if any
-                clean = content.replace("```json", "").replace("```", "").strip()
-                try:
-                    parsed = json.loads(clean)
-                    if parsed.get("tool_name") == "search_web" and "query" in parsed.get("parameters", {}):
-                        scores["json_tool"] = 100
+            try:
+                t0 = time.time()
+                res = requests.post(
+                    f"{self.host}/api/generate",
+                    json={"model": model_name, "prompt": prompt_tool, "stream": False, "options": {"temperature": 0.1}},
+                    timeout=25,
+                )
+                elapsed = time.time() - t0
+                total_time += elapsed
+                if res.status_code == 200:
+                    content = res.json().get("response", "").strip()
+                    # Clean code fences if any
+                    clean = content.replace("```json", "").replace("```", "").strip()
+                    try:
+                        parsed = json.loads(clean)
+                        if parsed.get("tool_name") == "search_web" and "query" in parsed.get("parameters", {}):
+                            scores["json_tool"] = 100
+                        else:
+                            scores["json_tool"] = 50
+                    except Exception:
+                        scores["json_tool"] = 25 if "search_web" in clean else 0
+            except Exception as e:
+                print(f"[ModelRouter] Test 1 failed for {model_name}: {e}")
+
+            # Test 2: Task Planning & Sub-step Decomposition
+            prompt_plan = (
+                "Break this request into 2 distinct numbered steps: 'Check disk space and list top files'. "
+                "Reply strictly in 2 numbered lines (1. ..., 2. ...)."
+            )
+            try:
+                t0 = time.time()
+                res = requests.post(
+                    f"{self.host}/api/generate",
+                    json={"model": model_name, "prompt": prompt_plan, "stream": False, "options": {"temperature": 0.1}},
+                    timeout=25,
+                )
+                elapsed = time.time() - t0
+                total_time += elapsed
+                if res.status_code == 200:
+                    content = res.json().get("response", "").strip()
+                    lines = [l for l in content.split("\n") if l.strip()]
+                    if any("1." in l for l in lines) and any("2." in l for l in lines):
+                        scores["planning"] = 100
                     else:
-                        scores["json_tool"] = 50
-                except Exception:
-                    scores["json_tool"] = 25 if "search_web" in clean else 0
-        except Exception as e:
-            print(f"[ModelRouter] Test 1 failed for {model_name}: {e}")
-
-        # Test 2: Task Planning & Sub-step Decomposition
-        prompt_plan = (
-            "Break this request into 2 distinct numbered steps: 'Check disk space and list top files'. "
-            "Reply strictly in 2 numbered lines (1. ..., 2. ...)."
-        )
-        try:
-            t0 = time.time()
-            res = requests.post(
-                f"{self.host}/api/generate",
-                json={"model": model_name, "prompt": prompt_plan, "stream": False, "options": {"temperature": 0.1}},
-                timeout=25,
-            )
-            elapsed = time.time() - t0
-            total_time += elapsed
-            if res.status_code == 200:
-                content = res.json().get("response", "").strip()
-                lines = [l for l in content.split("\n") if l.strip()]
-                if any("1." in l for l in lines) and any("2." in l for l in lines):
-                    scores["planning"] = 100
-                else:
-                    scores["planning"] = 60
-        except Exception as e:
-            print(f"[ModelRouter] Test 2 failed for {model_name}: {e}")
+                        scores["planning"] = 60
+            except Exception as e:
+                print(f"[ModelRouter] Test 2 failed for {model_name}: {e}")
+        finally:  # the busy-mark/lease never outlives the benchmark, even on Ctrl+C
+            self._release(guard, lease)
 
         # Calculate metrics
         avg_latency = round(total_time / 2.0, 2)
