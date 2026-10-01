@@ -4,11 +4,11 @@ yt-dlp, transcribed locally), a trip itinerary, a general workout plan, a meal p
 (drafts only - never posted). Source can be a topic, or a document path (PDF/Word/text) to learn from."""
 import csv
 import datetime as dt
-import json
 import os
 import re
 
 from ishti import llm
+from ishti.arch2.jsonio import parse_json
 from ishti.untrusted import guard
 from ishti.skills import trace
 
@@ -51,9 +51,11 @@ def source(text):
 
 
 def save(kind, topic, body, ext=".md"):
-    os.makedirs(HOME, exist_ok=True)
+    os.makedirs(HOME, exist_ok=True)  # home:Documents/ISHTI is in the manifest's write scope
     name = re.sub(r"[^\w -]", "", topic)[:50].strip() or kind
+    from ishti import scope
     path = os.path.join(HOME, f"{kind} - {name} {dt.date.today()}{ext}")
+    scope.check_write(path)  # fail with ScopeError, not an OS error, if the scope was narrowed
     if ext == ".md":
         with open(path, "w", encoding="utf-8") as f:
             f.write(body)
@@ -72,7 +74,14 @@ def op_flashcards(text, session):
     raw = llm.ask(f"Make {n} flashcards " + (f"from this material:\n{guard(src[:9000], 'study material')}" if src else f"about: {topic}")
                   + '\nReturn JSON {"cards": [{"front": "<question>", "back": "<short answer>"}]}.',
                   system=None, temperature=0.3, max_tokens=1800, response_format={"type": "json_object"})
-    cards = [c for c in json.loads(raw).get("cards", []) if c.get("front") and c.get("back")]
+    d = parse_json(raw)
+    if not d:
+        return ("I could not format the flashcards right now - the model returned something I could not parse. "
+                "Please try again (rephrasing the topic sometimes helps).")
+    cards = [c for c in d.get("cards", []) if isinstance(c, dict) and c.get("front") and c.get("back")]
+    if not cards:
+        return ("I could not build any flashcards from that - the model returned no usable cards. "
+                "Try naming the topic or attaching a document to learn from.")
     path = save("Flashcards", topic, "", ".csv")
     with open(path, "w", encoding="utf-8", newline="") as f:
         csv.writer(f).writerows([(c["front"], c["back"]) for c in cards])
@@ -103,7 +112,10 @@ def op_study_plan(text, session):
 def op_lecture(text, session):
     import tempfile
     import yt_dlp
-    url = URL.search(text).group(0)
+    m = URL.search(text)
+    if not m:  # routed by similarity without a URL in the text
+        return "Paste the YouTube link to summarise - e.g. 'summarize this lecture https://youtu.be/...'"
+    url = m.group(0)
     with tempfile.TemporaryDirectory() as work:
         trace(session, "yt-dlp", "downloading the audio", status="start")
         opts = {"format": "bestaudio/best", "outtmpl": os.path.join(work, "a.%(ext)s"), "quiet": True, "noplaylist": True,
@@ -186,4 +198,17 @@ if __name__ == "__main__":
         assert got == want, (t, got, want)
     assert not match("what's the weather") and not match("open youtube")
     assert topic_of("make 10 flashcards on photosynthesis", "flash\\s*cards?") == "photosynthesis"
-    print("[self-check] planners OK - routing, topic extraction")
+    # save() checks the manifest scope before writing (regression: the 2026-09-30 ScopeError crashed
+    # with OSError instead of being answered; the manifest now allows exactly home:Documents/ISHTI)
+    from ishti import scope
+    from ishti.audit import context as audit_ctx
+    assert os.path.normcase(scope._roots({"write": ["home:Documents/ISHTI"]})[0]) == \
+        os.path.normcase(os.path.join(os.path.expanduser("~"), "Documents", "ISHTI"))
+    with audit_ctx(skill="planners"):
+        scope.check_write(os.path.join(HOME, "Flashcards - x.csv"))  # must not raise (the skill's own output folder)
+        try:
+            scope.check_write(os.path.join(os.path.expanduser("~"), "Downloads", "x.csv"))
+            raise SystemExit("scope regression: planners wrote outside its manifest scope")
+        except scope.ScopeError:
+            pass
+    print("[self-check] planners OK - routing, topic extraction, scope")

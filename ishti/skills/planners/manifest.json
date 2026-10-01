@@ -17,7 +17,8 @@
   "laya": false,
   "scope": {
     "write": [
-      "data"
+      "data",
+      "home:Documents/ISHTI"
     ],
     "net": [
       "youtube.com",

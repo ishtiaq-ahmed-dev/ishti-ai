@@ -1,8 +1,11 @@
 """Skill permission scoping (A5): what each skill may reach, declared in its manifest and enforced here.
 
 manifest "scope": {
-  "write": ["data", "~/Downloads", "user"],   where it may create/change/delete files ("user" = the owner's own
-                                              areas: the home folder and non-system drives)
+  "write": ["data", "~/Downloads", "user", "home:Documents/ISHTI"],
+                                              where it may create/change/delete files ("user" = the owner's own
+                                              areas: the home folder and non-system drives; "home:<sub>" = one
+                                              folder inside the home, the narrow form for skills that need exactly
+                                              their own user folder)
   "net":   ["open-meteo.com"] | ["*"] | [],   which internet domains its Python code may call (localhost - Ollama,
                                               SearXNG - is always allowed)
   "apps":  true | false                       may it launch/close/kill apps or drive the mouse and keyboard
@@ -78,6 +81,8 @@ def _roots(scope):
             out.append(DATA)
         elif w == "user":  # the owner's own areas: home + every drive except the system drive's system folders
             out += [HOME] + [f"{d}:\\" for d in "DEFGHIJKLMNOPQRSTUVWXYZ" if os.path.isdir(f"{d}:\\")]
+        elif w.startswith("home:"):  # exactly one folder inside the owner's home ("home:Documents/ISHTI")
+            out.append(os.path.join(HOME, os.path.normpath(w[5:].strip().replace("/", os.sep))))
         else:
             out.append(w if os.path.isabs(os.path.expanduser(w)) else os.path.join(ROOT, w))
     return out

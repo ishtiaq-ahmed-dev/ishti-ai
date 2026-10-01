@@ -14,7 +14,7 @@
   "tier": "T0",
   "laya": false,
   "scope": {
-    "write": ["data"],
+    "write": ["data", "home:Documents/ISHTI"],
     "net": [],
     "apps": false
   },
