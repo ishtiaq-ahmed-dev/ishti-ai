@@ -479,3 +479,63 @@ All child processes spawned by ISHTI are assigned to a Windows Job Object (`JOB_
 ```json
 {"settings": "object", "env": "object", "active_env": "object", "ours": "bool", "active": "bool"}
 ```
+
+---
+
+## 11. Remote Control Channels (`ishti/channels/`, attached by `ishti/channels/api.py`)
+
+The desktop UI's **Settings → Remote Control** section drives these endpoints. Auth follows the
+server-wide rule (local unproxied = trusted; everything else needs the bearer token). The channel
+gate itself has **no path** to any policy/token writer: `remote_policy.yaml` (in `data/`) is
+local-editable only, and the bot token lives only in Windows Credential Manager (DPAPI).
+Transport: **outbound long polling only** — no inbound ports, no tunnels.
+
+### 11.1 `GET /api/remote/status`
+Health of every channel + recent remote activity (audit rows attributed to channel + message id).
+
+```json
+{
+  "telegram": {"enabled": false, "token_stored": false, "paired_ids": [], "running": false,
+               "poller": {"running": false, "offset": 101, "updates_seen": 3, "last_error": "",
+                          "last_poll_age_s": 1.2, "uptime_s": 30.0} | null},
+  "whatsapp": {"enabled": false, "risk_ack": false, "running": false, "last_error": ""},
+  "pin_set": false, "locked": false, "lockout_s": 0, "approvals_pending": 0,
+  "started_at": 1759132800.0,
+  "privacy_notice": "Telegram/WhatsApp messages pass through their servers - not local. Sensitive-output redaction applies to remote replies.",
+  "recent": [{"ts": 0, "initiator": "owner", "skill": "channels", "action": "remote reply sent",
+              "detail": "1.2s, 340 chars", "channel": "telegram"}]
+}
+```
+Also embedded in `GET /api/health` as the `remote` key (same shape, no `recent`).
+
+### 11.2 Pairing & sessions (desktop-only lifecycle)
+
+| Endpoint | Body | Effect |
+|---|---|---|
+| `POST /api/remote/pair/start` | — | Issues a 6-digit single-use code, 10-minute expiry. Owner sends `/pair <code>` to the bot from his own account; the bot records the sender's **numeric user ID**. |
+| `POST /api/remote/pair/cancel` | — | Discards the pending code. |
+| `POST /api/remote/revoke` | — | "Revoke all sessions": clears the allowlist and every pending approval. |
+
+### 11.3 Configuration (the only writers of the policy / token store)
+
+| Endpoint | Body | Notes |
+|---|---|---|
+| `GET /api/remote/policy` | — | The effective `remote_policy.yaml` (defaults merged). |
+| `PUT /api/remote/policy` | partial policy object | Local-only edit path; unknown keys are merged shallowly; `sensitive_output` merges per-key. |
+| `POST /api/remote/telegram/token` | `{"token": "123456:ABC..."}` | Validated shape, stored via DPAPI; never logged, never returned. |
+| `DELETE /api/remote/telegram/token` | — | Forgets the token and disables Telegram. |
+| `POST /api/remote/enable` | `{"channel": "telegram"\|"whatsapp", "enabled": bool}` | Telegram refuses without a stored token; WhatsApp flips its `risk_ack` with it (default OFF). |
+| `POST /api/remote/pin` | `{"pin": "..."}` (4–12 chars) | Optional second factor for T2 approvals; stored as a salted hash; 5 wrong entries ⇒ 15-min lockout (persisted). |
+| `DELETE /api/remote/pin` | — | Removes the PIN and `local_pin_required`. |
+| `POST /api/remote/test` | — | Sends "ISHTI remote link works" to the paired chat (quiet hours ignored for this). |
+
+### 11.4 Runtime behaviour the UI displays
+
+- Default remote scope: **T0/T1**; T2 needs the inline **Approve/Deny** step-up (single-use, expires
+  after `approval_ttl_s`, default 120 s); some categories are remote-forbidden and refused even for
+  the owner (deleting files, PC shutdown/restart, trade execution, installing skills, policy/config
+  changes, reading secrets, desktop control, screenshots).
+- Panic commands (`/kill`, `/lock`, `/unlock <PIN>`, `/status`) always work, including while locked.
+- Stale commands (queued while the PC was off; older than `stale_command_max_age_s`, default 300 s)
+  expire with an explanation instead of executing.
+- Unknown senders, group/channel chats and inline queries are ignored silently (capped alert only).

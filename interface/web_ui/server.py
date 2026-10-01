@@ -235,7 +235,12 @@ async def kill_endpoint(req: Request):
 async def health_endpoint():
     """Liveness for the watchdog (answering at all = not hung) + the latest health-loop snapshot."""
     from ishti import health, lifecycle
-    return {"ok": True, "state": lifecycle.state(), **health.snapshot()}
+    try:  # remote-control channels (docs/API_CONTRACT.md §11): running/stopped, never raises here
+        from ishti.channels import service as _remote_service
+        remote = _remote_service.get().health()
+    except Exception:
+        remote = {"available": False}
+    return {"ok": True, "state": lifecycle.state(), "remote": remote, **health.snapshot()}
 
 
 @app.get("/api/status")
@@ -1391,6 +1396,9 @@ app.include_router(learning_api)  # /api/learning/* + /api/memory/* - learning &
 
 from ishti import lifecycle_api  # noqa: E402  /api/ready, /api/vram, /api/shutdown, /ws/events (docs/API_CONTRACT.md)
 lifecycle_api.attach(app)
+
+from ishti.channels import api as remote_api  # noqa: E402  /api/remote/* + channel boot/stop (docs/API_CONTRACT.md §11)
+remote_api.attach(app)
 
 
 def start_server(port: int = 8888):
