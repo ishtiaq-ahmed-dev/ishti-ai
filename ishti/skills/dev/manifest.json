@@ -25,5 +25,6 @@
     "apps": false
   },
   "category": "Development & Code",
-  "path": "ishti/skills/dev"
+  "path": "ishti/skills/dev",
+  "test_file": "tests/skills/dev/test_dev.py"
 }

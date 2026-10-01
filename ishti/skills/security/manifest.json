@@ -29,5 +29,6 @@
     "apps": false
   },
   "category": "System & Desktop",
-  "path": "ishti/skills/security"
+  "path": "ishti/skills/security",
+  "test_file": "tests/skills/security/test_security.py"
 }

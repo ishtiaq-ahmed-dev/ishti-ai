@@ -18,5 +18,6 @@
     "net": [],
     "apps": false
   },
-  "category": "Health & Habits"
+  "category": "Health & Habits",
+  "test_file": "tests/skills/habits/test_habits.py"
 }

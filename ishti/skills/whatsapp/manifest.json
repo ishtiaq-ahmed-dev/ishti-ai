@@ -27,5 +27,6 @@
     "apps": false
   },
   "category": "Communication & Social",
-  "path": "ishti/skills/whatsapp"
+  "path": "ishti/skills/whatsapp",
+  "test_file": "tests/skills/whatsapp/test_whatsapp.py"
 }

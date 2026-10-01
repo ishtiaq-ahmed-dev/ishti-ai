@@ -27,5 +27,6 @@
     "apps": false
   },
   "category": "Utilities & Daily",
-  "path": "ishti/skills/speedtest"
+  "path": "ishti/skills/speedtest",
+  "test_file": "tests/skills/speedtest/test_speedtest.py"
 }

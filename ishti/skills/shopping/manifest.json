@@ -26,5 +26,6 @@
     "apps": false
   },
   "category": "Finance & Commerce",
-  "path": "ishti/skills/shopping"
+  "path": "ishti/skills/shopping",
+  "test_file": "tests/skills/shopping/test_shopping.py"
 }

@@ -27,5 +27,6 @@
     "apps": false
   },
   "category": "Utilities & Daily",
-  "path": "ishti/skills/travel"
+  "path": "ishti/skills/travel",
+  "test_file": "tests/skills/travel/test_travel.py"
 }

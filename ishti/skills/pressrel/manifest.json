@@ -9,5 +9,6 @@
   "tier": "T0",
   "laya": false,
   "scope": {"write": ["data"], "net": [], "apps": []},
-  "category": "Writing & Text"
+  "category": "Writing & Text",
+  "test_file": "tests/skills/pressrel/test_pressrel.py"
 }

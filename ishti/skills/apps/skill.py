@@ -34,3 +34,9 @@ def run(text, session):
     if agent.focus_window(app):
         return {"reply": f"Switched to {app}.", "sources": []}
     return {"reply": f"Couldn't open {app}: not a known app or on PATH.", "sources": []}
+
+
+if __name__ == "__main__":
+    assert match("open notepad") and match("open the calculator app")
+    assert not match("what is a file")
+    print("[self-check] apps OK - routing")

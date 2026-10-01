@@ -24,5 +24,6 @@
     "apps": false
   },
   "category": "Development & Code",
-  "path": "ishti/skills/braintrain"
+  "path": "ishti/skills/braintrain",
+  "test_file": "tests/skills/braintrain/test_braintrain.py"
 }

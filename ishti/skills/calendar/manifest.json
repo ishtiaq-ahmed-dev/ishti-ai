@@ -24,5 +24,6 @@
     "apps": false
   },
   "category": "Productivity & Planning",
-  "path": "ishti/skills/calendar"
+  "path": "ishti/skills/calendar",
+  "test_file": "tests/skills/calendar/test_calendar.py"
 }

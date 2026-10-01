@@ -24,5 +24,6 @@
     "apps": false
   },
   "category": "Productivity & Planning",
-  "path": "ishti/skills/lifelog"
+  "path": "ishti/skills/lifelog",
+  "test_file": "tests/skills/lifelog/test_lifelog.py"
 }

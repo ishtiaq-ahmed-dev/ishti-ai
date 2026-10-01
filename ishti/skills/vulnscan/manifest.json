@@ -9,5 +9,6 @@
   "tier": "T0",
   "laya": false,
   "scope": {"write": ["data/vulnscan"], "net": [], "apps": []},
-  "category": "Security"
+  "category": "Security",
+  "test_file": "tests/skills/vulnscan/test_vulnscan.py"
 }

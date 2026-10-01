@@ -9,5 +9,6 @@
   "tier": "T1",
   "laya": false,
   "scope": {"write": ["data/charts"], "net": [], "apps": []},
-  "category": "Data"
+  "category": "Data",
+  "test_file": "tests/skills/chart/test_chart.py"
 }

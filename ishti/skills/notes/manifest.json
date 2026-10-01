@@ -20,5 +20,6 @@
     "net": [],
     "apps": false
   },
-  "category": "Memory & Notes"
+  "category": "Memory & Notes",
+  "test_file": "tests/skills/notes/test_notes.py"
 }

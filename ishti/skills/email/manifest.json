@@ -24,5 +24,6 @@
     "apps": false
   },
   "category": "Communication & Social",
-  "path": "ishti/skills/email"
+  "path": "ishti/skills/email",
+  "test_file": "tests/skills/email/test_email.py"
 }

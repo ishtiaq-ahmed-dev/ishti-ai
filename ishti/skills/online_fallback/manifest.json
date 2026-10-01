@@ -28,5 +28,6 @@
     "apps": false
   },
   "category": "Web & Internet",
-  "path": "ishti/skills/online_fallback"
+  "path": "ishti/skills/online_fallback",
+  "test_file": "tests/skills/online_fallback/test_online_fallback.py"
 }

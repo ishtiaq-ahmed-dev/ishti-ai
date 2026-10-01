@@ -18,5 +18,6 @@
     "net": [],
     "apps": false
   },
-  "category": "Learning"
+  "category": "Learning",
+  "test_file": "tests/skills/study/test_study.py"
 }

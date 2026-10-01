@@ -18,5 +18,6 @@
     "net": [],
     "apps": false
   },
-  "category": "Health"
+  "category": "Health",
+  "test_file": "tests/skills/sleeplog/test_sleeplog.py"
 }

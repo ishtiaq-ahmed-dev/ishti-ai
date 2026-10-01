@@ -9,5 +9,6 @@
   "tier": "T0",
   "laya": false,
   "scope": {"write": ["data"], "net": [], "apps": []},
-  "category": "Finance"
+  "category": "Finance",
+  "test_file": "tests/skills/goaltrack/test_goaltrack.py"
 }

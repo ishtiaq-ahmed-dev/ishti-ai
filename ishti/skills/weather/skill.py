@@ -30,3 +30,9 @@ def run(text, session):
         return {"reply": f"Couldn't get the weather for {city}: {w['error']}", "sources": []}
     return {"reply": w["answer"], "verified": True, "sources": [{"id": 1, "title": "Open-Meteo forecast", "url": w["source"],
                                                "domain": "open-meteo.com", "snippet": w["answer"]}]}
+
+
+if __name__ == "__main__":
+    assert match("weather in London tomorrow")
+    assert not match("what is love")
+    print("[self-check] weather OK - routing")

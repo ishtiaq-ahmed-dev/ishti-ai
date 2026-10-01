@@ -96,3 +96,9 @@ def run(text, session):
     answer = res.get("answer", "")
     return {"reply": answer, "sources": res.get("sources", []), "verified": res.get("verified", False),
             "no_escalate": res.get("confident") is False or not FELL_SHORT.search(answer)}
+
+
+if __name__ == "__main__":
+    assert match("search the web for the speed of light")
+    assert not match("summarize this file")
+    print("[self-check] web_search OK - routing")

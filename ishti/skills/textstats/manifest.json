@@ -18,5 +18,6 @@
     "net": [],
     "apps": false
   },
-  "category": "Writing & Text"
+  "category": "Writing & Text",
+  "test_file": "tests/skills/textstats/test_textstats.py"
 }

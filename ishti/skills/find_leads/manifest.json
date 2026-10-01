@@ -19,5 +19,6 @@
     "apps": false
   },
   "category": "Finance & Commerce",
-  "path": "ishti/skills/find_leads"
+  "path": "ishti/skills/find_leads",
+  "test_file": "tests/skills/find_leads/test_find_leads.py"
 }

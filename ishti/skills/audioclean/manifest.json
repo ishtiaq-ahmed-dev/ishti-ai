@@ -9,5 +9,6 @@
   "tier": "T1",
   "laya": false,
   "scope": {"write": ["data/clean"], "net": [], "apps": []},
-  "category": "Media & Creative"
+  "category": "Media & Creative",
+  "test_file": "tests/skills/audioclean/test_audioclean.py"
 }

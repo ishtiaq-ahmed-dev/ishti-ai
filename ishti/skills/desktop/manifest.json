@@ -28,5 +28,6 @@
     "apps": true
   },
   "category": "System & Desktop",
-  "path": "ishti/skills/desktop"
+  "path": "ishti/skills/desktop",
+  "test_file": "tests/skills/desktop/test_desktop.py"
 }

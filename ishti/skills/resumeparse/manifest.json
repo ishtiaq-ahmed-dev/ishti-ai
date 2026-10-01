@@ -9,5 +9,6 @@
   "tier": "T1",
   "laya": false,
   "scope": {"write": ["data/extracted"], "net": [], "apps": []},
-  "category": "Documents & Files"
+  "category": "Documents & Files",
+  "test_file": "tests/skills/resumeparse/test_resumeparse.py"
 }

@@ -18,5 +18,6 @@
     "net": ["localhost"],
     "apps": false
   },
-  "category": "Data"
+  "category": "Data",
+  "test_file": "tests/skills/stats/test_stats.py"
 }

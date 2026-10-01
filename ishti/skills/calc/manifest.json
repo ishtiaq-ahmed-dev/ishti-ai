@@ -18,5 +18,6 @@
     "net": [],
     "apps": false
   },
-  "category": "Reasoning"
+  "category": "Reasoning",
+  "test_file": "tests/skills/calc/test_calc.py"
 }

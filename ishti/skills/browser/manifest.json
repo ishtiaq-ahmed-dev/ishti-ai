@@ -28,5 +28,6 @@
     "apps": false
   },
   "category": "Web & Internet",
-  "path": "ishti/skills/browser"
+  "path": "ishti/skills/browser",
+  "test_file": "tests/skills/browser/test_browser.py"
 }

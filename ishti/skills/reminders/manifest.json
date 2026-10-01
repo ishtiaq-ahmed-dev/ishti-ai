@@ -21,5 +21,6 @@
     "apps": false
   },
   "category": "Productivity & Planning",
-  "path": "ishti/skills/reminders"
+  "path": "ishti/skills/reminders",
+  "test_file": "tests/skills/reminders/test_reminders.py"
 }

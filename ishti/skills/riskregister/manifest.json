@@ -9,5 +9,6 @@
   "tier": "T0",
   "laya": false,
   "scope": {"write": ["data"], "net": [], "apps": []},
-  "category": "Productivity"
+  "category": "Productivity",
+  "test_file": "tests/skills/riskregister/test_riskregister.py"
 }

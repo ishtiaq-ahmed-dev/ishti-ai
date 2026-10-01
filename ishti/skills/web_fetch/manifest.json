@@ -28,5 +28,6 @@
     "apps": false
   },
   "category": "Web & Internet",
-  "path": "ishti/skills/web_fetch"
+  "path": "ishti/skills/web_fetch",
+  "test_file": "tests/skills/web_fetch/test_web_fetch.py"
 }

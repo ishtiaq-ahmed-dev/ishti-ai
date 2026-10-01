@@ -23,5 +23,6 @@
     "apps": false
   },
   "category": "Productivity & Planning",
-  "path": "ishti/skills/digest"
+  "path": "ishti/skills/digest",
+  "test_file": "tests/skills/digest/test_digest.py"
 }

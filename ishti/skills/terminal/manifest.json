@@ -19,5 +19,6 @@
     "apps": true
   },
   "category": "System & Desktop",
-  "path": "ishti/skills/terminal"
+  "path": "ishti/skills/terminal",
+  "test_file": "tests/skills/terminal/test_terminal.py"
 }

@@ -28,5 +28,6 @@
     "apps": false
   },
   "category": "Productivity & Planning",
-  "path": "ishti/skills/planners"
+  "path": "ishti/skills/planners",
+  "test_file": "tests/skills/planners/test_planners.py"
 }

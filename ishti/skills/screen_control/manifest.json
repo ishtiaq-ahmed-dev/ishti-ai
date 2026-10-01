@@ -18,5 +18,6 @@
     "net": [],
     "apps": true
   },
-  "category": "System & Desktop"
+  "category": "System & Desktop",
+  "test_file": "tests/skills/screen_control/test_screen_control.py"
 }

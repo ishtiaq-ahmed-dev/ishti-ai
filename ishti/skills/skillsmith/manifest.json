@@ -26,5 +26,6 @@
     "apps": false
   },
   "category": "Development & Code",
-  "path": "ishti/skills/skillsmith"
+  "path": "ishti/skills/skillsmith",
+  "test_file": "tests/skills/skillsmith/test_skillsmith.py"
 }

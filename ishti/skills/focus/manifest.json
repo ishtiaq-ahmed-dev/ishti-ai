@@ -21,5 +21,6 @@
     "apps": false
   },
   "category": "Productivity & Planning",
-  "path": "ishti/skills/focus"
+  "path": "ishti/skills/focus",
+  "test_file": "tests/skills/focus/test_focus.py"
 }

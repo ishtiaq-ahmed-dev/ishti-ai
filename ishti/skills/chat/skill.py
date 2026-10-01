@@ -110,3 +110,9 @@ def run(text, session):
     out = re.sub(r"\s*(?:KNOWN FACTS|Possibly relevant past context|LEARNED FROM THE OWNER)\b.*$", "", out, flags=re.S | re.I).strip()
     out = _honesty_guard(out)
     return {"reply": out or "No answer from the local model.", "sources": []}
+
+
+if __name__ == "__main__":
+    assert match("what is 17 times 23?")
+    assert not match("make flashcards on cells")
+    print("[self-check] chat OK - routing")

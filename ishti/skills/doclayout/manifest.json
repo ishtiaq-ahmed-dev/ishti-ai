@@ -9,5 +9,6 @@
   "tier": "T0",
   "laya": false,
   "scope": {"write": ["data"], "net": [], "apps": []},
-  "category": "Documents & Files"
+  "category": "Documents & Files",
+  "test_file": "tests/skills/doclayout/test_doclayout.py"
 }

@@ -46,13 +46,28 @@ def run(text, session):
     except Exception:
         pass
     report = res.get("report", "")
+    if not (report or "").strip():  # a skill must never answer with blank text
+        report = ("I could not put together a usable answer from the web for that. Please try rephrasing it, "
+                  "or ask again in a moment.")
     if session.get("route", {}).get("source") == "escalation":
         # used as a fallback for a plain question: the owner asked for an answer, not a report
         from ishti import llm
         trace(session, "answer", "condense the research into a direct answer", status="start")
-        report = llm.ask(f"Question: {text}\n\nResearch notes (with [n] citations):\n{report[:5000]}\n\n"
-                         "Answer the question directly in one or two sentences, keeping the [n] citations you rely on. "
-                         "Prefer the most recent information.", temperature=0.1, max_tokens=200)
+        condensed = llm.ask(f"Question: {text}\n\nResearch notes (with [n] citations):\n{report[:5000]}\n\n"
+                            "Answer the question directly in one or two sentences, keeping the [n] citations you rely on. "
+                            "Prefer the most recent information.", temperature=0.1, max_tokens=200)
+        # a failed/empty condense must never blank a report we already have (B1 class: a cleanup step
+        # silently emptying a good answer). Keep the report when the condenser gives nothing.
+        if condensed and condensed.strip():
+            report = condensed
+        else:
+            trace(session, "answer", "condense returned nothing - keeping the full report", status="error")
         trace(session, "answer", "condensed", status="done")
     return {"reply": report, "sources": res.get("sources", []), "queries": res.get("queries", []),
             "verified": res.get("verified", False), "mode": "DEEP_RESEARCH"}
+
+
+if __name__ == "__main__":
+    assert match("deep research the effect of sleep on memory")
+    assert not match("what time is it")
+    print("[self-check] deep_research OK - routing")

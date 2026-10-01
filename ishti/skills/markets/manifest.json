@@ -32,5 +32,6 @@
     "apps": false
   },
   "category": "Finance & Commerce",
-  "path": "ishti/skills/markets"
+  "path": "ishti/skills/markets",
+  "test_file": "tests/skills/markets/test_markets.py"
 }

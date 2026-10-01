@@ -9,5 +9,6 @@
   "tier": "T1",
   "laya": false,
   "scope": {"write": ["data/docs"], "net": [], "apps": []},
-  "category": "Writing & Text"
+  "category": "Writing & Text",
+  "test_file": "tests/skills/legaldoc/test_legaldoc.py"
 }

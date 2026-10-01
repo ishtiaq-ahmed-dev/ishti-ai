@@ -9,5 +9,6 @@
   "tier": "T2",
   "laya": false,
   "scope": {"write": ["data/gitops"], "net": ["localhost"], "apps": []},
-  "category": "Development"
+  "category": "Development",
+  "test_file": "tests/skills/gitops/test_gitops.py"
 }

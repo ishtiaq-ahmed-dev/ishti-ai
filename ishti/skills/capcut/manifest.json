@@ -26,5 +26,6 @@
     "apps": true
   },
   "category": "Media & Creative",
-  "path": "ishti/skills/capcut"
+  "path": "ishti/skills/capcut",
+  "test_file": "tests/skills/capcut/test_capcut.py"
 }

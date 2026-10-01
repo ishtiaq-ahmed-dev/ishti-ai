@@ -29,3 +29,9 @@ def run(text, session):
     rows += [(f"Disk {k}", f"{100 - round(100 * v.get('free_gb', 0) / max(1, v.get('total_gb', 1)))}% used",
               f"{v.get('free_gb', 0)} GB free of {v.get('total_gb', 0)} GB") for k, v in d.get("disks", {}).items()]
     return {"reply": md_table(("", "Use", "Details"), rows), "sources": [], "telemetry": d}
+
+
+if __name__ == "__main__":
+    assert match("battery status")
+    assert not match("write a poem")
+    print("[self-check] system OK - routing")

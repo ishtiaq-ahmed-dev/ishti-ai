@@ -18,5 +18,6 @@
     "net": [],
     "apps": false
   },
-  "category": "Security"
+  "category": "Security",
+  "test_file": "tests/skills/phishing_check/test_phishing_check.py"
 }

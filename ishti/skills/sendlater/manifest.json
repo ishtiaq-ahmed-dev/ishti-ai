@@ -9,5 +9,6 @@
   "tier": "T2",
   "laya": false,
   "scope": {"write": ["data"], "net": [], "apps": ["chrome"]},
-  "category": "Communication"
+  "category": "Communication",
+  "test_file": "tests/skills/sendlater/test_sendlater.py"
 }

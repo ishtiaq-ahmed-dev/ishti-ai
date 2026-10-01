@@ -9,5 +9,6 @@
   "tier": "T1",
   "laya": false,
   "scope": {"write": ["data/infographics"], "net": [], "apps": []},
-  "category": "Data"
+  "category": "Data",
+  "test_file": "tests/skills/infographic/test_infographic.py"
 }

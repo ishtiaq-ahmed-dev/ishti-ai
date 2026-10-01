@@ -23,5 +23,6 @@
     "apps": false
   },
   "category": "System & Desktop",
-  "path": "ishti/skills/automation"
+  "path": "ishti/skills/automation",
+  "test_file": "tests/skills/automation/test_automation.py"
 }

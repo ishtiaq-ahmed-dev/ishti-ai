@@ -25,5 +25,6 @@
     "apps": false
   },
   "category": "Communication & Social",
-  "path": "ishti/skills/contacts"
+  "path": "ishti/skills/contacts",
+  "test_file": "tests/skills/contacts/test_contacts.py"
 }

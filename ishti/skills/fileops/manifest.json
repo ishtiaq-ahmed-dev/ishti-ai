@@ -24,5 +24,6 @@
     "apps": false
   },
   "category": "Files & Storage",
-  "path": "ishti/skills/fileops"
+  "path": "ishti/skills/fileops",
+  "test_file": "tests/skills/fileops/test_fileops.py"
 }

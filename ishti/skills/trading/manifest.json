@@ -20,5 +20,6 @@
     "apps": false
   },
   "category": "Finance & Commerce",
-  "path": "ishti/skills/trading"
+  "path": "ishti/skills/trading",
+  "test_file": "tests/skills/trading/test_trading.py"
 }

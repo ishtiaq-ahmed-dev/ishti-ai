@@ -9,5 +9,6 @@
   "tier": "T0",
   "laya": false,
   "scope": {"write": ["data"], "net": [], "apps": false},
-  "category": "Development"
+  "category": "Development",
+  "test_file": "tests/skills/devops/test_devops.py"
 }

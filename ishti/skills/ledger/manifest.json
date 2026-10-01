@@ -23,5 +23,6 @@
     "apps": false
   },
   "category": "Finance & Commerce",
-  "path": "ishti/skills/ledger"
+  "path": "ishti/skills/ledger",
+  "test_file": "tests/skills/ledger/test_ledger.py"
 }

@@ -18,5 +18,6 @@
     "net": [],
     "apps": false
   },
-  "category": "Memory & Notes"
+  "category": "Memory & Notes",
+  "test_file": "tests/skills/checklist/test_checklist.py"
 }

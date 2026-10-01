@@ -9,5 +9,6 @@
   "tier": "T1",
   "laya": false,
   "scope": {"write": ["data/keyed"], "net": [], "apps": []},
-  "category": "Media & Creative"
+  "category": "Media & Creative",
+  "test_file": "tests/skills/chromakey/test_chromakey.py"
 }

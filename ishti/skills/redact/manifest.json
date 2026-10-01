@@ -9,5 +9,6 @@
   "tier": "T1",
   "laya": false,
   "scope": {"write": ["data/redacted"], "net": [], "apps": []},
-  "category": "Documents & Files"
+  "category": "Documents & Files",
+  "test_file": "tests/skills/redact/test_redact.py"
 }

@@ -23,5 +23,6 @@
     "apps": false
   },
   "category": "Productivity & Planning",
-  "path": "ishti/skills/workflows"
+  "path": "ishti/skills/workflows",
+  "test_file": "tests/skills/workflows/test_workflows.py"
 }

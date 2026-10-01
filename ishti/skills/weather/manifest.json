@@ -26,5 +26,6 @@
     "apps": false
   },
   "category": "Utilities & Daily",
-  "path": "ishti/skills/weather"
+  "path": "ishti/skills/weather",
+  "test_file": "tests/skills/weather/test_weather.py"
 }

@@ -24,5 +24,6 @@
     "apps": true
   },
   "category": "Media & Creative",
-  "path": "ishti/skills/video"
+  "path": "ishti/skills/video",
+  "test_file": "tests/skills/video/test_video.py"
 }

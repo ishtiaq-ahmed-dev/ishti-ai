@@ -18,5 +18,6 @@
     "net": [],
     "apps": false
   },
-  "category": "Finance"
+  "category": "Finance",
+  "test_file": "tests/skills/networth/test_networth.py"
 }

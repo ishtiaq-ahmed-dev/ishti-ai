@@ -26,5 +26,6 @@
     "apps": false
   },
   "category": "Knowledge & Intelligence",
-  "path": "ishti/skills/gemini"
+  "path": "ishti/skills/gemini",
+  "test_file": "tests/skills/gemini/test_gemini.py"
 }

@@ -21,5 +21,6 @@
     "apps": false
   },
   "category": "Knowledge & Intelligence",
-  "path": "ishti/skills/owner"
+  "path": "ishti/skills/owner",
+  "test_file": "tests/skills/owner/test_owner.py"
 }

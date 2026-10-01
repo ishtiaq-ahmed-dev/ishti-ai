@@ -199,3 +199,10 @@ def edit(text, session, src=None):
     if res.get("status") != "success":
         return {"reply": f"{op} failed: {res.get('error', 'FFmpeg error')}", "sources": []}
     return {"reply": f"Done ({op}{', GPU' if ed.has_nvenc else ''}): {res.get('output_path')}", "sources": []}
+
+
+if __name__ == "__main__":
+    assert match("trim the video clip")
+    assert match("cut the video in my downloads")
+    assert not match("create a capcut project from my clips")
+    print("[self-check] video OK - routing")

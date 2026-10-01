@@ -21,5 +21,6 @@
     "apps": false
   },
   "category": "Knowledge & Intelligence",
-  "path": "ishti/skills/relationships"
+  "path": "ishti/skills/relationships",
+  "test_file": "tests/skills/relationships/test_relationships.py"
 }

@@ -25,5 +25,6 @@
     "apps": false
   },
   "category": "Communication & Social",
-  "path": "ishti/skills/chat"
+  "path": "ishti/skills/chat",
+  "test_file": "tests/skills/chat/test_chat.py"
 }

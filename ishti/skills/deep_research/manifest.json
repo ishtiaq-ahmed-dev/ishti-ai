@@ -33,5 +33,6 @@
     "apps": false
   },
   "category": "Knowledge & Intelligence",
-  "path": "ishti/skills/deep_research"
+  "path": "ishti/skills/deep_research",
+  "test_file": "tests/skills/deep_research/test_deep_research.py"
 }

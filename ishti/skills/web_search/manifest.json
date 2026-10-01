@@ -30,5 +30,6 @@
     "apps": false
   },
   "category": "Web & Internet",
-  "path": "ishti/skills/web_search"
+  "path": "ishti/skills/web_search",
+  "test_file": "tests/skills/web_search/test_web_search.py"
 }

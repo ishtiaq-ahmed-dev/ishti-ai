@@ -9,5 +9,6 @@
   "tier": "T1",
   "laya": false,
   "scope": {"write": ["data/memes"], "net": [], "apps": []},
-  "category": "Media & Creative"
+  "category": "Media & Creative",
+  "test_file": "tests/skills/meme/test_meme.py"
 }

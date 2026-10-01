@@ -34,3 +34,9 @@ def run(text, session):
         return {"reply": f"No files matching '{q}' in your user folders.", "sources": []}
     lines = [f"{i}. {h['path']} ({h['size']}, {h['modified']})" for i, h in enumerate(hits, 1)]
     return {"reply": f"Found {len(hits)} for '{q}':\n" + "\n".join(lines), "sources": [], "files": hits}
+
+
+if __name__ == "__main__":
+    assert match("find files named readme in D:/ISHTI/docs")
+    assert not match("what is a folder")
+    print("[self-check] files OK - routing")

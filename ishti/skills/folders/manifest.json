@@ -21,5 +21,6 @@
     "apps": false
   },
   "category": "Files & Storage",
-  "path": "ishti/skills/folders"
+  "path": "ishti/skills/folders",
+  "test_file": "tests/skills/folders/test_folders.py"
 }

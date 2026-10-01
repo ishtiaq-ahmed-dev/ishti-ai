@@ -21,5 +21,6 @@
     "apps": false
   },
   "category": "Finance & Commerce",
-  "path": "ishti/skills/clients"
+  "path": "ishti/skills/clients",
+  "test_file": "tests/skills/clients/test_clients.py"
 }

@@ -30,5 +30,6 @@
     "apps": false
   },
   "category": "Utilities & Daily",
-  "path": "ishti/skills/utilities"
+  "path": "ishti/skills/utilities",
+  "test_file": "tests/skills/utilities/test_utilities.py"
 }

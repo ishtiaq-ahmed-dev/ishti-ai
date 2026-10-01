@@ -18,5 +18,6 @@
     "net": ["localhost"],
     "apps": false
   },
-  "category": "Daily Life"
+  "category": "Daily Life",
+  "test_file": "tests/skills/recipe/test_recipe.py"
 }

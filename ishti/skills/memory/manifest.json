@@ -22,5 +22,6 @@
     "apps": false
   },
   "category": "Knowledge & Intelligence",
-  "path": "ishti/skills/memory"
+  "path": "ishti/skills/memory",
+  "test_file": "tests/skills/memory/test_memory.py"
 }

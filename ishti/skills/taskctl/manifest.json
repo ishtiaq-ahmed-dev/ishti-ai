@@ -10,5 +10,6 @@
   "laya": false,
   "scope": {"write": ["data"], "net": [], "apps": false},
   "category": "Productivity & Planning",
-  "path": "ishti/skills/taskctl"
+  "path": "ishti/skills/taskctl",
+  "test_file": "tests/skills/taskctl/test_taskctl.py"
 }

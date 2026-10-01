@@ -22,5 +22,6 @@
     "net": [],
     "apps": []
   },
-  "category": "Reasoning"
+  "category": "Reasoning",
+  "test_file": "tests/skills/optimize/test_optimize.py"
 }

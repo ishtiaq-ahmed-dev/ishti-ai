@@ -9,5 +9,6 @@
   "tier": "T0",
   "laya": false,
   "scope": {"write": ["data"], "net": [], "apps": []},
-  "category": "Office"
+  "category": "Office",
+  "test_file": "tests/skills/formula/test_formula.py"
 }

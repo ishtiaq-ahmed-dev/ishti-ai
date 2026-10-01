@@ -29,5 +29,6 @@
     "apps": false
   },
   "category": "Web & Internet",
-  "path": "ishti/skills/webtools"
+  "path": "ishti/skills/webtools",
+  "test_file": "tests/skills/webtools/test_webtools.py"
 }

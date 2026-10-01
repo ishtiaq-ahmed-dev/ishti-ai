@@ -282,3 +282,9 @@ def _resolve_pick(answer: str, choices: List[str]) -> Optional[str]:
         if cleaned in os.path.basename(c).lower():
             return c
     return None
+
+
+if __name__ == "__main__":
+    assert match("create a capcut project from my clips")
+    assert not match("trim the video clip")
+    print("[self-check] capcut OK - routing")

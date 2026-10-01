@@ -252,3 +252,9 @@ def run(text, session):
     bad = report["errors"] + report["warnings"]
     return {"reply": ("All checks passed." if not bad else "Issues:\n" + "\n".join(f"- {b}" for b in bad[:8]))
                      + " Full report: DOCTOR tab.", "sources": []}
+
+
+if __name__ == "__main__":
+    assert match("what do you know about me?")
+    assert not match("what is the weather")
+    print("[self-check] owner OK - routing")

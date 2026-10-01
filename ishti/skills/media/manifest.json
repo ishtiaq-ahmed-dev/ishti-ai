@@ -28,5 +28,6 @@
     "apps": false
   },
   "category": "Media & Creative",
-  "path": "ishti/skills/media"
+  "path": "ishti/skills/media",
+  "test_file": "tests/skills/media/test_media.py"
 }

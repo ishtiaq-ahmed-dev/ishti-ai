@@ -18,5 +18,6 @@
     "net": [],
     "apps": false
   },
-  "category": "Health"
+  "category": "Health",
+  "test_file": "tests/skills/moodlog/test_moodlog.py"
 }

@@ -9,5 +9,6 @@
   "tier": "T0",
   "laya": false,
   "scope": {"write": ["data"], "net": [], "apps": []},
-  "category": "Health"
+  "category": "Health",
+  "test_file": "tests/skills/symptomlog/test_symptomlog.py"
 }
