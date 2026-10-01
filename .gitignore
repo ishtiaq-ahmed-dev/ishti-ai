@@ -45,3 +45,6 @@ reports/skills/_scratch/
 # long-run optimization session (2026-10-01)
 backups/
 _work/
+
+# runtime-generated reports (chat digest PDFs etc.) - regenerable skill output
+reports/*.pdf

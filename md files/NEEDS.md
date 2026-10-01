@@ -197,3 +197,6 @@ on arch2 get correct-but-untranslated replies; any arch2 + arch1-role mix flaps.
 PERFORMANCE_REPORT.md for numbers and the proposed fixes (translator gate is the big one).
 
 - 2026-10-01 08:39 [gap] skill_creator: a blocked (T3) action: live trade - ISHTI will not do this, and no confirmation unblocks it - asked: "place a live trade on my broker account"
+- 2026-10-01 17:23 [error] scanqr: pip couldn't install zxingcpp: ERROR: Could not find a version that satisfies the requirement zxingcpp (from versions: none)
+ERROR: No matching distribution found for zxingcpp
+ - asked: "auto-install"
