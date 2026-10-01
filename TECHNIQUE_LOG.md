@@ -33,3 +33,5 @@ Noise floor: import ~8%, skills_load ~1.5%, route ~20% (CPU scaling), TTS ~13% �
 
 ## Session note (2026-10-01)
 - Bench→suite interference found and fixed: bench_opt left the planner resident in VRAM; a later arch2 test's live LLM call then downshifted `qwen3:14b → qwen2.5-c8k:3b` and failed its assertion. bench_opt now restores VRAM (quick mode unloads the planner; full mode unloads everything it loaded).
+- Same class, second sighting (final gate): the per-skill browser suite's models were still resident (10-min keep-alive) when the full suite started; the arch2 live-LLM test sat in `vram.admit` until pytest's 120 s cap fired. With VRAM cleared first, the suite is green. Rule for live-LLM test sessions on this 16 GB machine: **clear VRAM between suites** (`keep_alive: 0` for everything in /api/ps). Logged as a harness caveat, not a product bug — the governor was correctly refusing to fit an 8.6 GB model next to a resident planner.
+- Final Cycle-1 gate: `_work/suite_final_cycle1b.log` — full offline suite green after clearing VRAM; perf_guard PASS.
