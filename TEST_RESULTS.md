@@ -373,3 +373,139 @@ recorded as environmental (CD-17 GPU contention), not as fixed.
 | No "Stop ISHTI" desktop shortcut | PASS | script removes stale ones; executed - desktop now has only ISHTI.lnk + Start ISHTI.lnk |
 | Regression tests | PASS | `tests/test_backend_watch.py` 8/8, `tests/test_shutdown_ux.py` 6/6, `tests/test_desktop_bootstrap.py` 5/5 |
 | Full offline suite (after the last code change) | PASS | **105 passed, 11 deselected, 0 failed** in 337 s; one earlier run had `test_dispatcher_state_flow` fail once (the known CD-17 environmental flake) - it passed twice in isolation and in the final full run |
+
+---
+
+# TEST_RESULTS — skill_creator + self-knowledge (2026-09-30/10-01)
+
+Every line below is raw output from this PC on 2026-09-30/10-01. Where something was **not** measured it
+says so; nothing is rounded up from an estimate. Command form used throughout:
+`& 'D:\ISHTI\venv\Scripts\python.exe' -m <module>` (module form — running the file path puts the wrong
+directory on `sys.path` and fails with `ModuleNotFoundError: No module named 'ishti'`, which cost me two
+false alarms before I checked `tools/verify_all.py`).
+
+## 1. Module self-checks — all green
+
+| Command | Result |
+|---|---|
+| `-m ishti.scope` | **PASS** — `[self-check] scope OK - every manifest scoped; file writes, network and app control limited per skill; system/ISHTI folders and system processes protected` (exit 0) |
+| `-m ishti.skills.registry` | **PASS** — `[self-check] skills.registry OK — 121 records, retrieval window, enable/disable, domain filter, status counts {'implemented': 120, 'blocked': 1}` (exit 0). The 1 blocked record was `skill_creator` before its `skill.py` existed; it now loads `status: working, problem: ''` |
+| `-m ishti.selfmodel` | **PASS** — `[self-check] selfmodel OK - 5 cheap probes read live (NVIDIA GeForce RTX 5070 Ti, 63.4 GB RAM), full build 1247 ms, block 813 chars (budget 1200), every fact provenance-tagged, failed reads visible, partial offload and baseline mismatches reported, owner identity absent from the resident block and stripped from outbound queries` (exit 0) |
+| `-m ishti.skills.meta.skill` | **PASS** — `[self-check] meta OK - routing, task tracker, self-update with rollback, self-knowledge from live measurements + refresh` (exit 0). Slow (~1-2 min) by design: its self-check runs a real `pip --outdated` query |
+| `-m ishti.skills.skill_creator.sandbox` | **PASS** — `[self-check] sandbox OK - 2.5 GB allocation died under the 512 MB cap (rc=3, peak 454.4 MB, hard limits on); a normal script ran clean (rc=0) and the result states the network is NOT restricted` (exit 0, **0.2 s**) |
+| `-m ishti.skills.skill_creator.gap` | **PASS** — real router not re-created, floor taken from the router's own config (0.2), vague ask asks exactly one question, router failure degrades safely |
+| `-m ishti.skills.skill_creator.research` | **PASS** — budgets enforced, duplicate sources collapsed, injection attempts logged and ignored, no-network case honest and source-free |
+| `-m ishti.skills.skill_creator.design` | **PASS** — T3/credential/purchase refused with the exact gap named, T2 gated not blocked, VRAM gap named, live probe found **22 models (coder rung: ishti-qwen2.5-coder:14b)** |
+| `-m ishti.skills.skill_creator.vetting` | **PASS** + **live**: `PyPI requests==2.34.2 licence=Apache-2.0 age=138d; OSV pyyaml 5.3.1 -> ['GHSA-8q59-q68h-6hv4', 'PYSEC-2021-142']` |
+| `-m ishti.skills.skill_creator.drafts` | **PASS** — naming, 12-file/256 KB cap, 3 consecutive greens with reset on failure, self-modification blocked, failure counting, honest rollback failure |
+| `-m ishti.skills.skill_creator.skill` | **PASS** — routing split with skillsmith, coder budget limits enforced (call cap + line cap), full pipeline offline (research → design → generate → scan → vet → 3 green sandbox runs → packaged DISABLED with the owner's yes still pending), T3 refused by name, existing skill left alone, **nothing installed into the real skill tree** |
+
+## 2. Test suites
+
+| Suite | Command | Result |
+|---|---|---|
+| WP-C1 regression | `pytest tests/test_router_lifecycle_flags.py tests/test_prompt3_skills.py tests/test_dispatcher_translate_guard.py tests/test_dispatcher_state_flow.py tests/test_planner_messenger.py -q` | **29 passed** (`.............................  [100%]`), 0 failed |
+| WP-C1 red→green | same, with `git stash push -- ishti/router.py` | **9 FAILED** before the fix: `test_non_routable_status_never_chosen[disabled/draft/retired]`, `..._as_only_skill[...]`, `test_settings_disabled_name_never_chosen`, `test_router_uses_registry_disabled_names_accessor`, `test_disabled_names_cached_not_read_per_call`; **14/14 green** after |
+| skill_creator acceptance (WP-D1) | `pytest tests/skills/skill_creator -q --timeout 120` | **27 passed** (`...........................  [100%]`) |
+| self-model acceptance (WP-D2) | `pytest tests/test_selfmodel.py -q` | **43 passed** (`...........................................  [100%]`) |
+
+
+## 3. Measured numbers (not estimates)
+
+| What | Measured | How |
+|---|---|---|
+| Self-model block size | **813–1086 chars** (budget 1200) | `python -m ishti.selfmodel` |
+| `render()` cold / cached | **91.1 ms / 0.94 ms** | timer around two `render()` calls, cold cache |
+| Full inventory build | **1247–3470 ms** (off the request path, daemon thread) | self-check output |
+| `load_skills()` | **1.2 s for 121 skills** | timer around `load_skills()` |
+| `style()` with the block | **3977 chars** | `len(llm.style())` |
+| Sandbox memory cap | 2.5 GB request died at **peak 454.4 MB** under a 512 MB cap | sandbox self-check |
+| Skills / manifests / self-checks / test_file | **121 / 121 / 111 / 2** | ISSUES.md SC-03/SC-04 loop |
+| Subprocess sites missing a timeout | **52 of 111** (heuristic) | ISSUES.md SC-05 |
+| `except: pass` patterns | **145** (heuristic) | ISSUES.md SC-06 |
+| `shell=True` | **6** | ISSUES.md SC-07 |
+| Hardcoded `D:\ISHTI` in shipped code | **16** | ISSUES.md SC-08 |
+| Committed secrets | **none** (`git ls-files data` = 0; 3 candidates classified by shape, no value printed) | ISSUES.md SC-09 |
+| Self-knowledge paraphrases recognised | **28 / 28**, 0 false positives (EN, Urdu, Pashto, Roman-Urdu) | `scratch/check_paraphrases.py` |
+
+## 4. Partial offload — the hard gate
+
+Every `/api/ps` sample taken during this pass: **`PARTIAL_OFFLOAD: false` for every loaded model**
+(`size_vram == size`). Sample at the start of codegen run #1:
+
+```
+{"name": "ishti-spark2.5:4b", "size": 8561172152, "size_vram": 8561172152, "PARTIAL_OFFLOAD": false}
+{"name": "gemma3:4b",        "size": 2875520450, "size_vram": 2875520450, "PARTIAL_OFFLOAD": false}
+```
+
+No run was allowed to load a model that did not fit — which is exactly why the feasibility gate refused
+(below) instead of silently splitting one.
+
+## 5. Real pipeline runs (acceptance test 1)
+
+### Run #1 — the honest refusal (this IS acceptance test 2 passing)
+
+`tools\skill_creator_run.py "make yourself able to combine a folder of images into one PDF"`, with the
+planner and translator resident:
+
+```
+2. feasibility: tier=T1 possible=False gpu=coder rung 'ishti-qwen2.5-coder:14b' installed, 965 MB free of 16303 MB
+REFUSED (honestly):
+I can't do that yet.
+
+Exactly what is missing:
+- a local coder model that is installed and fits in VRAM (coder rung 'ishti-qwen2.5-coder:14b' installed,
+  965 MB free of 16303 MB) - I will not offload part of a model onto the CPU
+
+Why, from the check: VRAM/model budget.
+```
+
+No draft was created, nothing was installed, no fake success. This is the required behaviour for a request
+that cannot be done within the machine's limits: say so, and name the exact gap.
+
+### Run #2 — after freeing VRAM
+
+`ishti.gpu.unload_idle_models()` freed the idle models (`[models] UNLOAD: qwen3:14b`), leaving
+**2349 / 16303 MiB used, no model loaded** (~13.9 GB free, enough for the 9922 MiB coder rung per
+`MODEL_DECISIONS.md`). The same command was then re-run.
+
+
+### Run #2 — reached the VRAM governor, killed mid-generation by me
+
+Run #2 got past research (SearXNG was unreachable and the Playwright fallback hung inside a single search
+call — see SC-22) and reached code generation. Its log captured the governor doing exactly the right thing:
+
+```
+[vram] coder: ishti-qwen2.5-coder:14b -> ishti-qwen2.5-coder-c4k:14b (was not fully on the GPU - trying less context)
+[vram] coder: ishti-qwen2.5-coder-c4k:14b -> qwen2.5-coder-c8k:7b (was not fully on the GPU - trying the next lighter model)
+```
+
+The governor walked **down the ladder rather than partially offloading** — the behaviour the whole design
+depends on. I then killed this run to apply the research timeout; no result was claimed from it.
+
+### Run #3 — refused again, honestly, and correctly
+
+After bounding the research stage:
+
+```
+2. feasibility: tier=T1 possible=True gpu=coder rung 'ishti-qwen2.5-coder:14b' installed, 5341 MB free of 16303 MB
+...
+I can't do that yet.
+Exactly what is missing:
+- a local coder model that is installed and fits in VRAM (coder rung 'ishti-qwen2.5-coder:14b' installed,
+  3131 MB free of 16303 MB) - I will not offload part of a model onto the CPU
+installed into ishti/skills? False
+```
+
+By the time the pipeline reached generation the **planner had reloaded** (it is pinned `Forever` in
+`models_ladder.yaml`), so free VRAM fell from 5341 MB to 3131 MB — below the ~9922 MiB the 14B coder needs.
+The gate refused rather than attempting a load that would have split the model.
+
+**So: real code generation is BLOCKED on this machine as it stands**, and the reason is measured, not
+guessed — the pinned planner plus a resident translator leaves 3.1–5.3 GB free, while the coder rung needs
+9922 MiB (`MODEL_DECISIONS.md`). Two ways forward, neither taken unilaterally: (a) stop ISHTI so the planner
+is not resident, then run the driver again; (b) relax the gate so it asks the **governor** whether the job
+can be admitted and lets the governor step the planner down — note the governor already demonstrated it
+*will* do that (run #2), so the current gate is stricter than necessary. Recorded as `NEEDS.md` N22 and
+`ISSUES.md` SC-23. The refusal direction is the safe one, so nothing was weakened to make a test pass.
+

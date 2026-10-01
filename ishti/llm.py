@@ -183,6 +183,20 @@ def style() -> str:
         out += "\n\nThe owner's instructions (always follow them):\n" + owner["instructions"]
     if prefs:
         out += "\n\nThe owner's standing preferences:\n" + "\n".join(prefs)
+    # The self-model (ishti/selfmodel.py): measured facts about THIS machine, skills and models, so the
+    # model never has to recall them. Additive and wrapped: if any probe fails the block is simply absent
+    # and a reply still goes out - a self-model must never be able to break answering. Measured cost:
+    # ~91 ms cold, ~1 ms from cache (2026-09-30).
+    try:
+        from ishti.selfmodel import render as _self_model
+        out += ("\n\n" + _self_model() +
+                "\n\nHow to use the block above: it is MEASURED, not remembered. For any question about "
+                "my hardware, models, skills, limits or abilities, answer only from it. If the fact is not "
+                "in there, reply exactly \"I don't know - shall I check?\" and check it - never estimate, "
+                "never recall, never invent a spec. Never say which model you are: the router picks one per "
+                "request, and the block lists what is installed, not what is speaking.")
+    except Exception as exc:
+        print(f"[llm] self-model unavailable ({type(exc).__name__}: {exc}) - answering without it")
     return out
 
 

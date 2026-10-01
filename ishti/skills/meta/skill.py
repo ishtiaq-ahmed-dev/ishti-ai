@@ -28,6 +28,29 @@ OPS = [
     ("pkg_outdated", re.compile(r"\b(?:outdated|old)\s+(?:python\s+|pip\s+)?packages\b|\b(?:check|any)\s+(?:ishti(?:'s)?\s+)?(?:python\s+|pip\s+)"
                                 r"(?:packages?\s+)?(?:for\s+)?updates\b|\b(?:check\s+)?ishti(?:'s)?\s+(?:python\s+)?packages\s+for\s+updates\b", re.I)),
     ("usage", re.compile(r"\b(?:which|what)\s+skills?\s+(?:do\s+i|did\s+i)\s+use\s+(?:the\s+)?most\b|\bskill\s+usage\b", I)),
+    # Self-knowledge (WP-B): identity, live machine facts, model inventory, skill inventory, and the
+    # refresh command. Deliberately does NOT take "what can't you do?" - that already answers from
+    # NEEDS.md (op_needs) and two skills must not fight over one phrasing.
+    ("self_check", re.compile(
+        r"\b(?:what\s+(?:are\s+your|is\s+your)\s+(?:specs?|specifications|setup|machine|system)|"
+        r"(?:your|the)\s+(?:pc|machine|system)\s+(?:specs?|specifications)|"
+        r"what\s+(?:gpu|graphics\s+card|cpu|processor|ram|memory|vram)\b|"
+        r"how\s+much\s+(?:ram|memory|disk|vram|space)\s+(?:do\s+(?:i|you)\s+have|have\s+(?:i|you))|"
+        r"which\s+models\s+(?:are\s+you|do\s+you)\s+(?:using|have|installed)|"
+        r"what\s+skills?\s+(?:do\s+you\s+have|have\s+you\s+got)|"
+        r"who\s+are\s+you\b|whose\s+assistant\s+are\s+you\b|"
+        r"what\s+(?:pc|computer|laptop|system|machine)\s+are\s+you|"
+        # Urdu (Arabic script), Pashto and Roman-Urdu: the dispatcher translates before routing, but a
+        # deterministic trigger is cheaper and works even when the translator model is busy or unavailable.
+        # No trailing \b on this group: Pashto/Urdu plurals attach suffixes (ما[ڈډ]?لونه) and \b is ASCII-only.
+        r"تم\s*کون\s*ہو|کمپیوٹر.{0,20}(?:سپیفیکیشن|سپیکس|تفصیل)|گرافکس\s*کارڈ|"
+        r"جی\s*پی\s*یو|کون\s*کون\s*سی?\s*ما[ڈډ]?ل|کون\s*کون\s*سی?\s*(?:اسکل|مہارتیا)|کیا\s*نہیں\s*کر\s*سکتے|"
+        r"ته\s*ول\s*څوک\s*یې|کمپیوټر.{0,20}(?:ډول|ځانګړی)|ګرافیکس\s*کارډ|کوم\s*ډول\s*ما[ڈډ]?ل|"
+        r"څه\s*مهارتونه\s*لرې|څه\s*نه\s*شې\s*کولی|"
+        r"tum\s*(?:kaun|kon)\s*ho|mer[ei]\s*(?:computer|pc|laptop)\s*(?:ki|ka)\s*(?:specs?|kaisi)|"
+        r"mer[ei]\s*(?:graphics|gpu|vram)\s*(?:card|kitab)|kaun\s*kaun\s*si\s*(?:models?|skills?)|"
+        r"tum(?:hare)?\s*(?:kya|kyun)\s*(?:nahi|na)\s*kar\s*sakte|"
+        r"(?:refresh|update|reload)\s+(?:your\s+)?self[-\s]?knowledge)", I)),
 ]
 
 
@@ -197,15 +220,47 @@ def op_usage(text, session):
     return (f"Skills used in the last 30 days ({len(rows)} requests):\n" + "\n".join(f"- {n}: {c}" for n, c in top)) if top else "No usage yet."
 
 
+REFRESH = re.compile(r"\b(?:refresh|update|reload)\s+(?:your\s+)?self[-\s]?knowledge\b", I)
+
+
+def op_self_check(text, session=None):
+    """Self-knowledge: the measured detail view, or a forced refresh ("refresh your self-knowledge").
+
+    Answers from `ishti.selfmodel`, which measures this PC live - so "what GPU do I have" cannot be
+    answered from memory. Local only: this text is never sent anywhere.
+    """
+    from ishti import selfmodel as sm
+    if REFRESH.search(str(text or "")):
+        out = sm.refresh()
+        changed = "Something changed and I've re-measured everything." if out["changed"] \
+            else "I re-measured everything; nothing relevant had changed."
+        lines = [changed, f"Measured {out['measured_at']} (fingerprint {out['fingerprint']}).", ""]
+        if out["mismatch"]:
+            lines.append("Note: this machine disagrees with the recorded baseline - " +
+                         "; ".join(out["mismatch"]))
+            lines.append("")
+        lines.append(out["render"])
+        return {"reply": "\n".join(lines), "sources": []}
+    return {"reply": sm.detail(), "sources": []}
+
+
 if __name__ == "__main__":
     for t, want in {"check your skills": "health", "what have you flagged as missing": "needs", "what have you accessed recently": "audit", "what did you do while I was away": "audit",
                     "show me today's actions": "audit",
                     "which skills do I use the most": "usage", "what's the status of my tasks": "tasks",
                     "what are you working on": "tasks", "check ishti's python packages for updates": "pkg_outdated",
                     "any outdated python packages": "pkg_outdated", "update ishti package requests": "pkg_update",
-                    "update all of ishti's packages": "pkg_update"}.items():
+                    "update all of ishti's packages": "pkg_update",
+                    "what are your specs": "self_check", "what GPU do I have": "self_check",
+                    "which models are you using": "self_check", "what skills do you have": "self_check",
+                    "who are you": "self_check", "whose assistant are you": "self_check",
+                    "refresh your self-knowledge": "self_check",
+                    "how much RAM do I have": "self_check"}.items():
         assert next((n for n, rx in OPS if rx.search(t)), None) == want, t
     assert not match("check the weather")
+    # "what can't you do?" must stay with op_needs (it answers from NEEDS.md) - two skills must not
+    # fight over one phrasing
+    assert next((n for n, rx in OPS if rx.search("what can't you do")), None) == "needs"
     now = time.time()
     tracked = {"tasks": [{"topic": "compare laptops", "status": "running", "started": now - 12, "result": ""},
                          {"topic": "weather tomorrow", "status": "done", "started": now - 30, "result": "33°C,\n clear"},
@@ -223,4 +278,14 @@ if __name__ == "__main__":
     assert update(["other"]).startswith("Nothing to update")
     outdated, _pip = real_outdated, real_pip
     assert isinstance(outdated(), list)  # the real pip query works
-    print("[self-check] meta OK - routing, task tracker, self-update with rollback")
+
+    # self-knowledge: measured live, and the owner's identity never rides along outbound
+    detail = op_self_check("what are your specs")["reply"]
+    assert "Measured" in detail, detail[:200]
+    assert "RTX 5070 Ti" in detail, detail[:400]
+    refreshed = op_self_check("refresh your self-knowledge")["reply"]
+    assert "re-measured" in refreshed, refreshed[:200]
+    from ishti import selfmodel as _sm
+    assert _sm.assert_local_only("what is the weather in Peshawar") == []
+    print("[self-check] meta OK - routing, task tracker, self-update with rollback, self-knowledge from "
+          "live measurements + refresh")
