@@ -52,9 +52,55 @@ record (122 skills, 2026-09-30) — left untouched and still valid.
 | (5) Codebase clean | **PASS** (tracked tree clean; scratch confined to gitignored `_work/`, `backups/`; deliverables committed) |
 | (6) Scorecard convergence | **PASS** — the remaining costs are genuine (122 skill imports ≈250 ms; GPU-bound LLM 85 tok/s; CPU Piper; STT 167 ms already tuned) |
 
-**Verdict: CYCLE 1 CONVERGED.** Remaining open item for Cycle 2 (with numbers):
-- Deferred: corrections table >2000 rows ⇒ add 5 s TTL cache to `corrections.learned()` (measured 0.007 ms now — no gain today).
-- Deferred: per-skill deep-read of all 122 skill.py (no measured signal points at any of them).
+**Verdict: CYCLE 1 CONVERGED.**
+
+---
+
+# Cycle 2 (same session, 2026-10-01)
+
+Driven by the owner's "run all cycles" instruction and one new measurement instrument.
+
+## What was measured
+
+| Question | Instrument | Result |
+|---|---|---|
+| What does a REQUEST cost beyond routing? (Cycle 1 never measured this) | new `bench_handle` in tools/bench_opt.py: dispatcher.handle() end-to-end, sandboxed stores, LLM mocked | reflex path **26.84 ms** — 100× the route itself (0.24 ms) |
+| Where do those 26.84 ms go? | same-process A/B, stubbing one suspect at a time | audit.record **~12 ms**, _inflight file IO **~6 ms**, log_route <0.2 ms, semantic/background ≈0 (already off-path) |
+| Which skills are actually used? | route_log (3091 routed requests, 121 distinct skills) | ~100 skills have ≤2 uses; still no case for lazy skill imports (deferral would move cost onto first use) |
+| Does §11 of the API contract match the code? | endpoint-by-endpoint diff | all 11 endpoints + `recent` key implemented — PASS |
+
+## Kept in Cycle 2
+
+| # | Change | Before | After | Gain |
+|---|---|---|---|---|
+| K3 | audit: cached per-thread SQLite connection + WAL + synchronous=NORMAL (pure log; connections previously leaked) | handle 26.84 ms; record 12 ms | handle 17.03 ms; record 0.018 ms | −36% request path |
+| K4 | _inflight: in-memory state + one coalescing writer thread (file is a crash-recovery hint) | handle 17.03 ms | **4.05 ms** | **−85% cumulative** |
+| B3 | PIP_NAME["zxingcpp"] = "zxing-cpp" — scanqr auto-install never worked | NEEDS.md runtime error entry | mapping fixed; module importable | bug fix |
+
+Verification: **3 consecutive full-suite greens** on the K3/K4 tree (`_work/suite_c2_repeat.log`,
+`_work/suite_c2_final2.log`, `_work/suite_c2_final3.log`); perf_guard extended with the handle
+benchmarks and PASS; focused suites (channels/dispatcher/digest) green.
+
+## Investigated to root cause, not fixed in code
+
+- **F1**: digest N5 flake — 2 sightings in ~8 full-suite-context runs, 0/27 focused reproductions
+  (incl. pre-change bisect), failing chat index differs each time; the code path is pure functions
+  over isolated temp DBs. Verdict: rare WAL-on-Windows write-contention flake under full-suite load.
+  Re-test with `-p no:randomly -vv` if it recurs.
+- Same flake class as the Cycle-1 VRAM-residency finding: **clear Ollama VRAM between suites**
+  (`keep_alive: 0`) — the final Cycle-2 gate ran green after that.
+
+## Cycle 2 convergence
+
+| Criterion | Status |
+|---|---|
+| No untried technique with plausible positive measured value | **PASS** — the request path is now 4 ms fixed cost (routing + audit + state); the rest is genuine work (skill run, LLM at 82–85 tok/s, whisper 167 ms) |
+| All tests green | **PASS** (3× suite, guard, focused) |
+| Docs match code | **PASS** (§11 verified; README audit closed in Cycle 1) |
+| Clean tree | **PASS** (runtime artifacts gitignored) |
+
+**Verdict: CYCLE 2 CONVERGED.** Deferred-with-numbers queue: corrections TTL cache (>2000 rows),
+per-skill deep reads (no measured signal), Piper GPU offload (unsupported by package).
 
 ## Section 5 — Rollback
 
