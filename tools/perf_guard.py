@@ -76,7 +76,7 @@ def main():
             continue
         change = (c - b) / b
         worse = (c < b) if higher_better else (c > b)
-        tol = args.tolerance if args.tolerance is not None else tol
+        bad = worse and abs(change) > (args.tolerance if args.tolerance is not None else tol)
         failed |= bad
         rows.append((label, b, c, change, ("REGRESSION" if bad else "ok")))
 

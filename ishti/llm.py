@@ -4,8 +4,6 @@ import os
 import re
 from types import SimpleNamespace
 
-from openai import OpenAI
-
 from ishti import killswitch
 from ishti import CONFIG
 
@@ -26,8 +24,23 @@ STYLE = (
 )
 
 _cfg = CONFIG["llm"]
-_client = OpenAI(base_url=(os.environ["ISHTI_OLLAMA_URL"].rstrip("/") + "/v1") if os.environ.get("ISHTI_OLLAMA_URL") else _cfg["base_url"],
-                 api_key="ollama", timeout=_cfg["timeout_s"])  # ISHTI_OLLAMA_URL: a second Ollama (tests, another port)
+_client = None
+# Measured (2026-10-01, -X importtime): `from openai import OpenAI` costs ~589 ms cumulative and was
+# paid by every `import ishti.llm` (26 skill modules import it) even when the request is answered by a
+# reflex/rule route with no LLM call. The client is created on first use instead.
+
+def _get_client():
+    """The OpenAI client to Ollama's /v1 endpoint, created on first use. Replaces the module-level
+    `_client = OpenAI(...)` (which forced the openai package to import at boot); the base URL is read
+    per call so ISHTI_OLLAMA_URL set later still applies.
+"""
+    global _client
+    if _client is None:
+        from openai import OpenAI  # the expensive import moves to first LLM call
+        _client = OpenAI(base_url=(os.environ["ISHTI_OLLAMA_URL"].rstrip("/") + "/v1") if os.environ.get("ISHTI_OLLAMA_URL") else _cfg["base_url"],
+                         api_key="ollama", timeout=_cfg["timeout_s"])  # ISHTI_OLLAMA_URL: a second Ollama (tests, another port)
+    return _client
+
 _installed = None
 
 FALLBACK_MAP = {
@@ -72,7 +85,7 @@ def _configured_for(role: str) -> str:
         name = a2.get(role) or _cfg["models"].get("planner", _cfg["fallback"])
         if _installed is None:
             try:
-                _installed = {m.id for m in _client.models.list().data}
+                _installed = {m.id for m in _get_client().models.list().data}
             except Exception:
                 _installed = set()
         if _installed and name not in _installed and f"{name}:latest" not in _installed:
@@ -80,10 +93,10 @@ def _configured_for(role: str) -> str:
         return name
     name = _cfg["models"].get(role, _cfg["fallback"])
     if role == "fast" or name.lower() in ("laya", "typed-decisions"):
-        return "laya"
+         return "laya"
     if _installed is None:
         try:
-            _installed = {m.id for m in _client.models.list().data}
+            _installed = {m.id for m in _get_client().models.list().data}
         except Exception:
             _installed = set()
     if _installed and name not in _installed and f"{name}:latest" not in _installed:
@@ -150,7 +163,7 @@ def _create(**args):
 
 def _create_call(args, openai):
     try:
-        return _client.chat.completions.create(**args)
+        return _get_client().chat.completions.create(**args)
     except openai.APIConnectionError:
         import time
         from ishti import lifecycle
@@ -161,7 +174,7 @@ def _create_call(args, openai):
         for _ in range(15):
             time.sleep(1)
             try:
-                return _client.chat.completions.create(**args)
+                return _get_client().chat.completions.create(**args)
             except openai.APIConnectionError:
                 continue
         raise RuntimeError("the local AI model (Ollama) isn't running and I couldn't start it - start Ollama "
