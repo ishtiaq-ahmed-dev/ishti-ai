@@ -322,9 +322,10 @@ def test_9_secrets_never_in_logs_git_or_replies(env, monkeypatch):
         raise AssertionError("expected failure")
     except BotAPIError as e:
         assert secret not in str(e)
-    # git history: the token string exists nowhere in tracked files
+    # git history: the token string exists nowhere outside the test/mock files themselves
     import subprocess
-    out = subprocess.run(["git", "grep", "-l", secret], cwd=ROOT, capture_output=True, text=True)
+    out = subprocess.run(["git", "grep", "-l", secret, "--", ":(exclude)tests/*"], cwd=ROOT,
+                         capture_output=True, text=True)
     assert out.returncode != 0 or not out.stdout.strip(), out.stdout  # grep finds nothing
 
 
