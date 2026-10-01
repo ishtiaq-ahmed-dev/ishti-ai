@@ -16,6 +16,29 @@ _cfg = CONFIG["router"]
 _laya = None
 laya_error = ""
 
+# Statuses the router must never pick (manifest `status`; "broken" also covers load failures).
+# The owner turning a skill off from the dashboard is separate: registry.disabled_names(), below.
+NON_ROUTABLE = {"broken", "draft", "disabled", "retired"}
+_FLAGS_TTL = 5.0                                # s: route() runs per request; don't read Settings every call
+_flags_cache: tuple[float, frozenset] = (0.0, frozenset())   # (monotonic timestamp, disabled skill names)
+
+
+def _disabled_flags() -> frozenset:
+    """Skill names switched off in Settings, cached for _FLAGS_TTL seconds. Lazy import (the registry's
+    retrieve() imports router back) and never raises: a Settings problem degrades to 'nothing disabled'
+    instead of breaking every route()."""
+    global _flags_cache
+    ts, names = _flags_cache
+    if time.monotonic() - ts < _FLAGS_TTL:
+        return names
+    try:
+        from ishti.skills import registry
+        names = frozenset(registry.disabled_names())
+    except Exception:
+        names = frozenset()
+    _flags_cache = (time.monotonic(), names)
+    return names
+
 
 def laya():
     """Lazy Laya Router; None (with laya_error set) when laya/torch isn't usable."""
@@ -50,7 +73,9 @@ def questions(skills):
 def route(text, skills, exclude=()):
     """-> {"skill", "confidence", "source", "ms", ...laya extras}; skill None if nothing is left."""
     t0 = time.perf_counter()
-    live = {n: s for n, s in skills.items() if s.status != "broken" and n not in exclude}
+    blocked = _disabled_flags()
+    live = {n: s for n, s in skills.items()
+            if s.status not in NON_ROUTABLE and n not in exclude and n not in blocked}
     done = lambda skill, conf, source, **kw: {"skill": skill, "confidence": round(conf, 3), "source": source,
                                               "ms": round((time.perf_counter() - t0) * 1000, 1), **kw}
 

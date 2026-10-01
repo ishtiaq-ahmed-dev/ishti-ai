@@ -205,9 +205,11 @@ def test_multiagent_end_to_end():
 
 # ------------------------------------------------------------------ flowise (E1)
 def test_flowise_adapter_and_profile():
-    import ishti.flowise_client as FC
-    assert FC.configured() is False
     from ishti.core.settings import get_settings_service
+    import ishti.flowise_client as FC
+    # reset the precondition: another test in the full run may have set integrations.flowise_url
+    get_settings_service().update({"integrations": {"flowise_url": "", "flowise_flows": {}}})
+    assert FC.configured() is False
     get_settings_service().update({"integrations": {
         "flowise_url": "http://127.0.0.1:39999",
         "flowise_flows": {"research gpus": "flow-research", "translate": "flow-tr"}}})

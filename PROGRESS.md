@@ -264,3 +264,82 @@ harness, not the UI; the UI is browser-rendered UTF-8).
       dispatcher follow-ups replay predated test mode/planner/escalation; fixed, contracts kept).
 - [x] Performance baselines (PERFORMANCE_REPORT.md): model cold/warm loads, per-path latency,
       translator tax 1–6 s per reply, GPU coexistence limits + top 3 improvements (owner call).
+
+---
+
+# Session 2026-09-30/10-01 — skill_creator + self-knowledge + issue hunt
+
+Machine: Windows 11 Pro 25H2 build 26200.9550, RTX 5070 Ti 16 GB (driver 610.47), 64 GB RAM,
+`D:\ISHTI\venv` Python 3.11.9. Start commit `b56994b`; **WP0 rollback point = commit `2801551`,
+tag `ishti-pre-skillcreator-20260930`** (it also captures the owner's 4 in-flight edits so nothing is
+lost). Legend: [x] done · [~] in progress · [ ] not started · BLOCKED = needs the owner (`NEEDS.md`).
+
+## Phase 1 — Research (parallel, 6 agents) → `RESEARCH.md` (73,080 bytes)
+- [x] R1 self-extending agents + failure modes · R2 sandboxing on Windows 11 · R3 dependency vetting ·
+      R4 manifest schema + Agent Skills · R5 self-knowledge · R6 local coder limits.
+- [x] Every claim labelled VERIFIED (source URL/command output + date) or UNVERIFIED; each agent wrote its
+      own `research/R<n>.md` (no shared files), then the integrator concatenated them verbatim.
+- [x] **Measured, not assumed:** Docker cold start **29 s**; Windows Sandbox `InstallState=2` (disabled);
+      Job-Object 512 MB cap killed a 2 GB allocation; `KILL_ON_JOB_CLOSE` killed a whole tree when the
+      supervisor was `os._exit`-ed; `pyyaml 5.3.1 → OSV 2 advisories`; `ctx → GHSA malware`; 120 manifests
+      with **0** non-conformant; `test_file` present in **1** of 120.
+- [x] Seven decisions recorded in `RESEARCH.md` (D1–D7). D7 is a **prerequisite bug**: `ishti/router.py:53`
+      only filters `status == "broken"`, so `disabled`/`draft`/`retired` skills are still routable — and
+      `ishti/skills/registry.py:retrieve()`, which *does* honour the dashboard's Disable flag, is **never
+      called in the runtime** (its only caller is its own `__main__`). "Register as DISABLED" is cosmetic
+      until both are fixed.
+
+## Phase 2 — Plan → `IMPLEMENTATION_PLAN.md`
+- [x] 13 work packages with owner-agent, exclusive files, dependencies, proof test, risk, rollback.
+- [x] Deviation from the master prompt, documented: agents share ONE working tree, so isolation is by
+      **exclusive file ownership**, not by one git branch per agent (branches would need separate
+      worktrees). No two agents may edit the same file; the integrator rejects overlapping claims.
+- [x] Second documented deviation: the prompt asks for `skills/skill_creator/`; in this repo skills live at
+      `ishti/skills/<name>/`, so it is built at `ishti/skills/skill_creator/` and drafts at
+      `ishti/skills/_drafts/` — the loader already skips `_`-prefixed dirs (`ishti/skills/__init__.py:180`),
+      which is exactly what an unapproved draft needs.
+- [x] Nothing in the plan deletes data, changes a T2/T3 rule, or needs a purchase → proceeded automatically.
+
+## Phase 3 — Build (4 agents in parallel, no shared files)
+- [~] WP-C1 Fixer-1: routing honours `disabled`/`draft`/`retired` + the Settings `skills.disabled` flag
+- [~] WP-A Builder-A: `skill_creator` core, sandbox, vetting, design, research
+- [~] WP-B Builder-B: self-model + `owner_profile.yaml` + system-prompt wiring
+- [~] WP-C2 Issue-Hunter: evidenced issue scan → `ISSUES.md`
+
+
+### Phase 3/4 — what actually happened (the plan's parallel band did NOT happen)
+
+- [!] **The four build sub-agents failed** with `Error 429: Daily free limit reached on model
+  deepseek/deepseek-v4.1-flash. Try again in 21h 56m`. They had already written WP-C1's router/registry fix,
+  the `scope.py` exception, `sandbox.py`, `vetting.py` and `tests/test_router_lifecycle_flags.py`; I reviewed
+  and built on all of it. **WP-B and WP-C2 were then done by me, serially.** Recorded in `NEEDS.md` N28 so the
+  schedule in `IMPLEMENTATION_PLAN.md` §5 is not read as a description of what happened.
+- [x] **WP-C1 (routing honours disabled/draft/retired + the Settings flag)** — proven red→green
+  (9 failures with `router.py` reverted, 14/14 green with it), 29 related tests still green. `ISSUES.md` SC-01.
+- [x] **WP-A (skill_creator)** — 9 modules, every self-check green, **27/27** acceptance tests. Full pipeline
+  proven offline end-to-end: research → design → generate → scan → vet → **3 consecutive** green sandbox runs →
+  packaged `v0.1.0` `status:"disabled"` with the owner's yes still pending, nothing installed.
+- [x] **WP-B (self-model)** — `ishti/selfmodel.py` + `owner_profile.yaml` + `llm.style()` + `meta` self-knowledge
+  in 4 languages. **43/43** acceptance tests; block 813–1086 chars vs a 1200 budget; cold render 91 ms.
+- [x] **WP-C2 (issue hunt)** — 21 evidenced rows (SC-01..SC-21) in `ISSUES.md`, each with a command to re-derive
+  it, plus an explicit "not verified" list.
+- [x] **Bugs found by running the code** (not by reading it): 2 in the router path, 3 in `generate()`/imports,
+  4 in the self-model (a cache clobber that made `detail()` report "0 skills", a renderer that hid failed
+  probes, a trimmer that deleted the MISMATCH/honesty lines, and a `detail()` that never printed hardware),
+  1 unbounded research call, 2 multilingual routing gaps.
+
+### Bugs I introduced and then caught (recorded because they are the point)
+- An invented gap-detection floor (0.35) contradicted the router's own `min_confidence` (0.2); Laya's own warning
+  says its scores are uncalibrated, so the code now reuses the router's number instead of re-deciding ownership.
+- A **router failure** was being counted as proof that no skill existed — which would have created a duplicate.
+  It now means *unknown*, and nothing is built.
+- `build()` wrote the cache before reading it, so the fresh model/skill inventory was overwritten away.
+- The research stage had budgets but **no timeout**, so one unreachable-search fallback hung the whole pipeline
+  for 5 minutes. Now bounded per call and in total, with a self-check that proves a hanging search is abandoned.
+
+### Deliverables
+`RESEARCH.md` · `IMPLEMENTATION_PLAN.md` · `ISSUES.md` · `TEST_RESULTS.md` · `NEEDS.md` · `PROGRESS.md` ·
+`ishti/skills/skill_creator/` (+ README, CHANGELOG) · `owner_profile.yaml` · `ishti/selfmodel.py` +
+`tests/test_selfmodel.py` · `tests/skills/skill_creator/` · `tests/test_router_lifecycle_flags.py` ·
+`tools/skill_creator_run.py` · `FINAL_REPORT.md`.
+

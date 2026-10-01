@@ -35,6 +35,11 @@ def _flags() -> tuple[set, set, set]:
         return set(), set(), set()
 
 
+def disabled_names() -> set[str]:
+    """Skill names the owner turned off (Settings skills.disabled). Never raises."""
+    return _flags()[1]
+
+
 def record_for(skill) -> dict:
     """One registry record for a loaded Skill object (A1). Manifest is the source of truth."""
     tier = (skill.manifest.get("tier") or "T1").upper()

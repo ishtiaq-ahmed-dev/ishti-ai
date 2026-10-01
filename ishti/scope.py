@@ -91,6 +91,11 @@ def check_write(path, what="write"):
     scope = scope_of(skill)
     if skill == "skillsmith" and _under(path, [os.path.join(ROOT, "ishti", "skills")]):
         return  # installing a skill is what it's for (after the owner's yes)
+    if skill == "skill_creator" and _under(path, [os.path.join(ROOT, "ishti", "skills", "_drafts")]):
+        # Deliberately NARROWER than skillsmith's exception above: drafts only. skill_creator cannot write
+        # into ishti/skills/<name> - a finished draft is installed by skillsmith.install_folder (owner-gated),
+        # so a draft can never turn itself into a live skill by writing files.
+        return
     if skill in ("architecture", "settings") and _norm(path) in (_norm(os.path.join(ROOT, "ishti", "config.json")),
                                                                  _norm(os.path.join(DATA, "settings.json")),
                                                                  _norm(os.path.join(DATA, "settings.secrets.json"))):
