@@ -44,6 +44,7 @@ import RareFolder from "@/components/rare/folder-component";
 import { CHAT_FONT_SIZES, getChatFontSize, setChatFontSize, type ChatFontSize } from "@/lib/font-size";
 import { cn } from "@/lib/utils";
 import { ModelsCard, VoiceCard, WhisperCard } from "@/components/ModelsVoices";
+import { RemoteControl } from "@/components/RemoteControl";
 import { ArchitectureCard } from "@/components/ArchitectureCard";
 
 export function Page({
@@ -2702,6 +2703,9 @@ export function Settings({ onToggleNav }: { onToggleNav?: () => void }) {
               isOpen={expandedCards.chrome}
               onToggle={() => toggleCard("chrome")}
             />
+
+            {/* 5. Remote Control (Telegram / WhatsApp) */}
+            <RemoteControl />
           </div>
         </div>
       </div>
