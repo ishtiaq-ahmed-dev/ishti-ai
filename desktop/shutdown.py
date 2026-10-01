@@ -1,4 +1,4 @@
-"""Stop ISHTI. The ONE stop path is the backend's graceful shutdown (POST /api/shutdown: stop intake, finish tasks,
+r"""Stop ISHTI. The ONE stop path is the backend's graceful shutdown (POST /api/shutdown: stop intake, finish tasks,
 flush SQLite/Chroma, stop voice/mic, unload models, close browser tools, release the port, exit). This module only asks
 for it and waits. If the backend cannot answer (crashed/hung) it kills by the pids ISHTI recorded in
 %LOCALAPPDATA%\ISHTI\run\ishti.json - never by matching process names or command lines (that used to be able to kill
@@ -79,7 +79,7 @@ def shutdown(port=8888, wait_s=45, quiet=False) -> int:
         os.remove(STOP_FLAG)
     except OSError:
         pass
-    say("ISHTI is stopped." if clean else "ISHTI may still be running - check the log in %LOCALAPPDATA%\ISHTI\logs.")
+    say("ISHTI is stopped." if clean else r"ISHTI may still be running - check the log in %LOCALAPPDATA%\ISHTI\logs.")
     return 0 if clean else 1
 
 

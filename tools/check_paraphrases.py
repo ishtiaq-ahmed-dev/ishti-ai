@@ -52,7 +52,7 @@ import re  # noqa: E402
 probe = CASES["PS"][3]
 out.write("\n--- probe ---\n")
 out.write("text: %r\n" % probe)
-for frag in ("کوم", "کوم\s*ډول\s*ماډل", "کوم ډول ماډلونه"):
+for frag in ("کوم", r"کوم\s*ډول\s*ماډل", "کوم ډول ماډلونه"):
     out.write("frag %-28r -> %s\n" % (frag, bool(re.search(frag, probe))))
 src = io.open(r"D:\ISHTI\ishti\skills\meta\skill.py", encoding="utf-8").read()
 i = src.find("کوم")

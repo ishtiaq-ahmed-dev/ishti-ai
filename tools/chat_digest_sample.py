@@ -1,4 +1,4 @@
-"""Build the chat-digest samples from the SYNTHETIC dataset (no real chats, no real people).
+r"""Build the chat-digest samples from the SYNTHETIC dataset (no real chats, no real people).
 
     venv\Scripts\python tools\chat_digest_sample.py
 

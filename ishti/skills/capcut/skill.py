@@ -115,7 +115,7 @@ def run(text: str, session: Dict[str, Any]) -> Dict[str, Any]:
         projs = ctrl.get_projects()
         if not projs:
             return {
-                "reply": "No CapCut projects found in your local draft store (`%LOCALAPPDATA%\\CapCut\\User Data\\Projects\\com.lveditor.draft`). You can create one anytime by saying: *'create a CapCut project from my latest video'*\.",
+                "reply": "No CapCut projects found in your local draft store (`%LOCALAPPDATA%\\CapCut\\User Data\\Projects\\com.lveditor.draft`). You can create one anytime by saying: *'create a CapCut project from my latest video'*.",
                 "sources": [],
             }
         lines = [f"### Local CapCut Projects ({len(projs)} found)", ""]
@@ -166,7 +166,7 @@ def run(text: str, session: Dict[str, Any]) -> Dict[str, Any]:
         opened = ctrl.open_capcut()
         if opened:
             return {"reply": "✓ **CapCut has been launched**. Your latest projects and edits are at the top of the project list.", "sources": []}
-        return {"reply": "Could not launch CapCut. Ensure CapCut is installed in `%LOCALAPPDATA%\\CapCut\\Apps\\CapCut.exe`.", "sources": []}
+        return {"reply": 'Could not launch CapCut. Ensure CapCut is installed in `%LOCALAPPDATA%\\CapCut\\Apps\\CapCut.exe`.', "sources": []}
 
     # 5. Silence Detection & Auto-Cut
     if any(k in t_lower for k in ["silence", "pause", "pauses", "dead air", "auto cut", "cut silence"]):

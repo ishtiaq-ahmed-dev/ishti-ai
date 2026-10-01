@@ -49,7 +49,7 @@ class Watchdog:
 
     @staticmethod
     def _out():
-        """What the server prints before its own logging starts (import errors, crashes at launch), in the shared log folder
+        r"""What the server prints before its own logging starts (import errors, crashes at launch), in the shared log folder
         %LOCALAPPDATA%\ISHTI\logs\launch.log; the last run kept as .1. Once running, the server logs to ishti.log itself."""
         from ishti import lifecycle
         path = os.path.join(lifecycle.LOG_DIR, "launch.log")

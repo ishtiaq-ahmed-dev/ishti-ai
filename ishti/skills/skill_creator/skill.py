@@ -358,7 +358,8 @@ def _op(op, m, session):
                 f"{r.get('failures', 0)} failure(s)" for n, r in sorted(st.items())]
         return {"reply": "Skill creator drafts:\n" + "\n".join(rows), "sources": []}
     if op == "disable":
-        from ishti.skills import skillsmith as _  # noqa: F401  (registry import is done inside drafts)
+        # (no `from ishti.skills import skillsmith` here: that binds the FOLDER - see _scan's comment;
+        # drafts pulls in whatever registry it needs itself)
         out = drafts.disable(name, "switched off by the owner")
         return {"reply": out.get("message") or out.get("reason") or str(out), "sources": []}
     if op == "enable":
