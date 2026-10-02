@@ -28,6 +28,15 @@ PY = sys.executable
 CORE = ["audit", "killswitch", "scope", "untrusted", "health", "facts", "semantic", "corrections", "reflex", "planner",
         "router", "llm", "ftlog", "rgraph", "gpu", "models", "duck", "diarize", "ocr", "clone", "manage", "wake",
         "talk", "voice"]
+# Modules whose docstring documents `Self-check: python <path>`: verify THAT exact command too, so a
+# missing repo-root bootstrap (ModuleNotFoundError when run as a script) is caught here, not by a human.
+DOC_SELFCHECKS = [
+    "desktop/overlay/fsm.py", "desktop/overlay/integrations.py", "desktop/overlay/log.py",
+    "desktop/overlay/mascot.py", "desktop/overlay/pills.py", "desktop/overlay/window.py",
+    "ishti/api_sessions.py", "ishti/dictation.py", "ishti/gateway.py", "ishti/hooks_relay.py",
+    "ishti/session_schema.py", "ishti/workspace.py",
+    "orchestrator/install_ops.py", "orchestrator/plan_view.py", "orchestrator/quality_gate.py",
+]
 SLOW = {"ishti.check", "ishti.wake", "ishti.voice", "ishti.diarize", "ishti.clone", "ishti.manage", "ishti.llm",
         "ishti.ocr", "ishti.semantic", "skill:browser", "skill:gemini", "skill:media", "skill:security",
         "skill:skillsmith", "skill:speedtest", "skill:markets", "skill:shopping", "skill:travel", "skill:weblayout",
@@ -38,6 +47,7 @@ SLOW = {"ishti.check", "ishti.wake", "ishti.voice", "ishti.diarize", "ishti.clon
 def items():
     out = [("ishti.check", [PY, "-m", "ishti.check"])]
     out += [(f"ishti.{m}", [PY, "-m", f"ishti.{m}"]) for m in CORE]
+    out += [(f"doc:{os.path.basename(p)}", [PY, os.path.join(ROOT, p)]) for p in DOC_SELFCHECKS]
     skills = sorted(d for d in os.listdir(os.path.join(ROOT, "ishti", "skills"))
                     if os.path.isfile(os.path.join(ROOT, "ishti", "skills", d, "skill.py")))
     out += [(f"skill:{s}", [PY, "-m", f"ishti.skills.{s}.skill"]) for s in skills]

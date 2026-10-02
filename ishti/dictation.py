@@ -25,9 +25,14 @@ import re
 import sys
 import time
 
-from ishti import CONFIG
-
+# `python ishti/dictation.py` (the documented self-check) puts ishti/ first on sys.path; put the
+# repo root back so `from ishti import CONFIG` resolves (same bootstrap as ishti/hooks_relay.py).
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
+from ishti import CONFIG  # noqa: E402  (after the path bootstrap)
+
 DATA_DIR = os.path.dirname(CONFIG["memory"]["db_path"])
 LOG_PATH = os.path.join(DATA_DIR, "dictation_history.jsonl")
 MAX_CHUNKS = 500

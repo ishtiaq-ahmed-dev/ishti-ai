@@ -487,3 +487,6 @@ sign-off: REVIEW_SIGNOFF.md; completeness: COMPLETENESS_AUDIT.md (runs 1+2).
 per repo in REPO_FEATURE_MATRIX.md). Orphaned surfaces wired to real callers: gateway ->
 `internet_reach` search channel, session envelopes -> overlay pills, overlay drop -> unified inbox,
 tray push-to-talk. Full offline suite 445/445 green; catalog generator idempotent.
+Recheck pass 2026-10-02: 4 documented self-checks were broken by a missing repo-root bootstrap
+(dictation/gateway/session_schema/quality_gate) - fixed, and tools/verify_all.py now runs every
+documented `python <path>` command so the class cannot ship unnoticed again (15/15 pass).

@@ -689,3 +689,20 @@ skills-library import + later-audit rows, hey-jev macOS-action merges + UI rows,
 login-state channels (N38) + setup/uninstall tooling, coucou COU-07 (Windows mail route) and
 COU-25 (multi-provider chat, OPT-IN). None of them is required by the P3 gate's already-shipped
 scope; each keeps its disposition + reason + evidence, so work can resume row by row.
+
+## 5. Self-check regression found + fixed (2026-10-02, recheck pass)
+
+Re-running the *documented* command of every module self-check (`python <path>`, 15 modules) found 4
+broken ones - `ishti/dictation.py`, `ishti/gateway.py`, `ishti/session_schema.py`,
+`orchestrator/quality_gate.py` - all failing with `ModuleNotFoundError: No module named 'ishti'`
+(script form puts the module's own folder first on sys.path, not the repo root). quality_gate's
+failure was worse than cosmetic: its lazy `security_scan` import could not resolve, so the
+security-reviewer reported `scanner-unavailable` and the seeded `dyn-code` assertion failed.
+
+Fixed with the repo's existing root bootstrap (`ROOT` on `sys.path`, same as `ishti/hooks_relay.py`).
+`tools/verify_all.py` now also runs every documented script-form command (`doc:<file>` rows) so this
+break class cannot ship unnoticed again.
+
+Evidence: each documented command passes (`verify_all --only doc:` = **15/15 in 2 s**), affected
+suites 3x green (`_work/selfcheck_fix_3x_run1..3.log`, exit 0), full suite **445/445, exit 0**
+(`_work/suite_after_selfcheck_fix.log`).

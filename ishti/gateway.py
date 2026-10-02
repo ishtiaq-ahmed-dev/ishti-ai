@@ -17,8 +17,15 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import urllib.parse
 import urllib.request
+
+# `python ishti/gateway.py` (the documented self-check) puts ishti/ first on sys.path; put the repo
+# root back so the module's own `ishti.*` imports resolve.
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
 DEFAULT_BASE = "http://127.0.0.1:8890"
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})

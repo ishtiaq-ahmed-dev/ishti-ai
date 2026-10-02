@@ -26,6 +26,8 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)   # `python orchestrator/quality_gate.py` self-check imports ishti.*
 SKIP_DIRS = frozenset({"__pycache__", ".git", ".venv", "venv", "vendor", "node_modules",
                        "dist", "build", ".mypy_cache", ".ruff_cache"})
 MAX_FILES = 400

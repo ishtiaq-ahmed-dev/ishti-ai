@@ -19,7 +19,14 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 import time
+
+# `python ishti/session_schema.py` (the documented self-check) puts ishti/ first on sys.path; put
+# the repo root back so the lazy `from ishti import events` in emit() resolves.
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
 V = 1
 AGENT_RE = re.compile(r"^[a-z0-9-]{1,24}$")
