@@ -34,7 +34,7 @@ tools/obscura/*.exe
 tools/obscura/*.zip
 
 # build outputs
-build/
+/build/
 dist/
 
 # QA harness artifacts (2026-09-30)
