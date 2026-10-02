@@ -6,6 +6,11 @@
 Auth: same rule as the whole server - local unproxied callers are trusted, everything else needs
 the bearer token. The policy/token endpoints are the ONLY writers of remote_policy.yaml and the
 DPAPI store, and both check `authorized(conn)` strictly.
+
+OD-12/23 hardening: every state-changing route additionally passes `_origin_ok()` first -
+a browser request from a cross-site context (Sec-Fetch-Site: cross-site/same-site, or an
+Origin that does not match Host) is refused 403 regardless of token; token sessions are
+hashed + in-memory (ishti/api_sessions.py), so a restart invalidates them.
 """
 from __future__ import annotations
 
@@ -18,6 +23,14 @@ router = APIRouter()
 TOKEN_RE = re.compile(r"^\d{6,12}:[A-Za-z0-9_-]{30,}$")
 
 
+def _origin_ok(request: Request) -> bool:
+    """Browser CSRF posture: a cross-site context is refused even with a valid token."""
+    from ishti import api_sessions
+    return api_sessions.origin_ok(request.headers.get("origin"),
+                                  request.headers.get("host"),
+                                  request.headers.get("sec-fetch-site"))
+
+
 def _auth(request: Request) -> bool:
     from interface.web_ui import server  # import late: server.py imports this module
     return server.authorized(request)
@@ -25,6 +38,10 @@ def _auth(request: Request) -> bool:
 
 def _deny():
     return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+
+def _forbidden():
+    return JSONResponse({"error": "cross-site request refused"}, status_code=403)
 
 
 @router.get("/api/remote/status")
@@ -45,6 +62,8 @@ async def remote_status(request: Request):
 
 @router.post("/api/remote/pair/start")
 async def pair_start(request: Request):
+    if not _origin_ok(request):
+        return _forbidden()
     if not _auth(request):
         return _deny()
     from ishti.channels import service
@@ -53,6 +72,8 @@ async def pair_start(request: Request):
 
 @router.post("/api/remote/pair/cancel")
 async def pair_cancel(request: Request):
+    if not _origin_ok(request):
+        return _forbidden()
     if not _auth(request):
         return _deny()
     from ishti.channels import service
@@ -61,6 +82,8 @@ async def pair_cancel(request: Request):
 
 @router.post("/api/remote/revoke")
 async def revoke(request: Request):
+    if not _origin_ok(request):
+        return _forbidden()
     if not _auth(request):
         return _deny()
     from ishti.channels import service
@@ -79,6 +102,8 @@ async def get_policy(request: Request):
 async def put_policy(request: Request):
     """The ONLY remote-policy writer, and it is local-only (any non-local caller needs the token;
     the channel gate has no path here at all)."""
+    if not _origin_ok(request):
+        return _forbidden()
     if not _auth(request):
         return _deny()
     from ishti.channels import policy, service
@@ -95,6 +120,8 @@ async def put_policy(request: Request):
 @router.post("/api/remote/telegram/token")
 async def set_token(request: Request):
     """Store the @BotFather token in Windows Credential Manager (DPAPI). Never logged."""
+    if not _origin_ok(request):
+        return _forbidden()
     if not _auth(request):
         return _deny()
     from ishti.channels import security
@@ -113,6 +140,8 @@ async def set_token(request: Request):
 
 @router.delete("/api/remote/telegram/token")
 async def del_token(request: Request):
+    if not _origin_ok(request):
+        return _forbidden()
     if not _auth(request):
         return _deny()
     from ishti.channels import policy, security, service
@@ -124,6 +153,8 @@ async def del_token(request: Request):
 
 @router.post("/api/remote/pin")
 async def set_pin(request: Request):
+    if not _origin_ok(request):
+        return _forbidden()
     if not _auth(request):
         return _deny()
     from ishti.channels import security
@@ -140,6 +171,8 @@ async def set_pin(request: Request):
 
 @router.delete("/api/remote/pin")
 async def del_pin(request: Request):
+    if not _origin_ok(request):
+        return _forbidden()
     if not _auth(request):
         return _deny()
     from ishti.channels import security
@@ -156,6 +189,8 @@ async def del_pin(request: Request):
 @router.post("/api/remote/enable")
 async def enable_channel(request: Request):
     """Flip a channel switch (Telegram needs a stored token + pairing; WhatsApp needs its risk ack)."""
+    if not _origin_ok(request):
+        return _forbidden()
     if not _auth(request):
         return _deny()
     from ishti.channels import policy, security, service
@@ -184,6 +219,8 @@ async def enable_channel(request: Request):
 @router.post("/api/remote/test")
 async def test_message(request: Request):
     """Send 'ISHTI remote link works' to the paired Telegram chat (no real send to anyone else)."""
+    if not _origin_ok(request):
+        return _forbidden()
     if not _auth(request):
         return _deny()
     from ishti.channels import service
