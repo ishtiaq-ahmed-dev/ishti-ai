@@ -127,6 +127,67 @@ class ModelRouter:
         except Exception:
             return name
 
+    def route(self, role: str = "primary", *, installed: Optional[List[str]] = None,
+              risk: str = "", budget: str = "") -> Dict[str, Any]:
+        """One decision object for a role (ECC-13: ECC's model-route heuristic merged here).
+
+        {"v": 1, "role", "model", "fallback", "chain", "risk", "budget", "reason", "latency_ms"}
+
+        * model is what a call would ACTUALLY serve: a configured name that is not installed is
+          resolved through _installed_alternative (live) or against the injected `installed`
+          list (tests/doctor) - a stale config name never reaches a request
+        * chain lists every distinct candidate in order: served model -> configured name ->
+          configured fallback -> fast model -> the rest of the installed models
+        * risk/budget are advisory labels carried through for callers; this method performs NO
+          load, touches NO GPU/VRAM code and cannot lower a gate - the governor still decides
+          admission at call time
+        * decision latency is measured per call (latency_ms); never raises
+
+        When `installed` is injected, the first usable entry is the last resort so the decision
+        is deterministic offline; the live path keeps the size-aware choice.
+        """
+        t0 = time.perf_counter()
+
+        def _done(model, configured, chain, reason):
+            return {"v": 1, "role": role, "model": model,
+                    "fallback": chain[1] if len(chain) > 1 else "", "chain": chain,
+                    "risk": str(risk)[:40], "budget": str(budget)[:40], "reason": reason,
+                    "latency_ms": round((time.perf_counter() - t0) * 1000, 3)}
+
+        try:
+            configured = self.get_model(role)
+            fb = self.get_model("fallback")
+            fast = self.get_model("fast")
+            usable: List[str] = []
+            if installed is not None:
+                listed = installed if isinstance(installed, (list, tuple, set)) else []
+                alts = [m for m in listed if isinstance(m, str)]
+                usable = [m for m in alts if not m.startswith(("nomic-embed", "all-minilm"))] or alts
+                if not usable:
+                    model = configured
+                elif configured in usable:
+                    model = configured
+                elif fb in usable:
+                    model = fb
+                else:
+                    model = usable[0]
+            else:
+                model = self._installed_alternative(configured)
+            chain: List[str] = []
+            for cand in (model, configured, fb, fast, *usable):
+                if cand and cand not in chain:
+                    chain.append(cand)
+            reason = ("configured model installed" if model == configured
+                      else f"configured '{configured}' unavailable - serving '{model}'")
+            return _done(model, configured, chain, reason)
+        except Exception as exc:              # a router decision must never break a caller
+            try:
+                configured = self.get_model(role)
+            except Exception:
+                configured = ""
+            return _done(configured, configured, [configured] if configured else [],
+                         f"route degraded ({type(exc).__name__})")
+
     def generate(
         self,
         user_content: str,

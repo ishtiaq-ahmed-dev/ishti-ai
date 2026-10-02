@@ -84,6 +84,7 @@ class IshtiDoctor:
         self._live(self.check_web_fetch, "Live page fetch")
         self.check_voice()               # internal live parts are budget-aware
         self.check_memory_and_skills()
+        self.check_install_state()
         self.check_services()
 
         if include_e2e:
@@ -304,6 +305,29 @@ class IshtiDoctor:
         up = SearxngSearchProvider().is_available()
         self._log_result("WebSearch", "Local SearXNG (Docker)", up,
                          SearxngSearchProvider.URL if up else "down - falling back to Wikipedia/Bing", is_warning=True)
+
+    def check_install_state(self):
+        """ECC-12: compare the tree with the recorded install baseline (data/install_state.json).
+        No baseline yet is a PASS with instructions, not a failure; drift is a WARNING (repair
+        is manual and never touches owner files)."""
+        print("\n--- [7b] Install State & Ownership ---")
+        try:
+            from orchestrator import install_state
+            d = install_state.drift()
+            if not d.get("baseline"):
+                self._log_result("Install", "Install baseline", True,
+                                 "none yet - run `python -m orchestrator.install_state capture`")
+                return
+            drifted = bool(d.get("missing") or d.get("modified"))
+            self._log_result(
+                "Install", "Skills/config drift", not drifted,
+                f"{d.get('checked', 0)} tracked; missing {len(d.get('missing') or [])}, "
+                f"modified {len(d.get('modified') or [])}, new {len(d.get('extra') or [])}",
+                is_warning=drifted)
+            if drifted:
+                print(f"  [WARN] {install_state.report(d)}")
+        except Exception as exc:   # the check must never break the suite
+            self._log_result("Install", "Install-state check", False, str(exc)[:200], is_warning=True)
 
     def check_services(self):
         print("\n--- [10] Services & Networking ---")
