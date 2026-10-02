@@ -556,6 +556,8 @@ per row). All local-only; none weakens an existing gate.
   transport runs (cloud backends are OPT-IN and off). Calls audit `risk=external`; results are
   untrusted data (`as_text()` fences them). `stats()["cloud_calls"]` stays 0 by construction.
 - `probe()` returns `{"ok", "detail"}` for the doctor. Tests: `tests/test_governed_search.py`.
+- Wired (commit `9e6003b`): `ishti/skills/internet_reach` exposes the non-OPT-IN `search` channel
+  (`reach search <query>`) - results arrive fenced as untrusted data and `cloud_calls` stays 0.
 
 ### 12.2 Workspace path confinement (OD-15) - `ishti/workspace.py`
 
@@ -591,7 +593,8 @@ per row). All local-only; none weakens an existing gate.
   `window.ishti.setState(<json>)`. Window options: on_top, frameless, non-resizable, no easy-drag,
   best-effort `WS_EX_NOACTIVATE`; the page shell is `pointer-events:none` (click-through).
 - Inbox: `ishti/channels/media.py::inbox_put/inbox_sweep/inbox_take/drop` - unique names,
-  single-use take, traversal-safe, small text inlined FENCED as untrusted data.
+  single-use take, traversal-safe, small text inlined FENCED as untrusted data. Wired (commit
+  `9e6003b`): `OverlayWindow.drop_file(path)` drops into this inbox and lights up the island.
 - Integrations: `desktop/overlay/integrations.py::status()` -> `off|paused|missing-cred|ok|error`;
   off until `opt_in()`, zero credential/network calls before that.
 
@@ -601,11 +604,16 @@ per row). All local-only; none weakens an existing gate.
   ("chunk N failed (...) - not pasted"); with no active session it refuses: nothing records.
   History is JSONL (`data/dictation_history.jsonl`, bounded); failed audio paths are preserved.
   `start/stop/start_ptt/release/apply_phrase/bind_ptt`. Tests: `tests/test_dictation.py`.
+- Wired (commit `9e6003b`): the tray menu toggles PTT (`desktop/tray.py::set_ptt/ptt_bound`);
+  OFF until the owner turns it on and nothing records outside an explicit session.
 
 ### 12.7 Session schema (ECC-09) - `ishti/session_schema.py`, `docs/SESSION_SCHEMA.md`
 
 - `make/validate/conforms/emit`; bus type `"session"`; `agent` regex `^[a-z0-9-]{1,24}$`, states
   `idle|thinking|working|finished|error|ratelimit|question`. Tests: `tests/test_session_schema.py`.
+- Wired (commit `9e6003b`): `hooks_relay.on_bus` maps `session` envelopes onto overlay pill events
+  (idle->SessionStart, thinking->UserPromptSubmit, working->PreToolUse, finished->Stop,
+  error->PostToolUseFailure, ratelimit->RateLimit, question->Notification).
 
 ### 12.8 Dev-side gates (ECC-01/04/08/12/13, COU-15)
 

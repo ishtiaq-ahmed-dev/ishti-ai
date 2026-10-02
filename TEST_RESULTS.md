@@ -635,3 +635,57 @@ Total: 163 tests in the 17 integration suites, all inside the 442-test run above
 | `desktop_control` live use | cua-driver not installed (N24/N25); skill ships manifest-DISABLED |
 | Real Telegram end-to-end | N22: token + pairing from the owner |
 
+
+# PART 3 — Status pass + wiring (2026-10-02, branch `feat/repo-integration`, commit `9e6003b`)
+
+## 1. Matrix status pass (the last P3 gate item)
+
+The matrix had shipped with every built row still saying `mapped`. Added `tools/audit_matrix_status.py`:
+it scans every file under `tests/` for each row's ID (explicit `T-` form and plain mentions),
+reports coverage, and (`--apply`) rewrites only rows a real suite cites. Report: `_work/matrix_status_report.json`.
+
+- All 23 proving suites re-run **3 consecutive times green** (`_work/status_pass_3x_run1..3.log`, 164 tests,
+  exit 0 each) plus the extended `internet_reach` suite (`_work/reach_3x_run1..3.log`, 53 tests, exit 0 each).
+- Result: **52 rows `tested`** (every PORT/ADAPT/IMPROVE/OPT-IN row with a green suite cited in its
+  Evidence cell) / **10 `proved-skip`** (NEEDS.md entries) / **69 `mapped` backlog** (listed per repo
+  in the matrix's "Status pass (2026-10-02)" section).
+- The audit also caught one over-claim: REACH-29 (`setup` wizard + `watch`) cited a test that actually
+  proves T-R24 (advisory update). REACH-29 is back to `mapped`; the citation moved to its real row.
+- WP-REACH coverage was completed with 8 new tests in the internet_reach suite:
+  T-R03/04/05/06/14/16 (ordered probed backends for web/youtube/rss/github/v2ex/xiaoyuzhou),
+  T-R22 (manifest route advertises every surface), T-R23 (`channels.json` can never hold cookie/
+  token/key material).
+
+## 2. Wiring the orphaned surfaces (commit `9e6003b`, 9 files, +250)
+
+Four shipped features had no production caller; each is now reachable from its natural entry point:
+
+| Row | Surface | Now called by |
+|---|---|---|
+| OD-14 | `ishti/gateway.py` (loopback-only governed search) | `internet_reach`'s new non-OPT-IN `search` channel (`reach search <query>`), fenced results, `cloud_calls == 0` |
+| ECC-09 | session envelopes (`ishti/session_schema.py`) | `hooks_relay.on_bus` maps states to overlay pill events (SessionStart/UserPromptSubmit/PreToolUse/Stop/PostToolUseFailure/RateLimit/Notification) |
+| COU-06/18 | unified inbox (`ishti/channels/media.py` drop/inbox_put/take/sweep) | `OverlayWindow.drop_file()` — a drop lands in `data/uploads/inbox`, content fenced as untrusted data, island lights up |
+| JEV-02 | `ishti/dictation.py` engine | tray menu "Push-to-talk (Right Alt)" (`set_ptt`/`ptt_bound`) |
+
+New/updated tests in the wiring commit: +4 in `tests/skills/internet_reach/test_internet_reach.py`,
++1 in `tests/test_hooks_relay.py`, +1 in `tests/test_overlay_window.py`, +2 in `tests/test_tray_merge.py`.
+All 4 suites green 3x (`_work/wiring_3x_run1..3.log`).
+
+Library-only by design (tests + self-check, no forced caller): `ishti/workspace.py`,
+`orchestrator/install_ops.py`; `orchestrator/plan_view.py` is reachable as
+`python -m orchestrator.plan_view [port]`.
+
+## 3. Regression
+
+- Full offline suite after the wiring commit: **445 collected / 445 passed, exit 0**
+  (`_work/suite_after_wiring.log`; 445 progress dots, no `F`/`E`).
+- Per-suite 3x logs: `_work/status_pass_3x_run*.log`, `_work/reach_3x_run*.log`, `_work/wiring_3x_run*.log`.
+
+## 4. Remaining backlog (honest)
+
+69 rows stay `mapped` (grouped per repo in the matrix). They are new capability, not defects:
+open-dots chat/UI + cloud connectors (N38) + computer runtime (N37 conditional), ecc
+skills-library import + later-audit rows, hey-jev macOS-action merges + UI rows, agent-reach
+login-state channels (N38) + setup/uninstall tooling, coucou COU-07 (Windows mail route) and
+COU-25 (multi-provider chat, OPT-IN). None of them is required by the P3 gate's already-shipped
+scope; each keeps its disposition + reason + evidence, so work can resume row by row.

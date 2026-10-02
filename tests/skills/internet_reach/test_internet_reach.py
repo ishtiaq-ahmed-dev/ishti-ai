@@ -1,7 +1,9 @@
 """Acceptance suite for `internet_reach` (WP-REACH).
 
-Covers matrix test IDs: T-R01 (registry), T-R02 (doctor+json), T-R19 (SSRF-guarded transcribe),
-T-R26 (UTF-8 subprocess), T-R28 (format), T-R29 (advisory update), plus the safety rows:
+Covers matrix test IDs: T-R01 (registry), T-R02 (doctor+json), T-R03 (web), T-R04 (youtube),
+T-R05 (rss), T-R06 (github), T-R14 (v2ex), T-R16 (xiaoyuzhou), T-R19 (SSRF-guarded transcribe),
+T-R22 (trigger aliases), T-R23 (config keeps no credential material), T-R24 (advisory update),
+T-R26 (UTF-8 subprocess), T-R28 (format), plus the safety rows:
 OPT-IN channels inert by default, doctor makes no network calls, manifest starts disabled,
 injection through fetched content stays fenced data.
 
@@ -116,7 +118,7 @@ def test_download_size_cap(tmp_path, monkeypatch):
     assert list(tmp_path.iterdir()) == [], "oversized partial download must be removed"
 
 
-# ---------------------------------------------------------------- T-R28 / T-R29: format + update
+# ---------------------------------------------------------------- T-R28 / T-R24: format + update
 def test_format_json_from_fenced_noise():
     out = _run("format this json: ```json\n{\"b\": 2, \"a\": [1,2]}\n``` done")
     assert out
@@ -133,6 +135,7 @@ def test_format_json_rejects_non_json():
 
 
 def test_update_check_is_advisory_only():
+    """T-R24: the update workflow only ever checks and reports - no auto-install path exists."""
     out = _run("reach check update")
     assert out and "advisory" in out["reply"] and "never auto-installs" in out["reply"]
 
@@ -254,3 +257,53 @@ def test_search_outage_is_honest(monkeypatch):
                         lambda q, transport=None: {"ok": False, "error": "searxng unreachable (ConnectionError)"})
     out = _run("reach search cats")
     assert out and "Local search did not answer" in out["reply"] and "nothing left this PC" in out["reply"]
+
+
+# ------------------------------------------- T-R03..R06/R14/R16: platform channel contract
+PLATFORM = {"web": "requests+bs4", "youtube": "yt-dlp", "rss": "stdlib-xml",
+            "github": "gh CLI", "v2ex": "requests", "xiaoyuzhou": "requests"}
+
+
+@pytest.mark.parametrize("channel,primary", sorted(PLATFORM.items()))
+def test_platform_channels_declare_ordered_probed_backends(channel, primary):
+    """T-R03/R04/R05/R06/R14/R16: every platform channel ships an ordered primary->fallback
+    backend list, the documented primary is first, every probe answers a bool without raising,
+    and doctor reports the channel's real state (ok / missing + repair) offline."""
+    spec = m.CHANNELS[channel]
+    backends = spec["backends"]
+    assert backends, f"{channel} must declare at least one backend"
+    assert backends[0]["name"] == primary, f"{channel} primary changed: {backends[0]['name']}"
+    for b in backends:
+        assert b.get("name") and b.get("probe"), b
+        assert b["probe"].split(":", 1)[0] in ("bin", "py", "mod"), b["probe"]
+        assert isinstance(m._probe(b["probe"]), bool), f"probe {b['probe']} must answer a bool"
+    row = {r["channel"]: r for r in m.doctor()}[channel]
+    assert row["state"] in ("ok", "missing", "opt-in-off"), row
+    if row["state"] == "missing":
+        assert row.get("repair"), f"{channel} missing without a repair hint"
+
+
+def test_trigger_aliases_cover_the_documented_channels():
+    """T-R22: the manifest route advertises every user-facing surface of this skill, so the
+    dispatcher's trigger phrases stay in sync with the registry."""
+    man = json.load(open(os.path.join(ROOT, "ishti", "skills", "internet_reach", "manifest.json"),
+                         encoding="utf-8"))
+    route = man["route"].lower()
+    for phrase in ("reach doctor", "which channels work", "youtube", "github", "rss", "bilibili",
+                   "reach search", "transcribe", "format this json", "reach version"):
+        assert phrase in route, f"route is missing '{phrase}'"
+    assert "search" in m.CHANNELS, "the local-search channel must be part of the registry"
+
+
+def test_config_file_keeps_no_credential_material():
+    """T-R23: the only persisted state is a channel->bool map. No cookies, tokens, keys or
+    passwords can ever land in data/reach/channels.json because nothing else is written."""
+    _run("reach enable twitter")
+    with open(m.CHANNELS_FILE, encoding="utf-8") as f:
+        raw = f.read()
+    data = json.loads(raw)
+    assert isinstance(data, dict) and data.get("twitter") is True
+    assert all(isinstance(v, bool) for v in data.values()), data
+    lowered = raw.lower()
+    for forbidden in ("cookie", "token", "password", "secret", "api_key", "authorization"):
+        assert forbidden not in lowered, f"credential material '{forbidden}' leaked into channels.json"

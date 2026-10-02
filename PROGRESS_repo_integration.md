@@ -22,7 +22,7 @@ Master log lives in `PROGRESS.md`; this file is the repo-integration resume poin
 ## Done (Phase 4-6)
 
 8. PHASE 4 build, merge order WP-OD -> WP-REACH -> WP-ECC -> WP-JEV -> WP-INTEGRATE(partial) -> WP-COUCOU -
-   **complete** (14 commits). Each feature: implement -> unit tests -> feature test -> peer review -> security
+   **complete** (15 commits). Each feature: implement -> unit tests -> feature test -> peer review -> security
    review -> integration test (full offline suite after each merge). New skills start DISABLED (T2 enable).
 9. PHASE 5: `TEST_RESULTS.md` **PART 2** - per-feature suites + 3x-green logs, measured before/after numbers,
    security numbers, regression (442/442 green, `_work/suite_final_verify.log`).
@@ -33,10 +33,26 @@ Master log lives in `PROGRESS.md`; this file is the repo-integration resume poin
 `docs/SKILL_CATALOG.md`, `docs/API_CONTRACT.md` §12, `THIRD_PARTY_NOTICES.md` addendum, `REPO_FEATURE_MATRIX.md`
 (131 rows).
 
-## Remaining (owner-gated only - no code work outstanding)
+## Done (Phase 7 - status pass + wiring, 2026-10-02, commit `9e6003b`)
 
-- N36 hey-jev license ask; N39 owner-approved live-STT set; N22/N23 real Telegram/WhatsApp pairing;
-  N7 microphone hardware; cua-driver install. See `FINAL_REPORT_repo_integration.md` section "Blocked".
+11. Matrix status pass: `tools/audit_matrix_status.py` maps every row to the test files that cite it;
+    all 23 proving suites re-run 3x green -> **52 rows `tested`** (Evidence cells name the suite),
+    10 `proved-skip`, **69 `mapped` backlog** grouped per repo in the matrix's status-pass section.
+    Caught + fixed one over-claim (REACH-29 cited the T-R24 update check) and completed WP-REACH's
+    proof line with 8 new channel-contract tests (T-R03/04/05/06/14/16/22/23).
+12. Wiring: gateway -> `internet_reach` search channel (OD-14); session envelopes -> overlay pill
+    events (ECC-09); overlay drop -> unified media inbox (COU-06/18); tray push-to-talk (JEV-02).
+    Regression: full offline suite **445/445 green** (`_work/suite_after_wiring.log`); PART 3 of
+    `TEST_RESULTS.md` holds the evidence; catalog generator re-run = zero diff.
+
+## Remaining
+
+- Owner-gated (unchanged): N36 hey-jev license ask; N39 owner-approved live-STT set; N22/N23 real
+  Telegram/WhatsApp pairing; N7 microphone hardware; cua-driver install; N37 (only if Docker proves
+  insufficient for the computer runtime). See `FINAL_REPORT_repo_integration.md` section "Blocked".
+- 69 `mapped` rows are code work, not blockers - new capability listed per repo in `REPO_FEATURE_MATRIX.md`
+  (open-dots chat/UI + connectors + runtime, ecc library/later-audit rows, hey-jev macOS-action merges,
+  agent-reach login-state channels + setup tooling, coucou COU-07/25). Resume row by row via their Test IDs.
 
 ## Environment facts measured 2026-10-01 (do not re-claim unmeasured)
 

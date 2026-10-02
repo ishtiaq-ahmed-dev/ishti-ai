@@ -7,9 +7,15 @@ workstream report alongside `FINAL_REPORT.md` (Remote Control) and `FINAL_REPORT
 
 ## Verdict: **READY WITH KNOWN ISSUES** (all remaining items owner-gated)
 
-14 commits on the branch; full offline suite **442/442 green**; every new skill starts DISABLED;
+15 commits on the branch; full offline suite **445/445 green**; every new skill starts DISABLED;
 every cloud capability is OPT-IN and OFF by default. The "known issues" are owner decisions and
 blocked hardware, not code defects.
+
+Status pass (2026-10-02, commit `9e6003b` + the doc pass): the matrix status column now reflects
+real evidence - **52 rows `tested`** (3x-green suites cited in each row), **10 `proved-skip`**,
+**69 `mapped`** backlog listed per repo in `REPO_FEATURE_MATRIX.md` (audited by
+`tools/audit_matrix_status.py`, report `_work/matrix_status_report.json`). Four orphaned surfaces
+(gateway, session schema, media inbox, dictation engine) are now wired to real callers.
 
 ## Coverage
 
@@ -38,7 +44,8 @@ blocked hardware, not code defects.
 |---|---|
 | Every matrix row dispositioned, no silent drops | **PASS** — 131 rows; unmapped = 0 (runs 1+2) |
 | Each feature: implement -> tests -> 3x green -> review | **PASS** — 163 tests in 17 integration suites; per-file 3x-green logs in `_work/` |
-| Full offline suite green after all merges | **PASS** — 442 collected / 442 passed, exit 0 |
+| Matrix status column reflects real evidence | **PASS** — 52 `tested` / 10 `proved-skip` / 69 `mapped` backlog; audit script + 3x-green logs (`TEST_RESULTS.md` PART 3) |
+| Full offline suite green after all merges | **PASS** — 445 collected / 445 passed, exit 0 (`_work/suite_after_wiring.log`) |
 | New skills start disabled; T2 to enable | **PASS** — `internet_reach`, `security_scan`, `skill_creator`, `vulnscan`, `desktop_control` |
 | Zero cloud calls by default (all cloud/account features OPT-IN, OFF) | **PASS** — gateway refuses non-loopback before transport; integration pills fetch nothing until opt-in |
 | No security high findings in production code | **PASS** — 1 high = scanner self-match; independent scan 23 medium / 0 high |
@@ -57,8 +64,12 @@ blocked hardware, not code defects.
 
 ## Honest notes
 
+- 69 of 131 rows remain `mapped` backlog (new capability, not defects); they are grouped per repo in
+  the matrix's status-pass section and are NOT silently counted as done.
+- Library-only by design: `ishti/workspace.py` and `orchestrator/install_ops.py` (tests + self-check;
+  no forced caller). `orchestrator/plan_view.py` is reachable as `python -m orchestrator.plan_view`.
 - The working tree during the final run also contained the owner's pending Cycle-4 performance edits
-  (vram/models/health/etc., not part of this branch's commits); the 442/442 result is for the combined
+  (vram/models/health/etc., not part of this branch's commits); the 445/445 result is for the combined
   tree. Branch-only CI-equivalent evidence is the per-WP 3x-green logs.
 - The review gate's repo-wide lint/format verdict reflects the project's existing style baseline
   (no ruff config); see `REVIEW_SIGNOFF.md` for the full triage.

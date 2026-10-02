@@ -481,3 +481,9 @@ Work packages landed (each with 3-consecutive-green tests):
 
 Evidence and numbers: TEST_RESULTS.md (PART 2); per-repo verdicts: FINAL_REPORT_repo_integration.md;
 sign-off: REVIEW_SIGNOFF.md; completeness: COMPLETENESS_AUDIT.md (runs 1+2).
+
+2026-10-02 status pass + wiring (commit 9e6003b, `TEST_RESULTS.md` PART 3): matrix evidence audit
+(`tools/audit_matrix_status.py`) -> 52 rows `tested` / 10 `proved-skip` / 69 `mapped` backlog (listed
+per repo in REPO_FEATURE_MATRIX.md). Orphaned surfaces wired to real callers: gateway ->
+`internet_reach` search channel, session envelopes -> overlay pills, overlay drop -> unified inbox,
+tray push-to-talk. Full offline suite 445/445 green; catalog generator idempotent.

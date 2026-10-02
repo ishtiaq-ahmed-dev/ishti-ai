@@ -422,7 +422,14 @@ BLOCKED only *if* Docker proves insufficient in T-OD-09..11. *Needed:* your appr
 `Enable-WindowsOptionalFeature -Online -FeatureName Containers-DisposableClientVM` — only then.
 
 ## N38. OPT-IN surfaces awaiting owner enablement (by design, default OFF)
-OD-07/08 connectors, OD-22 remote computer, REACH login-state channels (Twitter/Reddit/FB/IG/XHS/
-LinkedIn/Boss), REACH Exa/mcporter, COU-08 integration pills. Implemented but inert; each needs your
-explicit enablement + keys in Credential Manager before it can send anything, and personal data never
-flows to a connector you have not enabled. *Needed:* nothing until you want one.
+Implemented and inert (status pass 2026-10-02): REACH login-state channels (Twitter/Reddit/FB/IG/
+XHS/LinkedIn/Boss) and REACH Exa/mcporter exist in the channel registry and start OFF - `reach
+enable <channel>` writes a local boolean only (nothing is sent, no cookies are read), and the
+COU-08 integration pills are tested OFF. Each needs your explicit enablement + keys in Credential
+Manager before it can send anything, and personal data never flows to a connector you have not
+enabled.
+
+NOT built, awaiting an explicit owner ask (these stay `mapped` in REPO_FEATURE_MATRIX): OD-07
+Composio connectors (the local MCP connector framework is the replacement path), OD-08 GitHub
+create-issue connector (the read-only gh channel exists; write actions stay T2 and unbuilt),
+OD-22 third-party remote computer provider. *Needed:* say the word if you want any of these.
