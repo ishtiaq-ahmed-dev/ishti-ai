@@ -96,6 +96,11 @@ def route(text, skills, exclude=()):
     for s in sorted(live.values(), key=lambda s: s.manifest.get("priority", 50)):
         if s.matches(text):
             return done(s.name, 1.0, "rule")
+    # A skill that ships switched off ("disabled") but whose own trigger asks for it exactly: offered, never run silently -
+    # the dispatcher asks "turn it on?" first (owner: "when they are needed it should be usable").
+    for s in sorted(skills.values(), key=lambda s: s.manifest.get("priority", 50)):
+        if s.status == "disabled" and s.name not in exclude and s.name not in blocked and s.matches(text):
+            return done(s.name, 1.0, "rule", needs_enable=True)
 
     extra = {}
     r = laya()

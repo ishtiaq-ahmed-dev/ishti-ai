@@ -48,6 +48,8 @@ ISHTI_FACTS = (
 
 def asks_about_me(t):
     """A question about the owner themselves: "where do I study?", "where i stid ?" (typo), "what's my major"."""
+    if re.search(r"\bwhat\s+(?:do|does)\s+(?:i|my\s+\w+)\s+(?:like|love|prefer|hate|dislike)\b", t, re.I):
+        return False  # likes live in the relationship graph (the relationships skill answers them)
     words = re.findall(r"[a-z']+", t.lower())
     if not words or not (t.rstrip().endswith("?") or words[0] in ("where", "what", "which", "when", "whats", "what's")):
         return False
@@ -242,9 +244,16 @@ def run(text, session):
             rows = f.db.execute("SELECT entity, attr, value FROM facts ORDER BY key, attr").fetchall()
         return {"reply": "\n".join(f"- {e} {a}: {v}" for e, a, v in rows) or "Nothing saved yet.", "sources": []}
     if CAN.match(t):
+        # a person asking "what can you do" wants the gist, not 124 raw route strings: one line per area, with the skills in it
         from ishti.dispatcher import SKILLS
-        lines = [f"- {n} ({s.status}): {s.manifest['route']}" for n, s in SKILLS.items()]
-        return {"reply": "Skills:\n" + "\n".join(lines), "sources": []}
+        areas = {}
+        for n, s in SKILLS.items():
+            if s.status == "working":
+                areas.setdefault(s.category or "General", []).append(n.replace("_", " "))
+        lines = [f"- **{cat}** ({len(ns)}): {', '.join(sorted(ns)[:6])}{' ...' if len(ns) > 6 else ''}" for cat, ns in sorted(areas.items())]
+        return {"reply": f"I can do {sum(len(v) for v in areas.values())} kinds of things, all on this PC:\n" + "\n".join(lines)
+                         + "\n\nJust ask in plain words - e.g. \"remind me at 5 to call Ammi\", \"send hi to Ishtiaq on WhatsApp\", "
+                           "\"what's the price of bitcoin\". The full list is on the Skills page.", "sources": []}
     from orchestrator.doctor import IshtiDoctor
     # Interactive diagnostics must answer within a chat turn: 20 s cap (static checks + bounded live
     # probes). The DOCTOR tab can afford the full budget; a chat reply cannot (loop-2 fix).

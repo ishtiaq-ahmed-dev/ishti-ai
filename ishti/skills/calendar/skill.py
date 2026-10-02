@@ -74,7 +74,8 @@ def _parse(text):
         day = start.date()
     start = dt.datetime.combine(day, start.time())
     return str(d.get("title") or "Event").strip(), start, start + dt.timedelta(minutes=int(d.get("minutes") or 60)), \
-        str(d.get("place") or "").strip(), d.get("repeat") if d.get("repeat") in ("weekly", "daily") else ""
+        str(d.get("place") or "").strip(), (d.get("repeat") if d.get("repeat") in ("weekly", "daily")
+                                            and re.search(r"\b(?:every|each|weekly|daily)\b", text, I) else "")  # "an exam on monday" is once
 
 
 def occurrences(start_day, end_day):
@@ -99,28 +100,37 @@ def op_add(m, text, session):
         title, start, end, place, repeat = _parse(text)
     except (ValueError, KeyError, TypeError):
         return "When is it? e.g. \"add a meeting with Ali tomorrow at 3pm for an hour\"."
-    clash = [o for o in occurrences(start.date(), start.date()) if o[0] < end and o[1] > start]
+    all_day = not TIMED.search(text)  # "I have an exam on monday": no time said -> the whole day, not midnight-to-1am
+    if all_day:
+        start = dt.datetime.combine(start.date(), dt.time())
+        end = start + dt.timedelta(hours=23, minutes=59)
+    clash = [] if all_day else [o for o in occurrences(start.date(), start.date()) if o[0] < end and o[1] > start]
     with db() as c:
         c.execute("INSERT INTO events VALUES(?,?,?,?,?,?)", (uuid.uuid4().hex, start.timestamp(), end.timestamp(), title, place, repeat))
-    try:  # a heads-up 15 minutes before (one-off events)
+    heads_up = start - (dt.timedelta(hours=4) if all_day else dt.timedelta(minutes=15))  # all-day: 20:00 the evening before
+    try:  # a heads-up before (one-off events)
         from ishti.skills.reminders.skill import _db as rdb
         import time
-        if not repeat and start - dt.timedelta(minutes=15) > dt.datetime.now():
+        if not repeat and heads_up > dt.datetime.now():
             f = rdb()
             with f.lock, f.db:
                 f.db.execute("INSERT INTO reminders(due, text, created) VALUES(?,?,?)",
-                             ((start - dt.timedelta(minutes=15)).timestamp(), f"{title} at {start:%H:%M}" + (f" ({place})" if place else ""), time.time()))
+                             (heads_up.timestamp(), (f"{title} tomorrow" if all_day else f"{title} at {start:%H:%M}") + (f" ({place})" if place else ""),
+                              time.time()))
     except Exception as _exc:
         swallowed('ishti/skills/calendar/skill.py:op_add', _exc)
-    when = f"{start:%a %d %b, %H:%M}-{end:%H:%M}" + (f", {repeat}" if repeat else "")
+    when = (f"{start:%a %d %b} (all day)" if all_day else f"{start:%a %d %b, %H:%M}-{end:%H:%M}") + (f", {repeat}" if repeat else "")
     warn = ("\n⚠ Clashes with: " + ", ".join(f"{o[2]} ({o[0]:%H:%M}-{o[1]:%H:%M})" for o in clash)) if clash else ""
-    reply = f"Added **{title}** on {when}" + (f" at {place}" if place else "") + ". I'll remind you 15 minutes before." * (not repeat) + warn
+    nudge = (" I'll remind you the evening before at 20:00." if all_day else " I'll remind you 15 minutes before.") if not repeat else ""
+    reply = f"Added **{title}** on {when}" + (f" at {place}" if place else "") + "." + nudge + warn
     if GOOGLE.search(text):
         return to_google(title, start, end, place, session, reply)
     return reply
 
 
 GOOGLE = re.compile(r"\bgoogle\s+calendar\b|\bgcal\b", I)
+TIMED = re.compile(r"\b\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)|\bat\s+\d{1,2}\b|\b\d{1,2}:\d{2}\b|\b(?:noon|midnight|morning|afternoon|"
+                   r"evening|tonight|night)\b|\bfor\s+(?:an?\s+|\d+\s+)?(?:hour|minute)s?\b", I)
 
 
 def google_url(title, start, end, place=""):

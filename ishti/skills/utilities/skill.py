@@ -129,9 +129,15 @@ def op_time_in(m, text, session):
 def op_translate(m, text, session):
     body, lang = (m.group("body"), m.group("lang")) if m.group("body") else (m.group("body2"), m.group("lang2"))
     phrase = body.strip(" \"'")
-    out = llm.ask(f"Translate into {lang}. Output only the translation.\n\n{phrase}", role="translator",
-                  system=None, temperature=0, max_tokens=400)
-    return out.strip()
+    script = {"urdu": "Urdu script (اردو)", "pashto": "Pashto script (پښتو)", "arabic": "Arabic script", "persian": "Persian script",
+              "hindi": "Devanagari script", "chinese": "Chinese characters"}.get(lang.strip().lower(), f"{lang}")
+    out = llm.ask(f"Translate the text below into {lang.strip().title()}, written in {script}. Output only the translation - no "
+                  f"quotes, no notes, no transliteration.\n\nText: {phrase}", role="translator", system=None, temperature=0, max_tokens=400)
+    out = out.strip().strip('"')
+    if not out or out.lower() == phrase.lower():  # the small model echoed it: one stricter try on the main model
+        out = llm.ask(f"Give the {lang.strip().title()} translation ({script}) of: {phrase}\nOnly the translation.", role="planner",
+                      system=None, temperature=0, max_tokens=200).strip().strip('"')
+    return {"reply": out, "sources": [], "no_translate": True}  # the answer IS in the other language: never translate it back
 
 
 def op_define(m, text, session):
@@ -155,7 +161,8 @@ def op_define(m, text, session):
 def op_news(m, text, session):
     import feedparser
     topic = re.sub(r"\b(?:latest|today'?s?|top|the|news|headlines|about|on|for|of|what(?:'s| is)|give\s+me|show\s+me|any|me)\b", " ", text, flags=I)
-    topic = re.sub(r"\s+", " ", topic).strip(" ?.")
+    topic = re.sub(r"^(?:in|from|of)\s+", "", re.sub(r"\s+", " ", topic).strip(" ?.")).strip()  # "news in pakistan" -> "pakistan"
+    topic = topic[:1].upper() + topic[1:]
     city, country = owner_place()
     url = ("https://news.google.com/rss/search?q=" + requests.utils.quote(topic) if topic else "https://news.google.com/rss") \
           + ("&" if topic else "?") + "hl=en-PK&gl=PK&ceid=PK:en"

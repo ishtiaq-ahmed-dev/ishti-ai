@@ -350,6 +350,15 @@ def _transcribe(target: str, session) -> dict:
         return {"reply": f"Local transcription failed: {exc}"}
 
 
+TRIGGER = re.compile(r"\breach\s+(?:doctor|status|json|version|enable|disable|search)\b|\b(?:which|check\s+my)\s+(?:internet\s+)?channels\b|"
+                     r"\btranscribe\s+(?:this\s+|that\s+|the\s+)?(?:video|podcast|audio|link|url)?\s*(?:link\s+)?https?://|\bformat\s+this\s+json\b", re.I)
+
+
+def match(text):
+    """Its own explicit phrases only (the owner's words), so it can be offered even while switched off."""
+    return bool(TRIGGER.search(text or ""))
+
+
 def run(text: str, session):
     t = str(text or "").strip()
     low = t.lower()

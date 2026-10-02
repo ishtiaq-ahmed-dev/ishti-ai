@@ -51,17 +51,28 @@ def _offline(monkeypatch):
 
 
 # ------------------------------------------------------------------ lifecycle statuses
-@pytest.mark.parametrize("status", ["disabled", "draft", "retired"])
+@pytest.mark.parametrize("status", ["draft", "retired"])
 def test_non_routable_status_never_chosen(status):
     skills = {"ghost": FakeSkill("ghost", status=status, hit=True), "chat": FakeSkill("chat", hit=False)}
     dec = R.route("anything at all", skills)
     assert dec["skill"] != "ghost", dec
 
 
-@pytest.mark.parametrize("status", ["disabled", "draft", "retired"])
+@pytest.mark.parametrize("status", ["draft", "retired"])
 def test_non_routable_status_never_chosen_as_only_skill(status):
     dec = R.route("anything at all", {"ghost": FakeSkill("ghost", status=status, hit=True)})
     assert dec["skill"] is None, dec
+
+
+def test_disabled_skill_is_only_offered_when_its_own_trigger_asks_for_it():
+    """A shipped-off skill is never run silently: its exact trigger returns it flagged needs_enable (the dispatcher asks
+    "turn it on?"), and a working skill's trigger always wins over it."""
+    dec = R.route("anything at all", {"ghost": FakeSkill("ghost", status="disabled", hit=True)})
+    assert dec["skill"] == "ghost" and dec.get("needs_enable"), dec
+    dec = R.route("anything at all", {"ghost": FakeSkill("ghost", status="disabled", hit=True), "chat": FakeSkill("chat", hit=True)})
+    assert dec["skill"] == "chat" and not dec.get("needs_enable"), dec
+    dec = R.route("anything at all", {"ghost": FakeSkill("ghost", status="disabled", hit=False)})
+    assert dec["skill"] != "ghost", dec
 
 
 def test_broken_status_still_excluded():

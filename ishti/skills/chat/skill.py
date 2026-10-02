@@ -39,7 +39,29 @@ BACKCHANNEL = re.compile(r"\b(?:thanks|thank\s+you|that\s+helped|that\s+helps|th
                          r"well\s+done|nice\s+work|appreciate\s+it|got\s+it|makes\s+sense)\b", re.I)
 
 
+# "did you edit it?" / "have you sent it yet?" asks about what already happened - answered from the conversation (honestly), never by
+# running the skill again (Laya sent "DID YOU EDITED IT ?" to capcut, which re-ran and claimed effects it never added).
+DID_YOU = re.compile(r"^\s*(?:so\s+|and\s+|but\s+)?(?:did|have|has|were|was)\s+(?:you|it)\s+(?:\w+\s+){0,2}?(?:\w+ed|sent|done|made|"
+                     r"finished|written|seen|read|got|gotten|it|that|this|them|him|her|send|edit|make|do|open|add|save|delete|"
+                     r"book|call|remind|set|finish|complete|create|write|reply|check|buy|order|pay|post|upload|download)\b[^?]{0,60}\??\s*$", re.I)
+
+
+# "What is the capital of Pakistan?" / "how does a vaccine work" / "who was Allama Iqbal": timeless knowledge the model answers itself
+# in a second. Laya sent it to web search, which pasted raw search snippets (owner's chat). Live topics (prices, news, weather,
+# "latest") are claimed by their own rules first; anything about the owner or this PC is not general knowledge.
+KNOWLEDGE = re.compile(r"^\s*(?:what|who|where|when|which|why|how)\s+(?:is|are|was|were|does|do|did|many|much|far|long|old|big)\b", re.I)
+# also anything dated ("how many days until eid" was answered with an invented date): the calendar moves, the model's memory doesn't
+PERSONAL = re.compile(r"\b(?:my|me|mine|i|i'm|our|we|you|your|ishti|this\s+pc|today|tonight|tomorrow|now|latest|current|price|weather|"
+                      r"until|till|left|next|upcoming|this\s+year|20\d\d|date|days|score|won|winner|election|president|prime\s+minister|ceo)\b", re.I)
+
+
 def match(text):
+    if DID_YOU.match(text):
+        return True
+    if KNOWLEDGE.match(text) and not PERSONAL.search(text) and len(text.split()) <= 14:
+        from orchestrator.intent_detector import IntentDetector
+        if IntentDetector.classify(text)["mode"] == "LOCAL_KNOWLEDGE":
+            return True
     # arithmetic, creative writing and code questions: Laya zero-shot sends "a haiku about rain" to weather,
     # "write a python function ..." to apps and "fix a segfault in C" to capcut.
     # Back-channel ("thanks, that helped") is a chat reply too - routing it to a task skill answers
@@ -97,7 +119,20 @@ def _honesty_guard(reply):
     return reply
 
 
+def did_you(text, session):
+    """"Did you edit it?" - answered only from what this conversation shows was done (the honest answer is often "no")."""
+    turns = "\n".join(f"{'Owner' if m['role'] == 'user' else 'ISHTI'}: {str(m['content'])[:500]}" for m in session.get("history", [])[-8:])
+    out = llm.ask(f"Conversation so far:\n{turns or '(nothing yet)'}\n\nThe owner now asks: {text}\n\n"
+                  "Answer whether that action was actually DONE, using only the conversation above. It counts as done only if an ISHTI "
+                  "message clearly reports the finished result (not a plan, not a question, not \"I will\"). If it was not done or you "
+                  "cannot tell, say plainly that it was not done yet and offer to do it now. Two sentences at most.",
+                  role="planner", system=llm.style(), temperature=0, max_tokens=120)
+    return {"reply": out or "No - I haven't done that yet. Shall I do it now?", "sources": []}
+
+
 def run(text, session):
+    if DID_YOU.match(text):
+        return did_you(text, session)
     route = session.get("route") or {}
     if not isinstance(route, dict):
         route = {}

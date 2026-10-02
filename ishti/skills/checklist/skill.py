@@ -91,6 +91,10 @@ def _lists():
 
 def match(text):
     t = text.strip()
+    if TICK.match(t):  # "mark drink water as done": a pending reminder/task of that name is the reminders skill's
+        from ishti.skills.reminders.skill import _done_rows
+        if _done_rows(t):
+            return False
     return bool(NEW.match(t) or ADD.match(t) or TICK.match(t) or LEFT.match(t)
                 or RESET.match(t) or LISTS.match(t) or SHOW.match(t))
 

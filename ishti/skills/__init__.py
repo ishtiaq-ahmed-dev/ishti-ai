@@ -247,6 +247,24 @@ def ask_first(session, skill, question, action):
     return {"reply": question.rstrip(" ?") + "? (yes/no)", "sources": []}
 
 
+def enable_skill(name) -> bool:
+    """Switch a shipped-off skill on for good (manifest status -> working), after the owner said yes. Returns True."""
+    path = os.path.join(HERE, name, "manifest.json")
+    with open(path, encoding="utf-8") as f:
+        m = json.load(f)
+    m["status"] = "working"
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(m, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    try:
+        from ishti.dispatcher import SKILLS
+        if name in SKILLS:
+            SKILLS[name].manifest["status"] = "working"
+    except Exception as exc:
+        print(f"[skills] {name} enabled on disk; live registry not updated ({exc})")
+    return True
+
+
 def log_need(kind, skill, request, detail):
     """Errors and capability gaps go to the needs log (what was asked, what failed, why) instead of being
     swallowed. The same kind+skill+detail is logged once. Logging must never break the caller, but a log that

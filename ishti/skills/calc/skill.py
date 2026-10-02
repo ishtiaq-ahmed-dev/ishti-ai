@@ -14,7 +14,7 @@ _OPS = [
     ("derivative", re.compile(r"^\s*(?:please\s+)?(?:derivative|differentiate)\s+(?:of\s+)?(?P<body>.+)$", I)),
     ("integral", re.compile(r"^\s*(?:please\s+)?integral\s+(?:of\s+)?(?P<body>.+)$", I)),
     ("simplify", re.compile(r"^\s*(?:please\s+)?simplify\s+(?P<body>.+)$", I)),
-    ("percent", re.compile(r"^\s*what\s+(?:is\s+)?(?P<p>\d[\d.]*)\s*%\s+of\s+(?P<n>\d[\d,.]*)\s*\??$|^\s*(?P<n2>\d[\d,.]*)\s+is\s+what\s+percent\s+of\s+(?P<n3>\d[\d,.]*)\s*\??$", I)),
+    ("percent", re.compile(r"^\s*(?:what(?:'s|\s+is)?\s+|calculate\s+)?(?P<p>\d[\d.]*)\s*(?:%|percent)\s+of\s+(?P<n>\d[\d,.]*)\s*\??$|^\s*(?P<n2>\d[\d,.]*)\s+is\s+what\s+percent\s+of\s+(?P<n3>\d[\d,.]*)\s*\??$", I)),
     ("tip", re.compile(r"^\s*(?:calculate\s+)?(?:the\s+)?tip\s+(?:on|for)\s+(?:rs\.?|pkr|\$)?\s*(?P<amt>\d[\d,.]*)(?:\s+(?:at|with)\s+(?P<pct>\d[\d.]*)\s*%)?\s*$", I)),
     ("loan", re.compile(r"^\s*(?:calculate\s+)?loan\s+payment\s+(?:of\s+)?(?:rs\.?|pkr|\$)?\s*(?P<principal>\d[\d,.]*)\s*(?:at|with|@)\s*(?P<rate>\d[\d.]*)\s*%\s*(?:for|over)\s*(?P<years>\d+)\s*years?\s*$", I)),
     ("prime", re.compile(r"^\s*(?:prime\s+factors?\s+of|factori[sz]e)\s+(?P<n>\d+)\s*$", I)),

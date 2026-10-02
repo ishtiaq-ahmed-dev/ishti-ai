@@ -14,11 +14,14 @@ from typing import Dict, Any
 
 # Real-time triggers: answering these from model weights is always wrong.
 TEMPORAL_TRIGGERS = [
-    "today", "now", "currently", "latest", "recent", "this week", "this month",
+    # bare "now" / "today" / "tomorrow" are not live-data cues: "can you please now tell me" and "I have to go tomorrow" were
+    # sent to web search (owner's chats). Only phrases that ask about the world's current state qualify.
+    "news today", "today's news", "happening now", "right now in", "today in", "currently", "latest", "recent", "this week", "this month",
+    "who won", "match result", "match today", "yesterday's match", "exchange rate", "dollar rate", "gold rate", "petrol price",
     "this year", "current price", "current version", "current news", "newest",
     "recently released", "what happened", "what changed", "who is currently",
     "breaking news", "stock price", "crypto price", "weather", "score", "standings",
-    "tomorrow", "price of", "version of", "news about", "status of",
+    "price of", "version of", "news about", "status of",
     # "live" on its own is not a live-data cue - "I live in Peshawar" is a statement about
     # the owner, not a request for real-time data. Only the unambiguous phrases qualify.
     "live score", "live price", "live status", "live updates", "going live",
