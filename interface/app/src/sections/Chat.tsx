@@ -15,6 +15,7 @@ import { Markdown } from "@/components/Markdown";
 import { MediaPreview } from "@/components/MediaPreview";
 import { LiveMode } from "@/components/LiveMode";
 import { cn } from "@/lib/utils";
+import { useBootState } from "@/lib/boot";
 
 type Msg = {
   id: number;
@@ -67,6 +68,7 @@ type Props = {
 };
 
 export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
+  const boot = useBootState();
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(() => {
@@ -614,6 +616,8 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                   <span className="text-accent font-medium truncate">
                     {running > 1 ? `Working on ${running} tasks` : resolveAgentState(msgs.find((m) => m.live)?.events, true).label}
                   </span>
+                ) : boot && !boot.ready ? (
+                  <span className="text-muted-foreground">{boot.unreachable ? "Waiting for the server…" : `Starting up · ${boot.progress}% — you can already type`}</span>
                 ) : (
                   "Local · private · ready"
                 )}

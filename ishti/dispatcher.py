@@ -478,6 +478,7 @@ RECOVER = _recover()  # what the previous run was still doing when it stopped
 
 def _run(text, s, dec):
     """Run the decided skill; if it declines ("not mine"), fall through to the next best one."""
+    from ishti import calltrace
     tried, out, name = set(), None, None
     while dec["skill"]:
         name = dec["skill"]
@@ -501,7 +502,10 @@ def _run(text, s, dec):
                 else:
                     with audit.context(skill=name, initiator=initiator_of(dec, s, tried), tier=tier, view=s):
                         audit.record(f"run {name}", why(dec))
-                        out = SKILLS[name].run(text, s)
+                        if not dec.get("source"):  # the rule: no skill call without a concrete reason in the plan (ishti/calltrace.py)
+                            calltrace.flag(f"{name} ran for '{mask(text, s.get('redact'))[:60]}' with no route reason")
+                        with calltrace.timed("skill", name, why=why(dec)[:90]):
+                            out = SKILLS[name].run(text, s)
                         killswitch.check()  # killed mid-skill: whatever it returned (often a swallowed error) is dropped
                 gate = s.get("pending")
                 if gate and gate.get("action") and "request" not in gate:
@@ -545,6 +549,8 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
     Skills add their own tool events with session["trace"](type="tool", ...)."""
     t0 = time.perf_counter()
     killswitch.begin()
+    from ishti import calltrace
+    calltrace.begin(text)
     conv = get_conversation_manager()
     sid = session_id or conv.active_session_id or conv.new_chat("New Session")
     shared = SESSIONS.setdefault(sid, {"id": sid, "history": [], "pending": None, "last_entity": None})
@@ -581,6 +587,14 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
         shared["tasks"] = (shared.get("tasks", []) + [task])[-10:]
     _inflight(sid, text)
     try:
+        from ishti import lifecycle
+        # Still starting (the dashboard opens ~1 s after launch, the models keep loading): say what is loading and queue
+        # the request instead of failing or hanging in silence.
+        not_ready = lifecycle.await_brain(lambda m: s["trace"](type="tool", name="startup", label=m, status="waiting"))
+        if not_ready:
+            s["trace"](type="done", skill=None, ms=round((time.perf_counter() - t0) * 1000))
+            return {"request": text, "final_answer": not_ready, "mode": "STARTING", "skill": None, "sources": [], "session_id": sid,
+                    "channel": channel, "route": {}, "latency_ms": round((time.perf_counter() - t0) * 1000)}
         with audit.context(session=sid, channel=channel, request=text):
             audit.record(f"request: {text[:150]}", initiator="standing" if channel == "scheduled" else "owner", skill="")
             res = _handle(text, sid, conv, s, events, t0, channel)
@@ -630,7 +644,29 @@ def already_in(reply, lang):
         return bool(PASHTO.search(reply))
     if lang == "Urdu":
         return bool(URDU.search(reply)) and not PASHTO.search(reply)
+    if lang == "English":
+        return looks_english(reply)
     return False  # Roman Urdu: skills answer in English, always rewritten
+
+
+_EN_WORDS = frozenset("the a an and or of to in on at for with from is are was were be been it this that these those you your i we "
+                      "they he she not no yes can will would should could have has had do does did if then than as by about what "
+                      "which who when where how there here my me our us them his her its so but also just more most some any "
+                      "all one two please sorry ok okay".split())
+
+
+def looks_english(reply):
+    """True when `reply` is plainly English already, so "translate it into English" would be a no-op model call (0.2-5 s per
+    reply, and the translator once invented a different answer for a short message: measured 2026-10-02). Conservative:
+    only Latin-script text qualifies, and anything longer than a few words must contain English function words, so a French
+    or Spanish reply still goes to the translator. Numbers, code and short fragments ("12", "Done.") have no language."""
+    if URDU.search(reply) or DEVANAGARI.search(reply) or any(c.isalpha() and ord(c) > 0x24F for c in reply):   # any non-Latin letter
+        return False
+    words = re.findall(r"[A-Za-z']+", reply)
+    if len(words) < 4:
+        return True
+    hits = sum(w.lower() in _EN_WORDS for w in words)
+    return hits >= 2 and hits / len(words) >= 0.12
 
 
 _TRANSLATOR_META = re.compile(r"\b(?:please\s+(?:provide|paste|give|share)|what\s+text|i\s+need\s+the\s+(?:original|text)"
@@ -921,7 +957,14 @@ def _handle(text, sid, conv, s, events, t0, channel):
                why=why(dec), scores=dec.get("scores", []), steps=dec.get("steps", []))
     if dec["skill"] == "plan":
         # each step gets its own view (own route, no token stream): independent steps run in parallel
-        name, out = "plan", planner.run(steps, s, lambda t, d: _run(t, View(s.shared, trace=s["trace"]), d)[1])
+        def run_step(t, d):
+            # a step that is just "what time is it" is answered by the instant reflex, whichever skill the plan gave it
+            # (Laya had sent it to the weather skill: two web calls for a clock question)
+            if reflex.pure(t):
+                s["trace"](type="step", skill="reflex", status="start", why="an instant command")
+                return {"reply": reflex.answer(t)[0], "sources": []}
+            return _run(t, View(s.shared, trace=s["trace"]), d)[1]
+        name, out = "plan", planner.run(steps, s, run_step)
     else:
         name, out, dec = _run(text, s, dec)
         tried, current = {name}, name
@@ -943,7 +986,7 @@ def _handle(text, sid, conv, s, events, t0, channel):
     if s.get("injected"):  # second layer: nothing from injected text survives into the answer
         out["reply"] = clean_reply(out.get("reply"), s["injected"])
     out["reply"] = str(out.get("reply") or "") + note_for_owner(s)  # reply-less skill results never crash the close-out
-    if lang and not already_in(out["reply"], lang):
+    if lang and not out.get("no_translate") and not already_in(out["reply"], lang):
         s["trace"](type="tool", name="translate", label=f"answer in {lang.split(' (')[0]}", status="done")
         out["reply"] = translate(out["reply"], lang)
     return _finish(text, sid, conv, s, events, t0, channel, name, out, dec)
@@ -1049,10 +1092,11 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
             threading.Thread(target=inspect_turn, args=(text, reply, name, dec, dict(s), channel), daemon=True).start()
         except Exception as exc:
             print(f"[dispatcher] monitoring turn inspection skipped: {exc}")
+    from ishti import calltrace
     return {**{k: v for k, v in out.items() if k not in ("reply", "persisted")},
             "request": text, "final_answer": reply, "mode": out.get("mode") or (name or "none").upper(), "skill": name,
             "sources": out.get("sources", []), "session_id": sid, "channel": channel, "route": dec,
-            "latency_ms": round((time.perf_counter() - t0) * 1000)}
+            "latency_ms": round((time.perf_counter() - t0) * 1000), "calls": calltrace.end()}
 
 
 @api.post("/api/chat")
@@ -1214,8 +1258,9 @@ def warm_up():
     on ~1.6 GB of VRAM next to the 14B model and push it into slow shared memory; it loads on first use."""
     route("hello", SKILLS)
     import threading
-    from ishti.skills.markets.data import psx_symbols  # lets routing recognise "engro", "lucky" as PSX companies
-    threading.Thread(target=psx_symbols, daemon=True).start()
+    # (removed 2026-10-02: a boot-time fetch of the KSE-100 list from dps.psx.com.pk. Nobody had asked for market data, and it
+    # was the only outbound connection ISHTI made at startup - the no-cloud gate caught it. The markets skill fetches the list
+    # itself, cached for 24 h, the first time a stock question needs it.)
     try:  # the voice engine is small and on the CPU: loaded now, the first spoken sentence starts at once
         from ishti.voice import current_voice, kokoro, tts_voice
         v = current_voice()

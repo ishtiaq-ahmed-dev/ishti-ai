@@ -26,7 +26,7 @@ if ROOT not in sys.path:
 
 from desktop.focus_ishti import is_running, focus_window, reveal_window
 from desktop.shutdown import shutdown
-from desktop import backend_watch
+from desktop import backend_watch, timeline
 
 
 def _get_pythonw():
@@ -73,6 +73,8 @@ except Exception:
 
 
 def main():
+    timeline.reset()
+    timeline.mark("launcher_start")
     # 0. A flag left by the previous run must not close this fresh window the moment it opens.
     try:
         from desktop import backend_watch
@@ -105,6 +107,8 @@ def main():
         creationflags=flags,
     )
 
+    timeline.mark("backend_spawned")
+
     # 2b. System tray icon: global mic ON/OFF + dashboard + Stop.
     tray_pid = 0
     try:
@@ -117,14 +121,21 @@ def main():
     # 2b'. Register this launcher + the tray with the backend's registry: at shutdown the backend
     # closes them at the OS level (TerminateProcess needs no cooperation, so even a window whose GUI
     # thread has wedged - "ISHTI (Not Responding)" - cannot survive the owner's Shut down click).
-    try:
-        from ishti import lifecycle
-        entries = [(os.getpid(), "launcher")]
-        if tray_pid:
-            entries.append((tray_pid, "tray"))
-        lifecycle.record_shell_pids(entries)
-    except Exception as exc:
-        print(f"[launcher] could not register shell pids ({exc}); watchers remain the fallback")
+    # Off the critical path: importing ishti.lifecycle and waiting for the backend's own registry entry
+    # must not delay the window. The backend writes its entry ~1 s after launch; registering earlier
+    # would be overwritten by it.
+    def _register_shell():
+        try:
+            from ishti import lifecycle
+            entries = [(os.getpid(), "launcher")] + ([(tray_pid, "tray")] if tray_pid else [])
+            for _ in range(200):
+                if lifecycle.registry().get("server_pid"):
+                    break
+                time.sleep(0.1)
+            lifecycle.record_shell_pids(entries)
+        except Exception as exc:
+            print(f"[launcher] could not register shell pids ({exc}); watchers remain the fallback")
+    threading.Thread(target=_register_shell, daemon=True, name="register-shell").start()
 
     # 2c. Watch the backend: if it stays gone (external POST /api/shutdown, tray Stop, crash), this
     # process exits instead of becoming an orphan around a dead ISHTI (found 2026-09-29).

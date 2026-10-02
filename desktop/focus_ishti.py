@@ -8,31 +8,19 @@ if ROOT not in sys.path:
 
 
 def is_running(port=8888) -> bool:
-    """Checks if the ISHTI web server is responding."""
-    try:
-        import urllib.request
-        req = urllib.request.Request(f"http://127.0.0.1:{port}/api/health", headers={"User-Agent": "ISHTI-Singleton"})
-        with urllib.request.urlopen(req, timeout=1.5) as resp:
-            return resp.status == 200
-    except Exception:
-        pass
+    """True when something answers on the ISHTI port.
 
+    A closed loopback port takes ~2 s to refuse on this Windows setup (measured: connect_ex -> 10061 after
+    2.0 s), and the old three-probe version paid that 2 s twice before every cold launch (4 s of dead time).
+    One 0.25 s connect probe: an open port accepts in well under 10 ms, a closed one gives up quickly.
+    """
+    import socket
     try:
-        import http.client
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=1.5)
-        conn.request("GET", "/api/health")
-        resp = conn.getresponse()
-        return resp.status == 200
-    except Exception:
-        pass
-
-    try:
-        import socket
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(1.0)
-            return s.connect_ex(("127.0.0.1", port)) == 0
-    except Exception:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.25):
+            pass
+    except OSError:
         return False
+    return True
 
 
 def get_ishti_windows() -> list[int]:

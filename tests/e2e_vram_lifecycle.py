@@ -133,7 +133,7 @@ def t1(strict, budget, name):
     fresh()
     vram.start_sampler()
     sw, w = switches(), Watch()
-    r = vram.admit("ishti-qwen2.5:14b", role="planner", job="start")
+    r = vram.admit(vram.rungs("planner")[0]["name"], role="planner", job="start")   # the ladder's top rung (Spark-X2.5 since 2026-09-30)
     assert r["ok"], r
     state_line("planner resident")
     ttft0 = first_token_ms()
@@ -163,7 +163,7 @@ def t1(strict, budget, name):
     state_line("after the job")
     viol = w.stop()
     ok = (bool(h["ok"]) and full and both and "42" in answer and rung_during >= 1 and up and not viol
-          and all(m["full"] for m in vram.ps(True)) and any(m["name"] == "ishti-qwen2.5:14b" for m in vram.ps(True)))
+          and all(m["full"] for m in vram.ps(True)) and any(m["name"] == vram.rungs("planner")[0]["name"] for m in vram.ps(True)))
     for s in sw:
         say(f"  model_switch: {s['role']:9} {s['from']} -> {s['to']} | {s['reason']}")
     record(name, ok, f"loaded {h.get('model')} fully on GPU; planner rung during job {rung_during}, back to rung 0 after {time.time() - t0:.0f} s; "
@@ -255,7 +255,7 @@ def t3():
     fresh()
     vram.start_sampler()
     w = Watch()
-    assert vram.admit("ishti-qwen2.5:14b", role="planner", job="start")["ok"]
+    assert vram.admit(vram.rungs("planner")[0]["name"], role="planner", job="start")["ok"]
     base = first_token_ms(n=5)
     say(f"  planner first-token latency, idle: {base:.0f} ms")
     res, lat = {}, []
@@ -289,7 +289,10 @@ def t3():
         time.sleep(1)
     up = vram.current_rung("planner") == 0
     viol = w.stop()
-    ok = (rung_during_voice == 0 and not h["ok"] and worst <= base * 1.6 + 300 and stt_ok and not viol and up)
+    # during a voice turn a heavy job is either queued (no room without touching the planner) or served by a LIGHTER tier
+    # of its own ladder (room beside the planner): either way the planner stays on its top rung and keeps its latency
+    served_lighter = bool(h["ok"]) and h.get("model") != vram.rungs("vision3")[0]["name"]
+    ok = (rung_during_voice == 0 and (not h["ok"] or served_lighter) and worst <= base * 1.6 + 300 and stt_ok and not viol and up)
     record("T3 live-voice priority", ok, f"heavy job during a voice turn: {'queued (' + str(h.get('queued'))[:70] + ')' if not h['ok'] else 'loaded ' + str(h.get('model'))}; "
            f"planner untouched (rung {rung_during_voice}); planner first token idle {base:.0f} ms vs worst during the job {worst:.0f} ms; "
            f"whisper loaded in {load_s:.1f} s with planner rung {rung_after_stt} (voice has priority); upshift after STT release: {up}; partial offloads: {len(viol)}")
@@ -397,7 +400,9 @@ def t4():
                 seen.append((stage_now, r["error"] is not None))
                 say(f"  +{time.time() - t0:5.1f}s stage={stage_now} progress={r['progress']}% error={str(r['error'])[:90] if r['error'] else None}")
             done = [s["id"] for s in r["stages"] if s["done"]]
-            if killed_at is None and "memory_loaded" in done:  # Ollama is up and the boot is in its middle: kill it
+            # Ollama is up and the boot is in its middle (stages now run side by side, so "memory_loaded" says nothing about
+            # Ollama any more - wait for the engine itself): kill it
+            if killed_at is None and "ollama_ready" in done and "planner_warm" not in done and registry().get("ollama_pid"):
                 pid = registry().get("ollama_pid")
                 say(f"  killing our Ollama (pid {pid}) mid-boot")
                 lifecycle.kill_tree(pid)

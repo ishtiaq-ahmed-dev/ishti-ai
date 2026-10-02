@@ -17,6 +17,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+from desktop import timeline, window_state
+
 PORT = 8888
 URL = f"http://127.0.0.1:{PORT}"
 ICON_PATH = os.path.join(ROOT, "assets", "ishti.ico")
@@ -168,56 +170,62 @@ def _destroy_all_windows():
         pass
 
 
+TITLE = "ISHTI - Intelligent Personal Assistant"
+
+# pywebview walks every PUBLIC attribute of a js_api object (recursively) to build the JS bridge. Holding a window
+# in a public attribute made it walk the native WinForms form from the wrong thread - the walk raised COM/UI-thread
+# errors, wedged the UI and left the splash frozen at 14 % forever (reproduced 2026-10-02). Anything that is not
+# a JS-callable method therefore lives in an underscore attribute, which pywebview skips.
+
+
 class MainApi:
     """JS bridge exposed to the main app window (interface/app)."""
     def __init__(self, win=None):
-        self.win = win
+        self._win = win
 
     def set_window(self, win):
-        self.win = win
+        self._win = win
 
     def minimize_to_tray(self):
-        if self.win:
-            self.win.minimize()
+        if self._win:
+            self._win.minimize()
 
     def force_close(self):
         _trigger_detached_shutdown()
         _schedule_hard_exit()           # armed FIRST: destroy() may block on the GUI thread
         try:
-            if self.win:
-                self.win.destroy()
+            if self._win:
+                self._win.destroy()
         except Exception:
             pass
         _destroy_all_windows()          # in case the primary handle went stale
 
     def show_window(self):
-        if self.win:
-            self.win.restore()
-            self.win.show()
+        if self._win:
+            self._win.restore()
+            self._win.show()
 
+    def toggle_fullscreen(self):
+        if self._win:
+            self._win.toggle_fullscreen()
 
-class SplashApi:
-    """JS bridge exposed to splash.html."""
-    def __init__(self, splash_win, main_api):
-        self.splash_win = splash_win
-        self.main_api = main_api
+    def toggle_maximize(self):
+        if not self._win:
+            return
+        if _remember["maximized"]:
+            self._win.restore()
+        else:
+            self._win.maximize()
+
+    def window_info(self):
+        """Size/state for the regression test and the UI: logical pixels."""
+        w = self._win
+        return {"width": w.width, "height": w.height, "x": w.x, "y": w.y, "maximized": _remember["maximized"]} if w else {}
 
     def on_ready(self):
-        import webview
-        main_win = webview.create_window(
-            title="ISHTI - Intelligent Personal Assistant",
-            url=URL,
-            width=1280,
-            height=820,
-            min_size=(960, 600),
-            confirm_close=False,
-            js_api=self.main_api,
-        )
-        self.main_api.set_window(main_win)
-        main_win.events.closing += on_closing
-        threading.Thread(target=apply_ishti_icons_daemon, daemon=True).start()
-        if self.splash_win:
-            self.splash_win.destroy()
+        """splash.html reports a ready backend: go to the dashboard (normally already done by _open_dashboard)."""
+        if self._win:
+            self._win.load_url(URL)
 
     def view_log(self):
         log_path = os.path.join(os.environ.get("LOCALAPPDATA", ""), "ISHTI", "logs", "ishti.log")
@@ -227,14 +235,87 @@ class SplashApi:
     def retry_boot(self):
         try:
             import requests
-            requests.post("http://127.0.0.1:8888/api/ready/retry", timeout=2)
+            requests.post(f"{URL}/api/ready/retry", timeout=2)
         except Exception:
             pass
 
 
+# ---- window geometry memory (desktop/window_state.py): saved on resize/move (debounced) and on close
+_remember = {"maximized": False, "timer": None, "win": None}
+
+
+def _save_geometry():
+    w = _remember["win"]
+    if not w:
+        return
+    try:
+        state = window_state.load()
+        state["maximized"] = _remember["maximized"]
+        if not _remember["maximized"] and w.width and w.height:      # a maximized window's size is not the "normal" size
+            state.update(width=int(w.width), height=int(w.height), x=int(w.x), y=int(w.y))
+        window_state.save(state)
+    except Exception:
+        pass
+
+
+def _remember_soon(*_):
+    if _remember["timer"]:
+        _remember["timer"].cancel()
+    _remember["timer"] = threading.Timer(1.0, _save_geometry)
+    _remember["timer"].daemon = True
+    _remember["timer"].start()
+
+
+def _set_maximized(flag):
+    _remember["maximized"] = flag
+    _remember_soon()
+
+
+def _create_main_window(main_api, url):
+    """The one window the owner sees: sized from the primary work area (or last session), maximize/fullscreen
+    work, remembered on close. `url` is the splash until the backend answers, then the dashboard."""
+    import webview
+    ax, ay, aw, ah, _scale = window_state.work_area()
+    g = window_state.geometry((ax, ay, aw, ah), window_state.load())
+    _remember["maximized"] = g["maximized"]
+    win = webview.create_window(title=TITLE, url=url, width=g["width"], height=g["height"], x=g["x"], y=g["y"],
+                                min_size=window_state.MIN_SIZE, maximized=g["maximized"], confirm_close=False,
+                                js_api=main_api)
+    main_api.set_window(win)
+    _remember["win"] = win
+    win.events.closing += on_closing
+    win.events.closing += lambda *a: _save_geometry()
+    win.events.shown += lambda *a: timeline.mark("window_shown")
+    win.events.loaded += lambda *a: timeline.mark("dashboard_loaded" if (win.get_current_url() or "").startswith(URL) else "splash_loaded")
+    win.events.resized += _remember_soon
+    win.events.moved += _remember_soon
+    win.events.maximized += lambda *a: _set_maximized(True)
+    win.events.restored += lambda *a: _set_maximized(False)
+    return win
+
+
+def _open_dashboard(win):
+    """Runs once the GUI loop is up: the splash is already on screen. The moment the backend's HTTP server answers
+    (it binds ~1 s after launch; the models keep loading in the background, the dashboard shows that), switch the
+    window to the dashboard. Short connect timeouts: a closed loopback port takes ~2 s to refuse on Windows."""
+    import requests
+    deadline = time.time() + 120
+    while time.time() < deadline:
+        try:
+            if requests.get(f"{URL}/api/health", timeout=(0.3, 2)).ok:
+                timeline.mark("backend_answering")
+                win.load_url(URL)
+                return
+        except Exception:
+            pass
+        time.sleep(0.1)
+    # backend never answered: stay on the splash, whose error state offers retry / view log
+
+
 def run_app_window():
     import webview
-    from desktop.focus_ishti import is_running
+    if os.environ.get("ISHTI_DEBUG_PORT"):      # test hook (tests/test_launcher_window.py): inspect the page over CDP
+        webview.settings["REMOTE_DEBUGGING_PORT"] = int(os.environ["ISHTI_DEBUG_PORT"])
 
     # Exit instead of haunting a dead backend (external stop / crash) - see desktop/backend_watch.py.
     from desktop import backend_watch
@@ -243,46 +324,12 @@ def run_app_window():
     main_api = MainApi()
     threading.Thread(target=apply_ishti_icons_daemon, daemon=True).start()
 
-    # Check if backend is already fully ready
-    already_ready = False
-    if is_running(PORT):
-        try:
-            import requests
-            r = requests.get("http://127.0.0.1:8888/api/ready", timeout=1.0)
-            if r.status_code == 200 and r.json().get("ready"):
-                already_ready = True
-        except Exception:
-            pass
-
-    if already_ready:
-        window = webview.create_window(
-            title="ISHTI - Intelligent Personal Assistant",
-            url=URL,
-            width=1280,
-            height=820,
-            min_size=(960, 600),
-            confirm_close=False,
-            js_api=main_api,
-        )
-        main_api.set_window(window)
-        window.events.closing += on_closing
-        webview.start(private_mode=False, icon=ICON_PATH)
-    else:
-        splash_path = os.path.join(ROOT, "desktop", "splash.html")
-        splash_url = f"file:///{splash_path.replace(os.sep, '/')}"
-        splash_api = SplashApi(None, main_api)
-        splash_win = webview.create_window(
-            title="ISHTI",
-            url=splash_url,
-            width=520,
-            height=340,
-            frameless=True,
-            easy_drag=True,
-            on_top=True,
-            js_api=splash_api,
-        )
-        splash_api.splash_win = splash_win
-        webview.start(private_mode=False, icon=ICON_PATH)
+    from desktop.focus_ishti import is_running
+    splash = f"file:///{os.path.join(ROOT, 'desktop', 'splash.html').replace(os.sep, '/')}"
+    # Straight to the dashboard when the backend is already up (window reopened after a close).
+    up = is_running(PORT)
+    win = _create_main_window(main_api, URL if up else splash)
+    webview.start(None if up else _open_dashboard, None if up else win, private_mode=False, icon=ICON_PATH)
 
 
 if __name__ == "__main__":

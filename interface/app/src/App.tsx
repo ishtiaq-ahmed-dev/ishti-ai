@@ -12,6 +12,8 @@ import { NotificationBell } from "@/components/rare/notification-bell";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { IshtiBrand } from "@/components/IshtiBrand";
 import { initChatFontSize } from "@/lib/font-size";
+import { BootContext, useBoot } from "@/lib/boot";
+import { BootPanel } from "@/components/BootPanel";
 
 type VramData = {
   device: string;
@@ -67,6 +69,7 @@ function getInitialPage(): Key {
 }
 
 export default function App() {
+  const boot = useBoot();
   const [page, setPageState] = useState<Key>(getInitialPage);
   const [owner, setOwner] = useState("Ishtiaq Ahmed");
   const [projects, setProjects] = useState<Fact[]>([]);
@@ -331,7 +334,9 @@ export default function App() {
   }, [setPage]);
 
   return (
+    <BootContext.Provider value={boot}>
     <div className="flex h-full p-3 bg-canvas text-foreground transition-colors duration-200">
+      <BootPanel boot={boot} />
       <div className="relative flex min-h-0 flex-1 overflow-hidden rounded-3xl border border-border bg-background shadow-[0_8px_40px_rgba(0,0,0,0.06)] dark:shadow-[0_8px_40px_rgba(0,0,0,0.8)]">
         <AnimatePresence initial={false}>
           {showNav && (
@@ -585,5 +590,6 @@ export default function App() {
         )}
       </AnimatePresence>
     </div>
+    </BootContext.Provider>
   );
 }

@@ -21,6 +21,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import statistics
 import threading
 import time
 
@@ -72,7 +73,8 @@ FRIENDLY = {"ollama_ready": "The AI engine (Ollama) didn't start. Make sure Olla
 TIMEOUTS = {"backend_up": 60, "ollama_ready": 60, "memory_loaded": 90, "skills_loaded": 180, "planner_warm": 300, "voice_ready": 90}
 
 _lk = threading.RLock()
-_st = {"state": "starting", "port": 8888, "t0": time.time(), "done": {}, "error": None, "error_stage": None, "detail": {}}
+_st = {"state": "starting", "port": 8888, "t0": time.time(), "done": {}, "error": None, "error_stage": None, "detail": {},
+       "active": set(), "booting": False}
 _ollama = {"proc": None, "ours": False}
 _server = {"uvicorn": None}
 _accepting = threading.Event()
@@ -95,7 +97,9 @@ def accepting():
 def ready_snapshot():
     """GET /api/ready (docs/API_CONTRACT.md §2)."""
     with _lk:
-        stages = [{"id": i, "label": lab, "done": bool(_st["done"].get(i))} for i, lab in STAGES]
+        stages = [{"id": i, "label": lab, "done": bool(_st["done"].get(i)),
+                   "status": "done" if _st["done"].get(i) else "error" if _st["error_stage"] == i else "loading" if i in _st["active"] else "pending"}
+                  for i, lab in STAGES]
         nxt = next((s["id"] for s in stages if not s["done"]), "ready")
         done_n = sum(s["done"] for s in stages)
         err = _st["error"]
@@ -107,7 +111,7 @@ def ready_snapshot():
 def _publish_stage(sid):
     snap = ready_snapshot()
     s = next(x for x in snap["stages"] if x["id"] == sid)
-    events.publish("boot_stage", {"id": sid, "label": s["label"], "done": s["done"], "stage": snap["stage"], "progress": snap["progress"], "error": snap["error"]})
+    events.publish("boot_stage", {"id": sid, "label": s["label"], "done": s["done"], "status": s["status"], "stage": snap["stage"], "progress": snap["progress"], "error": snap["error"]})
 
 
 def _mark(sid, done=True):
@@ -203,9 +207,15 @@ def single_instance(port):
     return False
 
 
+# A closed loopback port takes ~2 s to refuse on Windows (measured 2.0 s), so every "is it up yet?" poll against a
+# service that is still starting cost 2 s. An open port accepts in under 10 ms: a 0.3 s connect timeout loses nothing
+# and turns a 2 s poll into a 0.3 s one (Ollama start 7.5 s -> see docs/build/P6_REPORT.md).
+CONNECT_S = 0.3
+
+
 def _health(port):
     try:
-        return requests.get(f"http://127.0.0.1:{port}/api/health", timeout=1.5).ok
+        return requests.get(f"http://127.0.0.1:{port}/api/health", timeout=(CONNECT_S, 1.5)).ok
     except requests.RequestException:
         return False
 
@@ -416,7 +426,7 @@ def ollama_env(s=None):
 
 def ollama_up():
     try:
-        return requests.get(OLLAMA + "/api/tags", timeout=3).ok
+        return requests.get(OLLAMA + "/api/tags", timeout=(CONNECT_S, 3)).ok
     except requests.RequestException:
         return False
 
@@ -566,11 +576,23 @@ def _stage_skills():
     _st["detail"]["skills"] = f"{len(SKILLS) - len(broken)}/{len(SKILLS)}" + (f" (broken: {', '.join(broken)})" if broken else "")
 
 
+LAYA_PEAK_MB = 4000
+
+
 def _stage_planner():
     if not ollama_up():
         raise ConnectionError("Ollama is not answering")
     from ishti import llm, vram
     model = llm.model_for("planner")
+    # The routing model (Laya) loads on the GPU in its own thread and peaks at ~3.8 GB while loading (measured,
+    # MODEL_DECISIONS.md). Loading the main model at the same moment would let that peak push it over the VRAM budget and
+    # the governor would pick a smaller one. So the two overlap only when both fit with room to spare.
+    warm = _warm_thread()
+    if warm and warm.is_alive():
+        need, _known = vram.need_of(model)
+        g = vram.gpu()
+        if g["available"] and vram.budget_mb(g) - g["used_mb"] < need + LAYA_PEAK_MB:
+            warm.join(170)
     res = vram.admit(model, role="planner", job="start the assistant")
     if not res["ok"]:
         raise RuntimeError(res.get("queued") or "no room on the GPU")
@@ -622,13 +644,19 @@ def _run_stage(sid):
     return None
 
 
-def boot():
-    """Run every stage in order; a failure is reported and retried (a late Ollama start, a freed GPU) so booting heals."""
-    t_stage = time.time()
-    timings = {}
-    for sid, _label in STAGES[:-1]:
-        attempts = 0
+# Stages that do not wait for each other run at the same time: the AI engine -> main model chain, the memory, and the
+# skills -> voice chain. Measured sequential boot was ollama 7.5 + memory 0.3 + skills 8 + planner 4 s.
+CHAINS = [("ollama_ready", "planner_warm"), ("memory_loaded",), ("skills_loaded", "voice_ready")]
+BRAIN_STAGES = ("ollama_ready", "memory_loaded", "skills_loaded", "planner_warm")   # what a request needs before it can be answered
+NEEDS_NAME = {"ollama_ready": "the AI engine", "memory_loaded": "your memory", "skills_loaded": "the skills", "planner_warm": "the main model"}
+
+
+def _run_chain(chain, timings):
+    for sid in chain:
+        attempts, t_stage = 0, time.time()
         while not _shutdown["started"]:
+            _st["active"].add(sid)
+            _publish_stage(sid)
             err = _run_stage(sid)
             if err is None:
                 break
@@ -637,7 +665,7 @@ def boot():
                 _st.setdefault("warnings", []).append(err)
                 events.publish("error", {"code": "voice_unavailable", "message": err, "stage": sid, "log_path": LOG_FILE})
                 break
-            if sid != "ollama_ready" and not ollama_up():  # the real cause: the AI engine went away - say that, and go back to it
+            if "ollama_ready" in chain and sid != "ollama_ready" and not ollama_up():  # the real cause: the AI engine went away
                 _mark("ollama_ready", False)
                 _mark(sid, False)
                 _fail("ollama_ready", "The AI engine (Ollama) stopped responding. Trying to start it again.")
@@ -649,16 +677,67 @@ def boot():
                 continue
             _fail(sid, err)
             time.sleep(min(5 * attempts, 15))
+        _st["active"].discard(sid)
         if _shutdown["started"]:
             return
-        _mark(sid)
         timings[sid] = round(time.time() - t_stage, 2)
-        t_stage = time.time()
+        _mark(sid)
+
+
+def boot():
+    """Run the stage chains side by side; a failure is reported and retried (a late Ollama start, a freed GPU) so booting heals."""
+    t0, timings = time.time(), {}
+    _st["booting"] = True
+    for sid, _label in STAGES[:1]:   # backend_up: our own HTTP server answering
+        _run_chain((sid,), timings)
+    threads = [threading.Thread(target=_run_chain, args=(c, timings), daemon=True, name=f"boot-{c[0]}") for c in CHAINS]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    if _shutdown["started"]:
+        return
     _mark("ready")
-    total = round(sum(timings.values()), 1)
+    total = round(time.time() - t0, 1)
     _st["detail"].update(timings=timings, total_s=total)
     _write_boot_metrics(timings, total)
-    log.info("ready in %.1f s: %s", total, timings)
+    log.info("ready in %.1f s (stages ran concurrently): %s", total, timings)
+
+
+def await_brain(on_wait=None, timeout=180):
+    """Called at the start of every request. -> None when the assistant can answer now. While it is still starting, tells the
+    caller plainly what is loading (on_wait(message), once) and holds the request until the brain stages finish - the
+    request is queued, never answered with a failure and never left hanging in silence. -> a plain-language message
+    only when the wait ran out (ISHTI could not finish starting)."""
+    if not _st["booting"] or _shutdown["started"]:
+        return None
+    pending = [s for s in BRAIN_STAGES if not _st["done"].get(s)]
+    if not pending:
+        return None
+    eta = max(1, round(_eta_s(pending)))
+    names = " and ".join(NEEDS_NAME[s] for s in pending[:2])
+    if on_wait:
+        on_wait(f"ISHTI is still starting up - loading {names}. Your message is queued and will be answered as soon as that is "
+                f"done (about {eta} seconds).")
+    end = time.time() + timeout
+    while time.time() < end and not _shutdown["started"]:
+        if all(_st["done"].get(s) for s in BRAIN_STAGES):
+            return None
+        time.sleep(0.2)
+    err = _st["error"] or "it is taking longer than expected"
+    return ("ISHTI has not finished starting up yet (" + err + "). Your message was not lost - try again in a moment; "
+            "the details are in the log (" + LOG_FILE + ").")
+
+
+def _eta_s(pending):
+    """Seconds until the pending brain stages are expected to finish: the median of the last recorded boots, minus what has run."""
+    try:
+        with open(os.path.join(DATA, "boot_times.json"), encoding="utf-8") as f:
+            hist = json.load(f)[-9:]
+        med = statistics.median(h["total_s"] for h in hist if h.get("total_s"))
+    except (OSError, ValueError, statistics.StatisticsError, KeyError):
+        med = 15.0
+    return max(1.0, med - (time.time() - _st["t0"]))
 
 
 def _write_boot_metrics(timings, total):
@@ -864,8 +943,14 @@ def _force_exit(why, clean=False):
 
 def serve(app, port):
     """uvicorn with a handle we can stop gracefully (release_ports step) - replaces uvicorn.run()."""
+    import importlib.util
     import uvicorn
-    cfg = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", timeout_graceful_shutdown=3)
+    # httptools (installed) parses HTTP requests in C - measurably faster than the h11 fallback, and it
+    # keeps the 3-second HUD polls cheap. Keep-alive is raised to 65 s so a polling tab reuses one
+    # connection instead of reopening sockets between polls.
+    http = "httptools" if importlib.util.find_spec("httptools") else "auto"
+    cfg = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", timeout_graceful_shutdown=3,
+                         http=http, timeout_keep_alive=65)
     srv = uvicorn.Server(cfg)
     _server["uvicorn"] = srv
     srv.run()
