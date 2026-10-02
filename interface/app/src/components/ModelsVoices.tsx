@@ -379,7 +379,7 @@ export function ModelsCard({
     <div className="rounded-2xl border border-border/80 bg-card/40 shadow-xs overflow-hidden transition-all duration-200">
       {/* Header */}
       <div
-        className="flex items-center justify-between gap-3 p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+        className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
         onClick={onToggle}
       >
         <div className="flex items-center gap-3 min-w-0">
@@ -537,7 +537,7 @@ export function ModelsCard({
                     <button
                       type="button"
                       onClick={() => setShowStorage((prev) => !prev)}
-                      className="w-full flex items-center justify-between p-3 text-left hover:bg-muted/40 transition-colors cursor-pointer select-none"
+                      className="w-full flex items-center justify-between p-3 text-left hover:bg-muted/40 transition-colors cursor-pointer"
                     >
                       <div className="flex items-center gap-2.5">
                         <HardDrive className="h-4 w-4 text-muted-foreground" />
@@ -717,7 +717,7 @@ export function VoiceCard({
     <div className="rounded-2xl border border-border/80 bg-card/40 shadow-xs overflow-hidden transition-all duration-200">
       {/* Header */}
       <div
-        className="flex items-center justify-between gap-3 p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+        className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
         onClick={onToggle}
       >
         <div className="flex items-center gap-3 min-w-0">
@@ -967,7 +967,7 @@ export function VoiceCard({
                     <button
                       type="button"
                       onClick={() => setShowEngines((prev) => !prev)}
-                      className="w-full flex items-center justify-between p-3 text-left hover:bg-muted/40 transition-colors cursor-pointer select-none"
+                      className="w-full flex items-center justify-between p-3 text-left hover:bg-muted/40 transition-colors cursor-pointer"
                     >
                       <div className="flex items-center gap-2.5">
                         <FileAudio className="h-4 w-4 text-muted-foreground" />
@@ -1098,7 +1098,7 @@ export function WhisperCard({
     <div className="rounded-2xl border border-border/80 bg-card/40 shadow-xs overflow-hidden transition-all duration-200">
       {/* Header */}
       <div
-        className="flex items-center justify-between gap-3 p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+        className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
         onClick={onToggle}
       >
         <div className="flex items-center gap-3 min-w-0">

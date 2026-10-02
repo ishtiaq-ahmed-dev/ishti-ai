@@ -34,7 +34,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { del, getJSON, postJSON } from "@/lib/api";
 import { DeleteButton } from "@/components/rare/delete-button";
 import { AnimatedCounter } from "@/components/rare/animated-counter";
@@ -376,7 +376,7 @@ type AddAttrState = {
   value: string;
 };
 
-export function Memory({ onToggleNav }: { onToggleNav?: () => void }) {
+export function MemoryBody() {
   const [facts, setFacts] = useState<Fact[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -519,12 +519,8 @@ export function Memory({ onToggleNav }: { onToggleNav?: () => void }) {
   const anyFactExpanded = Object.values(expandedFacts).some(Boolean);
 
   return (
-    <Page
-      title="Memory"
-      subtitle="Exact facts ISHTI looks up before anything else. Fully editable, updated in place, never duplicated."
-      className="max-w-6xl"
-      onToggleNav={onToggleNav}
-      action={
+    <>
+      <div className="mb-3 flex justify-end">
         <button
           type="button"
           onClick={() => setShowNewModal(true)}
@@ -532,8 +528,7 @@ export function Memory({ onToggleNav }: { onToggleNav?: () => void }) {
         >
           <Plus className="h-4 w-4" /> Add Fact
         </button>
-      }
-    >
+      </div>
       <div className="space-y-4">
         {/* Filter and stats toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card/50 p-3 shadow-xs">
@@ -623,7 +618,7 @@ export function Memory({ onToggleNav }: { onToggleNav?: () => void }) {
                 >
                   {/* Entity Header Bar */}
                   <div
-                    className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-muted/20 border-b border-border/60 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+                    className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-muted/20 border-b border-border/60 cursor-pointer hover:bg-muted/30 transition-colors"
                     onClick={() => toggleEntity(entity)}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -1081,6 +1076,20 @@ export function Memory({ onToggleNav }: { onToggleNav?: () => void }) {
           </div>
         )}
       </AnimatePresence>
+    </>
+  );
+}
+
+/** The Memory content as its own page (old #memory link; the Learning page shows the same body as a tab). */
+export function Memory({ onToggleNav }: { onToggleNav?: () => void }) {
+  return (
+    <Page
+      title="Memory"
+      subtitle="Exact facts ISHTI looks up before anything else. Fully editable, updated in place, never duplicated."
+      className="max-w-6xl"
+      onToggleNav={onToggleNav}
+    >
+      <MemoryBody />
     </Page>
   );
 }
@@ -1180,8 +1189,10 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [activeSkill, setActiveSkill] = useState<SkillInfo | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"folders" | "tree">("folders");
+  const [viewMode, setViewMode] = useState<"folders" | "tree">("tree");   // the animated tree is the main view; Folders is the alternative
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
+  const [focusedRow, setFocusedRow] = useState(-1);
+  const treeRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     getJSON<{ skills: SkillInfo[] }>("/api/skills").then((d) => {
@@ -1238,6 +1249,58 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
       next[c] = expand;
     });
     setExpandedFolders(next);
+  };
+
+  // Keyboard tree (F): one flat list of the rows the eye can see - a category header, then its skills while open.
+  const treeRows: { kind: "cat" | "skill"; cat: string; skill?: SkillInfo }[] = [];
+  categories.forEach((cat) => {
+    treeRows.push({ kind: "cat", cat });
+    if (expandedFolders[cat] !== false) {
+      (skillsByCategory[cat] || []).forEach((s) => treeRows.push({ kind: "skill", cat, skill: s }));
+    }
+  });
+  const rowIndex = (kind: "cat" | "skill", key: string) =>
+    treeRows.findIndex((r) => r.kind === kind && (kind === "cat" ? r.cat === key : r.skill?.name === key));
+  const focusRow = (idx: number) => {
+    if (!treeRows.length) return;
+    const clamped = Math.max(0, Math.min(treeRows.length - 1, idx));
+    setFocusedRow(clamped);
+    treeRef.current?.querySelector<HTMLElement>(`[data-tree-row="${clamped}"]`)?.focus();
+  };
+  const statusBadge = (status: string) =>
+    status === "working"
+      ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-500"
+      : status === "broken"
+      ? "border-red-500/25 bg-red-500/10 text-red-500"
+      : "border-amber-500/25 bg-amber-500/10 text-amber-500";
+  const onTreeKeyDown = (e: React.KeyboardEvent) => {
+    if (!treeRows.length) return;
+    const row = treeRows[Math.max(0, focusedRow)];
+    const catOpen = row ? expandedFolders[row.cat] !== false : false;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      focusRow(focusedRow < 0 ? 0 : focusedRow + 1);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      focusRow(focusedRow < 0 ? treeRows.length - 1 : focusedRow - 1);
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      if (row?.kind === "cat" && !catOpen) setExpandedFolders((prev) => ({ ...prev, [row.cat]: true }));
+      else focusRow(focusedRow + 1);
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      if (row?.kind === "cat" && catOpen) setExpandedFolders((prev) => ({ ...prev, [row.cat]: false }));
+      else if (row?.kind === "skill") {
+        const ci = treeRows.findIndex((r) => r.kind === "cat" && r.cat === row.cat);
+        if (ci >= 0) focusRow(ci);
+      }
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      focusRow(0);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      focusRow(treeRows.length - 1);
+    }
   };
 
   const handleCopy = (text: string, key: string, e?: React.MouseEvent) => {
@@ -1491,12 +1554,12 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
                             setActiveSkill(null);
                           }
                         }}
-                        className="group relative flex flex-col justify-between rounded-2xl border border-border bg-card/50 p-4 shadow-xs hover:border-accent/60 hover:bg-card/80 hover:shadow-md transition-all cursor-pointer h-full select-none"
+                        className="group relative flex flex-col justify-between rounded-2xl border border-border bg-card/50 p-4 shadow-xs hover:border-accent/60 hover:bg-card/80 hover:shadow-md transition-all cursor-pointer h-full"
                       >
                         <div>
                           {/* 3D Folder Icon from Chat Section */}
                           <div
-                            className="relative flex items-center justify-center rounded-xl bg-gradient-to-b from-accent-soft/30 to-accent-soft/10 border border-border/50 overflow-hidden py-2 mb-3.5 group-hover:border-accent/40 group-hover:from-accent-soft/45 transition-all select-none"
+                            className="relative flex items-center justify-center rounded-xl bg-gradient-to-b from-accent-soft/30 to-accent-soft/10 border border-border/50 overflow-hidden py-2 mb-3.5 group-hover:border-accent/40 group-hover:from-accent-soft/45 transition-all"
                             style={{ height: 104 }}
                           >
                             <div
@@ -1507,7 +1570,7 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
                                 transformOrigin: "center center",
                                 willChange: "transform",
                               }}
-                              className="flex items-center justify-center shrink-0 select-none group-hover:scale-[0.49] transition-transform duration-300"
+                              className="flex items-center justify-center shrink-0 group-hover:scale-[0.49] transition-transform duration-300"
                             >
                               <RareFolder color="blue" size="sm" allowOpen={true} />
                             </div>
@@ -1815,7 +1878,8 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
              MODE 3: DIRECTORY TREE ACCORDION VIEW
              ======================================================== */}
         {viewMode === "tree" && !search && (
-          <div className="space-y-4">
+          <div className="space-y-4 outline-none" role="tree" tabIndex={0} ref={treeRef}
+            aria-label="Skills tree - arrow keys to move, Enter to open a row" onKeyDown={onTreeKeyDown}>
             {categories.map((cat) => {
               const catSkills = skillsByCategory[cat] || [];
               const isOpen = expandedFolders[cat] !== false;
@@ -1833,8 +1897,11 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
                   {/* Folder Accordion Header */}
                   <button
                     type="button"
+                    data-tree-row={rowIndex("cat", cat)}
+                    onFocus={() => setFocusedRow(rowIndex("cat", cat))}
                     onClick={() => toggleFolderExpand(cat)}
-                    className="w-full flex items-center justify-between p-4 text-left hover:bg-muted/20 transition-colors cursor-pointer select-none group"
+                    aria-expanded={isOpen}
+                    className="w-full flex items-center justify-between p-4 text-left hover:bg-muted/20 transition-colors cursor-pointer group focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div
@@ -1899,9 +1966,11 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
                                 <button
                                   key={s.name}
                                   type="button"
+                                  data-tree-row={rowIndex("skill", s.name)}
+                                  onFocus={() => setFocusedRow(rowIndex("skill", s.name))}
                                   onClick={() => setActiveSkill(isSelected ? null : s)}
                                   className={cn(
-                                    "flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left transition-all cursor-pointer shadow-xs",
+                                    "flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left transition-all cursor-pointer shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
                                     isSelected
                                       ? "border-accent bg-accent/15 ring-2 ring-accent/30"
                                       : "border-border bg-background hover:border-accent/40 hover:bg-muted/30"
@@ -1922,8 +1991,13 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
                                       {s.name}
                                     </span>
                                   </div>
-                                  <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                                    v{s.version}
+                                  <span className="flex shrink-0 items-center gap-1.5">
+                                    <span className={cn("rounded-full border px-1.5 py-0.5 text-[9.5px] font-semibold capitalize", statusBadge(s.status))}>
+                                      {s.status}
+                                    </span>
+                                    <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                                      v{s.version}
+                                    </span>
                                   </span>
                                 </button>
                               );
@@ -1996,8 +2070,13 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
                           </div>
                         </div>
                       </div>
-                      <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0">
-                        v{s.version}
+                      <span className="flex shrink-0 items-center gap-1.5">
+                        <span className={cn("rounded-full border px-1.5 py-0.5 text-[9.5px] font-semibold capitalize", statusBadge(s.status))}>
+                          {s.status}
+                        </span>
+                        <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                          v{s.version}
+                        </span>
                       </span>
                     </button>
                   );
@@ -2156,7 +2235,7 @@ function Stat({ label, value, unit, sub }: { label: string; value: number; unit:
   );
 }
 
-export function System({ onToggleNav }: { onToggleNav?: () => void }) {
+export function SystemBody() {
   const [t, setT] = useState<Telemetry | null>(null);
   const [activity, setActivity] = useState<{ days: { date: string; count: number }[]; skills: { skill: string; count: number }[] }>();
   const [doctor, setDoctor] = useState<Record<string, Check[]> | null>(null);
@@ -2175,10 +2254,12 @@ export function System({ onToggleNav }: { onToggleNav?: () => void }) {
   const gpu = typeof t?.gpu === "object" ? t.gpu : undefined;
   const max = Math.max(1, ...(activity?.skills.map((s) => s.count) ?? [1]));
   return (
-    <Page title="System" subtitle="This PC, live, and what ISHTI has been doing." onToggleNav={onToggleNav}
-      action={<button disabled={running} onClick={async () => { setRunning(true); setDoctor((await getJSON<{ checks: Record<string, Check[]> }>("/api/doctor")).checks); setRunning(false); }}
-        className="flex items-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-xs font-medium text-white disabled:opacity-50">
-        {running ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />} Run diagnostics</button>}>
+    <>
+      <div className="mb-3 flex justify-end">
+        <button disabled={running} onClick={async () => { setRunning(true); setDoctor((await getJSON<{ checks: Record<string, Check[]> }>("/api/doctor")).checks); setRunning(false); }}
+          className="flex items-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-xs font-medium text-white disabled:opacity-50 cursor-pointer">
+          {running ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />} Run diagnostics</button>
+      </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="CPU" value={t?.cpu_percent ?? 0} unit="%" />
         <Stat label="RAM" value={t?.ram_percent ?? 0} unit="%" sub={t ? `${t.ram_used_gb} / ${t.ram_total_gb} GB` : ""} />
@@ -2225,7 +2306,7 @@ export function System({ onToggleNav }: { onToggleNav?: () => void }) {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
+            <label className="flex items-center gap-1.5 text-xs cursor-pointer">
               <span className="text-muted-foreground">Auto-Heal:</span>
               <input
                 type="checkbox"
@@ -2281,6 +2362,15 @@ export function System({ onToggleNav }: { onToggleNav?: () => void }) {
           )}
         </div>
       </Card>
+    </>
+  );
+}
+
+/** The System content as its own page (old #system link; Settings also shows it as a collapsible card). */
+export function System({ onToggleNav }: { onToggleNav?: () => void }) {
+  return (
+    <Page title="System" subtitle="This PC, live, and what ISHTI has been doing." onToggleNav={onToggleNav}>
+      <SystemBody />
     </Page>
   );
 }
@@ -2326,7 +2416,7 @@ function ChromeProfiles({
     <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
       {/* Card Header */}
       <div
-        className="flex items-center justify-between gap-3 p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+        className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
         onClick={onToggle}
       >
         <div className="flex items-center gap-3 min-w-0">
@@ -2482,6 +2572,8 @@ export function Settings({ onToggleNav }: { onToggleNav?: () => void }) {
     models: false,
     voice: false,
     whisper: false,
+    language: false,
+    system: false,
   });
 
   const toggleCard = (key: string) => {
@@ -2497,6 +2589,8 @@ export function Settings({ onToggleNav }: { onToggleNav?: () => void }) {
       models: expand,
       voice: expand,
       whisper: expand,
+      language: expand,
+      system: expand,
     });
   };
 
@@ -2566,7 +2660,7 @@ export function Settings({ onToggleNav }: { onToggleNav?: () => void }) {
         {/* ========================================================
              SECTION 0: Architecture (arch1 dispatcher vs arch2 two-pass brain)
              ======================================================== */}
-        <LanguageSettings />
+        <LanguageSettings isOpen={expandedCards.language} onToggle={() => toggleCard("language")} />
 
         <PrivacyPanel />
 
@@ -2649,7 +2743,7 @@ export function Settings({ onToggleNav }: { onToggleNav?: () => void }) {
             {/* 1. Appearance Card */}
             <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
               <div
-                className="flex items-center justify-between gap-3 p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+                className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
                 onClick={() => toggleCard("appearance")}
               >
                 <div className="flex items-center gap-3 min-w-0">
@@ -2732,7 +2826,7 @@ export function Settings({ onToggleNav }: { onToggleNav?: () => void }) {
             {/* 2. Chat Text Size Card */}
             <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
               <div
-                className="flex items-center justify-between gap-3 p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+                className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
                 onClick={() => toggleCard("chatSize")}
               >
                 <div className="flex items-center gap-3 min-w-0">
@@ -2834,7 +2928,7 @@ export function Settings({ onToggleNav }: { onToggleNav?: () => void }) {
             {/* 3. Side Chats Width Card */}
             <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
               <div
-                className="flex items-center justify-between gap-3 p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+                className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
                 onClick={() => toggleCard("sideChats")}
               >
                 <div className="flex items-center gap-3 min-w-0">
@@ -2953,6 +3047,57 @@ export function Settings({ onToggleNav }: { onToggleNav?: () => void }) {
             {/* 5. Remote Control (Telegram / WhatsApp) */}
             <RemoteControl />
           </div>
+        </div>
+
+        {/* ========================================================
+             SECTION 5: System (moved here from the left nav; #system still redirects)
+             ======================================================== */}
+        <div className="space-y-2 pt-3 border-t border-border/60">
+          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2 px-1">
+            <Cpu className="h-4 w-4 text-accent" />
+            <span>System</span>
+            <span className="text-[11px] font-normal lowercase tracking-normal text-muted-foreground/80">
+              {expandedCards.system ? "Expanded" : "Default collapsed"}
+            </span>
+          </div>
+          <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
+            <div
+              className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
+              onClick={() => toggleCard("system")}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-slate-500/15 text-slate-400">
+                  <Cpu className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-semibold text-foreground text-sm">This PC</div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    CPU, RAM, GPU/VRAM live, requests by skill and the diagnostics + self-healing tools.
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); toggleCard("system"); }}
+                className="shrink-0 rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              >
+                <ChevronDown className={cn("h-4 w-4 transition-transform duration-200", expandedCards.system ? "rotate-180 text-accent" : "")} />
+              </button>
+            </div>
+            <AnimatePresence initial={false}>
+              {expandedCards.system && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden border-t border-border/60 p-4 space-y-3.5 bg-background/50"
+                >
+                  <SystemBody />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </Card>
         </div>
       </div>
     </Page>

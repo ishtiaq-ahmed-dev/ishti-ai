@@ -14,6 +14,7 @@ import {
   ThumbsDown,
   ThumbsUp,
   Trash2,
+  UserRound,
   Users,
   Workflow,
   X,
@@ -21,7 +22,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { del, getJSON, postJSON } from "@/lib/api";
-import { Page } from "@/sections/Pages";
+import { MemoryBody, Page } from "@/sections/Pages";
+import { AboutYouBody } from "@/sections/AboutYou";
 import { cn } from "@/lib/utils";
 
 // Contract types: docs/LEARNING_INTERFACE.md section 4 (keys and value types are frozen).
@@ -157,7 +159,17 @@ type LearningSettings = {
 
 type AskSlot = { question?: string | null; candidate_id?: number | null };
 type Notice = { kind: "ok" | "error"; text: string };
-type TabKey = "overview" | "lessons" | "reflections" | "candidates" | "feedback" | "mistakes" | "people" | "workflows" | "training" | "settings";
+type TabKey = "overview" | "lessons" | "reflections" | "candidates" | "feedback" | "mistakes" | "people" | "workflows" | "training" | "about" | "memory" | "settings";
+
+/** #about / #memory still work: they now open the matching tab here instead of a separate nav page. */
+function tabFromHash(): TabKey | null {
+  try {
+    const clean = window.location.hash.replace(/^#\/?/, "").toLowerCase().split("/")[0].split("?")[0];
+    if (clean === "about") return "about";
+    if (clean === "memory") return "memory";
+  } catch {}
+  return null;
+}
 
 // Reflections (Reflexion 2303.11366) and mined insights (ExpeL 2308.10144). Both are stored as
 // lessons at the weak band, so `bucket`/`confidence` behave like any other row in this file.
@@ -331,6 +343,8 @@ const TABS: { key: TabKey; label: string; icon: LucideIcon }[] = [
   { key: "people", label: "People", icon: Users },
   { key: "workflows", label: "Workflows", icon: Workflow },
   { key: "training", label: "Training data", icon: Database },
+  { key: "about", label: "About you", icon: UserRound },
+  { key: "memory", label: "Memory", icon: Database },
   { key: "settings", label: "Settings", icon: Sliders },
 ];
 
@@ -356,7 +370,7 @@ const draftFrom = (st: LearningSettings | null): SettingsDraft => {
 };
 
 export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
-  const [tab, setTab] = useState<TabKey>("overview");
+  const [tab, setTab] = useState<TabKey>(() => tabFromHash() ?? "overview");
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -425,6 +439,20 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
   useEffect(() => {
     void load(true);
   }, [load]);
+
+  useEffect(() => {   // #about / #memory (and the back/forward buttons) switch tabs without leaving this page
+    const onHash = () => { const t = tabFromHash(); if (t) setTab(t); };
+    const onTab = (e: Event) => {
+      const t = (e as CustomEvent).detail as TabKey;
+      if (TABS.some((x) => x.key === t)) setTab(t);
+    };
+    window.addEventListener("hashchange", onHash);
+    window.addEventListener("ishti-learning-tab", onTab);
+    return () => {
+      window.removeEventListener("hashchange", onHash);
+      window.removeEventListener("ishti-learning-tab", onTab);
+    };
+  }, []);
 
   const run = useCallback(async (key: string, action: () => Promise<unknown>, okText?: string): Promise<boolean> => {
     setBusy(key);
@@ -1293,6 +1321,10 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
                 )}
               </Panel>
             )}
+
+            {tab === "about" && <AboutYouBody />}
+
+            {tab === "memory" && <MemoryBody />}
 
             {tab === "settings" && draft && (
               <Panel

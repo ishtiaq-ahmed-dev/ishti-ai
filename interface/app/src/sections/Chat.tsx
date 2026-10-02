@@ -212,6 +212,15 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
       }
       return;
     }
+    // While the reply is still streaming, pin to the bottom directly: a smooth animation restarted on
+    // every single token stutters. A finished message gets the smooth scroll.
+    const last = msgs[msgs.length - 1];
+    if (last?.live) {
+      const el = scrollContainer.current;
+      if (el) el.scrollTop = el.scrollHeight;
+      else bottom.current?.scrollIntoView({ behavior: "instant", block: "end" });
+      return;
+    }
     bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [msgs]);
 
@@ -603,7 +612,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                         onClick={() => (selecting ? toggleSelected(x.session_id) : selectSession(x.session_id))}
                         onDoubleClick={(e) => { if (!selecting) { e.stopPropagation(); setRenaming(x.session_id); setRenameDraft(x.title); } }}
                         className={cn(
-                          "group relative flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm transition-all duration-200 select-none",
+                          "group relative flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm transition-all duration-200",
                           isSelected
                             ? "border-accent/70 bg-gradient-to-r from-accent/15 via-accent/8 to-transparent text-foreground font-semibold shadow-[0_2px_12px_rgba(110,86,207,0.12)] dark:shadow-[0_2px_12px_rgba(139,117,255,0.18)]"
                             : "border-border/60 dark:border-white/10 bg-card/40 dark:bg-card/20 text-muted-foreground hover:border-accent/40 hover:bg-card/80 dark:hover:bg-card/45 hover:text-foreground hover:shadow-xs",

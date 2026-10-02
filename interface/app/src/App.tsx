@@ -1,12 +1,11 @@
 import { AnimatePresence, motion } from "motion/react";
-import { Bot, Brain, CandlestickChart, UserRound, Cpu, FolderKanban, GraduationCap, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, Power, Settings as SettingsIcon, Sparkles, Minimize2, X, Zap } from "lucide-react";
+import { Bot, CandlestickChart, Cpu, FolderKanban, GraduationCap, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, Power, Settings as SettingsIcon, Sparkles, Minimize2, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { getJSON, postJSON } from "@/lib/api";
 import { Chat } from "@/sections/Chat";
-import { Memory, Settings, Skills, System, Tasks } from "@/sections/Pages";
+import { Settings, Skills, Tasks } from "@/sections/Pages";
 import { Learning } from "@/sections/Learning";
 import { Overview } from "@/sections/Overview";
-import { AboutYou } from "@/sections/AboutYou";
 import { Markets } from "@/sections/Markets";
 import { NotificationBell } from "@/components/rare/notification-bell";
 import { NotificationPopover, type Notif } from "@/components/NotificationCenter";
@@ -41,21 +40,21 @@ const NAV = [
   { key: "overview", label: "Overview", icon: LayoutDashboard },
   { key: "tasks", label: "Tasks", icon: ListChecks },
   { key: "markets", label: "Markets", icon: CandlestickChart },
-  { key: "about", label: "About you", icon: UserRound },
-  { key: "memory", label: "Memory", icon: Brain },
   { key: "learning", label: "Learning", icon: GraduationCap },
   { key: "skills", label: "Skills", icon: Bot },
-  { key: "system", label: "System", icon: Cpu },
   { key: "settings", label: "Settings", icon: SettingsIcon },
 ] as const;
+// About you and Memory are tabs of Learning; System is a card inside Settings (old #about / #memory / #system links still land there).
 type Key = (typeof NAV)[number]["key"];
 
 type Fact = { entity: string; attr: string; value: string };
 
 function parseHash(raw: string): Key | null {
   const clean = raw.replace(/^#\/?/, "").toLowerCase().split("/")[0].split("?")[0];
-  // #notifications is the Notifications tab of the Tasks page (no separate nav entry)
-  const alias = (clean === "notifications" ? "tasks" : clean) as Key;
+  // #notifications is the Notifications tab of Tasks; #about/#memory are tabs of Learning; #system is a card in Settings.
+  const alias = (clean === "notifications" ? "tasks"
+    : clean === "about" || clean === "memory" ? "learning"
+      : clean === "system" ? "settings" : clean) as Key;
   return NAV.some((n) => n.key === alias) ? alias : null;
 }
 
@@ -188,6 +187,10 @@ export default function App() {
       }
       if (window.location.hash !== targetHash) {
         window.history.replaceState(null, "", targetHash);
+      }
+      if (next === "learning") {
+        // clicking the nav item always lands on the Learning overview tab, not the last #about/#memory tab
+        try { window.dispatchEvent(new CustomEvent("ishti-learning-tab", { detail: "overview" })); } catch {}
       }
     } catch {}
   }, []);
@@ -515,11 +518,8 @@ export default function App() {
               {page === "overview" && <Overview onToggleNav={toggleNav} />}
               {page === "tasks" && <Tasks onToggleNav={toggleNav} />}
               {page === "markets" && <Markets onToggleNav={toggleNav} />}
-              {page === "about" && <AboutYou onToggleNav={toggleNav} />}
-              {page === "memory" && <Memory onToggleNav={toggleNav} />}
               {page === "learning" && <Learning onToggleNav={toggleNav} />}
               {page === "skills" && <Skills onToggleNav={toggleNav} />}
-              {page === "system" && <System onToggleNav={toggleNav} />}
               {page === "settings" && <Settings onToggleNav={toggleNav} />}
             </motion.div>
           </AnimatePresence>

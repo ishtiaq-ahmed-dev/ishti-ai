@@ -145,7 +145,7 @@ function CollapsibleCard({
           e.currentTarget.blur();
           onToggle();
         }}
-        className="w-full flex items-center justify-between p-4 text-left hover:bg-muted/20 transition-colors cursor-pointer select-none group focus:outline-hidden"
+        className="w-full flex items-center justify-between p-4 text-left hover:bg-muted/20 transition-colors cursor-pointer group focus:outline-hidden"
         aria-expanded={isOpen}
       >
         <div className="flex items-center gap-3 min-w-0">
@@ -310,7 +310,7 @@ export function Overview({ onToggleNav }: { onToggleNav?: () => void }) {
           tabIndex={0}
           onClick={handleOpenNewChat}
           title="Click to open Chat and start a new conversation"
-          className="flex items-center gap-3 cursor-pointer group select-none"
+          className="flex items-center gap-3 cursor-pointer group"
         >
           <IshtiBrand
             variant="lockup"

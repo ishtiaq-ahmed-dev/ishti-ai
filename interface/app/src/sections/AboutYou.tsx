@@ -83,7 +83,7 @@ function AddRow({ prefix = "", placeholder, onAdd }: { prefix?: string; placehol
 }
 
 /** Everything ISHTI knows about the owner and sends with their messages - visible and editable personal profile. */
-export function AboutYou({ onToggleNav }: { onToggleNav?: () => void }) {
+export function AboutYouBody() {
   const [about, setAbout] = useState<About | null>(null);
   const [instructions, setInstructions] = useState("");
   const [saved, setSaved] = useState(false);
@@ -110,12 +110,7 @@ export function AboutYou({ onToggleNav }: { onToggleNav?: () => void }) {
   );
 
   return (
-    <Page
-      title="About you"
-      subtitle="What ISHTI knows about you and how it should work for you. Edit anything; it applies to your next message."
-      className="max-w-6xl"
-      onToggleNav={onToggleNav}
-    >
+    <>
       {!about ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
           <div className="lg:col-span-7 space-y-4">
@@ -246,6 +241,20 @@ export function AboutYou({ onToggleNav }: { onToggleNav?: () => void }) {
           </div>
         </div>
       )}
+    </>
+  );
+}
+
+/** The About-you content as its own page (old #about link; the Learning page shows the same body as a tab). */
+export function AboutYou({ onToggleNav }: { onToggleNav?: () => void }) {
+  return (
+    <Page
+      title="About you"
+      subtitle="What ISHTI knows about you and how it should work for you. Edit anything; it applies to your next message."
+      className="max-w-6xl"
+      onToggleNav={onToggleNav}
+    >
+      <AboutYouBody />
     </Page>
   );
 }
