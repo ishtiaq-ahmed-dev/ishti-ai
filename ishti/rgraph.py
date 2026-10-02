@@ -640,3 +640,18 @@ if __name__ == "__main__":
     rel3 = relationship_of("bilal")
     assert rel3["relationship"] == "unknown" and rel3["needs_confirmation"], rel3
     print(f"[self-check] rgraph OK - {stats()}; temporal edges, conflicts, merge, privacy export, gifts")
+
+
+def rename_node(old_name, new_name):
+    """Correct a person's name (a spelling the owner just fixed). Merges into an existing node of the new name. -> True when done."""
+    old = get_node(old_name)
+    key = re.sub(r"\s+", " ", (new_name or "").strip()).lower()
+    if not old or not key:
+        return False
+    existing = get_node(key)
+    if existing and existing["id"] != old["id"]:
+        return merge_nodes(key, old_name)
+    c = conn()
+    with LOCK, c:
+        c.execute("UPDATE nodes SET name=?, last_confirmed=? WHERE id=?", (key, _now(), old["id"]))
+    return True

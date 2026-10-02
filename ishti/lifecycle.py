@@ -133,6 +133,9 @@ def _fail(sid, message):
 
 
 # ---------------------------------------------------------------- logging, single instance, job object, registry
+_stream_fd = {"fd": None}
+
+
 class _Stream(io.TextIOBase):
     """stdout/stderr -> the rotating log (and the console when there is one). pythonw has no stdout at all."""
     encoding = "utf-8"
@@ -154,6 +157,20 @@ class _Stream(io.TextIOBase):
             if line.strip():
                 logging.getLogger("stdout" if self.level == logging.INFO else "stderr").log(self.level, line.rstrip())
         return len(s)
+
+    def fileno(self):
+        """Child processes (Playwright's node driver, subprocess with stderr=sys.stderr) ask for a real descriptor: without one every
+        browser start died with 'UnsupportedOperation: fileno' under pythonw (owner's chat, 2026-10-02). Their own output is
+        dropped (devnull) - what matters is that they start."""
+        if self.tee:
+            try:
+                return self.tee.fileno()
+            except Exception as exc:  # a console without a descriptor: fall through to devnull
+                from ishti.core.logutil import swallowed
+                swallowed("ishti/lifecycle.py:_Stream.fileno", exc)
+        if _stream_fd["fd"] is None:
+            _stream_fd["fd"] = os.open(os.devnull, os.O_WRONLY)
+        return _stream_fd["fd"]
 
     def flush(self):
         if self.tee:
@@ -548,6 +565,11 @@ def _stage_ollama():
         privacy.silence_ollama_tray()   # the tray app phones ollama.com hourly; ISHTI runs its own `ollama serve`
     except Exception:
         log.exception("could not silence Ollama's tray app")
+    try:  # unfinished downloads a crash left behind (ISHTI's own .part files) are removed, not kept as junk
+        from ishti import manage
+        manage.cleanup_incomplete()
+    except Exception:
+        log.exception("could not clean up incomplete downloads")
     how = ensure_ollama()
     from ishti import vram
     vram.start_sampler()

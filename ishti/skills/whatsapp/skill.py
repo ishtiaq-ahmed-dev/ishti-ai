@@ -20,8 +20,11 @@ HINT = ("You are in WhatsApp Web, already logged in. To message someone: click t
         "owner did not ask for.")
 
 
+PRONOUN_SEND = re.compile(r"^\s*(?:(?:and|then|now|also|please)\s+)*(?:send|text|message|tell|reply\s+to)\s+(?:him|her|them)\b", re.I)  # "and send him hi": the last chat
+
+
 def match(text):
-    return bool(TRIGGER.search(text) or SEND_TO.search(text))
+    return bool(TRIGGER.search(text) or SEND_TO.search(text) or PRONOUN_SEND.search(text))
 
 
 def open_whatsapp(session, wait_s=4):
@@ -282,7 +285,8 @@ def parse_send(text, session, context=None):
                 break
     else:
         path = path and path.group(0)
-    return str(d.get("contact") or "").strip(), path if path and os.path.isfile(path) else None, msgs, voice
+    contact = resolve_contact(str(d.get("contact") or "").strip(), session)
+    return contact, path if path and os.path.isfile(path) else None, msgs, voice
 
 
 VISUAL = (".mp4", ".webm", ".mov", ".mkv", ".3gp", ".png", ".jpg", ".jpeg", ".gif", ".webp")
@@ -626,8 +630,53 @@ def run(text, session):
         return _run(text, session)
 
 
+# a message that starts a NEW request is not the answer to "which contact?" (owner's chat: "Open WhatsApp Web." was searched as a contact name)
+NEW_COMMAND = re.compile(r"^\s*(?:please\s+|now\s+|and\s+)?(?:open|launch|start|go\s+to|switch\s+to|check|read|show|send|message|text|tell|search|find|call|remind|what|who|how|why|when)\b", re.I)
+PRONOUN = {"him", "her", "them", "he", "she", "it", "and", "again", "same", "the same person", "that person", "this person", "same person"}
+OPEN_ONLY = re.compile(r"^\s*(?:please\s+)?(?:open|launch|start|switch\s+to|focus|go\s+to)\s+(?:the\s+|my\s+)?(?:whatsapp|whatsap|watsapp|whastap)"
+                       r"(?:\s+(?P<kind>web|desktop|app|application))?(?:\s+(?:in|on)\s+(?:chrome|browser|my\s+(?:pc|computer|desktop)))?\s*[.!]?$", re.I)
+
+
+def resolve_contact(name, session):
+    """Who "him", "my brother" or "bhai" is: the person ISHTI just wrote to / read, or the owner's relative of that kind."""
+    key = (name or "").strip().lower()
+    if not key or key in PRONOUN:
+        return session.get("whatsapp_last") or name
+    kin = re.sub(r"^my\s+", "", key)
+    from ishti import rgraph
+    if kin in rgraph.KIN:
+        edges = rgraph.edges_of("me", rel=kin, direction="out") or rgraph.edges_of("me", rel=kin, direction="in")
+        if edges:
+            e = edges[0]
+            return (e["d_name"] if e["s_name"] == "me" else e["s_name"]).title()
+    session["whatsapp_last"] = name
+    return name
+
+
+def open_preferred(session, kind=None):
+    """Open WhatsApp ONCE, the way the owner prefers (Settings: Learning > About you): Web in Chrome Profile 9 by default, or the desktop
+    app - never both (the owner's complaint: 'it was opening WhatsApp Web and the Desktop app both, which was a mess')."""
+    from ishti import prefs
+    mode = "desktop" if (kind or "").lower() in ("desktop", "app", "application") else "web" if kind else prefs.whatsapp_mode()
+    if mode == "desktop":
+        from desktop.computer_use import get_computer_use_agent
+        agent = get_computer_use_agent()
+        agent.launch_app("whatsapp")
+        time.sleep(0.6)
+        agent.focus_window("whatsapp")
+        return {"reply": "Opened WhatsApp Desktop.", "sources": []}
+    snap, ok = open_whatsapp(session)
+    if ok:
+        return {"reply": "Opened WhatsApp Web (Chrome Profile 9).", "sources": []}
+    if re.search(r"Scan (?:the )?QR|Log in with phone|Link with phone", snap or "", re.I):
+        return {"reply": "WhatsApp Web is open but it asks you to scan the QR code with your phone first (WhatsApp > Linked devices).", "sources": []}
+    return {"reply": "I opened WhatsApp Web in Chrome Profile 9 but the chat list did not load yet - give it a few seconds.", "sources": []}
+
+
 def _run(text, session):
     p = session.get("pending")
+    if p and p.get("skill") == "whatsapp" and NEW_COMMAND.match(text):
+        session["pending"] = p = None
     if p and p.get("skill") == "browser":  # yes/no to a send the browser engine asked about
         return browser.run(text, session)
     if p and p.get("skill") == "whatsapp":
@@ -640,14 +689,10 @@ def _run(text, session):
         chosen_contact = p.get("contact") or (p.get("candidates", [text])[0] if p.get("candidates") else text)
         return send_desktop(chosen_contact, p.get("messages", []), p.get("file"), session)
 
-    # 1. Direct App Launch / Focus intent: "open whatsapp", "launch whatsapp"
-    if re.search(r"^\s*(?:open|launch|start|switch\s+to|focus)\s+(?:the\s+|my\s+)?(?:whatsapp|whatsap|watsapp)(?:\s+app)?\s*[.!]?$", text, re.I) and not (SEND.search(text) or SEND_TO.search(text)):
-        from desktop.computer_use import get_computer_use_agent
-        agent = get_computer_use_agent()
-        agent.launch_app("whatsapp")
-        time.sleep(0.6)
-        agent.focus_window("whatsapp")
-        return {"reply": "Opened WhatsApp.", "sources": []}
+    # 1. Plain "open WhatsApp" / "open WhatsApp Web": one window, the preferred kind
+    m_open = OPEN_ONLY.match(text)
+    if m_open and not (SEND.search(text) or SEND_TO.search(text)):
+        return open_preferred(session, m_open.group("kind"))
 
     is_send = bool(SEND.search(text) or SEND_TO.search(text) or re.search(r"\b(?:send|message|text|write)\b", text, re.I))
 
@@ -673,6 +718,7 @@ def _run(text, session):
             if name:
                 messages = parse_messages(chat_snap, n=10)
                 context_str = format_chat_context(name, messages)
+                session["whatsapp_last"] = name
                 session["whatsapp_context"] = {"contact": name, "messages": messages, "context_str": context_str}
                 session["pending"] = {"skill": "whatsapp", "sticky": True, "ask": "reply", "contact": name, "exact_name": name, "context": context_str}
                 return {"reply": f"{context_str}\n\nWould you like me to send a text or voice reply to {name}?", "sources": []}

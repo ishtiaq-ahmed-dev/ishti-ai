@@ -24,7 +24,18 @@ KIN = ("brother", "sister", "father", "mother", "son", "daughter", "cousin", "un
 # "this is my brother Ahmed" / "Ahmed is my cousin" / "meet my friend Sara"
 KIN_DECLARE = re.compile(r"\b(?:this\s+is|meet|that's|that is|introduce)\s+my\s+(?P<rel>" + "|".join(KIN) + r")\s*"
                          r"(?:,?\s*(?:his|her|their)?\s*name\s*(?:is)?)?\s*(?P<name>[A-Z][\w'-]*(?:\s+[A-Z][\w'-]*)?)", I)
-KIN_DECLARE2 = re.compile(r"^\s*(?P<name>[A-Z][\w'-]*(?:\s+[A-Z][\w'-]*)?)\s+is\s+my\s+(?P<rel>" + "|".join(KIN) + r")\s*[.!]?$")
+ELDER = r"(?:(?:elder|older|younger|big|little|eldest|youngest|real|only)\s+)?"
+NAME = r"[A-Za-z][\w'-]*(?:\s+[A-Za-z][\w'-]*)?"
+# "irfan is my brother" (any case: the owner types lowercase names), "Ahmed is my elder brother, okay?"
+KIN_DECLARE2 = re.compile(r"^\s*(?P<name>" + NAME + r")\s+is\s+my\s+" + ELDER + r"(?P<rel>" + "|".join(KIN) + r")\b[^?]*$", I)
+# "my brother name is Ishaq Ahmed and he is my elder brother" / "my brother's name is Bilal"
+KIN_NAME = re.compile(r"^\s*my\s+" + ELDER + r"(?P<rel>" + "|".join(KIN) + r")(?:'s|s)?\s+name\s+is\s+(?P<name>" + NAME + r")(?=\s+and\b|\s*[,.!?]|\s*$)", I)
+# "who is my brother" / "what is my brother's name" / "tell me about my sister"
+WHO_IS = re.compile(r"^\s*(?:who\s+is|who's|what(?:'s|\s+is)|tell\s+me\s+(?:about|who\s+is))\s+my\s+" + ELDER + r"(?P<rel>" + "|".join(KIN) + r")(?:'s\s+name)?\s*\??$", I)
+# "his name spelling is I-R-F-A-N" / "his name is Irfan not Ishaq": the owner correcting the person just talked about
+SPELL = re.compile(r"\b(?:his|her|their|the)\s+(?:first\s+|full\s+)?name\b.{0,30}?\b(?P<letters>(?:[A-Za-z]\s*-\s*){2,}[A-Za-z])\b", I)
+CORRECT = re.compile(r"^\s*(?:no[,.]?\s+)?(?:his|her|their)\s+(?:full\s+)?name\s+is\s+(?P<new>" + NAME + r")(?:\s*,?\s*not\s+(?P<old>" + NAME + r"))?\s*[.!]?$", I)
+NOT_NAMES = {"he", "she", "it", "this", "that", "who", "what", "there", "my", "mine", "his", "her", "they", "someone", "everyone", "you"}
 LIKE = re.compile(r"^\s*(?:(?:my\s+)?(?P<who2>" + "|".join(KIN) + r")\s+)?(?P<who>[A-Z][\w'-]*(?:\s+[A-Z][\w'-]*)?)\s+"
                   r"(?P<rel>really\s+)?(?P<rel2>likes?|loves?|prefers?|dislikes?|hates?|can'?t\s+stand)\s+(?P<what>.+?)\s*[.!]?$", I)
 LIKE2 = re.compile(r"^\s*(?:remember\s+|note\s+)?i\s+(?P<rel>really\s+)?(?P<rel2>like|love|prefer|dislike|hate|can'?t\s+stand)\s+(?P<what>.+?)\s*[.!]?$", I)
@@ -64,8 +75,14 @@ STATS = re.compile(r"\b(?:who\s+do\s+(?:you|i)\s+know|relationship\s+(?:graph|st
 
 
 
+def _declared(t):
+    m = KIN_DECLARE2.match(t)
+    return m if m and m["name"].strip().lower() not in NOT_NAMES and m["name"].strip().split()[0].lower() not in NOT_NAMES else None
+
+
 def match(text):
-    return bool(KIN_DECLARE.search(text) or KIN_DECLARE2.match(text.strip()) or LIKE.match(text.strip())
+    return bool(KIN_DECLARE.search(text) or _declared(text.strip()) or KIN_NAME.match(text.strip()) or WHO_IS.match(text.strip())
+                or SPELL.search(text) or CORRECT.match(text.strip()) or LIKE.match(text.strip())
                 or LIKE2.match(text.strip()) or NEG_LIKE.match(text.strip()) or QUERY.match(text.strip())
                 or INTRO_Q.search(text) or GIFT.search(text) or MERGE.search(text) or STATS.search(text))
 
@@ -107,8 +124,37 @@ def run(text, session):
                 return {"reply": f"Updated - the {keep} fact stands for that person now.", "sources": []}
         return {"reply": "There's no open contradiction to resolve right now.", "sources": []}
 
-    if m := KIN_DECLARE.search(t) or KIN_DECLARE2.match(t):
+    if m := WHO_IS.match(t):  # "who is my brother"
+        rel = m["rel"].lower()
+        edges = rgraph.edges_of("me", rel=rel, direction="out") or rgraph.edges_of("me", rel=rel, direction="in")
+        if not edges:
+            return {"reply": f"I don't know who your {rel} is yet. Tell me once - \"my {rel} is Ahmed\" - and I'll remember.", "sources": []}
+        names = [(e["d_name"] if e["s_name"] == "me" else e["s_name"]).title() for e in edges]
+        session["rel_last"] = names[0]
+        return {"reply": f"Your {rel} is {' and '.join(dict.fromkeys(names))}.", "sources": []}
+
+    if (m := SPELL.search(t) or CORRECT.match(t)) and not KIN_NAME.match(t):  # a spelling fix for the person just discussed
+        new = (re.sub(r"[\s-]+", "", m["letters"]) if "letters" in m.groupdict() and m["letters"] else m["new"]).strip().title()
+        old = (m.groupdict().get("old") or session.get("rel_last") or "").strip()
+        if not old:
+            kin = [e for rel in ("brother", "sister", "friend") for e in rgraph.edges_of("me", rel=rel, direction="out")]
+            old = kin[0]["d_name"] if len(kin) == 1 else ""
+        if not old:
+            return {"reply": "Whose name should I fix? Tell me like \"my brother is Irfan\".", "sources": []}
+        if rgraph.rename_node(old, new):
+            session["rel_last"] = new
+            return {"reply": f"Fixed: it is {new} now (was {old.title()}).", "sources": []}
+        return {"reply": f"I don't have {old.title()} stored, so there is nothing to fix.", "sources": []}
+
+    if m := KIN_NAME.match(t):
         rel, name = m["rel"].lower(), m["name"].strip()
+        eid, created = rgraph.relate("me", rel, name)
+        session["rel_last"] = name.title()
+        return {"reply": f"Noted: your {rel} is {name.title()}.", "sources": []}
+
+    if m := KIN_DECLARE.search(t) or _declared(t):
+        rel, name = m["rel"].lower(), m["name"].strip()
+        session["rel_last"] = name.title()
         eid, created = rgraph.relate("me", rel, name)
         if eid and created:
             return {"reply": f"Noted: {name.title()} is your {rel}. I keep family facts private - they never "
