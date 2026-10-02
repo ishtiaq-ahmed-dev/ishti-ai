@@ -20,11 +20,12 @@ HINT = ("You are in WhatsApp Web, already logged in. To message someone: click t
         "owner did not ask for.")
 
 
-PRONOUN_SEND = re.compile(r"^\s*(?:(?:and|then|now|also|please)\s+)*(?:send|text|message|tell|reply\s+to)\s+(?:him|her|them)\b", re.I)  # "and send him hi": the last chat
+PRONOUN_SEND = re.compile(r"^\s*(?:(?:and|then|now|also|please|yes|yeah|ok|okay)[,]?\s+)*(?:send|text|message|tell|reply)\s+(?:it\s+)?(?:to\s+)?(?:him|her|them)\b", re.I)  # "and send him hi": the last chat
 
 
 def match(text):
-    return bool(TRIGGER.search(text) or SEND_TO.search(text) or PRONOUN_SEND.search(text))
+    return bool(TRIGGER.search(text) or SEND_TO.search(text) or PRONOUN_SEND.search(text)
+                or (SAID.search(text) and discussed_in(text)))  # "search for Ishaq Ahmed and let me know what he said"
 
 
 def open_whatsapp(session, wait_s=4):
@@ -637,6 +638,24 @@ OPEN_ONLY = re.compile(r"^\s*(?:please\s+)?(?:open|launch|start|switch\s+to|focu
                        r"(?:\s+(?P<kind>web|desktop|app|application))?(?:\s+(?:in|on)\s+(?:chrome|browser|my\s+(?:pc|computer|desktop)))?\s*[.!]?$", re.I)
 
 
+DISCUSS = re.compile(
+    r"\b(?:search|check|look|open|go)\s+(?:for\s+|in\s+|into\s+|to\s+)?(?:the\s+|my\s+)?(?P<a>[\w][\w&'-]*(?:\s+[\w&'-]+){0,4}?)\s*(?:group|chat)?"
+    r"\s*(?:,\s*|\s+and\s+)(?:then\s+)?(?:let\s+me\s+know|tell\s+me|give\s+me|summari[sz]e|show\s+me|read)"
+    r"|\bwhat\s+(?:we|they|he|she|people)\s+(?:have\s+|had\s+|has\s+)?(?:discussed|talked\s+about|said|wrote|decided)\s+(?:in|with|there\s+in)\s+"
+    r"(?:the\s+|my\s+)?(?P<b>[\w][\w&'-]*(?:\s+[\w&'-]+){0,4}?)(?:\s+group|\s+chat)?\s*[.?!]?$", re.I)
+SAID = re.compile(r"\bwhat\s+(?:he|she|they|we)\s+(?:have\s+|had\s+|has\s+)?(?:said|say|says|discussed|talked\s+about|wrote|sent)\b", re.I)
+
+
+def discussed_in(text):
+    """The chat/group the owner wants read ("automation workflow"), or None."""
+    m = DISCUSS.search(text)
+    if not m:
+        return None
+    name = re.sub(r"^(?:whatsapp\s+(?:and\s+)?(?:search|check|look|open)?\s*(?:for\s+)?)", "", (m["a"] or m["b"] or "").strip(), flags=re.I)
+    name = re.sub(r"\s+(?:group|chat)$", "", name, flags=re.I).strip()
+    return name if name and name.lower() not in ("whatsapp", "it", "there", "that", "this") else None
+
+
 def resolve_contact(name, session):
     """Who "him", "my brother" or "bhai" is: the person ISHTI just wrote to / read, or the owner's relative of that kind."""
     key = (name or "").strip().lower()
@@ -702,6 +721,31 @@ def _run(text, session):
         snap, ok = open_whatsapp(session, wait_s=3)
     except Exception:
         ok = False
+
+    # 2a. "open WhatsApp and check the automation workflow group and let me know what we discussed there": read that chat and answer
+    if (target := discussed_in(text)) and not (SEND.search(text) or SEND_TO.search(text)):
+        if not ok:
+            return {"reply": "WhatsApp Web is not ready in Chrome Profile 9 yet (it may need the QR scan). Open it once and ask again.",
+                    "sources": []}
+        target = resolve_contact(target, session)
+        name, chat_snap = open_chat(target, session)
+        if isinstance(chat_snap, list) and not name:
+            if not chat_snap:
+                return {"reply": f"I couldn't find a chat or group called \"{target}\" on WhatsApp.", "sources": []}
+            session["pending"] = {"skill": "whatsapp", "sticky": True, "candidates": chat_snap, "ask": "contact"}
+            return {"reply": "Which one?\n" + "\n".join(f"{i}. {n}" for i, n in enumerate(chat_snap, 1)), "sources": []}
+        session["whatsapp_last"] = name
+        messages = parse_messages(chat_snap, n=40)
+        if not messages:
+            return {"reply": f"I opened \"{name}\" but no messages were visible to read.", "sources": []}
+        from ishti import llm
+        transcript = format_chat_context(name, messages)
+        trace(session, "read", f"read {len(messages)} messages in {name}")
+        answer = llm.ask(f"{transcript}\n\nThe owner asks: {text}\nAnswer from these messages only: who said what, decisions, "
+                         "open questions. Short bullet points. If the messages do not cover it, say so.", role="planner", temperature=0.2,
+                         max_tokens=600)
+        session["whatsapp_context"] = {"contact": name, "messages": messages, "context_str": transcript}
+        return {"reply": f"**{name}** (last {len(messages)} messages):\n{answer}", "sources": []}
 
     # 2. Direct Read Chat Messages intent: "what did Ali say", "read messages from Ali", "check chat with Bhai"
     if READ_CHAT.search(text) and not (SEND.search(text) or SEND_TO.search(text)):

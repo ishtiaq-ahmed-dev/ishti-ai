@@ -36,6 +36,54 @@ def test_spoken_reply_is_short_and_clean():
     assert got == ["One.", "Two.", "Three.", "Four.", "The rest is on your screen."]
 
 
+def test_kin_statements_and_questions_in_any_case():
+    from ishti.dispatcher import _calm
+    from ishti.skills.relationships import skill as rel
+    assert rel._kin_name(_calm("MY BROTHER IS IRFAN AHMED"))["name"].lower() == "irfan ahmed"
+    assert rel.match(_calm("Hey who is my brother?")) and not rel.match("my brother is sick")
+
+
+def test_todo_said_in_passing_goes_to_tasks():
+    from ishti.skills.reminders import skill as rem
+    assert rem.todo("di have to submit the asisgmeny as well")["what"].startswith("submit")
+    assert rem.todo("don't let me forget to pay the electricity bill")["what"] == "pay the electricity bill"
+    assert not rem.todo("I have to say, this is nice") and not rem.todo("do I have to pay?")
+    assert rem.match("in 2 minutes remind me to drink water") and rem.LIST.match("what's on my list")
+    assert rem.CANCEL_ABOUT.match("cancel the reminder to drink water")
+
+
+def test_echo_of_my_own_status_lines_is_ignored():
+    from ishti.dispatcher import ECHO
+    assert ECHO.search("Found three sources, opening the top three.") and ECHO.search("Searching the internet for-")
+    assert not ECHO.search("search the internet for pakistan news") and not ECHO.search("I found two sources of income")
+
+
+def test_timeless_question_is_chat_but_dated_one_is_not():
+    from ishti.skills.chat import skill as chat
+    assert chat.match("What is the capital of Pakistan?") and not chat.match("how many days until eid")
+    assert chat.DID_YOU.match("Did you send the message to ishtiaq?") and chat.DID_YOU.match("DID YOU EDITED IT ?")
+
+
+def test_arch2_action_claim_without_a_tool_is_caught():
+    from ishti.dispatcher import ACTION_CLAIM
+    assert ACTION_CLAIM.search("- Reminder set: **Drink water** scheduled for Sat")
+    assert not ACTION_CLAIM.search("The capital of Pakistan is Islamabad.")
+
+
+def test_brave_and_installed_apps():
+    from ishti.skills.apps import skill as apps
+    m = apps.IN_BROWSER.match("Open ssr movies in brawe browser and search for tenet movie")
+    assert m["browser"].lower() == "brawe" and apps.browser_url(m["what"], m["q"]).endswith("q=ssr+movies+tenet+movie")
+
+
+def test_only_owner_words_come_back_from_semantic_recall():
+    import tempfile
+    from ishti.semantic import Semantic
+    s = Semantic(tempfile.mkdtemp())
+    s.add("User: my brother is Irfan\nISHTI: Noted: your brother is Ishaq.")
+    assert all("ISHTI:" not in h for h in s.recall("who is my brother", max_distance=2.0))
+
+
 def test_hypothetical_sum_is_calc_not_ledger():
     q = "if I spend 250 on groceries and 175 on fuel, how much did I spend"
     assert calc.run(q, {})["reply"] == "250 + 175 = 425"

@@ -13,7 +13,8 @@ PREFIX = "prefers_app_"
 _USE_FOR = re.compile(r"^\s*(?:please\s+)?(?:(?:always|from\s+now\s+on|only)\s+)?(?:use|prefer|pick|choose)\s+(?P<app>.{2,40}?)\s+(?:for|to\s+open|when\s+i\s+say)\s+"
                       r"(?P<job>.{2,40}?)(?:\s+(?:always|from\s+now\s+on|from\s+now))?\s*[.!]?$", re.I)
 _I_PREFER = re.compile(r"^\s*i\s+(?:always\s+)?(?:prefer|like|want)\s+(?:to\s+use\s+)?(?P<app>.{2,40}?)\s+for\s+(?P<job>.{2,40}?)\s*[.!]?$", re.I)
-_OPEN_IN = re.compile(r"^\s*(?:always\s+)?open\s+(?P<job>.{2,30}?)\s+(?:in|with)\s+(?P<app>.{2,40}?)(?:\s+(?:always|from\s+now\s+on))?\s*[.!]?$", re.I)
+# only with "always"/"from now on": a plain "open youtube in brave" is a command to do it now, not a standing preference
+_OPEN_IN = re.compile(r"^\s*(?:(?P<always>always)\s+)?open\s+(?P<job>.{2,30}?)\s+(?:in|with)\s+(?P<app>.{2,40}?)(?:\s+(?P<always2>always|from\s+now\s+on))?\s*[.!]?$", re.I)
 # whatsapp is its own case: "always use whatsapp web", "check the whatsapp web always when i say open whatsapp", "use whatsapp desktop"
 _WHATSAPP = re.compile(r"\b(?:use|check|open|prefer|want|go\s+to|always)\b.{0,40}\bwh?a+t*s*\s?a+p+\s+(?P<kind>web|desktop|app)\b|"
                        r"\bwh?a+t*s*\s?a+p+\s+(?P<kind2>web|desktop)\b.{0,30}\b(?:always|only|every\s+time|from\s+now\s+on)\b", re.I)
@@ -58,6 +59,8 @@ def statement(text):
                 "and never open the other one. You can change this in Learning > About you.")
     for rx in (_USE_FOR, _I_PREFER, _OPEN_IN):
         m = rx.match(t)
+        if m and rx is _OPEN_IN and not (m["always"] or m["always2"]):
+            continue
         if m:
             app, job = m.group("app").strip(" .,"), m.group("job").strip(" .,")
             if (re.match(r"(?:the|a|an|this|that|it|them|him|her|some|any)\b", app, re.I) or len(app.split()) > 4 or not _slug(job)
@@ -108,7 +111,8 @@ if __name__ == "__main__":  # self-check with a stub facts store
     assert "Desktop" in statement("always use whatsapp desktop") and whatsapp_mode() == "desktop"
     assert statement("send hi to ali on whatsapp web") is None                                    # an action, not a preference
     assert "Spotify" in statement("always use Spotify for music") and app_for("my music") == "Spotify"
-    assert "Notepad" in statement("open notes in Notepad") and app_for("notes") == "Notepad"
+    assert "Notepad" in statement("always open notes in Notepad") and app_for("notes") == "Notepad"
+    assert statement("open youtube in brave") is None                                              # a command, not a preference
     assert statement("use the first result for the report") is None
     for _ in range(5):
         note_use("browser", "Chrome")

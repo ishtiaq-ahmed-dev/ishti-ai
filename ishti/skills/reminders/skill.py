@@ -14,9 +14,22 @@ from ishti.facts import get_facts
 
 I = re.I
 UNIT = {"s": 1, "sec": 1, "second": 1, "m": 60, "min": 60, "minute": 60, "h": 3600, "hr": 3600, "hour": 3600, "day": 86400}
-SET = re.compile(r"^(?:please\s+)?(?:remind\s+me\b(?!\s+(?:what|who|where|which|when\s+is|how))|set\s+(?:a\s+|an\s+)?(?:reminder|timer|alarm)\b|(?:start\s+)?a?\s*\d+\s*"
+# "in 2 minutes remind me to drink water" / "tomorrow at 9 remind me ...": the time may come first
+SET = re.compile(r"^(?:please\s+)?(?:(?:in|after)\s+[\w .]{1,20}?\s+|(?:tomorrow|today|tonight)\s+(?:at\s+[\w:.]+\s*(?:am|pm)?\s+)?|at\s+[\w:.]+\s*(?:am|pm)?\s+)?(?:remind\s+me\b(?!\s+(?:what|who|where|which|when\s+is|how))|(?:set|add|create|make|put)\s+(?:a\s+|an\s+|the\s+|one\s+)?(?:reminder|timer|alarm)\b|(?:start\s+)?a?\s*\d+\s*"
                  r"(?:second|sec|minute|min|hour|hr)s?\s+timer\b)", I)
-LIST = re.compile(r"^(?:list|show|what\s+are)\s+(?:all\s+)?(?:my\s+)?(?:reminders|timers)|^(?:do\s+i\s+have\s+)?any\s+reminders", I)
+# "I have to submit the assignment as well" / "don't let me forget to pay the bill" / "add a task: call the bank": a to-do the owner
+# states in passing. It goes to Tasks with a sensible default reminder (owner's chat: nothing was added and ISHTI asked for a file path).
+TODO = re.compile(r"^\s*(?:and\s+|also\s+|oh\s+|ok(?:ay)?\s+)?(?:d?i\s+(?:also\s+|still\s+)?(?:have|need|got|gotta)\s+to|i\s+must|"
+                  r"don'?t\s+let\s+me\s+forget(?:\s+to)?|add\s+(?:a\s+|this\s+)?(?:task|to-?do)\s*(?:to\s+|:|-)?|to-?do\s*:?)\s+(?P<what>.{3,200}?)\s*[.!]?$", I)
+NOT_TODO = re.compile(r"^(?:say|admit|agree|tell\s+you|ask\s+you|know|see|check|send|open|search|play|find|go\s+now|leave\s+now|be\s+honest)\b", I)
+LIST = re.compile(r"^(?:list|show|what\s+are)\s+(?:all\s+)?(?:my\s+)?(?:reminders|timers|tasks)|^(?:do\s+i\s+have\s+)?any\s+(?:reminders|tasks)"
+                  r"|^what'?s?\s+(?:is\s+|are\s+)?(?:the\s+|my\s+)?(?:rem[aeio]nd[aeo]rs?|tasks?|to-?dos?)\b"  # "whats the remonder" (typed fast)
+                  r"|^what\s+(?:do\s+i\s+have\s+to\s+do|is\s+on\s+my\s+list)\b|^what'?s\s+on\s+my\s+(?:list|plate|agenda|schedule|to-?do)", I)
+# "cancel the reminder to drink water" / "delete the task about the rent"
+CANCEL_ABOUT = re.compile(r"^(?:cancel|delete|remove|clear|stop)\s+(?:the\s+|my\s+)?(?:reminder|timer|alarm|task)\s+(?:to|for|about|of)\s+(?P<what>.+?)\W*$", I)
+# "mark drink water as done" / "I finished the assignment" / "done with the rent"
+DONE = re.compile(r"^(?:mark|tick|check\s+off|set)\s+(?:the\s+)?(?P<what>.+?)\s+(?:as\s+)?(?:done|complete|completed|finished)\W*$"
+                  r"|^(?:i\s+)?(?:have\s+)?(?:done|did|finished|completed)\s+(?:with\s+)?(?:the\s+)?(?P<what2>.+?)\W*$", I)
 CANCEL = re.compile(r"^(?:cancel|delete|remove|clear|stop)\s+(?:the\s+|my\s+)?(?P<all>all\s+(?:my\s+)?)?(?P<what>.*?)\s*"
                     r"(?:reminders?|timers?|alarms?)\s*(?P<num>\d+)?\W*$", I)
 IN = re.compile(r"\b(?:in|for|after)\s+(?P<n>\d+(?:\.\d+)?|an?|one|half\s+an?)\s*(?P<u>seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|[smh])\b", I)
@@ -186,9 +199,29 @@ def _fmt(due: float, now: dt.datetime):
     return f"{d.strftime('%H:%M')}{day} ({rel})"
 
 
+def todo(text):
+    m = TODO.match(text.strip())
+    return m if m and not NOT_TODO.match(m["what"]) and not text.strip().endswith("?") else None
+
+
+def default_due(now):
+    """A to-do with no time: remind tonight at 20:00, or tomorrow 09:00 when it is already evening."""
+    due = now.replace(hour=20, minute=0, second=0, microsecond=0)
+    return due if now < due - dt.timedelta(hours=1) else (now + dt.timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
+
+
+def _done_rows(t):
+    """The pending reminders/tasks a "mark X as done" names (every word of X in the task text), else []."""
+    m = DONE.match(t.strip())
+    if not m:
+        return []
+    words = [w for w in re.findall(r"[a-z0-9']+", (m["what"] or m["what2"] or "").lower()) if w not in ("the", "my", "a", "task", "reminder")]
+    return [r for r in _pending(_db()) if words and all(w in r[2].lower() for w in words)]
+
+
 def match(text):
     t = text.strip()
-    return bool(SET.match(t) or LIST.match(t) or CANCEL.match(t)
+    return bool(SET.match(t) or LIST.match(t) or CANCEL.match(t) or CANCEL_ABOUT.match(t) or _done_rows(t) or todo(t)
                 or (re.match(r"^(?:please\s+)?(?:every|each)\s", t, I) and RECUR.search(t)))
 
 
@@ -203,6 +236,17 @@ def run(text, session, now=None):
         rows = _pending(f)
         return {"reply": "\n".join(f"{i}. {_fmt(d, now)}: {x}" for i, (_, d, x) in enumerate(rows, 1))
                          or "No reminders set.", "sources": []}
+    if rows := _done_rows(t):
+        with f.lock, f.db:
+            f.db.executemany("UPDATE reminders SET done=1 WHERE id=?", [(r[0],) for r in rows])
+        return {"reply": "Done: " + "; ".join(r[2] for r in rows) + ". It moved to Done in Tasks.", "sources": []}
+    if m := CANCEL_ABOUT.match(t):
+        words = [w for w in re.findall(r"[a-z0-9']+", m["what"].lower()) if w not in ("the", "my", "a")]
+        hit = [r for r in _pending(f) if words and all(w in r[2].lower() for w in words)]
+        with f.lock, f.db:
+            f.db.executemany("UPDATE reminders SET done=1 WHERE id=?", [(r[0],) for r in hit])
+        return {"reply": ("Cancelled: " + "; ".join(r[2] for r in hit)) if hit else f"I don't have a reminder about \"{m['what']}\".",
+                "sources": []}
     if (m := CANCEL.match(t)) and not SET.match(t):
         rows = _pending(f)
         if m["all"]:
@@ -232,6 +276,19 @@ def run(text, session, now=None):
         return {"reply": f"{'Scheduled' if task else 'Repeating reminder'} {every}"
                          + (f" at {due:%H:%M}" if not repeat.startswith("every:") else "")
                          + f": {body}. First: {_fmt(due.timestamp(), now)}." + (" I'll do it and tell you the result." if task else ""),
+                "sources": []}
+    if (m := todo(t)) and not SET.match(t):
+        body = m["what"]
+        due = when(body, now)
+        body = re.sub(r"\s+(?:as\s+well|too|also)$", "", what(body) or body, flags=I).strip(" ,.") or body
+        body = body[:1].upper() + body[1:]
+        due = due or default_due(now)
+        same = [r for r in _pending(f) if r[2].strip().lower() == body.strip().lower()]
+        if same:  # said twice (or repeated in a voice retry): one task, not two
+            return {"reply": f"That's already on your tasks: {body} ({_fmt(same[0][1], now)}).", "sources": []}
+        with f.lock, f.db:
+            f.db.execute("INSERT INTO reminders(due, text, created) VALUES(?,?,?)", (due.timestamp(), body, time.time()))
+        return {"reply": f"Added to your tasks: {body}. I'll remind you at {_fmt(due.timestamp(), now)} - tell me another time to change it.",
                 "sources": []}
     due, label = when(t, now), what(t)
     if due is None:  # unusual phrasing: let the local LLM read it
