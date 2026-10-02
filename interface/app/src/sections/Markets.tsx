@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowLeft, History, LineChart, Play, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { del, getJSON, postJSON } from "@/lib/api";
 import { AnimatedCounter } from "@/components/rare/animated-counter";
 import { Markdown } from "@/components/Markdown";
@@ -87,7 +87,13 @@ const actionTone = (a: string) =>
 const money = (v: number | undefined, cur: string) =>
   v == null ? "-" : `${SYM[cur] ?? ""}${v.toLocaleString(undefined, { maximumFractionDigits: 2 })}${SYM[cur] ? "" : ` ${cur}`}`;
 
-export function Markets({ onToggleNav }: { onToggleNav?: () => void }) {
+// Inside the Skills page (Markets is the markets skill's own dashboard): no second page header, just the refresh button and content.
+function EmbeddedShell({ action, children }: { title?: string; subtitle?: string; onToggleNav?: () => void; action?: ReactNode; children: ReactNode }) {
+  return <div><div className="mb-3 flex justify-end">{action}</div>{children}</div>;
+}
+
+export function Markets({ onToggleNav, embedded }: { onToggleNav?: () => void; embedded?: boolean }) {
+  const Shell = embedded ? EmbeddedShell : Page;
   const [items, setItems] = useState<Item[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
@@ -147,7 +153,7 @@ export function Markets({ onToggleNav }: { onToggleNav?: () => void }) {
   };
 
   return (
-    <Page title="Markets" subtitle="Live prices and a technical analyzer. Stocks via Yahoo Finance (the data OpenBB uses), PSX from the exchange, crypto from CoinGecko."
+    <Shell title="Markets" subtitle="Live prices and a technical analyzer. Stocks via Yahoo Finance (the data OpenBB uses), PSX from the exchange, crypto from CoinGecko."
       onToggleNav={onToggleNav}
       action={<button type="button" onClick={load} title="Refresh" className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs cursor-pointer hover:bg-muted">
         <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh</button>}>
@@ -301,6 +307,6 @@ export function Markets({ onToggleNav }: { onToggleNav?: () => void }) {
           )}
         </section>
       )}
-    </Page>
+    </Shell>
   );
 }

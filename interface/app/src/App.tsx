@@ -1,12 +1,11 @@
 import { AnimatePresence, motion } from "motion/react";
-import { Bot, CandlestickChart, Cpu, FolderKanban, GraduationCap, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, Power, Settings as SettingsIcon, Sparkles, Minimize2, X, Zap } from "lucide-react";
+import { Bot, Cpu, FolderKanban, GraduationCap, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, Power, Settings as SettingsIcon, Sparkles, Minimize2, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { getJSON, postJSON } from "@/lib/api";
 import { Chat } from "@/sections/Chat";
 import { Settings, Skills, Tasks } from "@/sections/Pages";
 import { Learning } from "@/sections/Learning";
 import { Overview } from "@/sections/Overview";
-import { Markets } from "@/sections/Markets";
 import { NotificationBell } from "@/components/rare/notification-bell";
 import { NotificationPopover, type Notif } from "@/components/NotificationCenter";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -39,7 +38,6 @@ const NAV = [
   { key: "chat", label: "Chat", icon: MessageSquare },
   { key: "overview", label: "Overview", icon: LayoutDashboard },
   { key: "tasks", label: "Tasks", icon: ListChecks },
-  { key: "markets", label: "Markets", icon: CandlestickChart },
   { key: "learning", label: "Learning", icon: GraduationCap },
   { key: "skills", label: "Skills", icon: Bot },
   { key: "settings", label: "Settings", icon: SettingsIcon },
@@ -54,7 +52,7 @@ function parseHash(raw: string): Key | null {
   // #notifications is the Notifications tab of Tasks; #about/#memory are tabs of Learning; #system is a card in Settings.
   const alias = (clean === "notifications" ? "tasks"
     : clean === "about" || clean === "memory" ? "learning"
-      : clean === "system" ? "settings" : clean) as Key;
+      : clean === "system" ? "settings" : clean === "markets" ? "skills" : clean) as Key;
   return NAV.some((n) => n.key === alias) ? alias : null;
 }
 
@@ -517,7 +515,6 @@ export default function App() {
               {page === "chat" && <Chat owner={owner} onBusy={onBusy} showNav={showNav} onToggleNav={toggleNav} />}
               {page === "overview" && <Overview onToggleNav={toggleNav} />}
               {page === "tasks" && <Tasks onToggleNav={toggleNav} />}
-              {page === "markets" && <Markets onToggleNav={toggleNav} />}
               {page === "learning" && <Learning onToggleNav={toggleNav} />}
               {page === "skills" && <Skills onToggleNav={toggleNav} />}
               {page === "settings" && <Settings onToggleNav={toggleNav} />}

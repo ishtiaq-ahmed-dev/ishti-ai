@@ -1,3 +1,4 @@
+import { Markets } from "@/sections/Markets";
 import { AnimatePresence, motion } from "motion/react";
 import {
   ArrowLeft,
@@ -1184,6 +1185,16 @@ const CATEGORY_METAS: Record<
 };
 
 export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
+  // Markets lives here now (it is the markets skill's dashboard); old #markets links open this tab
+  const [section, setSection] = useState<"skills" | "markets">(() => (window.location.hash.toLowerCase().includes("markets") ? "markets" : "skills"));
+  const sectionTabs = (
+    <div role="tablist" aria-label="Skills section" className="flex items-center rounded-xl border border-border bg-card p-1 shadow-xs">
+      {([["skills", "All skills"], ["markets", "Markets"]] as const).map(([k, label]) => (
+        <button key={k} type="button" role="tab" aria-selected={section === k} onClick={() => setSection(k)}
+          className={cn("rounded-lg px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer",
+            section === k ? "bg-accent text-white shadow-sm" : "text-muted-foreground hover:text-foreground")}>{label}</button>))}
+    </div>
+  );
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [search, setSearch] = useState("");
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
@@ -1325,12 +1336,18 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
   };
 
   return (
+    section === "markets" ? (
+      <Page title="Skills" subtitle="Markets: live prices, research and your past market checks." onToggleNav={onToggleNav} action={sectionTabs}>
+        <Markets embedded />
+      </Page>
+    ) :
     <Page
       title="Skills"
       subtitle="Folder-based modular skill system. Each skill is isolated under ishti/skills with manifest routing."
       onToggleNav={onToggleNav}
       action={
         <div className="flex items-center gap-2">
+          {sectionTabs}
           {/* Toggle between Folder Cards and Tree Accordion */}
           <div className="flex items-center rounded-xl border border-border bg-card p-1 shadow-xs">
             <button

@@ -151,6 +151,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   }, [historyWidth]);
   const [graphFor, setGraphFor] = useState<number | null>(null);
   const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false); // Stop pressed: the last words are being written into the box
   const [liveOpen, setLiveOpen] = useState(false);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [graphView, setGraphView] = useState<"answer" | "chat">("answer");
@@ -510,20 +511,25 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
           if (text && rec.state === "recording") setInput(text);
         } catch {} finally { inflight = false; }
       };
+      // Stop never sends: the full transcript goes into the box so the owner can read/fix it and press Send themselves
       rec.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
         setAudioStream(null);
         setRecording(false);
+        if (!chunks.length) return;
+        setTranscribing(true);
         try {
-          if (!chunks.length) return;
           const form = new FormData();
           form.append("audio", new Blob(chunks, { type: rec.mimeType }), "speech.webm");
           const res = await fetch("/api/stt", { method: "POST", body: form });
           if (!res.ok) throw new Error(`STT failed with HTTP ${res.status}`);
           const data = await res.json();
-          if (data?.text && data.text.trim()) send(data.text.trim());
+          if (data?.text && data.text.trim()) setInput(data.text.trim());
         } catch (sttErr) {
           console.warn("[Voice] STT transcription failed:", sttErr);
+        } finally {
+          setTranscribing(false);
+          box.current?.focus();
         }
       };
       recorder.current = rec;
@@ -921,7 +927,9 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               />
               <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 min-w-0">
                 {recording ? (
-                  <span className="text-amber-500 font-medium">Listening to voice…</span>
+                  <span className="text-amber-500 font-medium">Listening to voice… press Stop when you are done</span>
+                ) : transcribing ? (
+                  <span className="text-amber-500 font-medium">Writing down what you said…</span>
                 ) : busy ? (
                   <span className="text-accent font-medium truncate">
                     {running > 1 ? `Working on ${running} tasks` : resolveAgentState(msgs.find((m) => m.live)?.events, true).label}
@@ -1057,7 +1065,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
           )}
         </div>
 
-        <form onSubmit={(e) => { e.preventDefault(); send(input); }} className="px-4 sm:px-6 pb-5 pt-1 shrink-0">
+        <form onSubmit={(e) => { e.preventDefault(); if (!recording && !transcribing) send(input); }} className="px-4 sm:px-6 pb-5 pt-1 shrink-0">
           <AnimatePresence initial={false}>
             {queue.length > 0 && (
               <motion.ul initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
@@ -1087,7 +1095,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
             >
               <div className="flex w-full items-end gap-2 rounded-2xl border border-border bg-background p-2 shadow-[0_2px_12px_rgba(29,27,46,0.06)] transition-shadow focus-within:shadow-[0_2px_18px_rgba(110,86,207,0.18)]">
                 <textarea ref={box} value={input} onChange={(e) => setInput(e.target.value)} rows={1}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!recording && !transcribing) send(input); } }}
                   placeholder="Ask or tell ISHTI to do anything…"
                   style={{ fontSize: "var(--chat-input-size)" }}
                   className="scroll-thin max-h-[220px] min-h-[40px] flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 leading-relaxed outline-none placeholder:text-muted-foreground" />
@@ -1099,7 +1107,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                   className="flex h-9 items-center gap-1.5 rounded-xl border border-accent/40 px-2.5 text-xs font-semibold text-accent transition-colors hover:bg-accent-soft/40 cursor-pointer">
                   <AudioLines className="h-4 w-4" /> Live
                 </button>
-                <button type="submit" disabled={!input.trim()} title={canStart ? "Send" : "Queue: runs when a slot is free"}
+                <button type="submit" disabled={!input.trim() || recording || transcribing} title={recording ? "Stop the recording first" : transcribing ? "Writing down what you said…" : canStart ? "Send" : "Queue: runs when a slot is free"}
                   className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-white transition-opacity disabled:opacity-40 cursor-pointer">
                   <ArrowUp className="h-4 w-4" />
                 </button>
@@ -1115,7 +1123,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
             >
               <div className="flex w-full items-end gap-2 rounded-2xl border border-border bg-background p-2 shadow-[0_2px_12px_rgba(29,27,46,0.06)] transition-shadow focus-within:shadow-[0_2px_18px_rgba(110,86,207,0.18)]">
                 <textarea ref={box} value={input} onChange={(e) => setInput(e.target.value)} rows={1}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!recording && !transcribing) send(input); } }}
                   placeholder="Ask or tell ISHTI to do anything…"
                   style={{ fontSize: "var(--chat-input-size)" }}
                   className="scroll-thin max-h-[220px] min-h-[40px] flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 leading-relaxed outline-none placeholder:text-muted-foreground" />
@@ -1127,7 +1135,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                   className="flex h-9 items-center gap-1.5 rounded-xl border border-accent/40 px-2.5 text-xs font-semibold text-accent transition-colors hover:bg-accent-soft/40 cursor-pointer">
                   <AudioLines className="h-4 w-4" /> Live
                 </button>
-                <button type="submit" disabled={!input.trim()} title={canStart ? "Send" : "Queue: runs when a slot is free"}
+                <button type="submit" disabled={!input.trim() || recording || transcribing} title={recording ? "Stop the recording first" : transcribing ? "Writing down what you said…" : canStart ? "Send" : "Queue: runs when a slot is free"}
                   className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-white transition-opacity disabled:opacity-40 cursor-pointer">
                   <ArrowUp className="h-4 w-4" />
                 </button>
