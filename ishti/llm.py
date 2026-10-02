@@ -68,8 +68,22 @@ def model_for(role: str) -> str:
     if role in ("vision2", "vision3"):  # no config entry: the ladder's best installed rung
         rs = vram.rungs(role)
         return vram.effective(role, rs[0]["name"] if rs else _cfg["fallback"])
+    if role in ("main", "validation") and not os.environ.get(f"ISHTI_MODEL_{role.upper()}") and not _arch2_active():
+        # arch2's own 14B "main"/"validation" model is not in any ladder: asking the governor for it made the planner swap
+        # DOWN to a 3B after every reply (the memory extractor runs on role "main" even under arch1; measured 2026-10-02).
+        # Unless the owner switched to arch2 on purpose, they run on whatever the planner role runs on right now - same
+        # pinned model, no load, no switch.
+        return vram.effective("planner", _configured_for("planner"))
     name = _configured_for(role)
-    return name if name == "laya" else vram.effective("planner" if role in ("main", "validation") else role, name)
+    return name if name == "laya" else vram.effective(role, name)
+
+
+def _arch2_active() -> bool:
+    try:
+        from ishti.arch2 import registry
+        return registry.active() == "arch2"
+    except Exception:
+        return False
 
 
 def _configured_for(role: str) -> str:
@@ -213,7 +227,7 @@ def style() -> str:
     return out
 
 
-def chat(messages, role="planner", system=STYLE, tools=None, temperature=0.3, max_tokens=1024, on_token=None, **kw):
+def _chat(messages, role="planner", system=STYLE, tools=None, temperature=0.3, max_tokens=1024, on_token=None, **kw):
     """Returns the OpenAI message object (has .content and .tool_calls).
     max_tokens is always set: with tools the model can keep generating after its tool call.
     on_token(str) streams the reply as it is generated (plain replies only, not tool calls)."""
@@ -223,6 +237,12 @@ def chat(messages, role="planner", system=STYLE, tools=None, temperature=0.3, ma
         from ishti.untrusted import RULE
         system = f"{system}\n\n{RULE}" if system else RULE
     msgs = ([{"role": "system", "content": system}] if system else []) + list(messages)
+    # Thinking models (Spark-X2.5, qwen3...) spend the whole max_tokens budget reasoning and return EMPTY content: measured
+    # 2026-10-02, the first chat after boot took 16 s for "what is 7 plus 5?" and answered nothing, then the "no answer"
+    # text went through the translator, which invented a reply. Ollama's /v1 honours reasoning_effort="none" on every
+    # chat model (checked on qwen2.5, gemma3, qwen3, Spark: 7 plus 5 in 0.1 s). A caller that wants the reasoning passes
+    # reasoning_effort="low"|"medium"|"high" itself.
+    kw.setdefault("reasoning_effort", "none")
     args = dict(model=model_for(role), messages=msgs, temperature=temperature, max_tokens=max_tokens, _role=role, **kw)
     context = " ".join(str(m.get("content", "")) for m in messages if m.get("role") == "user")
     if tools:
@@ -249,6 +269,21 @@ def chat(messages, role="planner", system=STYLE, tools=None, temperature=0.3, ma
     killswitch.check()
     msg.content = clean(msg.content, context)
     return msg
+
+
+def chat(*a, **kw):
+    """_chat() plus a line in the request's call ledger (ishti/calltrace.py): which role/model, how long."""
+    import time
+    from ishti import calltrace
+    t = time.perf_counter()
+    try:
+        return _chat(*a, **kw)
+    finally:
+        role = kw.get("role") or (a[1] if len(a) > 1 else "planner")
+        try:
+            calltrace.note("llm", role, (time.perf_counter() - t) * 1000, model=model_for(role))
+        except Exception:
+            calltrace.note("llm", role, (time.perf_counter() - t) * 1000)
 
 
 def ask(prompt: str, role="planner", system=STYLE, **kw) -> str:

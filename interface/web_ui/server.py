@@ -13,8 +13,7 @@ import secrets
 from typing import Dict, Any, List
 from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse, Response
 import uvicorn
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -28,6 +27,8 @@ from orchestrator.memory.error_logger import ErrorLogger
 from voice.tts import speak, speakable
 from orchestrator.memory.user_profile import get_user_memory
 from ishti.dispatcher import api as ishti_api, handle as ishti_handle, HOOKS as ISHTI_HOOKS
+# Speed (Cycle 4): cached pre-compression, cache headers, selective gzip - with its own offline test.
+from interface.web_ui.static_perf import CachedStaticFiles, SelectiveGZipMiddleware
 
 app = FastAPI(title="ISHTI Personal AI Assistant")
 app.add_middleware(
@@ -38,6 +39,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(ishti_api)  # /api/chat, /api/skills, /api/facts (the dispatcher)
+
+app.add_middleware(SelectiveGZipMiddleware)  # 1.02 MB JS -> ~290 KB, 107 KB CSS -> ~16 KB on the wire
 
 # Remote access (Cloudflare tunnel, remote/tunnel_setup.md) arrives from cloudflared on 127.0.0.1,
 # so "is it localhost?" is not enough: anything proxied or non-local must carry the token.
@@ -84,8 +87,8 @@ os.makedirs(STATIC_DIR, exist_ok=True)
 os.makedirs(TEMPLATES_DIR, exist_ok=True)
 os.makedirs(RESEARCH_MEM_DIR, exist_ok=True)
 
-# Mount static files
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+# Mount static files (the old HUD's own assets: short cache - they are not content-hashed)
+app.mount("/static", CachedStaticFiles(directory=STATIC_DIR, max_age=300), name="static")
 
 # Shared state
 model_router = ModelRouter()
@@ -164,7 +167,40 @@ ISHTI_HOOKS.update(emit=sync_event_callback)
 
 APP_DIST = os.path.join(ROOT_DIR, "interface", "app", "dist")  # the React app (cd interface/app && npm run build)
 if os.path.isdir(os.path.join(APP_DIST, "assets")):
-    app.mount("/assets", StaticFiles(directory=os.path.join(APP_DIST, "assets")), name="app-assets")
+    # Vite content-hashes every name: safe to cache for a year, repeat loads cost zero bytes.
+    app.mount("/assets", CachedStaticFiles(directory=os.path.join(APP_DIST, "assets"),
+                                           max_age=31536000, immutable=True), name="app-assets")
+
+# Local UI fonts (tools/fetch_ui_fonts.py): versioned names, served from memory-fast disk cache.
+_FONTS_DIR = os.path.join(APP_DIST, "fonts") if os.path.isdir(os.path.join(APP_DIST, "fonts")) \
+    else os.path.join(ROOT_DIR, "interface", "app", "public", "fonts")
+if os.path.isdir(_FONTS_DIR):
+    app.mount("/fonts", CachedStaticFiles(directory=_FONTS_DIR, max_age=31536000, immutable=True), name="app-fonts")
+
+
+_BRAND_FILES: Dict[str, tuple] = {}  # filename -> (path, media) resolved once; the HUD asks on every load
+
+
+def _brand_file(filename: str):
+    """(path, media type) for a brand/icon file, or None. Resolved once per name (isfile() on four
+    directories per request was pure overhead on the HUD's critical path)."""
+    if filename not in _BRAND_FILES:
+        search_dirs = [APP_DIST, os.path.join(ROOT_DIR, "interface", "app", "public"), STATIC_DIR,
+                       os.path.join(ROOT_DIR, "assets")]
+        found = None
+        names = [filename] if filename else []
+        names += ["ishti-icon.svg", "favicon.svg", "favicon.png", "ishti-logo.png"]  # fallbacks
+        for name in names:
+            for d in search_dirs:
+                candidate = os.path.join(d, name)
+                if os.path.isfile(candidate):
+                    found = (candidate, "image/svg+xml" if name.endswith(".svg") else
+                             "image/png" if name.endswith(".png") else "image/x-icon")
+                    break
+            if found:
+                break
+        _BRAND_FILES[filename] = found
+    return _BRAND_FILES[filename]
 
 
 @app.get("/favicon.ico")
@@ -175,34 +211,40 @@ if os.path.isdir(os.path.join(APP_DIST, "assets")):
 @app.get("/ishti-logo.svg")
 @app.get("/ishti-logo.png")
 async def get_favicons_and_brand_assets(request: Request):
-    """Serve favicons and brand logos with correct media types."""
-    filename = request.url.path.lstrip("/")
-    search_dirs = [
-        APP_DIST,
-        os.path.join(ROOT_DIR, "interface", "app", "public"),
-        STATIC_DIR,
-        os.path.join(ROOT_DIR, "assets"),
-    ]
-    for d in search_dirs:
-        candidate = os.path.join(d, filename)
-        if os.path.isfile(candidate):
-            media = "image/svg+xml" if filename.endswith(".svg") else "image/png" if filename.endswith(".png") else "image/x-icon"
-            return FileResponse(candidate, media_type=media)
-    # Fallback if specific file missing
-    for fallback in ["ishti-icon.svg", "favicon.svg", "favicon.png", "ishti-logo.png"]:
-        for d in search_dirs:
-            candidate = os.path.join(d, fallback)
-            if os.path.isfile(candidate):
-                media = "image/svg+xml" if fallback.endswith(".svg") else "image/png"
-                return FileResponse(candidate, media_type=media)
-    return JSONResponse({"error": "not found"}, status_code=404)
+    """Serve favicons and brand logos with correct media types (resolved once, cached a day)."""
+    hit = _brand_file(request.url.path.lstrip("/"))
+    if not hit:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return FileResponse(hit[0], media_type=hit[1], headers={"Cache-Control": "public, max-age=86400"})
+
+
+_INDEX_CACHE = {"mtime": None, "html": "", "etag": ""}
+
+
+def _built_index():
+    """The built React index.html, cached in memory (it is fetched on every HUD open/reload).
+    Re-read only when the file changes, so `npm run build` is picked up without a server restart."""
+    built = os.path.join(APP_DIST, "index.html")
+    if not os.path.exists(built):
+        return None
+    st = os.stat(built)
+    if _INDEX_CACHE["mtime"] != st.st_mtime_ns:
+        with open(built, encoding="utf-8") as f:
+            _INDEX_CACHE.update(mtime=st.st_mtime_ns, html=f.read(),
+                                etag=f'"{st.st_mtime_ns:x}-{st.st_size:x}"')
+    return _INDEX_CACHE
 
 
 @app.get("/", response_class=HTMLResponse)
-async def index():
+async def index(request: Request):
     """The new app when it's built; the old HUD otherwise (still reachable at /hud)."""
-    built = os.path.join(APP_DIST, "index.html")
-    return await hud() if not os.path.exists(built) else HTMLResponse(open(built, encoding="utf-8").read())
+    cached = _built_index()
+    if not cached:
+        return await hud()
+    headers = {"Cache-Control": "no-cache", "ETag": cached["etag"]}  # revalidate -> 304, never stale
+    if request.headers.get("if-none-match") == cached["etag"]:
+        return Response(status_code=304, headers=headers)
+    return HTMLResponse(cached["html"], headers=headers)
 
 
 @app.get("/hud", response_class=HTMLResponse)

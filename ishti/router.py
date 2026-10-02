@@ -1,6 +1,7 @@
 """Fast routing before any LLM call: deterministic skill triggers, then Laya typed decisions,
 then the default skill. Every decision is logged (facts.route_log) so the Laya typed-decisions
 checkpoint can later be fine-tuned on ISHTI's own traffic (NEEDS.md)."""
+import os
 import time
 import warnings
 
@@ -44,15 +45,24 @@ def laya():
     """Lazy Laya Router; None (with laya_error set) when laya/torch isn't usable."""
     global _laya, laya_error
     if _laya is None and not laya_error and _cfg["use_laya"]:
-        try:
-            from laya import Router
-            import torch
-            cuda = torch.cuda.is_available()
-            _laya = Router(max_loaded=1, device="cuda" if cuda else "cpu")
-            if cuda:  # fp16: same decisions, 0.9 GB instead of 1.7 GB of VRAM next to the LLM, ~35 ms
-                _laya.load(_cfg["laya_model"]).model.half()
-        except Exception as exc:
-            laya_error = f"{type(exc).__name__}: {exc}"
+        # Local-first: the weights are already in the Hugging Face cache, so the loader must not ask the hub anything (it sent
+        # ~6 requests to huggingface.co at every boot - a network call from a runtime that promises none, and a
+        # failure point offline). Offline first; only a machine that has never downloaded the model goes online, once.
+        for offline in ("1", "0"):
+            os.environ["HF_HUB_OFFLINE"] = offline
+            try:
+                from laya import Router
+                import torch
+                cuda = torch.cuda.is_available()
+                _laya = Router(max_loaded=1, device="cuda" if cuda else "cpu")
+                if cuda:  # fp16: same decisions, 0.9 GB instead of 1.7 GB of VRAM next to the LLM, ~35 ms
+                    _laya.load(_cfg["laya_model"]).model.half()
+                laya_error = ""
+                break
+            except Exception as exc:
+                _laya = None
+                laya_error = f"{type(exc).__name__}: {exc}"
+        os.environ.pop("HF_HUB_OFFLINE", None)   # only for the duration of this load: other loaders keep their own behaviour
     return _laya
 
 

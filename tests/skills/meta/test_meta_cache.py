@@ -43,3 +43,22 @@ def test_cache_invalidates_when_a_skill_file_changes(tmp_path):
         stamp.update(str(os.path.getmtime(p) + 1).encode())  # +1s: pretend one file changed
     key_after = stamp.hexdigest()
     assert key_before != key_after
+
+
+def test_disk_cache_answers_a_fresh_process(tmp_path, monkeypatch):
+    """Cycle 4: the ~72-80 s health pass must not repeat in a NEW process when nothing changed.
+
+    The FIX-10 cache was in-memory only, so every restart paid the full pass again - the first
+    `check your skills` after a boot was the slowest request in the whole system. Same mtime key =
+    identical skill sources = the same report; the TTL stays 900 s."""
+    monkeypatch.setattr(meta, "_HEALTH_DISK", str(tmp_path / "meta_health.json"))
+    _, _, key = meta._health_key()
+    reply = "Skill health: 122/122 self-checks pass (from the disk cache)"
+    meta._health_disk_put(key, reply)
+    assert meta._health_disk_get(key) == reply, "disk cache round-trip failed"
+    assert meta._health_disk_get(key + "x") is None, "a different skill set must not reuse the reply"
+    meta._health_cache.clear()   # as if this were a fresh process
+    t0 = time.time()
+    out = meta.op_health("check your skills", {})
+    assert time.time() - t0 < 5, "disk cache not used - a fresh process would pay the full pass"
+    assert "from the disk cache" in out

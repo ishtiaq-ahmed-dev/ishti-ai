@@ -60,9 +60,35 @@ def candidate(text, skills=None, session=None):
     return several
 
 
+_FILLER = frozenset("what when where which with that this have your from into then also tell show give please about make just like some more".split())
+CORE = ("chat", "memory", "web_search", "browser", "apps", "whatsapp")   # steps almost any multi-task request can need
+
+
+def shortlist(text, skills):
+    """The skills worth listing in the planning prompt: what the router picks for each clause (plus its runners-up) and the
+    core set. The prompt used to carry ALL 124 skill descriptions (15,408 chars, ~3,850 tokens, measured 2026-10-02) on every
+    multi-task request; this is ~10-20 of them. Falls back to everything when the clauses don't narrow it down."""
+    from ishti.router import route
+    want = set(CORE)
+    clauses = [p for p in CLAUSE.split(text) if p and len(p.split()) >= 2 and not smalltalk(p)]
+    for clause in clauses[:6]:
+        r = route(clause, skills)
+        want.update(n for n in [r.get("skill")] + [n for n, _ in (r.get("scores") or [])[:3]] if n)
+    # recall net for what the router missed ("tell me my notes" routes to memory): a skill whose name appears in the request,
+    # or that shares two content words with its route description, stays on the list
+    words = {w for w in re.findall(r"[a-z]{4,}", text.lower()) if w not in _FILLER}
+    for n, sk in skills.items():
+        desc = set(re.findall(r"[a-z]{4,}", str(sk.manifest.get("route", "")).lower())) - _FILLER
+        if any(part in words or part + "s" in words for part in n.split("_") if len(part) >= 4) or len(words & desc) >= 2:
+            want.add(n)
+    picked = {n for n in want if n in skills and skills[n].status != "broken"}
+    return picked if len(picked) - len(set(CORE) & picked) >= 1 else None
+
+
 def plan(text, skills):
     """[{"skill", "request"}, ...] with >= 2 steps, or None (a single skill can do it)."""
-    live = {n: s.manifest["route"] for n, s in skills.items() if s.status != "broken"}
+    keep = shortlist(text, skills)
+    live = {n: s.manifest["route"] for n, s in skills.items() if s.status != "broken" and (keep is None or n in keep)}
     out = llm.ask(
         "Split the owner's request into steps, one skill per step. Skills:\n"
         + "\n".join(f"- {n}: {r}" for n, r in live.items())
@@ -128,8 +154,10 @@ def run(steps, session, run_step):
     if not any(PREV in s["request"] for s in steps):
         # ponytail: one thread per step; model calls still queue on the single GPU, but web, files, APIs and
         # the browser overlap. Browser steps serialize on the browser skill's own lock.
+        from ishti import calltrace
+        safe_in_ledger = calltrace.carry(safe)   # the worker threads report into this request's call ledger
         with cf.ThreadPoolExecutor(len(steps)) as pool:
-            outs = list(pool.map(lambda p: safe(p[1]["request"], dec(*p)), enumerate(steps, 1)))
+            outs = list(pool.map(lambda p: safe_in_ledger(p[1]["request"], dec(*p)), enumerate(steps, 1)))
         replies = [f"**{i}. {s['request'][:70]}**\n{o['reply']}" for i, (s, o) in enumerate(zip(steps, outs), 1)]
         return {"reply": "\n\n".join(replies) + report(outs, len(steps)),
                 "sources": [x for o in outs for x in o.get("sources", [])], "mode": "PLAN", "steps": steps}

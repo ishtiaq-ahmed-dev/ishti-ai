@@ -189,6 +189,11 @@ def install():
         def request(self, method, url, *a, **k):
             check_url(url)
             _kill_check()  # every web request is also a kill-switch checkpoint (searches, page fetches)
+            from ishti import calltrace
+            from urllib.parse import urlparse
+            host = urlparse(str(url)).hostname or ""
+            if host not in ("127.0.0.1", "localhost"):  # our own Ollama/server loopback calls are not "external" calls
+                calltrace.note("net", host)
             return orig_request(self, method, url, *a, **k)
         requests.sessions.Session.request = request
     except ImportError:

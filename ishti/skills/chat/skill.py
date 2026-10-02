@@ -109,7 +109,9 @@ def run(text, session):
         out = (llm.chat(msgs[-1:], role=role, system=system, temperature=0).content or "").strip()
     out = re.sub(r"\s*(?:KNOWN FACTS|Possibly relevant past context|LEARNED FROM THE OWNER)\b.*$", "", out, flags=re.S | re.I).strip()
     out = _honesty_guard(out)
-    return {"reply": out or "No answer from the local model.", "sources": []}
+    if not out:  # a system message, not model text: it must not go through the translator (which made up a reply for it)
+        return {"reply": "No answer from the local model.", "sources": [], "no_translate": True}
+    return {"reply": out, "sources": []}
 
 
 if __name__ == "__main__":

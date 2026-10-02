@@ -189,7 +189,7 @@ _last_use = 0.0
 # Measured: a warm turbo decode is ~0.3 s, a cold load costs seconds of disk + kernel warm-up, and the wake loop
 # wants the model the moment the owner stops talking. Whisper's ~1.1 GB is VRAM the 14B planner would like back, so
 # the trade is: keep it while the owner is working with ISHTI, drop it when he walks away (config, in seconds).
-IDLE_UNLOAD_S = int(_cfg.get("whisper_idle_unload_s", 600))
+IDLE_UNLOAD_S = int(os.environ.get("ISHTI_WHISPER_IDLE_S") or _cfg.get("whisper_idle_unload_s", 600))
 
 
 _final_active = threading.Event()        # a final decode is running: partials must not queue GPU work behind it
@@ -511,6 +511,7 @@ def tts_voice(profile=None):
     with _load_lock:
         if profile["piper_voice"] not in _voices:
             from piper import PiperVoice
+            _voices.clear()  # only the voice in use stays loaded (like kokoro below); switching reloads in ~0.3 s
             _voices[profile["piper_voice"]] = PiperVoice.load(os.path.join(_cfg["piper_dir"], profile["piper_voice"] + ".onnx"))
     return _voices[profile["piper_voice"]]
 

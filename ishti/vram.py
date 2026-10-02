@@ -32,7 +32,7 @@ import time
 import requests
 import yaml
 
-from ishti import CONFIG, ROOT, events
+from ishti import CONFIG, ROOT, events, keepalive
 
 MIB = 1 << 20
 DATA = os.path.dirname(CONFIG["memory"]["db_path"])
@@ -157,7 +157,7 @@ def ps(fresh=False, strict=True):
     model): decision paths (strict=True) get the last good answer if it is under 30 s old, else the error is raised;
     display paths (strict=False) get [] instead."""
     def read():
-        rows = requests.get(OLLAMA + "/api/ps", timeout=8).json().get("models", [])
+        rows = keepalive.get(OLLAMA + "/api/ps", timeout=8).json().get("models", [])
         out = [{"name": m["name"], "size": m["size"], "size_vram": m["size_vram"], "ctx": m.get("context_length"),
                 "expires_at": m.get("expires_at", ""), "size_mb": mb(m["size"]), "size_vram_mb": mb(m["size_vram"]),
                 "full": m["size_vram"] >= m["size"]} for m in rows]
@@ -179,7 +179,7 @@ def ps(fresh=False, strict=True):
 def tags():
     """{name: size_bytes} of installed models. A failed read gives {} for this call only - it is never cached as the answer."""
     def read():
-        return {m["name"]: m["size"] for m in requests.get(OLLAMA + "/api/tags", timeout=5).json().get("models", [])}
+        return {m["name"]: m["size"] for m in keepalive.get(OLLAMA + "/api/tags", timeout=5).json().get("models", [])}
     try:
         return _cached("tags", 10, read)
     except (requests.RequestException, ValueError):
@@ -194,9 +194,10 @@ def installed(name):
 def info(name):
     """{'default_ctx','kv_per_token'} from /api/show (kv estimate = 2 * layers * kv_heads * head_dim * 2 bytes, f16)."""
     def read():
-        d = requests.post(OLLAMA + "/api/show", json={"model": name}, timeout=15).json()
+        d = keepalive.post(OLLAMA + "/api/show", json={"model": name}, timeout=15).json()
         m = re.search(r"^num_ctx\s+(\d+)", d.get("parameters") or "", re.M)
         default = int(m.group(1)) if m else int(os.environ.get("OLLAMA_CONTEXT_LENGTH") or 4096)
+        pinned = bool(m)  # the Modelfile sets num_ctx: Ollama will use exactly that. Otherwise Ollama >= 0.34 picks the context itself
         mi, kv = d.get("model_info", {}), 0
         arch = mi.get("general.architecture", "")
         try:
@@ -206,7 +207,7 @@ def info(name):
             kv = 2 * layers * kv_heads * head_dim * 2
         except (KeyError, TypeError, ZeroDivisionError):
             pass
-        return {"default_ctx": default, "kv_per_token": kv}
+        return {"default_ctx": default, "kv_per_token": kv, "pinned": pinned}
     try:
         return _cached(f"info:{name}", 3600, read)
     except (requests.RequestException, ValueError, KeyError):
@@ -214,17 +215,30 @@ def info(name):
 
 
 # ---------------------------------------------------------------- measured footprints
+_conn_cache = {}
+
+
 def _db():
-    os.makedirs(DATA, exist_ok=True)
-    c = sqlite3.connect(DB, timeout=10)
-    c.execute("CREATE TABLE IF NOT EXISTS model_footprints(model TEXT, num_ctx INTEGER, size INTEGER, size_vram INTEGER, "
-              "tps REAL, kv_type TEXT, measured_at REAL, PRIMARY KEY(model, num_ctx))")
-    c.execute("CREATE TABLE IF NOT EXISTS job_footprints(what TEXT PRIMARY KEY, mb INTEGER, at REAL)")
-    c.execute("CREATE TABLE IF NOT EXISTS switches(ts REAL, role TEXT, from_model TEXT, to_model TEXT, reason TEXT)")
-    try:  # what the GPU really grew by when the model loaded (Ollama's size_vram misses e.g. a vision projector, ~1.2 GB)
-        c.execute("ALTER TABLE model_footprints ADD COLUMN gpu_delta INTEGER")
-    except sqlite3.OperationalError:
-        pass
+    """Cached per-thread connection (Cycle 4, the audit.py pattern): the VRAM governor calls this
+    several times per model load (footprints, switches) and each call used to re-connect and re-run
+    three CREATE TABLEs + a failing ALTER probe. WAL + synchronous=NORMAL: measurement telemetry."""
+    key = (threading.get_ident(), DB)
+    c = _conn_cache.get(key)
+    if c is None:
+        os.makedirs(DATA, exist_ok=True)
+        c = sqlite3.connect(DB, timeout=10, check_same_thread=False)
+        c.execute("PRAGMA journal_mode=WAL")
+        c.execute("PRAGMA synchronous=NORMAL")
+        c.execute("PRAGMA busy_timeout=5000")
+        c.execute("CREATE TABLE IF NOT EXISTS model_footprints(model TEXT, num_ctx INTEGER, size INTEGER, size_vram INTEGER, "
+                  "tps REAL, kv_type TEXT, measured_at REAL, PRIMARY KEY(model, num_ctx))")
+        c.execute("CREATE TABLE IF NOT EXISTS job_footprints(what TEXT PRIMARY KEY, mb INTEGER, at REAL)")
+        c.execute("CREATE TABLE IF NOT EXISTS switches(ts REAL, role TEXT, from_model TEXT, to_model TEXT, reason TEXT)")
+        try:  # what the GPU really grew by when the model loaded (Ollama's size_vram misses e.g. a vision projector, ~1.2 GB)
+            c.execute("ALTER TABLE model_footprints ADD COLUMN gpu_delta INTEGER")
+        except sqlite3.OperationalError:
+            pass
+        _conn_cache[key] = c
     return c
 
 
@@ -299,7 +313,8 @@ def base_of(name):
 def alias_name(model, ctx):
     """The name under which `model` runs at `ctx` - a pure function, nothing is created or read from Ollama. `model` itself
     when that ctx is its default (or unknown: the ladder gave none), else a same-weights alias."""
-    if model == "laya" or not ctx or ctx == info(model)["default_ctx"]:
+    i = info(model)
+    if model == "laya" or not ctx or (ctx == i["default_ctx"] and i.get("pinned", True)):
         return model
     base, _, tag = model.partition(":")
     return f"{base}-c{ctx // 1024}k:{tag or 'latest'}"
@@ -337,11 +352,29 @@ def variant(model, ctx):
 
 
 # ---------------------------------------------------------------- roles and ladders
+def rung_num_ctx(r):
+    """The context a rung runs at: the ladder's num_ctx, else - when the model's Modelfile sets none - an explicit pin
+    (config `pin_ctx`, 4096). Ollama >= 0.34 chooses the context itself for such a model: on 0.35.0 gemma3:4b loaded at
+    131072 (6.4 GB real instead of 2.7) and qwen3:14b at 40960 with a CPU split (measured 2026-10-02); the older
+    assumption "default = 4096" no longer holds, so an unpinned rung always runs through a same-weights alias."""
+    if r.get("num_ctx") or r.get("cpu"):
+        return r.get("num_ctx")
+    try:
+        return None if info(r["model"]).get("pinned", True) else int(cfg().get("pin_ctx", 4096))
+    except Exception:
+        return None
+
+
 def rungs(role):
     """The role's INSTALLED rungs, best first: [{'model','num_ctx','name'(variant name),'cpu','note'}]."""
     spec = cfg()["roles"].get(role, {})
-    return [{**r, "name": r["model"] if r.get("cpu") else alias_name(r["model"], r.get("num_ctx")) if installed(r["model"]) else None}
-            for r in spec.get("rungs", []) if r.get("cpu") or installed(r["model"])]
+    out = []
+    for r in spec.get("rungs", []):
+        if not (r.get("cpu") or installed(r["model"])):
+            continue
+        ctx = rung_num_ctx(r)
+        out.append({**r, "num_ctx": ctx, "name": r["model"] if r.get("cpu") else alias_name(r["model"], ctx)})
+    return out
 
 
 def role_spec(role):
@@ -367,7 +400,7 @@ def rung_ctx(model, role):
     """The context the ladder gives this model as a rung of `role` (None = the model's own default)."""
     base, _ = base_of(model)
     r = next((r for r in role_spec(role).get("rungs", []) if r["model"] in (model, base)), None) if role else None
-    return r.get("num_ctx") if r else None
+    return rung_num_ctx(r) if r else None
 
 
 def _ours(name):
@@ -400,7 +433,7 @@ def current_rung(role):
 
 # ---------------------------------------------------------------- Ollama actions
 def _post(path, body, timeout=60):
-    r = requests.post(OLLAMA + path, json=body, timeout=timeout)
+    r = keepalive.post(OLLAMA + path, json=body, timeout=timeout)
     r.raise_for_status()
     return r
 
@@ -915,7 +948,7 @@ def snapshot():
     """GET /api/vram (docs/API_CONTRACT.md §5)."""
     g, loaded = gpu(), ps(strict=False)
     ours = mb(sum(m["size_vram"] for m in loaded) * 1) if loaded else 0
-    ollama = {"version": _cached("ver", 300, lambda: (requests.get(OLLAMA + "/api/version", timeout=3).json().get("version", "")
+    ollama = {"version": _cached("ver", 300, lambda: (keepalive.get(OLLAMA + "/api/version", timeout=3).json().get("version", "")
                                                        if _alive() else "")), "url": OLLAMA, "ours": False, "env": {}}
     try:
         from ishti import lifecycle
@@ -946,7 +979,7 @@ def snapshot():
 
 def _alive():
     try:
-        return requests.get(OLLAMA + "/api/version", timeout=2).ok
+        return keepalive.get(OLLAMA + "/api/version", timeout=2).ok
     except requests.RequestException:
         return False
 

@@ -24,6 +24,12 @@ class Facts:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         self.db = sqlite3.connect(path, check_same_thread=False)
         self.lock = threading.Lock()
+        # Speed (Cycle 4): the store is written on every request (route_log) and updated whenever the
+        # owner tells ISHTI a fact. WAL + synchronous=NORMAL removes the per-commit full fsync
+        # (~3 ms, the same fix audit.py measured) - a route-log row does not need to survive a power cut.
+        self.db.execute("PRAGMA journal_mode=WAL")
+        self.db.execute("PRAGMA synchronous=NORMAL")
+        self.db.execute("PRAGMA busy_timeout=5000")
         with self.lock, self.db:
             self.db.execute("""CREATE TABLE IF NOT EXISTS facts(
                 key TEXT, attr TEXT, entity TEXT, value TEXT, previous TEXT, updated_at REAL,

@@ -68,28 +68,65 @@ def run(text, session):
 
 
 _health_cache = {}   # mtime-sum -> (ts, reply); FIX-10: 72 s per call, no cache, re-run 4x per suite
+_HEALTH_DISK = os.path.join(ROOT, "data", "cache", "meta_health.json")  # Cycle 4: survives a restart
 
 
-def op_health(text, session):
-    from ishti.dispatcher import SKILLS
+def _health_key():
+    """The cache key for op_health: a hash over every skill.py's mtime (+ the file list). Identical
+    sources cannot produce a different result, so the same key means the same report."""
+    import hashlib
+    from ishti.dispatcher import SKILLS  # lazy: the dispatcher imports the skills that import this module
     here = os.path.join(ROOT, "ishti", "skills")
     names = [n for n in SKILLS if os.path.isfile(os.path.join(here, n, "skill.py"))
              and "__main__" in open(os.path.join(here, n, "skill.py"), encoding="utf-8").read()]
+    stamp = hashlib.sha256()
+    for n in sorted(names):
+        stamp.update(str(os.path.getmtime(os.path.join(here, n, "skill.py"))).encode())
+    return here, names, stamp.hexdigest()
+
+
+def _health_disk_get(key):
+    """A ~72-80 s full pass must not run again in a NEW process when nothing changed (Cycle 4: the
+    FIX-10 cache was in-memory only, so the first `check your skills` after every restart was the
+    slowest request in the whole system). Same key = identical skill sources; same 900 s TTL."""
+    try:
+        with open(_HEALTH_DISK, encoding="utf-8") as f:
+            d = json.load(f)
+        if d.get("key") == key and time.time() - float(d.get("ts", 0)) < 900 and d.get("reply"):
+            return str(d["reply"])
+    except (OSError, ValueError, TypeError):
+        pass
+    return None
+
+
+def _health_disk_put(key, reply):
+    try:
+        os.makedirs(os.path.dirname(_HEALTH_DISK), exist_ok=True)
+        tmp = _HEALTH_DISK + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:  # atomic replace: a crash never leaves a half file
+            json.dump({"key": key, "ts": time.time(), "reply": reply}, f, ensure_ascii=False)
+        os.replace(tmp, _HEALTH_DISK)
+    except OSError:
+        pass
+
+
+def op_health(text, session):
+    from ishti.dispatcher import SKILLS  # lazy: the dispatcher imports the skills that import this module
+    here, names, key = _health_key()
     trace(session, "selfcheck", f"running {len(names)} skill self-checks", status="start")
 
     # FIX-10: a full pass costs ~72 s. Cache on the CONTENT of the skill files: identical
     # sources cannot produce a different result, so repeat calls (the generated suite fires
     # this row 4x; users repeat too) return instantly. Any skill.py edit changes the key.
-    import hashlib
-    stamp = hashlib.sha256()
-    for n in sorted(names):
-        p = os.path.join(here, n, "skill.py")
-        stamp.update(str(os.path.getmtime(p)).encode())
-    key = stamp.hexdigest()
     if key in _health_cache and time.time() - _health_cache[key][0] < 900:
         ts, cached = _health_cache[key]
         trace(session, "selfcheck", "cached (skills unchanged)", status="done")
         return cached
+    disk = _health_disk_get(key)   # Cycle 4: also across restarts - the key proves nothing changed
+    if disk:
+        _health_cache[key] = (time.time(), disk)
+        trace(session, "selfcheck", "cached (skills unchanged since the last run)", status="done")
+        return disk
 
     def check(n):
         t0 = time.time()
@@ -109,6 +146,7 @@ def op_health(text, session):
     lines += [f"- ✗ {n} didn't load: {p}" for n, p in broken.items()]
     reply = f"Skill health: {ok}/{len(results)} self-checks pass, {len(SKILLS) - len(broken)}/{len(SKILLS)} skills loaded.\n" + "\n".join(lines)
     _health_cache[key] = (time.time(), reply)
+    _health_disk_put(key, reply)  # Cycle 4: a restart must not pay the ~72 s pass again
     return reply
 
 

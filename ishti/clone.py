@@ -10,17 +10,22 @@ import io
 import os
 import tempfile
 import threading
+import time
 import wave
 
 import numpy as np
 
 _vc, _lock = None, threading.Lock()
+_last, _timer = 0.0, None
+IDLE_S = int(os.environ.get("ISHTI_CLONE_IDLE_S") or 600)   # same 10-minute rule as every other on-demand model
 DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "clone")
 FILES = ("s3gen.safetensors", "conds.pt")  # ~1 GB; Settings -> Voices -> engine files can delete / download them
 
 
 def model():
-    """Loaded once: on the GPU when ~2.5 GB is free (next to the planner), else on the CPU."""
+    """Loaded on first use and dropped again after IDLE_S without use (it used to stay on the GPU for the rest of the
+    session after a single voice note: ~2.5 GB held for nothing). The load goes through the VRAM governor, which makes
+    room first; on the GPU when it fits, else on the CPU."""
     global _vc
     with _lock:
         if _vc is None:
@@ -28,9 +33,45 @@ def model():
                 raise RuntimeError("the own-voice converter isn't downloaded (Settings -> Voices -> engine files)")
             import torch
             from chatterbox.vc import ChatterboxVC
-            dev = "cuda" if torch.cuda.is_available() and torch.cuda.mem_get_info()[0] > 2.5e9 else "cpu"
-            _vc = ChatterboxVC.from_local(DIR, dev)
+            from ishti import gpu, vram
+            try:
+                with gpu.slot(2500, "own-voice converter loading"):
+                    _vc = ChatterboxVC.from_local(DIR, "cuda" if torch.cuda.is_available() else "cpu")
+            except vram.GpuBusy:   # no room even after the governor tried: the CPU is slower but never blocks the voice note
+                _vc = ChatterboxVC.from_local(DIR, "cpu")
     return _vc
+
+
+def _arm():
+    global _last, _timer
+    _last = time.time()
+    if _timer:
+        _timer.cancel()
+    _timer = threading.Timer(IDLE_S + 1, drop, kwargs={"if_idle": True})
+    _timer.daemon = True
+    _timer.start()
+
+
+def drop(if_idle=False):
+    """Unload the converter and give its GPU memory back. -> True when something was unloaded."""
+    global _vc
+    with _lock:
+        if _vc is None or (if_idle and time.time() - _last < IDLE_S):
+            return False
+        _vc = None
+    import gc
+    gc.collect()
+    try:
+        import torch
+        torch.cuda.empty_cache()
+    except Exception:
+        pass
+    try:
+        from ishti import models
+        models.log_event("unload", "own-voice converter", f"idle > {IDLE_S // 60}m" if if_idle else "dropped")
+    except Exception:
+        pass
+    return True
 
 
 def to_wav(samples, rate):
@@ -51,6 +92,7 @@ def convert(wav_bytes, sample_path):
     vc = model()
     with _lock:  # one conversion at a time: the model keeps the target voice between calls
         out = vc.generate(src, target_voice_path=sample_path)
+    _arm()
     return to_wav(out.squeeze(0).numpy(), vc.sr)
 
 

@@ -26,11 +26,10 @@ def free_mb():
 
 def unload_idle_models():
     """Ask Ollama to free the loaded models except pinned models (they reload on their next use)."""
-    import requests
-    from ishti import CONFIG, models
+    from ishti import CONFIG, keepalive, models
     base = CONFIG["llm"]["base_url"].rsplit("/v1", 1)[0]
     try:
-        loaded = [m["name"] for m in requests.get(f"{base}/api/ps", timeout=5).json().get("models", [])]
+        loaded = [m["name"] for m in keepalive.get(f"{base}/api/ps", timeout=5).json().get("models", [])]
     except Exception:
         return []
     freed = [m for m in loaded if not models.is_pinned(m)]

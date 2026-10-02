@@ -3,7 +3,7 @@
     "base_url": "http://127.0.0.1:11434/v1",
     "models": {
       "planner": "ishti-spark2.5:4b",
-      "coder": "qwen3-coder:30b-a3b",
+      "coder": "ishti-qwen2.5-coder:14b",
       "fast": "laya",
       "translator": "gemma3:4b"
     },

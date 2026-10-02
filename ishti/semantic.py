@@ -7,6 +7,7 @@ import chromadb
 import requests
 
 from ishti import CONFIG
+from ishti import keepalive
 
 import os
 import threading
@@ -14,14 +15,27 @@ import threading
 _cfg = CONFIG["memory"]
 
 
+_EMBED_CACHE = {}
+
+
 def embed(texts):
     cfg = CONFIG["memory"]
-    from ishti import models
+    from ishti import calltrace, models
+    key = (cfg["embed_model"], tuple(texts))
+    hit = _EMBED_CACHE.get(key)
+    if hit is not None:     # the same text embedded again this session (a repeated or retried question): no model call
+        calltrace.note("embed", cfg["embed_model"], 0, cached=True)
+        return hit
     models.used(cfg["embed_model"])
-    r = requests.post(f"{cfg['embed_url']}/api/embed",
-                      json={"model": cfg["embed_model"], "input": texts}, timeout=60)
-    r.raise_for_status()
-    return r.json()["embeddings"]
+    with calltrace.timed("embed", cfg["embed_model"], n=len(texts)):
+        r = keepalive.post(f"{cfg['embed_url']}/api/embed",
+                           json={"model": cfg["embed_model"], "input": texts}, timeout=60)
+        r.raise_for_status()
+    out = r.json()["embeddings"]
+    if len(_EMBED_CACHE) >= 256:   # ponytail: drop-oldest, not true LRU; a 256-entry cache of short strings never matters more
+        _EMBED_CACHE.pop(next(iter(_EMBED_CACHE)))
+    _EMBED_CACHE[key] = out
+    return out
 
 
 # nomic-embed-text is trained with these task prefixes; recall is noticeably sharper with them.

@@ -56,8 +56,8 @@ def _volume(m, text):
 
 
 TABLE = [
-    (re.compile(r"^\W*(?:what(?:'s|\s+is)\s+the\s+time(?:\s+now)?|what\s+time\s+is\s+it(?:\s+now)?|time\s+(?:now|please)|"
-                r"current\s+time|kya\s+time\s+hai|time\s+kya\s+hai)" + END, I), _time),
+    (re.compile(r"^\W*(?:what(?:'s|\s+is)\s+the\s+(?:current\s+)?time(?:\s+(?:right\s+)?now)?|what\s+time\s+is\s+it(?:\s+(?:right\s+)?now|\s+currently|\s+at\s+the\s+moment)?|time\s+(?:now|please)|"
+                r"(?:the\s+)?current\s+time|kya\s+time\s+hai|time\s+kya\s+hai)" + END, I), _time),
     (re.compile(r"^\W*(?:what(?:'s|\s+is)\s+(?:the\s+)?(?:date|today'?s\s+date)(?:\s+today)?|today'?s\s+date|what\s+date\s+is\s+it"
                 r"(?:\s+today)?|aaj\s+(?:ki\s+)?(?:date|tareekh)\s+kya\s+hai)" + END, I), _date),
     (re.compile(r"^\W*(?:what\s+day\s+is\s+(?:it|today)(?:\s+today)?|which\s+day\s+is\s+(?:it|today))" + END, I), _day),
@@ -69,6 +69,15 @@ TABLE = [
     (re.compile(r"^\W*(?:(?:turn\s+(?:the\s+)?)?volume\s+(?:up|down)|(?:un)?mute|set\s+(?:the\s+)?volume\s+to\s+\d{1,3}\s*%?|"
                 r"louder|quieter)" + END, I), _volume),
 ]
+
+
+def pure(text):
+    """"time" / "date" / "day" when `text` is exactly an instant read-only question, else None. Unlike answer() it never runs
+    anything with a side effect (volume, stop-talking act on the PC), so the planner can ask it about a single step."""
+    for rx, fn in TABLE:
+        if fn in (_time, _date, _day) and rx.match(text.strip()):
+            return fn.__name__.strip("_")
+    return None
 
 
 def answer(text):
@@ -88,6 +97,8 @@ if __name__ == "__main__":
                     "good morning ishti": "greet", "thank you so much": "thanks", "shukriya": "thanks",
                     "stop talking": "stop_talking", "volume up": "volume", "set volume to 30%": "volume"}.items():
         assert kind_of(t) == kind, (t, kind_of(t))
+    assert pure("what time is it right now") == "time" and pure("what is the current time") == "time"   # these went to web search (126 s measured)
+    assert pure("what time is it in tokyo") is None and pure("what time is it") == "time" and pure("volume up") is None and pure("what time is my exam") is None
     assert answer("Assalam o alaikum")[0].startswith("Wa alaikum assalam") and answer("what is the date today")[0].startswith("Today is")
     for t in ("hi, can you search the latest AI news", "what time is my exam", "thanks, now send it to Ali",
               "what is the date of the final exam", "hello world in python", "stop the download"):

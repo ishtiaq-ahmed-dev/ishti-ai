@@ -44,6 +44,72 @@ except ImportError:
     win32con = None
     win32process = None
 
+# ---- Telemetry caches (Cycle 4) ----------------------------------------------------------------
+# get_system_telemetry() is on the HUD's 3-second /api/system poll and on every "how much ram am I
+# using" request. The old body slept 100 ms (cpu_percent interval) and spawned nvidia-smi per call:
+# measured 150 ms. CPU now needs no sleep (psutil returns the delta since the previous call), and the
+# slow facts (nvidia-smi subprocess, per-partition disk usage) are cached with a short TTL - fresh
+# enough for a status read, cheap enough to poll.
+_GPU_CACHE: Dict[str, Any] = {"ts": 0.0, "value": "Unknown"}
+_GPU_TTL_S = 2.0
+_DISKS_CACHE: Dict[str, Any] = {"ts": 0.0, "value": {}}
+_DISKS_TTL_S = 5.0
+_CPU_PRIMED = False
+
+
+def _cpu_percent_fast() -> float:
+    """Non-blocking CPU% (no 0.1 s sleep). The first call primes psutil's baseline and waits 50 ms
+    once, so even the first answer is real instead of 0.0."""
+    global _CPU_PRIMED
+    if psutil is None:
+        return 0.0
+    if not _CPU_PRIMED:
+        psutil.cpu_percent(None)  # prime the baseline
+        _CPU_PRIMED = True
+        time.sleep(0.05)
+    return psutil.cpu_percent(None)
+
+
+def _disks_cached() -> Dict[str, Any]:
+    """Per-partition usage, cached ~5 s (disk_usage stats each mountpoint; unchanged second to second)."""
+    if psutil is None:
+        return {}
+    now = time.time()
+    if now - _DISKS_CACHE["ts"] < _DISKS_TTL_S:
+        return _DISKS_CACHE["value"]
+    disks = {}
+    for part in psutil.disk_partitions(all=False):
+        try:
+            usage = psutil.disk_usage(part.mountpoint)
+            disks[part.device] = {"mount": part.mountpoint, "total_gb": round(usage.total / (1024**3), 1),
+                                  "free_gb": round(usage.free / (1024**3), 1), "percent_used": usage.percent}
+        except Exception:
+            pass
+    _DISKS_CACHE.update(ts=now, value=disks)
+    return disks
+
+
+def _gpu_cached():
+    """nvidia-smi facts, cached ~2 s. A subprocess spawn per status read cost ~40-80 ms; two seconds of
+    staleness is invisible in a HUD gauge and keeps the poll path near-free."""
+    now = time.time()
+    if now - _GPU_CACHE["ts"] < _GPU_TTL_S:
+        return _GPU_CACHE["value"]
+    value = _GPU_CACHE["value"]
+    try:
+        smi = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,memory.total,memory.used,temperature.gpu", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=2)
+        if smi.returncode == 0 and smi.stdout.strip():
+            parts = [p.strip() for p in smi.stdout.strip().split(",")]
+            if len(parts) >= 4:
+                value = {"name": parts[0], "total_vram_mb": int(parts[1]), "used_vram_mb": int(parts[2]),
+                         "temp_c": int(parts[3])}
+    except Exception:
+        pass  # keep the last good value (or "Unknown") - never fail a status read on nvidia-smi
+    _GPU_CACHE.update(ts=now, value=value)
+    return value
+
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(ROOT_DIR, "data")
 USER_PROFILE_DIR = os.environ.get("USERPROFILE", r"C:\Users\PC")
@@ -133,6 +199,12 @@ class ComputerUseAgent:
         Launches desktop applications or opens files in default viewers.
         Supports common named aliases, executables in PATH, and shell links.
         """
+        from ishti import test_mode
+        if test_mode.enabled():  # NEEDS N21: under ISHTI_TEST_MODE=1 a direct call must never open a real app either
+            from ishti import audit
+            audit.record(f"TEST-MODE BLOCK launch_app: {app_name}", str(target_file or "")[:120], skill="desktop_control",
+                         initiator="test-harness", tier="T2", confirmed=None, request="[test-mode]")
+            return {"status": "blocked", "app": app_name, "details": "ISHTI_TEST_MODE=1: the app was not launched, only recorded"}
         app_aliases = {
             "notepad": "notepad.exe",
             "calculator": "calc.exe",
@@ -438,7 +510,8 @@ class ComputerUseAgent:
 
     def focus_window(self, title_keyword: str) -> bool:
         """Finds and brings a window matching title_keyword to the foreground."""
-        if win32gui is None:
+        from ishti import test_mode
+        if win32gui is None or test_mode.enabled():  # NEEDS N21: tests never move the owner's windows
             return False
 
         keyword_lower = title_keyword.lower()
@@ -467,7 +540,14 @@ class ComputerUseAgent:
     # 6. SYSTEM TELEMETRY & HARDWARE AWARENESS
     # -------------------------------------------------------------
     def get_system_telemetry(self) -> Dict[str, Any]:
-        """Gathers real-time host hardware metrics (CPU, RAM, Disks, GPU)."""
+        """Gathers real-time host hardware metrics (CPU, RAM, Disks, GPU).
+
+        Speed (Cycle 4): this runs on the /api/system poll (every 3 s in the HUD) and on every
+        "how much ram am I using" request. Two costs dominated it: psutil.cpu_percent(interval=0.1)
+        sleeps 100 ms by design, and nvidia-smi is a process spawn (~40-80 ms) - measured 150 ms per
+        call. CPU is now non-blocking (primed once), and the GPU/disk facts are cached for a couple of
+        seconds: a status read is allowed to be ~2 s old, a frozen UI is not.
+        """
         telemetry = {
             "timestamp": datetime.now().isoformat(),
             "cpu_percent": 0.0,
@@ -481,46 +561,17 @@ class ComputerUseAgent:
 
         if psutil is not None:
             try:
-                telemetry["cpu_percent"] = psutil.cpu_percent(interval=0.1)
+                telemetry["cpu_percent"] = _cpu_percent_fast()
                 vm = psutil.virtual_memory()
                 telemetry["ram_total_gb"] = round(vm.total / (1024**3), 1)
                 telemetry["ram_used_gb"] = round(vm.used / (1024**3), 1)
                 telemetry["ram_percent"] = vm.percent
-
-                for part in psutil.disk_partitions(all=False):
-                    try:
-                        usage = psutil.disk_usage(part.mountpoint)
-                        telemetry["disks"][part.device] = {
-                            "mount": part.mountpoint,
-                            "total_gb": round(usage.total / (1024**3), 1),
-                            "free_gb": round(usage.free / (1024**3), 1),
-                            "percent_used": usage.percent,
-                        }
-                    except Exception:
-                        pass
+                telemetry["disks"] = _disks_cached()
             except Exception as e:
                 print(f"[ComputerUse] psutil metrics error: {e}")
 
-        # GPU detection via nvidia-smi
-        try:
-            smi = subprocess.run(
-                ["nvidia-smi", "--query-gpu=name,memory.total,memory.used,temperature.gpu", "--format=csv,noheader,nounits"],
-                capture_output=True,
-                text=True,
-                timeout=2,
-            )
-            if smi.returncode == 0 and smi.stdout.strip():
-                parts = [p.strip() for p in smi.stdout.strip().split(",")]
-                if len(parts) >= 4:
-                    telemetry["gpu"] = {
-                        "name": parts[0],
-                        "total_vram_mb": int(parts[1]),
-                        "used_vram_mb": int(parts[2]),
-                        "temp_c": int(parts[3]),
-                    }
-        except Exception:
-            pass
-
+        # GPU detection via nvidia-smi (cached ~2 s: it is a subprocess, not a syscall)
+        telemetry["gpu"] = _gpu_cached()
         return telemetry
 
 

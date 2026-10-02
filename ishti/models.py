@@ -18,21 +18,36 @@ import time
 import requests
 
 from ishti import CONFIG
+from ishti import keepalive
 
 DB = os.path.join(os.path.dirname(CONFIG["memory"]["db_path"]), "model_usage.db")
 OLLAMA = (os.environ.get("ISHTI_OLLAMA_URL") or CONFIG.get("llm", {}).get("base_url", "http://127.0.0.1:11434/v1")).rsplit("/v1", 1)[0]
-IDLE_TIMEOUT_S = int(CONFIG.get("model_idle_timeout_s", 600))  # 10 minutes idle timer
+IDLE_TIMEOUT_S = int(os.environ.get("ISHTI_IDLE_TIMEOUT_S") or CONFIG.get("model_idle_timeout_s", 600))  # 10 minutes idle timer
 
 _lock = threading.Lock()
 _last_used = {}
 _eviction_timers = {}
 
 
+_conn_cache = {}
+
+
 def _db():
-    os.makedirs(os.path.dirname(DB), exist_ok=True)
-    c = sqlite3.connect(DB, timeout=10)
-    c.execute("CREATE TABLE IF NOT EXISTS usage(ts REAL, model TEXT)")
-    c.execute("CREATE TABLE IF NOT EXISTS model_events(ts REAL, event TEXT, model TEXT, detail TEXT)")
+    """A cached per-thread connection, created once per (thread, DB path) - the same pattern audit.py
+    measured (~12 ms -> ~0 ms): connect + CREATE TABLE + an ALTER probe on every call was paid on the
+    reply path (models.used() runs for every LLM request). WAL + synchronous=NORMAL drop the fsync:
+    this is usage telemetry, not owner data."""
+    key = (threading.get_ident(), DB)
+    c = _conn_cache.get(key)
+    if c is None:
+        os.makedirs(os.path.dirname(DB), exist_ok=True)
+        c = sqlite3.connect(DB, timeout=10, check_same_thread=False)
+        c.execute("PRAGMA journal_mode=WAL")
+        c.execute("PRAGMA synchronous=NORMAL")
+        c.execute("PRAGMA busy_timeout=5000")
+        c.execute("CREATE TABLE IF NOT EXISTS usage(ts REAL, model TEXT)")
+        c.execute("CREATE TABLE IF NOT EXISTS model_events(ts REAL, event TEXT, model TEXT, detail TEXT)")
+        _conn_cache[key] = c
     return c
 
 
@@ -87,7 +102,7 @@ def tier(model: str, now=None) -> str:
 def currently_resident() -> list[dict]:
     """Query Ollama and return currently loaded models in VRAM."""
     try:
-        r = requests.get(f"{OLLAMA}/api/ps", timeout=5)
+        r = keepalive.get(f"{OLLAMA}/api/ps", timeout=5)
         if r.ok:
             return r.json().get("models", [])
     except Exception:
@@ -100,7 +115,7 @@ def evict(model: str, reason: str = "idle > 10m"):
     if is_pinned(model):
         return False
     try:
-        r = requests.post(f"{OLLAMA}/api/generate", json={"model": model, "keep_alive": 0}, timeout=15)
+        r = keepalive.post(f"{OLLAMA}/api/generate", json={"model": model, "keep_alive": 0}, timeout=15)
         if r.ok:
             log_event("unload", model, reason)
             return True
@@ -186,7 +201,7 @@ def used(model: str):
 
 def _keep_alive(model: str, keep):
     try:
-        requests.post(f"{OLLAMA}/api/generate", json={"model": model, "keep_alive": keep}, timeout=30)
+        keepalive.post(f"{OLLAMA}/api/generate", json={"model": model, "keep_alive": keep}, timeout=30)
     except requests.RequestException:
         pass
 

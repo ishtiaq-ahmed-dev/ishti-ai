@@ -8,14 +8,14 @@ import time
 
 import requests
 
-from ishti import CONFIG
+from ishti import CONFIG, keepalive
 
 EVERY_S = 300
 _state = {"at": 0.0, "status": "starting", "checks": {}}
 
 
 def _ollama():
-    tags = requests.get("http://127.0.0.1:11434/api/tags", timeout=5).json()
+    tags = keepalive.get("http://127.0.0.1:11434/api/tags", timeout=5).json()
     names = {m["name"] for m in tags.get("models", [])}
     want = CONFIG["llm"]["models"]["planner"]
     ok = any(n == want or n.startswith(want + ":") or n.split(":")[0] == want.split(":")[0] for n in names)
@@ -28,7 +28,7 @@ def _ollama():
 
 
 def _searx():
-    r = requests.get("http://127.0.0.1:8890/search?q=ping&format=json", timeout=8)
+    r = keepalive.get("http://127.0.0.1:8890/search?q=ping&format=json", timeout=8)
     return r.ok, f"HTTP {r.status_code}"
 
 
