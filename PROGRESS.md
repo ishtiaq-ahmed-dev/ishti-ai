@@ -428,8 +428,10 @@ Then: new master prompt Cycle 1 starts from a clean, tagged tree.
 - K4 KEEP: _inflight in-memory + coalescing writer thread -> handle() 4.05 ms (-85% cumulative).
 - B3: PIP_NAME zxingcpp -> zxing-cpp (scanqr auto-install never worked; found via NEEDS.md runtime entry).
 - 3 consecutive full-suite greens; perf_guard extended with handle keys; guard PASS.
-- F1: digest N5 flake investigated to root-cause class (WAL-on-Windows under full-suite load;
-  0/27 focused reproductions incl. pre-change bisect) - documented, not asserted away.
+- F1: digest N5 flake investigated - first characterised as WAL-on-Windows (0/27 focused repros).
+  **CURED 2026-10-02** (recheck): real root cause was `store.ingest_json` stamping `last_seen` with the
+  ingest wall-clock, so chat ordering followed SQLite write timing; fixed (max message ts + name
+  tie-break + name-keyed N5 comparison). Order now 1/10 runs distinct (was 9/10); suite 5/5 green.
 - API_CONTRACT SS11 verified endpoint-by-endpoint (11/11 + recent key).
 - route_log usage data: 3091 requests, 121 skills used -> lazy skill imports stay rejected.
 
@@ -456,7 +458,7 @@ Then: new master prompt Cycle 1 starts from a clean, tagged tree.
   (docker restart ishti-searxng -> HTTP 200); Ollama VRAM cleared between suites before every gate.
 - Still open by design (owner decision or per-site judgement), listed plainly in SWEEP_REPORT.md
   section 4: CD-11 ruff, CD-13, Issue 30, SC-05/06/11, Issue 22/24, SC-23, SC-10, Q10, N22-N26,
-  Need 2/3/13, and the F1 digest flake (characterised, deliberately not weakened).
+  Need 2/3/13. (F1 digest flake: characterised here, then CURED 2026-10-02 - see the 5-repo section.)
 
 ## 5-repo integration session (2026-10-01/02, branch feat/repo-integration)
 
@@ -490,3 +492,6 @@ tray push-to-talk. Full offline suite 445/445 green; catalog generator idempoten
 Recheck pass 2026-10-02: 4 documented self-checks were broken by a missing repo-root bootstrap
 (dictation/gateway/session_schema/quality_gate) - fixed, and tools/verify_all.py now runs every
 documented `python <path>` command so the class cannot ship unnoticed again (15/15 pass).
+Same pass: skill_creator manifest pointed at a non-existent test file (fixed + new
+`tests/test_manifest_integrity.py` guard), and the F1 digest flake was root-caused and CURED
+(ingest wall-clock used as `last_seen`; order now deterministic 1/10 runs vs 9/10).

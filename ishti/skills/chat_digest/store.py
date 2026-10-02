@@ -170,13 +170,28 @@ def stats():
 
 def ingest_json(payload, source="json"):
     """payload: {"chats": [{"chat_id","name","type","archived","muted","unread","messages":[{...}]}]}.
-    The synthetic test dataset and any script that already has messages in hand use this."""
+    The synthetic test dataset and any script that already has messages in hand use this.
+
+    `last_seen` is the chat's real last message time (max message ts) when the payload carries
+    timestamps - NOT the ingest wall-clock. Stamping `now()` here made the digest's
+    "most recent first" ordering follow SQLite write timing (nondeterministic run to run); found
+    by the F1 digest-flake recheck 2026-10-02."""
     n = 0
     for ch in payload.get("chats", []):
+        msgs = ch.get("messages", [])
+        when = ch.get("last_seen")
+        if not when and msgs:
+            stamps = []
+            for mm in msgs:
+                try:
+                    stamps.append(float(mm.get("ts")))
+                except (TypeError, ValueError):
+                    continue
+            when = max(stamps) if stamps else None
         cid = upsert_chat(ch.get("chat_id") or ch.get("name"), ch.get("name"), ch.get("type", "unknown"),
                           ch.get("archived", False), ch.get("muted", False), ch.get("unread", False),
-                          source=source, when=ch.get("last_seen"))
-        n += add_messages(cid, ch.get("messages", []), source=source)
+                          source=source, when=when)
+        n += add_messages(cid, msgs, source=source)
     return n
 
 

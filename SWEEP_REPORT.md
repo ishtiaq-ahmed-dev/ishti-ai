@@ -37,13 +37,21 @@ gated; every closed row backed by a command run on this PC (never by reading alo
   Ollama (`keep_alive: 0` on `/api/ps`) restored a pass. This is the documented Q10 policy: run the live
   suites when the GPU is idle, not a product defect.
 
-## 3. F1 flake — third sighting, better characterised (test deliberately unchanged)
+## 3. F1 flake — third sighting, better characterised — now CURED (2026-10-02)
 
 `tests/test_chat_digest.py::test_n5_prompt_injection_does_not_change_behaviour` failed once inside a
 full-suite run **and once focused immediately after** a full-suite run; the next 17 focused runs were
 green. New datapoint vs. the earlier two sightings: it is not confined to in-suite load — it can fire in
 the disk-churn window right after a suite (AV/indexer). Per the standing rule the test is **not** weakened;
 the evidence is appended to `TECHNIQUE_LOG.md`.
+
+**CURED 2026-10-02** (recheck pass): the failure became reproducible (2/3 focused), and instrumenting it
+showed 9 distinct chat orders in 10 runs. Root cause: `store.ingest_json` stamped `last_seen` with the
+ingest wall-clock instead of the chat's last message time, so the digest's "most recent first" ordering
+was really SQLite write-timing order; the test then compared relationship lists positionally. Fixed in
+`store.ingest_json` (real max message ts) + a name tie-break in `analyze()` + an order-independent
+(name-keyed) N5 comparison — the same claim, no weakening. Evidence: 1 distinct order / 10 runs, digest
+suite 5/5 green, full offline suite green (`_work/digest_cured_run1..5.log`).
 
 ## 4. Still open — and why (no honest sweep can call these "fixed")
 
@@ -82,6 +90,7 @@ Every row that could be closed from code is closed, with a test or a command beh
 "issues" turned out to be **false positives** (SC-07's gitops/vulnscan hits, my own sweep's first
 report), and one (CD-12) was a documented fallback that never existed — now it does. Two rows are
 environment failures with a proven remedy (SearXNG port-forward, VRAM contention) rather than defects, one
-is unreproduced and therefore uncured (`Errno 22`), and the F1 flake is characterised, not silenced. The
+is unreproduced and therefore uncured (`Errno 22`), and the F1 flake was characterised in this sweep and
+**cured on 2026-10-02** (root cause: ingest wall-clock stamped as `last_seen`; see section 3). The
 remaining OPEN list in section 4 is owner-decided work or per-site judgement — stated plainly instead of
 being counted as "no issues".

@@ -440,7 +440,7 @@ def analyze(win, cfg=None, use_llm=False, session=None):
     found = store.chats()
     prov = store.provenance(win["start"], win["end"])
     coverage, results = [], []
-    ordered = sorted(found, key=lambda c: -(c.get("last_seen") or 0))
+    ordered = sorted(found, key=lambda c: (-(c.get("last_seen") or 0), str(c.get("name") or c.get("chat_id") or "")))
     budget = int(cfg.get("max_chats", 250))
     for i, ch in enumerate(ordered):
         msgs = store.messages_between(win["start"], win["end"], ch["chat_id"])

@@ -706,3 +706,25 @@ break class cannot ship unnoticed again.
 Evidence: each documented command passes (`verify_all --only doc:` = **15/15 in 2 s**), affected
 suites 3x green (`_work/selfcheck_fix_3x_run1..3.log`, exit 0), full suite **445/445, exit 0**
 (`_work/suite_after_selfcheck_fix.log`).
+
+## 6. F1 digest flake — root cause found and cured (2026-10-02)
+
+The long-standing `test_chat_digest.py::test_n5_...` flake (5 sightings; earlier characterised as a
+WAL-on-Windows/AV disk-churn flake at 0/27 focused reproductions) became reproducible in the recheck
+(2/3 focused failures), which allowed instrumentation. Measured: **9 distinct chat orders in 10 runs**.
+
+Root cause (product bug, not a test flake): `store.ingest_json` called `upsert_chat(when=ch.get("last_seen"))`,
+but JSON payloads carry no chat-level `last_seen`, so every chat was stamped with the **ingest wall-clock**.
+The digest's "most recent first" sort therefore ordered chats by SQLite write timing. N5 then compared
+relationship lists **positionally**, so any swap between a known chat (Bilal, brother) and an unknown one
+failed the assertion.
+
+Fix (three small changes, no weakening):
+- `ishti/skills/chat_digest/store.py::ingest_json` derives `last_seen` from the chat's max message ts.
+- `ishti/skills/chat_digest/analyze.py` sorts with a name tie-break (total order, deterministic).
+- `tests/test_chat_digest.py` N5 compares relationships by chat **name** (`{name: relationship}` equality)
+  — exactly the claim under test, order-independent.
+
+Evidence: order = **1 distinct / 10 runs** (was 9/10), correctly most-recent-first; digest suite
+**5/5 green** (`_work/digest_cured_run1..5.log`, was 2/3 failing); full offline suite green
+(`_work/suite_final_recheck2.log`).
