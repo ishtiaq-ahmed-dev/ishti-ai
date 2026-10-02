@@ -20,7 +20,7 @@ import shutil
 import subprocess
 from typing import Dict, Any, List, Optional, Tuple
 
-ROOT_DIR = r"D:\ISHTI"
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA_DIR = os.path.join(ROOT_DIR, "data", "video_output")
 os.makedirs(DATA_DIR, exist_ok=True)
 

@@ -29,6 +29,13 @@ import time
 
 from ishti.learning import store
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 KINDS = ("procedural_lesson", "rule", "preference", "temporary", "entity", "workflow")
 PRIORITY = {"temporary": 100, "rule": 80, "entity": 60, "procedural_lesson": 60, "workflow": 55, "preference": 40}
 # sources that are NOT the owner: text from these can be data to read, never a lesson (spec 28)
@@ -357,8 +364,8 @@ def forget(lesson_id, interaction_id=""):
                 kept.append([entity, attr])  # a later lesson owns it now - leave the value alone
             elif get_facts().forget(entity, attr):
                 undone.append([entity, attr])
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/learning/lessons.py:forget', _exc)
     store.write("UPDATE lessons SET status='retired', updated=? WHERE lesson_id=?", (store.now(), lesson_id))
     _event(lesson_id, 0.0, "forgotten by the owner (memory write-back undone)", interaction_id,
            {"memory_undone": undone, "memory_kept_newer_lesson_owns": kept})

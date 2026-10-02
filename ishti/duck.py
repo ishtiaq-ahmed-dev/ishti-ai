@@ -6,6 +6,13 @@ import os
 import threading
 import time
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 DUCK_LEVEL = 0.25
 _lock = threading.Lock()
 _holders = 0
@@ -34,8 +41,8 @@ def start():
                 if level > DUCK_LEVEL:
                     _saved[s.Process.pid] = level
                     vol.SetMasterVolume(DUCK_LEVEL, None)
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/duck.py:start', _exc)
 
 
 def stop():
@@ -49,8 +56,8 @@ def stop():
             for s in _sessions():
                 if s.Process.pid in _saved:
                     s.SimpleAudioVolume.SetMasterVolume(_saved[s.Process.pid], None)
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/duck.py:stop', _exc)
         _saved.clear()
 
 

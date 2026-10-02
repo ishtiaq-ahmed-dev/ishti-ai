@@ -543,6 +543,11 @@ def _stage_backend():
 
 
 def _stage_ollama():
+    try:
+        from ishti import privacy
+        privacy.silence_ollama_tray()   # the tray app phones ollama.com hourly; ISHTI runs its own `ollama serve`
+    except Exception:
+        log.exception("could not silence Ollama's tray app")
     how = ensure_ollama()
     from ishti import vram
     vram.start_sampler()

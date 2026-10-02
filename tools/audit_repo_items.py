@@ -202,7 +202,7 @@ def coucou():
 
 def main():
     if not VENDOR.is_dir():
-        sys.exit("vendor/ missing - clone the repos first (see VENDOR_PINS.md)")
+        sys.exit("vendor/ missing - clone the five integration repos into vendor/ first")
     OUT.mkdir(exist_ok=True)
     for fn in (open_dots, ecc, hey_jev, agent_reach, coucou):
         before = len(rows)

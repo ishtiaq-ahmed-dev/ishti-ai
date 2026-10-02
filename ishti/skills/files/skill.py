@@ -37,6 +37,6 @@ def run(text, session):
 
 
 if __name__ == "__main__":
-    assert match("find files named readme in D:/ISHTI/docs")
+    assert match("find files named readme in D:/work/docs")
     assert not match("what is a folder")
     print("[self-check] files OK - routing")

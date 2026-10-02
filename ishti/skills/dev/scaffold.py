@@ -159,9 +159,9 @@ if __name__ == "__main__":
     root = tempfile.mkdtemp()
     path, how = scaffold("fastapi", "shop-api", root)
     assert os.path.isfile(os.path.join(path, "shop_api", "__init__.py")) and "uvicorn shop_api:app" in how
-    assert subprocess.run(["git", "log", "--oneline"], cwd=path, capture_output=True, text=True).stdout.strip().endswith("Project scaffold")
+    assert subprocess.run(["git", "log", "--oneline"], cwd=path, capture_output=True, text=True, timeout=60).stdout.strip().endswith("Project scaffold")
     p = subprocess.run(["python", "-c", "import sys; sys.path.insert(0, '.'); import shop_api; print(shop_api.main().title)"],
-                       cwd=path, capture_output=True, text=True)
+                       cwd=path, capture_output=True, text=True, timeout=60)
     assert p.stdout.strip() == "shop-api" or "No module named 'fastapi'" in p.stderr, p.stderr
     try:
         scaffold("python", "shop-api", root)

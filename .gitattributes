@@ -1,0 +1,2 @@
+# Windows batch files must keep CRLF line endings (cmd.exe mis-parses labels in LF files), also in the GitHub ZIP download
+*.bat text eol=crlf

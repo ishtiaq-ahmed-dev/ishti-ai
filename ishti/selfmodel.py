@@ -34,6 +34,9 @@ import time
 from ishti import CONFIG, ROOT
 
 PROFILE = os.path.join(ROOT, "owner_profile.yaml")
+# The owner confirms the details in chat ("confirm my profile"): the answer is stored here, in data/, because the meta skill
+# may only write there - owner_profile.yaml itself stays exactly as the owner edited it.
+CONFIRM = os.path.join(ROOT, "data", "owner_profile_confirmed.json")
 TTL_S = 30          # cheap probes (hardware)
 FULL_TTL_S = 300    # expensive probes (models + skill registry)
 BUDGET_CHARS = 1200
@@ -134,18 +137,31 @@ def profile() -> dict:
         import yaml
         with open(PROFILE, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
-        return data if isinstance(data, dict) else {}
+        data = data if isinstance(data, dict) else {}
+        if data and os.path.isfile(CONFIRM):
+            data = {**data, "confirmed": True}
+        return data
     except Exception as exc:
         print(f"[selfmodel] owner profile unreadable ({type(exc).__name__}: {exc}) - treated as unknown")
         return {}
 
 
+def confirm_profile() -> str:
+    """Record that the owner checked the profile details ("confirm my profile" -> yes). -> the file written."""
+    import json
+    os.makedirs(os.path.dirname(CONFIRM), exist_ok=True)
+    with open(CONFIRM, "w", encoding="utf-8") as f:
+        json.dump({"confirmed": True, "at": time.strftime("%Y-%m-%d %H:%M")}, f)
+    return CONFIRM
+
+
 def profile_fingerprint() -> str:
     try:
         st = os.stat(PROFILE)
-        return f"{int(st.st_mtime)}:{st.st_size}"
+        sig = f"{int(st.st_mtime)}:{st.st_size}"
     except OSError:
         return "absent"
+    return sig + (":confirmed" if os.path.isfile(CONFIRM) else "")
 
 
 

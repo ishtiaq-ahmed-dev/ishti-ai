@@ -9,7 +9,7 @@ and cannot be talked into passing. Four questions, always answered in the design
   4. what tier does it get - T2 for anything with side effects, T0 for read-only, and NEVER lowered here?
 
 If it cannot be done locally, safely or within the limits, `refuse()` says so and names the exact gap;
-the caller logs it to NEEDS.md. A plausible-sounding "I'll try anyway" would be worse than a refusal.
+the caller logs it to the needs log. A plausible-sounding "I'll try anyway" would be worse than a refusal.
 """
 from __future__ import annotations
 
@@ -75,12 +75,30 @@ def vram_check(request="") -> dict:
         out["note"] = (out["note"] + "; " if out["note"] else "") + \
             f"ladder unavailable ({type(exc).__name__}: {exc})"
         out["coder"] = next((m for m in out["installed"] if "coder" in m.lower()), "")
-    # 80% budget of the card (models_ladder.yaml budget_pct); the 14B coder measured 9922 MiB (R6 S2)
-    budget = int(out.get("total_mb", 0) * 0.8) if out.get("total_mb") else 0
-    out["ok"] = bool(out["coder"]) and (not budget or out["free_mb"] is None or out["free_mb"] >= 4096)
+    # Can the governor place the coder right now? ishti.vram.plan() is read-only and answers with the real numbers
+    # (measured footprints, the 80% budget, Ollama's headroom rule) and the steps it would take: unload an idle model,
+    # step the planner down a rung, a lighter coder rung. A fixed "4096 MB free" threshold refused jobs the governor
+    # could place (SC-23) and could not see that an idle model was about to be evicted.
+    out["fits"], out["plan"] = None, []
+    if out["coder"]:
+        try:
+            from ishti import vram
+            p = vram.plan(out["coder"], role="coder")
+            out["fits"] = p is not None
+            out["plan"] = [f"{a.get('do')}: {a.get('model') or a.get('role')}" for a in (p or {}).get("actions", [])]
+            if p is not None:
+                out["need_mb"] = p.get("need_mb")
+                out["coder_target"] = p["target"]["model"]
+            else:
+                out["note"] = (out["note"] + "; " if out["note"] else "") + vram.why_not(out["coder"])
+        except Exception as exc:  # governor unreadable: degrade to a coarse free-memory check, and say so
+            out["note"] = (out["note"] + "; " if out["note"] else "") +                 f"VRAM governor unavailable ({type(exc).__name__}); used a static free-memory check"
+            out["fits"] = out["free_mb"] is None or out["free_mb"] >= 4096
+    out["ok"] = bool(out["coder"]) and bool(out["fits"])
     if not out["note"]:
         out["note"] = (f"coder rung '{out['coder']}' installed, {out['free_mb']} MB free of "
-                       f"{out['total_mb']} MB" if out["coder"]
+                       f"{out.get('total_mb')} MB" + (f"; governor plan: {', '.join(out['plan'])}" if out["plan"] else "")
+                       if out["coder"]
                        else "no coder rung installed from the ladder - code generation cannot run")
     return out
 

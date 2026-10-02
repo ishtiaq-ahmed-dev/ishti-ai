@@ -34,8 +34,30 @@ from ishti.untrusted import fence, guard
 from tools.web.relevance import filter_sources
 from orchestrator.memory.user_profile import get_user_memory
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 RESEARCH_MEM_DIR = os.path.join(ROOT_DIR, "orchestrator", "memory", "research")
 os.makedirs(RESEARCH_MEM_DIR, exist_ok=True)
+
+
+def _submit(pool, fn, *args, **kwargs):
+    """pool.submit(), except while the interpreter is exiting: a daemon thread that is still answering a request then gets
+    "RuntimeError: cannot schedule new futures after interpreter shutdown" (the web_search row in the runtime log). Work
+    that can no longer be parallelised is simply run inline, so the answer still completes instead of failing."""
+    try:
+        return pool.submit(fn, *args, **kwargs)
+    except RuntimeError:
+        fut = concurrent.futures.Future()
+        try:
+            fut.set_result(fn(*args, **kwargs))
+        except Exception as exc:
+            fut.set_exception(exc)
+        return fut
 
 
 READ_BUDGET_S = 4.0
@@ -61,8 +83,8 @@ class DeepResearchEngine:
             o = obscura.fetch(url, "markdown")
             if o.get("ok") and o.get("content", "").strip():
                 return {"status": "success", "content": o["content"][:max_chars]}
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('orchestrator/deep_research.py:DeepResearchEngine._fetch_one', _exc)
         return self.fetcher.fetch(url, max_chars=max_chars)
 
     def emit(self, event_type: str, data: Dict[str, Any]) -> None:
@@ -114,7 +136,8 @@ class DeepResearchEngine:
                 pages = self._read(top)
                 self.emit("status_change", {"state": "RESEARCHING", "detail": "Reading through them now..."})
                 with concurrent.futures.ThreadPoolExecutor(max_workers=len(pages) or 1) as pool:
-                    verdicts = list(pool.map(lambda pg: self._page_verdict(user_prompt[:MAX_QUERY_CHARS], pg), pages))
+                    verdicts = [f.result() for f in [_submit(pool, self._page_verdict, user_prompt[:MAX_QUERY_CHARS], pg)
+                                                     for pg in pages]]
                 for pg, (ok, why) in zip(pages, verdicts):
                     if ok:
                         good.append(pg)
@@ -159,7 +182,7 @@ class DeepResearchEngine:
         """Read pages in parallel under one time budget. A slow page (the reader-mode fallback can take 10-12 s)
         must not hold the answer hostage: past the budget its search snippet is used instead."""
         pool = concurrent.futures.ThreadPoolExecutor(max_workers=len(top) or 1)
-        futures = [pool.submit(self.fetcher.fetch, r.url, max_chars=2500) for r in top]
+        futures = [_submit(pool, self.fetcher.fetch, r.url, max_chars=2500) for r in top]
         concurrent.futures.wait(futures, timeout=READ_BUDGET_S)
         pool.shutdown(wait=False, cancel_futures=True)
         pages = []
@@ -268,7 +291,7 @@ class DeepResearchEngine:
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
             future_to_src = {
-                executor.submit(self._fetch_one, src.url, 3000): (i + 1, src)
+                _submit(executor, self._fetch_one, src.url, 3000): (i + 1, src)
                 for i, src in enumerate(sources_pool)
             }
             for future in concurrent.futures.as_completed(future_to_src):
@@ -375,8 +398,8 @@ class DeepResearchEngine:
                 clean_queries = [l for l in lines if len(l) > 5][:count]
                 if clean_queries:
                     queries = clean_queries
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('orchestrator/deep_research.py:DeepResearchEngine._generate_research_queries', _exc)
 
         # Fallback queries if model failed
         if len(queries) < 2:

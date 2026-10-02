@@ -20,7 +20,7 @@ import subprocess
 
 
 def _project_root():
-    """D:\\ISHTI whether we are the frozen exe or run from source.
+    """The ISHTI checkout whether we are the frozen exe or run from source.
 
     --onedir layout: dist\\ISHTI\\ISHTI.exe + dist\\ISHTI\\_internal -> three dirnames up.
     --onefile layout: dist\\ISHTI.exe -> two dirnames up. The candidate that really contains
@@ -63,7 +63,7 @@ def handoff():
             "ISHTI - cannot start",
             "ISHTI could not find its Python environment.\n\n"
             f"Expected: {pyw}\n\n"
-            "Fix: run D:\\ISHTI\\start.bat once (it restores the venv), then launch ISHTI again.",
+            "Fix: run start.bat in the ISHTI folder once (it restores the venv), then launch ISHTI again.",
         )
         return 1
     if not os.path.isfile(launcher_py):

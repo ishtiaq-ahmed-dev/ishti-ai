@@ -187,7 +187,7 @@ def test_J(engine):
 def test_K(engine):
     print("\nTEST K - Memory persistence across restart")
     # A genuinely fresh process, not a re-import of a cached singleton.
-    code = ("import sys; sys.path.insert(0, r'D:\\ISHTI');"
+    code = (f"import sys; sys.path.insert(0, {ROOT_DIR!r});"
             "from orchestrator.memory.user_profile import get_user_memory as g;"
             "p=g().get_profile(); print(p.name + '|' + p.location.get('city',''))")
     import subprocess

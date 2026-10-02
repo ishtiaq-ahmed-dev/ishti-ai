@@ -9,7 +9,12 @@ It takes over the GPU for a few minutes: run it with ISHTI stopped.
 Thinking models (a `thinking` capability in /api/show, e.g. Spark-X2.5) reason before answering, so the
 fixed quality prompts run with a larger token budget (NUM_PREDICT_THINKING) and are judged on the text
 AFTER the </think> stream - the 160-token cap was sized for non-thinking brains and truncated the
-reasoning mid-stream (measured: Spark needed 260 tokens for the json prompt, 962 for the table)."""
+reasoning mid-stream (measured: Spark needed 260 tokens for the json prompt, 962 for the table).
+
+Your own prompts (what actually matters for a lighter rung, e.g. Urdu/Pashto, plans, tool use): put them in
+data/owner_prompts.txt, one per line, optionally `prompt || text the answer must contain`; lines starting with # are
+ignored. Every rung then also answers them and the replies are saved in data/vram_calibration.json (`owner_prompts`)
+so a rung's quality is judged on YOUR traffic, not only on the fixed prompts above."""
 import base64
 import io
 import json
@@ -24,6 +29,7 @@ import requests
 from ishti import vram
 
 OUT = os.path.join(vram.DATA, "vram_calibration.json")
+OWNER_PROMPTS = os.path.join(vram.DATA, "owner_prompts.txt")
 NUM_PREDICT_DEFAULT = 160     # non-thinking brains: answers fit well inside this (14B quality row, 29 Sep)
 NUM_PREDICT_THINKING = 2048   # thinking brains: room to reason first; the answer itself stays short
 PROMPTS = {
@@ -35,6 +41,21 @@ PROMPTS = {
 }
 TOOL = [{"type": "function", "function": {"name": "get_weather", "description": "Weather for a city", "parameters": {
     "type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}}}]
+
+
+def load_owner_prompts(path=None):
+    """[(prompt, expected_substring_or_None)] from the owner's prompt file; [] when the file does not exist."""
+    out = []
+    try:
+        with open(path or OWNER_PROMPTS, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    prompt, _, expect = line.partition("||")
+                    out.append((prompt.strip(), expect.strip() or None))
+    except OSError:  # no prompt file: the fixed prompts are all there is
+        return out
+    return out
 
 
 def _json(t):
@@ -122,8 +143,16 @@ def measure(name, ctx):
             ok_v = False
         quality += ok_v
         notes.append(f"vision:{'ok' if ok_v else 'FAIL'}")
+    owner = []
+    for prompt, expect in load_owner_prompts():
+        try:
+            reply = _answer(generate(name, prompt, budget)["response"]).strip()
+        except Exception as exc:
+            reply = f"(failed: {type(exc).__name__})"
+        owner.append({"prompt": prompt, "reply": reply[:400], "expected": expect,
+                      "ok": (expect.lower() in reply.lower()) if expect else None})
     res.update(quality=f"{quality}/{total}", quality_detail=" ".join(notes) + (f" [think@{budget}]" if think else ""),
-               think=think, quality_num_predict=budget)
+               think=think, quality_num_predict=budget, owner_prompts=owner)
     print("  ", {k: res[k] for k in ("size_vram_mb", "gpu_delta_mb", "load_s", "tps", "ttft_ms", "quality")}, res["quality_detail"], flush=True)
     vram.unload(name)
     return res

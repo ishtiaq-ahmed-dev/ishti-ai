@@ -33,6 +33,13 @@ if ROOT not in sys.path:
 
 from ishti import CONFIG  # noqa: E402  (after the path bootstrap)
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 DATA_DIR = os.path.dirname(CONFIG["memory"]["db_path"])
 LOG_PATH = os.path.join(DATA_DIR, "dictation_history.jsonl")
 MAX_CHUNKS = 500
@@ -173,8 +180,8 @@ class Dictation:
             self._session["chunks"] += 1
             try:
                 self._clipboard(text)
-            except Exception:
-                pass
+            except Exception as _exc:
+                swallowed('ishti/dictation.py:Dictation.push_chunk', _exc)
             try:
                 pasted = bool(self._paste(text))
             except Exception:
@@ -194,8 +201,8 @@ class Dictation:
             self._appends += 1
             if self._appends % 25 == 0 or self._appends <= 2:
                 self._trim()
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/dictation.py:Dictation._log', _exc)
 
     def _trim(self) -> None:
         """Keep the JSONL history bounded (last max_chunks lines)."""
@@ -205,8 +212,8 @@ class Dictation:
             if len(lines) > self.max_chunks:
                 with open(self.log_path, "w", encoding="utf-8") as f:
                     f.writelines(lines[-self.max_chunks:])
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/dictation.py:Dictation._trim', _exc)
 
     def history(self, limit: int = 50) -> list:
         try:

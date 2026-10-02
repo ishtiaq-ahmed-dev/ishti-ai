@@ -32,19 +32,19 @@ PLAN = "# The plan\n\n- step one\n- step two\n\n<script>alert(1)</script>\n<img 
 
 def _work(tmp_path, plan=PLAN):
     tmp_path.mkdir(parents=True, exist_ok=True)
-    (tmp_path / "IMPLEMENTATION_PLAN.md").write_text(plan, encoding="utf-8")
+    (tmp_path / "demo_plan.md").write_text(plan, encoding="utf-8")
     return tmp_path
 
 
 def _serve(tmp_path):
     dec = str(tmp_path / "data" / "plan_decisions.json")
-    h = pv.serve(str(tmp_path), plans=("IMPLEMENTATION_PLAN.md",), decisions_file=dec)
+    h = pv.serve(str(tmp_path), plans=("demo_plan.md",), decisions_file=dec)
     assert h["ok"] and h["url"].startswith("http://127.0.0.1:"), h
     return h, dec
 
 
 def test_render_escapes_plan_markup(tmp_path):
-    page = pv.render(str(_work(tmp_path)), plans=("IMPLEMENTATION_PLAN.md",))
+    page = pv.render(str(_work(tmp_path)), plans=("demo_plan.md",))
     assert "Approve" in page and "Request changes" in page and "step one" in page
     assert "<script>alert(1)</script>" not in page and "<img" not in page
     assert "&lt;script&gt;" in page and "&lt;img" in page, "raw markup is escaped"
@@ -54,7 +54,7 @@ def test_render_escapes_plan_markup(tmp_path):
 
 def test_decisions_are_validated_and_bounded(tmp_path):
     dec = str(tmp_path / "data" / "plan_decisions.json")
-    assert pv.record_decision({"doc": "IMPLEMENTATION_PLAN.md", "decision": "approve"}, dec)
+    assert pv.record_decision({"doc": "demo_plan.md", "decision": "approve"}, dec)
     assert pv.record_decision({"doc": "x", "decision": "request-changes", "note": "fix scope"}, dec)
     assert pv.record_decision({"doc": "x", "decision": "maybe"}, dec) is None
     assert pv.record_decision({"decision": "approve"}, dec) is None
@@ -89,12 +89,12 @@ def test_http_surface_end_to_end(tmp_path):
         with urllib.request.urlopen(base + "/decisions", timeout=5) as r:
             assert json.loads(r.read()) == []
         req = urllib.request.Request(base + "/decision",
-                                     data=json.dumps({"doc": "IMPLEMENTATION_PLAN.md",
+                                     data=json.dumps({"doc": "demo_plan.md",
                                                       "decision": "approve"}).encode(),
                                      headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=5) as r:
             row = json.loads(r.read())
-        assert r.status == 200 and row["decision"] == "approve" and row["doc"] == "IMPLEMENTATION_PLAN.md"
+        assert r.status == 200 and row["decision"] == "approve" and row["doc"] == "demo_plan.md"
         assert len(pv.load_decisions(dec)) == 1
         # invalid decision -> 400; unknown path -> 404; oversized -> 413
         bad = urllib.request.Request(base + "/decision", data=b'{"doc":"x","decision":"nope"}',

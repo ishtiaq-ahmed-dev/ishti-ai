@@ -24,10 +24,10 @@ WORKLOAD = [
     "what's the weather in Peshawar today",
     "remind me in 40 minutes to qa-stretch",
     "Reply with the exact word: PONG",
-    "find files named readme in D:/ISHTI/docs",
+    "find files named readme in {ROOT}/tests/fixtures",
     "what do you remember about me",
     "note: qa ramp marker {n}",
-    "show the top level of D:/ISHTI/docs",
+    "show the top level of {ROOT}/tests/fixtures",
     "bayes: prior 1% sensitivity 99% specificity 95%",
     "how much RAM is free",
     "check the last 24 hours of all my chats and give me a report",
@@ -49,8 +49,7 @@ def main():
         i = 0
         while not stop.is_set():
             text = WORKLOAD[(wid * 3 + i) % len(WORKLOAD)]
-            if "{n}" in text:
-                text = text.replace("{n}", f"{wid}-{i}")
+            text = text.replace("{n}", f"{wid}-{i}").replace("{ROOT}", ROOT.replace("\\", "/"))
             sid = f"qa_ramp{n}_w{wid}"
             toks = []
             t0 = time.time()

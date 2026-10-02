@@ -6,7 +6,7 @@ voice.stt_call(), which runs it on one dedicated thread.
 
 This test checks the invariant (one decode thread, results and errors crossing the queue intact) and then the real
 thing end to end: the two self-checks that used to exit with a fail-fast code are run in subprocesses and must exit 0.
-Run:  D:\\ISHTI\\venv\\Scripts\\python.exe D:\\ISHTI\\tests\\test_stt_threads.py
+Run:  venv\\Scripts\\python tests\\test_stt_threads.py
 """
 import os
 import subprocess

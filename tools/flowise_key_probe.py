@@ -1,9 +1,10 @@
 """Probe how Flowise 3.0.5's /apikey endpoint authenticates (status + body, no secrets printed)."""
 import json
+import os
 import sys
 import urllib.request
 
-sys.path.insert(0, r"D:\ISHTI\tools")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from flowise_wire import BASE, EMAIL, PASSWORD, login_cookie
 
 jar = login_cookie()

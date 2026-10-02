@@ -22,6 +22,13 @@ import time
 
 from ishti import CONFIG
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 STATE_PATH = os.path.join(os.path.dirname(CONFIG["memory"]["db_path"]), "mic_state.json")
 
 _lock = threading.Lock()
@@ -108,16 +115,16 @@ def _start_listener() -> bool:
                 from interface.web_ui.server import sync_event_callback
                 sync_event_callback("assistant_message", {"user": text, "reply": res["final_answer"],
                                                           "sources": res.get("sources", []), "channel": "voice"})
-            except Exception:
-                pass
+            except Exception as _exc:
+                swallowed('ishti/mic_control.py:_start_listener.on_voice_command', _exc)
             return res["final_answer"]
 
         def on_event(kind, data):
             try:
                 from interface.web_ui.server import sync_event_callback
                 sync_event_callback(kind, data)
-            except Exception:
-                pass
+            except Exception as _exc:
+                swallowed('ishti/mic_control.py:_start_listener.on_event', _exc)
 
         _listener_stop = wake.start(on_voice_command, on_event=on_event)
         print("[mic] wake-word listener started (wake phrases: "

@@ -56,7 +56,7 @@ def run(text, session):
             try:
                 out = globals()["op_" + name](m, text, session)
             except IndexError:  # an op that needs a file found no existing path in the request
-                out = "Give me the full path of the file (it has to exist), e.g. C:\\Users\\PC\\Documents\\report.docx."
+                out = "Give me the full path of the file (it has to exist), e.g. "+os.path.join(os.path.expanduser("~"), "Documents", "report.docx")+"."
             trace(session, "docs", "done", status="done")
             return out if isinstance(out, dict) or out is None else {"reply": out, "sources": []}
     return None
@@ -174,7 +174,7 @@ def op_pdf_compress(m, text, session):
         pdf.save(dst, compress_streams=True, object_stream_mode=pikepdf.ObjectStreamMode.generate,
                  recompress_flate=True, linearize=True)
     a, b = os.path.getsize(src), os.path.getsize(dst)
-    note = "" if b < a * 0.9 else " (little gain: most PDF size is images; recompressing those needs Ghostscript, logged in NEEDS.md)"
+    note = "" if b < a * 0.9 else " (little gain: most PDF size is images; recompressing those needs Ghostscript, which is not installed)"
     if b >= a * 0.9:
         from ishti.skills import log_need
         log_need("gap", "docs", text, "PDF image recompression (Ghostscript) for real size reduction")

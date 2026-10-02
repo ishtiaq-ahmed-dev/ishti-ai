@@ -11,7 +11,7 @@ import time
 from fastapi import APIRouter, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
 
-from ishti import audit, killswitch, reflex
+from ishti import audit, killswitch, languages, reflex
 from ishti.scope import ScopeError, install as _install_scope
 from ishti.untrusted import clean_reply, note_for_owner
 
@@ -233,9 +233,10 @@ def preferred_language():
     """The owner's locked answer language, or None (mirror whatever the owner speaks). Stored as a fact so it
     survives restarts and reaches the LLM style prompt (llm.style() lists prefers_* facts)."""
     try:
-        return (get_facts().get("owner").get("prefers_language") or "").strip() or None
+        pref = (get_facts().get("owner").get("prefers_language") or "").strip() or None
     except Exception:
         return None
+    return pref if pref and languages.allowed(pref) else None   # a lock on a language that is switched off does nothing
 FOLLOW_UP = re.compile(
     r"^\s*(?:why\s+(?:did|didn'?t|did\s*not|didnot|don'?t|won'?t)\s+you|(?:no[,.!]?\s+)?i\s+(?:asked|meant|said|wanted)|"
     r"(?:search|look|check|try|do)\s+(?:it\s+|that\s+|this\s+)?(?:now|again|instead|properly|online)|"
@@ -538,7 +539,7 @@ def _run(text, s, dec):
         dec = route(text, SKILLS, exclude=tried)
     if out is None:
         log_need("gap", "none", text, "no skill could handle this request")
-        name, out = None, {"reply": "I can't do that yet - no skill handles it. I've logged it in NEEDS.md as a skill to add."}
+        name, out = None, {"reply": "I can't do that yet - no skill handles it. I've logged it as a skill to add."}
     get_facts().log_route(mask(text, s.get("redact")), name, dec.get("confidence", 0), dec.get("source", ""), json.dumps(dec))
     return name, out, dec
 
@@ -824,6 +825,10 @@ def _handle(text, sid, conv, s, events, t0, channel):
                 if picked:
                     break
         from ishti import voice
+        if picked and not languages.allowed(picked):  # switched off in Settings: say how to turn it on instead of obeying
+            out = {"reply": f"{picked} is switched off. Turn it on in Settings > Language first - until then I answer in English.", "sources": []}
+            s["trace"](type="route", skill="owner", source="rule", confidence=1.0, why=f"{picked} is switched off in Settings.")
+            return _finish(text, sid, conv, s, events, t0, channel, "owner", out, {"skill": "owner", "source": "rule", "confidence": 1.0})
         if picked:  # keep the owner's choice; sync STT forced language & facts
             f.set("owner", "prefers_language", picked)
             code_map = {"English": "en", "Urdu": "ur", "Pashto": "ps", "Roman Urdu": "ur"}
@@ -915,6 +920,13 @@ def _handle(text, sid, conv, s, events, t0, channel):
     # only the owner's three languages: Pashto (its own letters ټ ډ ړ ښ ږ ځ څ ګ ڼ ې ۍ), Urdu, Roman Urdu; else English
     spoken = ("Pashto" if PASHTO.search(text) else "Urdu" if URDU.search(text) or DEVANAGARI.search(text)
               else "Roman Urdu (Urdu written in English letters)" if roman_urdu(text) else None)
+    if spoken and not languages.allowed(spoken):  # Settings -> Language: switched off, so ISHTI answers in English and says so once
+        if not s.get("lang_hint_shown"):
+            s["lang_hint_shown"] = True
+            name = spoken.split(" (")[0]
+            s["lang_note"] = ("\n\n(You wrote in " + name + ", but " + name + " is switched off, so I answered in English. "
+                              "To use it, turn it on in Settings > Language.)")
+        spoken = None
     if spoken:  # understanding always happens in English; the answer language comes from the lock below
         s["trace"](type="tool", name="understand", label=f"{spoken.split(' (')[0]} message: reading it in English", status="start")
         text = translate(text, "English")
@@ -989,6 +1001,8 @@ def _handle(text, sid, conv, s, events, t0, channel):
     if lang and not out.get("no_translate") and not already_in(out["reply"], lang):
         s["trace"](type="tool", name="translate", label=f"answer in {lang.split(' (')[0]}", status="done")
         out["reply"] = translate(out["reply"], lang)
+    if s.get("lang_note"):  # after the translation step: the hint is already English and must not go through the translator
+        out["reply"] += s.pop("lang_note")
     return _finish(text, sid, conv, s, events, t0, channel, name, out, dec)
 
 
@@ -1408,6 +1422,21 @@ async def _off(fn, *args):
 
 def _manage_error(exc):
     return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@api.get("/api/settings/languages")
+async def languages_state():
+    """Settings -> Language: English is always on; Urdu and Pashto are switches (off by default)."""
+    return languages.state()
+
+
+@api.post("/api/settings/languages")
+async def languages_set(req: Request):
+    b = await req.json()
+    flag = lambda k: b[k] if isinstance(b.get(k), bool) else None   # noqa: E731  (anything but true/false is ignored)
+    languages.set_enabled(urdu=flag("urdu"), pashto=flag("pashto"))
+    audit.record("language switches -> " + ", ".join(languages.enabled()), "", initiator="owner", skill="settings")
+    return languages.state()
 
 
 @api.get("/api/manage")

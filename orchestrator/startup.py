@@ -25,6 +25,13 @@ from orchestrator.model_router import ModelRouter
 from voice.tts import speak, speakable
 from orchestrator.memory.user_profile import get_user_memory
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 CHROME_EXE = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 PROFILE_DIR = os.path.join(ROOT_DIR, "data", "chrome_profile")
 
@@ -88,8 +95,8 @@ def check_web_ui() -> bool:
         if r.status_code == 200:
             print(" [ACTIVE (http://127.0.0.1:8888)]")
             return True
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('orchestrator/startup.py:check_web_ui', _exc)
 
     print(" [STARTING]...", end="", flush=True)
     pythonw_exe = os.path.join(ROOT_DIR, "venv", "Scripts", "pythonw.exe")
@@ -197,8 +204,8 @@ def main():
                     print("  [INFO] Reopening app window...")
                     launch_browser()
                     sys.exit(0)
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('orchestrator/startup.py:main', _exc)
 
     router = ModelRouter()
 

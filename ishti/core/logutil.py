@@ -82,6 +82,31 @@ def jlog(level: str, logger: str, msg: str, **fields):
             pass
 
 
+_swallowed_seen: dict = {}
+
+
+def swallowed(where: str, exc: BaseException | None = None, every: float = 600.0) -> None:
+    """Log a failure that the caller deliberately survives (`except ...:` that used to be a bare `pass`).
+
+    Meant for best-effort paths where raising would be wrong but silence hides real faults (a lost audit
+    row, a dropped lesson, a clipboard that did not copy). Rate-limited per (where, exception type): the
+    first occurrence is logged at once, repeats at most once per `every` seconds with a count, so a
+    failure inside a loop cannot flood the log. Never raises."""
+    try:
+        key = (where, type(exc).__name__ if exc is not None else "")
+        now = time.time()
+        with _lock:
+            entry = _swallowed_seen.get(key)  # (when last logged, repeats suppressed since)
+            due = entry is None or now - entry[0] >= every
+            suppressed = entry[1] if entry else 0
+            _swallowed_seen[key] = (now, 0) if due else (entry[0], entry[1] + 1)
+        if due:
+            warn("swallowed", f"{where}: {type(exc).__name__ + ': ' if exc is not None else ''}{exc}"[:300],
+                 repeats_suppressed=suppressed)
+    except Exception:  # logging must never break the caller
+        pass
+
+
 def info(logger: str, msg: str, **fields): jlog("INFO", logger, msg, **fields)
 def warn(logger: str, msg: str, **fields): jlog("WARNING", logger, msg, **fields)
 def error(logger: str, msg: str, **fields): jlog("ERROR", logger, msg, **fields)
@@ -100,4 +125,13 @@ if __name__ == "__main__":
     assert "jane@doe.com" not in d["msg"] and "SuperSecretValue123" not in d["msg"], d
     assert "4111" not in d["msg"] and "0300" not in d["msg"] and "0300" not in d["request"], d
     assert "call" in d["request"] and "\u2022" in d["request"], d  # redacted, not dropped
+    # swallowed(): first failure logged at once, repeats rate-limited, never raises
+    configure(log_path=path, enabled=True)
+    n0 = len(open(path, encoding="utf-8").read().splitlines())
+    for _ in range(5):
+        swallowed("selfcheck.site", ValueError("boom"))
+    n1 = len(open(path, encoding="utf-8").read().splitlines())
+    assert n1 - n0 == 1, (n0, n1)   # 5 repeats of one failure at one site -> one line (rate limited)
+    swallowed("selfcheck.site", KeyError("other"))  # a different failure type at the same site is not suppressed
+    assert len(open(path, encoding="utf-8").read().splitlines()) - n1 == 1
     print("[self-check] core.logutil OK — JSON lines, secrets+PII redacted, fields kept")

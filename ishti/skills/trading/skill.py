@@ -2,7 +2,7 @@
 
 Why this exists: the checklist's trading domain was "not built" - markets/research.py can SAY
 "buy NVDA under 180, stop 172" but nothing could act on the call, and jumping straight to a real
-broker is a T3 escalation (md files/NEEDS.md #18) that needs its own design and approval. This
+broker is a T3 escalation that needs its own design and approval. This
 skill closes the gap safely: orders run against a LOCAL SQLITE LEDGER (paper_account /
 paper_orders / paper_positions) with the same hard rules as everything else:
 
@@ -245,7 +245,7 @@ def _refuse_broker():
                      "markets-desk calls run on simulated money with a yes/no gate on every order "
                      "(\"paper buy 10 shares of NVDA at 500\"). Going live is a T3 escalation that "
                      "needs a broker-adapter design, a hard confirmation gate and the kill switch "
-                     "wired in first - it's written up in 'md files/NEEDS.md' (#18).", "sources": []}
+                     "wired in first - that is not built, on purpose.", "sources": []}
 
 
 OPS = ((ORDER, op_order), (CLOSE, op_close), (RESET, op_reset), (HISTORY, op_history),
@@ -338,7 +338,7 @@ if __name__ == "__main__":
 
     # rule 1: real money asks are refused, never attempted
     r = run("connect my real broker", {})
-    assert "No real broker" in r["reply"] and "NEEDS.md" in r["reply"], r
+    assert "No real broker" in r["reply"] and "not built, on purpose" in r["reply"], r
 
     # reset: gate, then back to starting cash
     r = run("reset the paper account", session)

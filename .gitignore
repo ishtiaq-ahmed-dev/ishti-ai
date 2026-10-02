@@ -35,7 +35,7 @@ tools/obscura/*.zip
 
 # build outputs
 /build/
-dist/
+/dist/
 
 # QA harness artifacts (2026-09-30)
 .qa_nemotron/
@@ -73,3 +73,7 @@ docs/build/evidence/*.txt
 # machine-local state
 window.json
 *.tmp
+.agents/
+
+# old runtime-gap log (now data/needs_runtime.md)
+md files/

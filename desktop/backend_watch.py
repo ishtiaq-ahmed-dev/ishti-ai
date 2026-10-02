@@ -20,6 +20,13 @@ import threading
 import time
 import urllib.request
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 GRACE_S = float(os.environ.get("ISHTI_BACKEND_LOST_GRACE_S", "25"))
 FLAG_GRACE_S = float(os.environ.get("ISHTI_FLAG_GRACE_S", "2.5"))   # let the overlay finish gracefully
 POLL_S = 2.0
@@ -74,8 +81,8 @@ def _watch(on_lost, port, grace_s, poll_s):
             if time.time() - flag_since >= FLAG_GRACE_S:
                 try:
                     on_lost()
-                except Exception:
-                    pass
+                except Exception as _exc:
+                    swallowed('desktop/backend_watch.py:_watch', _exc)
                 return
         elif health_ok(port):
             seen_up = True
@@ -85,7 +92,7 @@ def _watch(on_lost, port, grace_s, poll_s):
             if time.time() - down_since >= grace_s:
                 try:
                     on_lost()
-                except Exception:
-                    pass
+                except Exception as _exc:
+                    swallowed('desktop/backend_watch.py:_watch', _exc)
                 return
         time.sleep(FLAG_POLL_S if flag_since else poll_s)

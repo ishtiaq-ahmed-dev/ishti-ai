@@ -1,0 +1,11 @@
+# ISHTI lint gate (CD-11 / N19). A deliberately small rule set: only findings that are real bugs, not style.
+#   E9   syntax errors / unreadable files      F63  invalid comparisons/assertions     F7  syntax-level misuse (return outside def, ...)
+#   F82  undefined names (NameError at runtime)  F811 a definition silently redefined
+# The tree has zero findings under this set and tests/test_lint_gate.py keeps it at zero. Style rules (E501, F401, ...) were
+# 1600 findings on the old tree and are NOT a gate: widen `select` only together with the fixes.
+target-version = "py311"
+extend-exclude = ["venv", "vendor", "node_modules", "dist", "build", "interface/app", "tools/flowise", "tools/obscura",
+                  ".qa_nemotron", "scratch", "_work", "backups"]
+
+[lint]
+select = ["E9", "F63", "F7", "F82", "F811"]

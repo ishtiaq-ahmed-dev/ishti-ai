@@ -28,8 +28,8 @@ def _setup_shortcut(ws, shortcut_path, target, args, desc, icon_path):
 
 
 def create_desktop_shortcuts():
-    """Start: the singleton launcher (a second click focuses the running instance, never duplicates it).
-    Creates both ISHTI.lnk and Start ISHTI.lnk for maximum user convenience."""
+    """The ONE desktop icon, "ISHTI": the singleton launcher (a second click focuses the running instance, never
+    duplicates it). Owner request 2026-10-02: one icon only - a leftover "Start ISHTI.lnk" is moved to the Recycle Bin."""
     ws = win32com.client.Dispatch("WScript.Shell")
     desktop = ws.SpecialFolders("Desktop")
 
@@ -43,9 +43,14 @@ def create_desktop_shortcuts():
 
     desc = "ISHTI - Intelligent Personal Assistant"
 
-    # Primary shortcuts
     _setup_shortcut(ws, os.path.join(desktop, "ISHTI.lnk"), target, args, desc, ICON)
-    _setup_shortcut(ws, os.path.join(desktop, "Start ISHTI.lnk"), target, args, desc, ICON)
+    stale = os.path.join(desktop, "Start ISHTI.lnk")
+    if os.path.exists(stale):
+        try:
+            from win32com.shell import shell, shellcon  # Recycle Bin, not a hard delete
+            shell.SHFileOperation((0, shellcon.FO_DELETE, stale, None, shellcon.FOF_ALLOWUNDO | shellcon.FOF_NOCONFIRMATION | shellcon.FOF_SILENT, None, None))
+        except Exception as exc:
+            print(f"[WARN] could not remove {stale}: {exc}")
 
 
 def remove_stop_shortcut():

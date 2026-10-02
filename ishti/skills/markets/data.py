@@ -8,6 +8,13 @@ import time
 import numpy as np
 import requests
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0 Safari/537.36"}
 TOLA_G, OUNCE_G = 11.6638, 31.1035
 _cache = {}
@@ -56,8 +63,8 @@ def crypto_id(name):
                 coins = r.json().get("coins", [])
                 if coins:
                     return coins[0]["id"]
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/skills/markets/data.py:crypto_id.find', _exc)
         return COIN_SYMS.get(clean, clean)
     return cached(f"cgid:{name.lower()}", 86400, find)
 
@@ -72,8 +79,8 @@ def crypto(coin_id, vs="usd"):
             if r.ok and coin_id in r.json():
                 d = r.json()[coin_id]
                 return {"price": float(d[vs]), "change_24h": float(d.get(f"{vs}_24h_change") or 0.0)}
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/skills/markets/data.py:crypto.fetch', _exc)
         # 2. Fast Fallback: Binance
         sym = COIN_SYMS.get(coin_id.lower(), coin_id.upper())
         try:
@@ -81,16 +88,16 @@ def crypto(coin_id, vs="usd"):
             if r.ok:
                 d = r.json()
                 return {"price": float(d["lastPrice"]), "change_24h": float(d.get("priceChangePercent") or 0.0)}
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/skills/markets/data.py:crypto.fetch', _exc)
         # 3. Fallback: Coinbase
         try:
             r = requests.get(f"https://api.coinbase.com/v2/prices/{sym}-USD/spot", timeout=5)
             if r.ok:
                 d = r.json().get("data", {})
                 return {"price": float(d.get("amount", 0.0)), "change_24h": 0.0}
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/skills/markets/data.py:crypto.fetch', _exc)
         raise RuntimeError(f"Could not fetch crypto price for {coin_id}")
     return cached(f"cg:{coin_id}:{vs}", 60, fetch)
 
@@ -102,16 +109,16 @@ def crypto_history(coin_id, days=365):
                              params={"vs_currency": "usd", "days": days, "interval": "daily"}, timeout=10)
             if r.ok:
                 return [p[1] for p in r.json().get("prices", [])]
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/skills/markets/data.py:crypto_history.fetch', _exc)
         # Fallback to Binance klines
         sym = COIN_SYMS.get(coin_id.lower(), coin_id.upper())
         try:
             r = requests.get(f"https://api.binance.com/api/v3/klines?symbol={sym}USDT&interval=1d&limit={min(days, 365)}", timeout=8)
             if r.ok:
                 return [float(k[4]) for k in r.json()]
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/skills/markets/data.py:crypto_history.fetch', _exc)
         return []
     return cached(f"cgh:{coin_id}:{days}", 900, fetch)
 

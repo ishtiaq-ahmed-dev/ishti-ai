@@ -67,7 +67,7 @@ def main():
         out_json = os.path.join(os.getcwd(), "_work", "perf_guard_current.json")
         cmd = [sys.executable, "-m", "tools.bench_opt", "--json", out_json, *extra]
         print("[perf_guard] benching:", " ".join(cmd))
-        r = subprocess.run(cmd, cwd=os.path.dirname(HERE), capture_output=True, text=True)
+        r = subprocess.run(cmd, cwd=os.path.dirname(HERE), capture_output=True, text=True, timeout=1800)
         sys.stdout.write(r.stdout)
         if r.returncode != 0:
             print(r.stderr[-2000:])

@@ -1,0 +1,6 @@
+# Spark-X2.5-4B Q4_K_M (4-bit), 2.6 GB: for 6 GB graphics cards as the ISHTI brain (planner role).
+# ollama create ishti-spark2.5-q4:4b -f ishti/spark2.5-q4.Modelfile
+# Source: ollama.com/maternion/spark-x2.5:4b-q4_K_M (XHToken/Spark-X2.5-4B, Apache-2.0). Same weights and the author's sampling
+# settings as the full-size build; num_ctx 8192 because the /v1 endpoint cannot set the context per request.
+FROM maternion/spark-x2.5:4b-q4_K_M
+PARAMETER num_ctx 8192

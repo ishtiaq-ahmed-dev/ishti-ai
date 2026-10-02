@@ -22,7 +22,14 @@ import stat
 import threading
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
 
 # --------------------------------------------------------------------- schema
 
@@ -141,7 +148,18 @@ class PrivacySettings(BaseModel):
         default_factory=lambda: [r"[\w.+-]+@[\w-]+\.[\w.]+", r"\b(?:\+92|0)\d{9,10}\b", r"\b(?:\d[ -]?){13,19}\b"],
         description="Regexes redacted from logs (emails, phones, cards)")
     remember_chats: bool = Field(True, description="Persist chat history")
-    allow_t3: list[str] = Field(default_factory=list, description="T3 (dangerous) skills explicitly allowed")
+    allow_t3: dict[str, bool] = Field(
+        default_factory=dict,
+        description="T3 (dangerous) skills explicitly allowed: skill name -> true. Same shape the dispatcher reads "
+                    "(CONFIG['allow_t3'].get(name)); an older list of names is accepted and converted")
+
+    @field_validator("allow_t3", mode="before")
+    @classmethod
+    def _allow_t3_list_to_mapping(cls, v):
+        """Settings saved while the schema said list[str] hold ["skill_a", ...]: keep them working as {name: True}."""
+        if isinstance(v, (list, tuple, set)):
+            return {str(n): True for n in v}
+        return v
 
 
 class ObservabilitySettings(BaseModel):
@@ -192,8 +210,8 @@ def _user_only(path: str):
     POSIX chmod works when running under WSL)."""
     try:
         os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
-    except OSError:
-        pass
+    except OSError as _exc:
+        swallowed('ishti/core/settings.py:_user_only', _exc)
 
 
 def _keyring_available() -> bool:
@@ -253,8 +271,8 @@ class SettingsService:
                 import keyring
                 keyring.set_password("ishti", "settings_secrets", json.dumps(secrets))
                 return
-            except Exception:
-                pass
+            except Exception as _exc:
+                swallowed('ishti/core/settings.py:SettingsService._save_secrets', _exc)
         with open(self.secrets_path, "w", encoding="utf-8") as f:
             json.dump(secrets, f, indent=2, ensure_ascii=False)
         _user_only(self.secrets_path)

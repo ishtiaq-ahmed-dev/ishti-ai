@@ -1,12 +1,13 @@
 """Tests for the lifecycle pass (issues 2/3): Start is idempotent (a second Start focuses, never duplicates),
 Stop is full and verified, the OS-shutdown signal runs the shutdown detached, and the desktop exit path posts
 a clean shutdown. No server is started or stopped here - the launch/reveal/shutdown steps are faked. Run:
-    $env:PYTHONIOENCODING='utf-8'; D:\\ISHTI\\venv\\Scripts\\python.exe D:\\ISHTI\\tests\\test_lifecycle.py"""
+    $env:PYTHONIOENCODING='utf-8'; venv\\Scripts\\python tests\\test_lifecycle.py"""
 import os
 import subprocess
 import sys
 
-sys.path.insert(0, r"D:\ISHTI")
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _ROOT)
 
 from desktop import focus_ishti, launcher, shutdown
 
@@ -133,7 +134,7 @@ if hasattr(launcher, "ctrl_handler"):
     assert launcher.ctrl_handler(0) is False, "only close/logoff/shutdown events are handled"
 
 # ---- 4. the dashboard exit path is a real clean-shutdown call ----------------------------------------------
-app = r"D:\ISHTI\interface\app\src\App.tsx"
+app = os.path.join(_ROOT, 'interface', 'app', 'src', 'App.tsx')
 src = open(app, encoding="utf-8").read()
 assert "Do you want to exit ISHTI?" in src, "the native close confirmation is required"
 assert "/api/shutdown" in src, "Yes must trigger the clean shutdown"
@@ -141,32 +142,32 @@ assert "sendBeacon" in src, "the shutdown must survive the page unloading (nativ
 assert "pagehide" in src, "the native prompt's Yes must be what triggers the shutdown"
 
 # the bundle that is actually served contains it
-dist_js = [f for f in os.listdir(r"D:\ISHTI\interface\app\dist\assets") if f.endswith(".js")]
+dist_js = [f for f in os.listdir(os.path.join(_ROOT, 'interface', 'app', 'dist', 'assets')) if f.endswith(".js")]
 assert dist_js, "the built bundle is missing"
-bundle = open(os.path.join(r"D:\ISHTI\interface\app\dist\assets", dist_js[0]), encoding="utf-8").read()
+bundle = open(os.path.join(os.path.join(_ROOT, 'interface', 'app', 'dist', 'assets'), dist_js[0]), encoding="utf-8").read()
 for needle in ("Do you want to exit ISHTI?", "/api/shutdown", "sendBeacon", "pagehide"):
     assert needle in bundle, f"the served bundle is stale - it lacks {needle!r}"
 
 # the server endpoint exists: ONE graceful shutdown (ishti/lifecycle_api.py), attached to the app by server.py
-server = r"D:\ISHTI\interface\web_ui\server.py"
+server = os.path.join(_ROOT, 'interface', 'web_ui', 'server.py')
 assert "lifecycle_api.attach(app)" in open(server, encoding="utf-8").read()
-assert '@router.post("/api/shutdown")' in open(r"D:\ISHTI\ishti\lifecycle_api.py", encoding="utf-8").read()
+assert '@router.post("/api/shutdown")' in open(os.path.join(_ROOT, 'ishti', 'lifecycle_api.py'), encoding="utf-8").read()
 assert '@app.post("/api/shutdown")' not in open(server, encoding="utf-8").read(), "a second, competing shutdown path"
 
 # ---- 5. start.bat and stop.bat are wired to the singleton check and the full stop ---------------------------
 # start.bat no longer pokes focus_ishti.py directly: it launches desktop/launcher.py (or the packaged exe),
 # which owns the singleton check. What matters is that the no-argument branch cannot start a second instance
 # or open a console window.
-_start = open(r"D:\ISHTI\start.bat", encoding="utf-8").read()
+_start = open(os.path.join(_ROOT, 'start.bat'), encoding="utf-8").read()
 _launch_branch = _start.split(":handle_cli")[0]        # everything before the CLI sub-commands
 assert "desktop\\launcher.py" in _launch_branch, "start.bat must go through the singleton launcher"
 assert "dist\\ISHTI\\ISHTI.exe" in _launch_branch, "start.bat must prefer the packaged app (no console window)"
 assert "startup.py" not in _launch_branch, "the console-banner startup path is back in the no-argument branch"
 assert "focus_ishti.py" not in _launch_branch, "start.bat must not race the launcher's own singleton check"
-assert "shutdown.py" in open(r"D:\ISHTI\stop.bat", encoding="utf-8").read()
+assert "shutdown.py" in open(os.path.join(_ROOT, 'stop.bat'), encoding="utf-8").read()
 # stop.bat -> desktop/shutdown.py: asks the backend for the graceful shutdown, then verifies the port and recorded pids are gone;
 # it kills only by recorded pid (never by matching process names / command lines)
-_sd = open(r"D:\ISHTI\desktop\shutdown.py", encoding="utf-8").read()
+_sd = open(os.path.join(_ROOT, 'desktop', 'shutdown.py'), encoding="utf-8").read()
 assert "/api/shutdown" in _sd and "registry()" in _sd and "clean =" in _sd
 assert "process_iter" not in _sd and "cmdline" not in _sd, "name/command-line based killing is back"
 

@@ -374,7 +374,26 @@ def rungs(role):
             continue
         ctx = rung_num_ctx(r)
         out.append({**r, "num_ctx": ctx, "name": r["model"] if r.get("cpu") else alias_name(r["model"], ctx)})
-    return out
+    return _owner_first(role, spec, out)
+
+
+def _owner_first(role, spec, items):
+    """The model the owner picked for this role (Settings -> Language models, or ISHTI_MODEL_<ROLE>) is the TOP rung; the rungs
+    below it are the installed ladder models that are lighter than it, heaviest first - a downshift must always go to something
+    smaller. A pick that is not in the ladder at all becomes rung 0 on its own (it runs at the role's minimum context)."""
+    chosen = os.environ.get(f"ISHTI_MODEL_{role.upper()}") or (CONFIG.get("llm", {}).get("models", {}) or {}).get(role)
+    if not chosen or chosen == "laya" or not items or items[0].get("cpu"):
+        return items
+    top = next((r for r in items if chosen in (r["model"], r["name"])), None)
+    if top is None:
+        if not installed(chosen):
+            return items
+        ctx = rung_num_ctx({"model": chosen, "num_ctx": spec.get("min_ctx")})
+        top = {"model": chosen, "num_ctx": ctx, "name": alias_name(chosen, ctx), "note": "chosen in Settings"}
+    size = tags().get(top["model"], 0)
+    lighter = [r for r in items if r is not top and size and 0 < tags().get(r["model"], 0) < size]
+    lighter.sort(key=lambda r: -tags().get(r["model"], 0))
+    return [top] + lighter
 
 
 def role_spec(role):

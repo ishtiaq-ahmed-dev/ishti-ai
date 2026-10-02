@@ -27,7 +27,7 @@ import time
 import psutil
 import requests
 
-ROOT = r"D:\ISHTI"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 from ishti import events, lifecycle, vram  # noqa: E402
 
@@ -484,7 +484,7 @@ def t5(n=20):
 
 def t5b():
     """Hard kill (no cleanup runs): the Job Object must still take the children down."""
-    code = ("import os,subprocess,sys,time\nsys.path.insert(0,r'D:\\ISHTI')\nfrom ishti import lifecycle\n"
+    code = ("import os,subprocess,sys,time\nsys.path.insert(0,r'" + ROOT + "')\nfrom ishti import lifecycle\n"
             "print(lifecycle.adopt_job(),flush=True)\n"
             "kids=[subprocess.Popen(['ping','-n','300','127.0.0.1'],stdout=subprocess.DEVNULL) for _ in range(2)]\n"
             "print(' '.join(str(k.pid) for k in kids),flush=True)\ntime.sleep(300)\n")

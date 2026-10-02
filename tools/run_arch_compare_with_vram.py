@@ -17,14 +17,14 @@ peak, partial, total_mb = {}, {}, [16303]
 
 
 def smi():
-    out = subprocess.run(["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"], capture_output=True, text=True).stdout
+    out = subprocess.run(["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=15).stdout
     used, tot = (int(x) for x in out.strip().splitlines()[0].split(","))
     total_mb[0] = tot
     return used
 
 
 def ollama_partial():
-    out = subprocess.run(["ollama", "ps"], capture_output=True, text=True).stdout.splitlines()[1:]
+    out = subprocess.run(["ollama", "ps"], capture_output=True, text=True, timeout=15).stdout.splitlines()[1:]
     return [ln.split()[0] for ln in out if ln.strip() and "100% GPU" not in ln]
 
 

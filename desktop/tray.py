@@ -10,6 +10,13 @@ import os
 import sys
 import threading
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
@@ -39,8 +46,8 @@ def _refresh(icon, res=None):
         enabled = bool(res.get("enabled"))
         if icon is not None:
             icon.title = f"ISHTI - mic {'ON (listening)' if enabled else 'OFF'}"
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('desktop/tray.py:_refresh', _exc)
 
 
 def _open_dashboard():
@@ -171,8 +178,8 @@ def run_tray():
                     icon.icon = _icon_image(*new)
                     icon.title = f"ISHTI - mic {'ON (listening)' if new[0] else 'OFF'}" + \
                                  (" - live" if new[1] else "")
-            except Exception:
-                pass
+            except Exception as _exc:
+                swallowed('desktop/tray.py:run_tray.poll_state', _exc)
             time.sleep(2)
 
     threading.Thread(target=poll_state, daemon=True).start()
@@ -182,8 +189,8 @@ def run_tray():
     try:
         from desktop import backend_watch
         backend_watch.start(lambda: icon.stop())
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('desktop/tray.py:run_tray', _exc)
 
     icon.run()
 

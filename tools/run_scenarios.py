@@ -166,11 +166,12 @@ def _event(step, mode_box):
                     round(time.time() - t0, 2), None)
     except Exception as exc:
         return "", round(time.time() - t0, 2), f"event failed: {type(exc).__name__}: {exc}"
-    return "", 0.0, f"BLOCKED-EVENT: no real mechanism wired for {ev[:60]!r} (see NEEDS.md Q6)"
+    return "", 0.0, f"BLOCKED-EVENT: no real mechanism wired for {ev[:60]!r} (needs an interactive audio session)"
 
 
 def run_scenario(path, runs, use_server, monitor_tag):
-    sc = yaml.safe_load(open(path, encoding="utf-8"))
+    # {ROOT} in a scenario step expands to this checkout (forward slashes, so it is one path token)
+    sc = yaml.safe_load(open(path, encoding="utf-8").read().replace("{ROOT}", ROOT.replace("\\", "/")))
     sid_base = f"qa_{sc['id']}"
     results = []
     for run_no in range(1, runs + 1):

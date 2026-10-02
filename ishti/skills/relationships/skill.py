@@ -92,14 +92,6 @@ def _name_of(m, who_key="who"):
             return e["d_name"] if e["s_name"] == "me" else e["s_name"]
         return None
     return who
-    if rel:  # "what does my father like" -> the node linked to me by 'father'
-        from ishti import rgraph
-        edges = rgraph.edges_of("me", rel=rel, direction="out") or rgraph.edges_of("me", rel=rel, direction="in")
-        if edges:
-            e = edges[0]
-            return e["d_name"] if e["s_name"] == "me" else e["s_name"]
-        return None
-    return (who or "").strip()
 
 
 def run(text, session):

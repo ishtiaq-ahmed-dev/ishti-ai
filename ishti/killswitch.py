@@ -11,6 +11,13 @@ POST /api/kill (the dashboard's Stop button), and the in-process hotkey when run
 import threading
 import time
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 _gen = 0
 _last = {"at": 0.0, "reason": ""}
 _local = threading.local()
@@ -60,14 +67,14 @@ def kill(reason="kill switch"):
     try:
         from ishti.audit import record
         record("KILL SWITCH", f"{reason}: {', '.join(stopped) or 'nothing was running'}", initiator="owner", skill="killswitch")
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/killswitch.py:kill', _exc)
     try:  # Section 7: the kill switch also sets the global mic OFF - no capture after a kill
         from ishti import mic_control
         mic_control.mic_off(f"kill switch: {reason}", by="killswitch", also_stop_live=True)
         stopped.append("global mic OFF")
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/killswitch.py:kill', _exc)
     return stopped
 
 

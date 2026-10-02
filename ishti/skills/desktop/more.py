@@ -12,6 +12,13 @@ import time
 from ishti import ROOT
 from ishti.skills import ask_first
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 I = re.I
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 MACROS = os.path.join(ROOT, "data", "macros")
@@ -127,8 +134,8 @@ def start_clipboard_history():
         while True:
             try:
                 remember_clip(pyperclip.paste(), db)
-            except Exception:
-                pass
+            except Exception as _exc:
+                swallowed('ishti/skills/desktop/more.py:start_clipboard_history.loop', _exc)
             time.sleep(1.5)
     threading.Thread(target=loop, daemon=True, name="clipboard-history").start()
 

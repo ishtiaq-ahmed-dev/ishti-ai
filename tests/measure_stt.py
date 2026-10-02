@@ -14,7 +14,7 @@ Patterns measured (16 kHz mono float32 in, as every caller of voice.transcribe f
   batched   BatchedInferencePipeline.transcribe(language=lang, batch_size=8)
   partial   Stream.partial(): tail window only, no VAD, no timestamps, no language pass
 
-Run:  D:\\ISHTI\\venv\\Scripts\\python.exe D:\\ISHTI\\tests\\measure_stt.py [--model M] [--compute C] [--json F]
+Run:  venv\\Scripts\\python tests\\measure_stt.py [--model M] [--compute C] [--json F]
 """
 import argparse
 import io
@@ -124,14 +124,14 @@ def measure(model_ref, compute, device, which, clips):
         res["rows"][name] = row
         print(f"  [{compute}] {name}: " + " ".join(f"{k}={v}" for k, v in row.items() if k.endswith("_ms")))
     import gc
-    del model, batched
+    model = batched = None  # release the models before collecting
     gc.collect()
     return res
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default=r"D:\ISHTI\data\models\whisper-large-v3-turbo")
+    ap.add_argument("--model", default=os.path.join(ROOT, "data", "models", "whisper-large-v3-turbo"))
     ap.add_argument("--compute", default="float16")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--which", default="load,warmup,detect,new,nolang,batched,partial")
@@ -153,8 +153,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-def timed(fn, *a, **kw):
-    t = time.perf_counter()
-    out = fn(*a, **kw)
-    return out, (time.perf_counter() - t) * 1000

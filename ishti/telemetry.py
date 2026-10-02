@@ -20,6 +20,13 @@ from collections import defaultdict, deque
 
 from ishti import ROOT
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 DB_PATH = os.path.join(ROOT, "data", "telemetry.jsonl")
 MAX_LINES = 4000                     # rolling retention (H4: policy is configurable)
 _lock = threading.Lock()
@@ -117,14 +124,14 @@ def metrics() -> dict:
     try:
         from ishti.agents import perf
         agents = perf()
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/telemetry.py:metrics', _exc)
     queue = {}
     try:
         from ishti import taskmgr
         queue = taskmgr.stats()
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/telemetry.py:metrics', _exc)
     try:
         import psutil
         sys = {"cpu_pct": psutil.cpu_percent(interval=None),
@@ -152,7 +159,7 @@ def errors(limit: int = 50) -> list[dict]:
 # ------------------------------------------------------------------ H5: eval harness
 EVAL_SET_PATH = os.path.join(ROOT, "data", "eval", "prompt3_regression.json")
 DEFAULT_EVAL = [
-    {"name": "memory_roundtrip", "type": "store", "do": "remember", "ask": "where is the ishti project?", "expect": ["D:\\ISHTI"]},
+    {"name": "memory_roundtrip", "type": "store", "do": "remember", "ask": "where is the ishti project?", "expect": ["D:\\Projects\\ISHTI"]},
     {"name": "math_reflex", "type": "reflex", "text": "what is 17 times 23? reply with just the number", "expect": ["391"]},
     {"name": "router_weather", "type": "route", "text": "what's the weather tomorrow?", "expect_skill": "weather"},
     {"name": "router_research", "type": "route", "text": "deep research the internet about GPU prices", "expect_skill": "deep_research"},
@@ -225,8 +232,8 @@ def run_eval(tests: list | None = None) -> dict:
                 from ishti.facts import Facts
                 import tempfile
                 f = Facts(os.path.join(tempfile.mkdtemp(), "eval.db"))
-                f.set("project", "ISHTI", "D:\\ISHTI")
-                ok = "D:\\ISHTI" in f.get("project", "ISHTI")
+                f.set("project", "ISHTI", "D:\\Projects\\ISHTI")
+                ok = "D:\\Projects\\ISHTI" in f.get("project", "ISHTI")
                 detail = "facts round-trip"
         except Exception as exc:
             ok, detail = False, f"{type(exc).__name__}: {str(exc)[:80]}"
@@ -256,8 +263,8 @@ def persist():
         if len(lines) > MAX_LINES:
             with open(DB_PATH, "w", encoding="utf-8") as f:
                 f.writelines(lines[-MAX_LINES:])
-    except OSError:
-        pass
+    except OSError as _exc:
+        swallowed('ishti/telemetry.py:persist', _exc)
 
 
 if __name__ == "__main__":

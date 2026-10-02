@@ -6,13 +6,13 @@ r"""Isolated replay tests for the dispatcher's Issue-1 fixes (no network, no own
   * a normal follow-up still drops a non-sticky question (no regression)
   * the follow-up patterns do not swallow ordinary requests ("send hi to bhai")
 
-Run:  $env:PYTHONIOENCODING='utf-8'; D:\ISHTI\venv\Scripts\python.exe D:\ISHTI\tests\test_dispatcher_followups.py
+Run:  $env:PYTHONIOENCODING='utf-8'; venv\Scripts\python tests\test_dispatcher_followups.py
 """
 import os
 import sys
 import tempfile
 
-ROOT = r"D:\ISHTI"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 import ishti.facts as facts_mod  # noqa: E402

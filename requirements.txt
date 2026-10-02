@@ -1,0 +1,128 @@
+# ISHTI - Python packages (Windows, Python 3.11 only).
+#
+# You normally never touch this file: install.bat reads it for you.
+# Manual install, if you ever need it (from the ISHTI folder):
+#     py -3.11 -m venv venv
+#     venv\Scripts\python -m pip install -r requirements.txt
+#     venv\Scripts\python -m pip install --no-deps chatterbox-tts==0.1.7      (see "Chatterbox" below)
+#
+# Versions are pinned to what the working PC runs, so a fresh install behaves the same.
+# Only packages the code imports are listed; everything they need in turn is resolved by pip.
+
+# --- PyTorch: the CUDA 12.8 build (needed for NVIDIA RTX 50-series cards; also fine for older NVIDIA cards) ---
+# Installing plain "torch" from PyPI gives a CPU-only build. The "+cu128" tag below only exists on this index,
+# so pip is forced to take the GPU build. torchaudio must come from the same index (pip does this by itself).
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch==2.11.0+cu128
+torchaudio==2.11.0
+
+# --- Web server and API clients ---
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+pydantic==2.12.5
+python-multipart==0.0.32
+requests==2.34.2
+httpx==0.28.1
+openai==2.54.0          # talks to Ollama's OpenAI-compatible endpoint, on this PC only
+mcp==1.28.1
+PyYAML==6.0.3
+keyring==25.7.0
+cryptography==50.0.1
+psutil==7.2.2
+packaging==26.3
+python-dateutil==2.9.0.post0
+
+# --- Memory (local database + vector search) ---
+chromadb==1.1.1
+
+# --- Voice: listening (speech recognition), speaking, wake word ---
+faster-whisper==1.2.1
+ctranslate2==4.8.2
+onnxruntime==1.30.0
+kokoro-onnx==0.6.1
+piper-tts==1.8.0
+sounddevice==0.5.6
+openwakeword==0.6.0
+pyttsx3==2.99
+speechbrain==1.1.1      # tells speakers apart
+laya==0.3.20            # tiny router model
+transformers==5.17.0
+huggingface_hub==1.33.0
+safetensors==0.8.0
+
+# --- Chatterbox: speaks voice notes in YOUR voice (optional feature) ---
+# Chatterbox's own package pins torch 2.6, which cannot drive RTX 50-series cards. So it is installed WITHOUT its
+# dependencies (install.py does: pip install --no-deps chatterbox-tts==0.1.7) and only the pieces it needs are here:
+librosa==0.11.0
+s3tokenizer==0.3.0
+diffusers==0.40.0
+resemble-perth==1.0.1
+conformer==0.3.2
+omegaconf==2.3.1
+einops==0.8.2
+
+# --- Documents, data, images, charts ---
+numpy==2.4.6
+pandas==3.0.6
+scipy==1.17.1
+scikit-learn==1.9.1
+matplotlib==3.11.2
+sympy==1.14.0
+pillow==12.3.0
+opencv-python==5.0.0.93
+openpyxl==3.1.5
+python-docx==1.2.0
+python-pptx==1.0.2
+reportlab==5.0.1
+pdfplumber==0.11.10
+pikepdf==10.13.0.post1
+pypdf==6.19.0
+pypdfium2==5.13.0
+py7zr==1.1.3
+rapidocr-onnxruntime==1.4.4
+mss==10.2.0
+rembg==2.0.85           # remove image backgrounds
+zxcvbn==4.5.0
+zxing-cpp==3.1.1
+
+# --- Web skills (only used when you ask ISHTI to look something up) ---
+beautifulsoup4==4.15.0
+feedparser==6.0.14
+playwright==1.63.0
+yfinance==1.7.0
+yt-dlp==2026.8.19
+Send2Trash==2.1.0       # "delete" moves files to the Recycle Bin
+
+# --- Video editing helpers (optional skills) ---
+pycapcut==0.0.3
+capcut==0.1.1
+
+# --- Windows only: the desktop window, tray icon, volume, keyboard/mouse control, Windows OCR ---
+pywebview==6.2.1; sys_platform == "win32"
+pythonnet==3.1.0; sys_platform == "win32"   # the window engine behind pywebview; newer 3.2 not tested here
+pywin32==312; sys_platform == "win32"
+comtypes==1.4.17; sys_platform == "win32"
+pycaw==20260921; sys_platform == "win32"
+pystray==0.19.5; sys_platform == "win32"
+pynput==1.8.2; sys_platform == "win32"
+PyAutoGUI==0.9.54; sys_platform == "win32"
+PyGetWindow==0.0.9; sys_platform == "win32"
+pyperclip==1.11.0; sys_platform == "win32"
+screen_brightness_control==0.27.2; sys_platform == "win32"
+winrt-runtime==3.2.1; sys_platform == "win32"
+winrt-Windows.Foundation==3.2.1; sys_platform == "win32"
+winrt-Windows.Foundation.Collections==3.2.1; sys_platform == "win32"
+winrt-Windows.Globalization==3.2.1; sys_platform == "win32"
+winrt-Windows.Graphics.Imaging==3.2.1; sys_platform == "win32"
+winrt-Windows.Media.Ocr==3.2.1; sys_platform == "win32"
+winrt-Windows.Storage.Streams==3.2.1; sys_platform == "win32"
+
+# --- Tests (start.bat test) ---
+pytest==9.1.1
+pytest-timeout==2.4.0
+
+# --- NOT included on purpose ---
+# scrapegraphai: optional lead-finding extra that pulls in ~100 more packages; the skill works without it.
+#     Add it with:  venv\Scripts\python -m pip install scrapegraphai==1.76.0
+# pyinstaller: only needed to rebuild ISHTI.exe (ISHTI.spec).
+# Fine-tuning (orchestrator\finetune.py) needs datasets, trl and unsloth; install them yourself if you ever want it.

@@ -6,9 +6,10 @@ dispatcher, then ALWAYS restores the previous profile. Run:
 
     venv\\Scripts\\python -X utf8 tools\\probe_arch2_qwen3.py
 """
+import os
 import sys
 
-sys.path.insert(0, r"D:\ISHTI")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ishti.core.architectures import get_registry
 

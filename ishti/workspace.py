@@ -21,6 +21,13 @@ from __future__ import annotations
 import os
 import re
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 DEFAULT_MAX_BYTES = 8 * 1024 * 1024
 MAX_NAME = 255
 MAX_ENTRIES = 2000
@@ -86,8 +93,8 @@ class Workspace:
         self.max_bytes = max(1, int(max_bytes))
         try:
             os.makedirs(self.root, exist_ok=True)
-        except OSError:
-            pass
+        except OSError as _exc:
+            swallowed('ishti/workspace.py:Workspace.__init__', _exc)
 
     # ---- checks ---------------------------------------------------------------
     def check(self, path, *, must_exist: bool = False) -> dict:

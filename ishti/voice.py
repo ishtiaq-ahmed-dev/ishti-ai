@@ -269,8 +269,33 @@ def get_forced_language() -> str | None:
     return _forced_language
 
 
+_lang_applied = 0.0
+_forced_by_languages = False
+
+
+def apply_languages(max_age_s=0.0):
+    """Limit speech recognition to the languages switched on in Settings -> Language (English only by default): Whisper then
+    never guesses among ~100 languages, and with English only it is simply told "en". Re-reads the switches at most every
+    `max_age_s` seconds (the recogniser asks before every decode)."""
+    global _lang_applied, _forced_language, _forced_by_languages
+    if max_age_s and time.time() - _lang_applied < max_age_s:
+        return
+    _lang_applied = time.time()
+    from ishti import languages
+    codes = [languages.CODES[l] for l in languages.enabled()]
+    _cfg["languages"] = codes
+    if codes == ["en"]:
+        if _forced_language != "en":
+            _forced_language, _forced_by_languages = "en", True
+    elif _forced_by_languages:   # English was forced only because it was the only language: release it
+        _forced_language, _forced_by_languages = None, False
+    if _forced_language and _forced_language not in codes:
+        _forced_language = None   # its language was switched off: back to detection among the enabled ones
+
+
 def score_language_probs(probs: list) -> str:
     """Evaluate detected language probabilities according to primary bias and switch threshold (Section 5)."""
+    apply_languages(5)
     if _forced_language in ("en", "ur", "ps"):
         return _forced_language
 
@@ -305,6 +330,7 @@ def pick_language(model, pcm):
     """Confidence-threshold tuning with primary language bias (Section 5).
     English is the default primary language. Only switch to Urdu or Pashto
     when detection confidence clearly exceeds the switch threshold and margin."""
+    apply_languages(5)
     if _forced_language in ("en", "ur", "ps"):
         return _forced_language
 
@@ -493,6 +519,8 @@ def kokoro(profile):
 def _kokoro_pcm(words, profile):
     """(int16 bytes, rate). Urdu/Pashto text is spoken with a Hindi-trained voice through the Urdu phonemizer
     (Whisper hears it as correct Urdu); English with the profile's own voice."""
+    if profile.get("engine") != "kokoro":  # Urdu is spoken by Kokoro even when the owner's own voice is a Piper one
+        profile = next((v for v in roster() if v.get("engine") == "kokoro" and installed(v)), profile)
     k = kokoro(profile)
     if URDU_SCRIPT.search(words):
         male = profile.get("gender", "female") == "male"

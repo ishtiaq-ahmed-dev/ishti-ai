@@ -41,6 +41,8 @@ HAPPY = {happy!r}
 LANG = {lang!r}
 EDGE = {edge!r}
 FAIL = {fail!r}
+HAPPY = HAPPY.replace("{{ROOT}}", ROOT.replace("\\\\", "/")).replace("{{ROOT_WIN}}", os.path.normpath(ROOT))
+EDGE = [e.replace("{{ROOT}}", ROOT.replace("\\\\", "/")).replace("{{ROOT_WIN}}", os.path.normpath(ROOT)) for e in EDGE]
 
 
 def _run(text):
@@ -136,8 +138,8 @@ def happy_for(name, route):
         "chat": "Reply with the exact word: PONG",
         "memory": "remember that my sister's name is Zainab",
         "reminders": "remind me in 5 minutes to stretch",
-        "files": "find files named readme in D:\\ISHTI\\docs",
-        "folders": "show the top level of D:\\ISHTI\\docs",
+        "files": "find files named sample in {ROOT_WIN}\\tests\\fixtures",
+        "folders": "show the top level of {ROOT_WIN}\\tests\\fixtures",
         "notes": "note: buy contact lenses",
         "digest": "give me a digest of my notes",
         "budget": "spent 250 on groceries today",
@@ -145,7 +147,7 @@ def happy_for(name, route):
         "system": "how much RAM is free",
         # FIX-5: 'is notepad running' is a status QUESTION - run() honestly declines it, so the
         # generated happy row could never pass. A real 'open notepad' row would REALLY LAUNCH
-        # Notepad: desktop/computer_use.launch_app has no ISHTI_TEST_MODE guard (NEEDS.md N21),
+        # Notepad: desktop/computer_use.launch_app has no ISHTI_TEST_MODE guard (the T2 gate lives in the dispatcher, not in run()),
         # and the dispatcher T2 gate does not apply to direct run() calls. An unknown app name
         # exercises the full path (VERB -> launch_app -> focus_window) and returns the honest
         # 'couldn't open' reply with zero side effects - verified live before regenerating.
@@ -156,7 +158,7 @@ def happy_for(name, route):
         # automation RULE wants 'when X, do Y' shape; the bare route prose is not a rule
         "automation": "when a pdf appears in downloads, move it to D:/Docs",
         # chart needs a REAL csv path (CHART3: 'line chart of <path>'); 'sales.csv' does not exist
-        "chart": "line chart of D:/ISHTI/metrics/ramp_table.csv",
+        "chart": "line chart of {ROOT}/metrics/ramp_table.csv",
         # checklist: SHOW/LISTS shapes; 'checklist for' alone matches nothing
         "checklist": "my checklist",
         # clients: 'new client' alone asks a clarifying question - a valid reply; the dashboard
@@ -164,23 +166,23 @@ def happy_for(name, route):
         "clients": "add client Ahmed via whatsapp, contact 0300-0000000",
         # desktop/dev/docs: the route prose is not a command; these rows hit real ops
         "desktop": "what is on my screen",
-        "dev": "git status of D:/ISHTI",
-        "docs": "summarize D:/ISHTI/docs/FINAL_REPORT.md",
+        "dev": "git status of {ROOT}",
+        "docs": "summarize {ROOT}/tests/fixtures/sample_report.txt",
         "extract": "extract all the links from https://example.com",
-        "fileops": "zip D:/ISHTI/docs",
+        "fileops": "zip {ROOT}/tests/fixtures",
         "focus": "start a 25 minute focus sprint",
         # forecast: needs csv path + horizon ('forecast sales.csv next 6 months' lacks a real file)
-        "forecast": "forecast D:/ISHTI/metrics/ramp_table.csv next 6 months",
+        "forecast": "forecast {ROOT}/metrics/ramp_table.csv next 6 months",
         # gitops: commit/push need a repo path in the text ('commit my changes' has none -> decline)
-        "gitops": "git status of D:/ISHTI",
+        "gitops": "git status of {ROOT}",
         # imgcrop: needs a real image path
-        "imgcrop": "crop D:/ISHTI/data/charts/ramp_table-line.png to square",
+        "imgcrop": "crop {ROOT}/assets/ishti_app_icon.png to square",
         # ledger/lifelog want first-person logged-statements; media wants verb + real path;
         # mailmerge MERGE wants 'mailmerge <csv>: <template>' (both paths real)
         "ledger": "spent 250 on groceries today",
         "lifelog": "I drank 3 glasses of water",
-        "mailmerge": "mailmerge D:/ISHTI/docs/merge_contacts.csv: D:/ISHTI/docs/merge_template.txt",
-        "media": "convert the image D:/ISHTI/assets/ishti_app_icon.png to jpg",
+        "mailmerge": "mailmerge {ROOT}/tests/fixtures/merge_contacts.csv: {ROOT}/tests/fixtures/merge_template.txt",
+        "media": "convert the image {ROOT}/assets/ishti_app_icon.png to jpg",
         "mnemonic": "make a mnemonic for: red orange yellow green blue indigo violet",
         # meta/montecarlo: rows must match the ops' own regexes (probed live)
         "meta": "check your skills",
@@ -189,10 +191,10 @@ def happy_for(name, route):
         "networth": "track asset bank account 200000",
         # real-arg rows (probed live): pdftables/redact need real files; quickcalc phrases must
         # match its regexes; phishing needs a URL; relationships needs a question shape
-        "pdftables": "extract tables from D:/ISHTI/reports/2026-09-30_0933_chat_digest.pdf",
+        "pdftables": "extract tables from {ROOT}/reports/2026-09-29_2044_chat_digest.pdf",
         "phishing_check": "check this link http://example.com",
         "quickcalc": "2000 with a 15% off",
-        "redact": "redact D:/ISHTI/docs/redact_test.csv",
+        "redact": "redact {ROOT}/tests/fixtures/redact_test.csv",
         "relationships": "what does my friend Sara like",
         # security/sendlater/sleeplog: real accepted shapes (probed live)
         "security": "check password strength of Tr0ub4dor&3",
@@ -205,7 +207,7 @@ def happy_for(name, route):
         # sensitivity NAME op only matches the 'f(x) =' form (probed); 'profit = 30*x - 1000' returns None
         "sensitivity": "sensitivity analysis of f(x) = 30*x - 1000, x from 1 to 100",
         # study FLASHCARDS wants a real file path
-        "study": "make flashcards from D:/ISHTI/docs/FINAL_REPORT.md",
+        "study": "make flashcards from {ROOT}/tests/fixtures/sample_report.txt",
         "subscriptions": "track subscription netflix 1500 monthly",
         # NOTE: canonical Wikipedia grid (row 2 is 600195000). The common transcription
         # 006195000 is genuinely unsolvable and the skill correctly refuses it - adjudicated
@@ -218,7 +220,7 @@ def happy_for(name, route):
         "travel": "find flights from Peshawar to Dubai",
         "utilities": "generate a strong password",
         "vocab": "vocab stats",
-        "vulnscan": "vulnerability scan of D:/ISHTI/ishti/skills/sudoku/skill.py",
+        "vulnscan": "vulnerability scan of {ROOT}/ishti/skills/sudoku/skill.py",
         "webtools": "which pages are you watching",
         "whatsapp": "check my whatsapp",
         "workflows": "list my workflows",
@@ -228,7 +230,7 @@ def happy_for(name, route):
         "owner": "what do you know about me",
         "markets": "show me BTC price in usd",
         "deep_research": "research local-first AI assistants 2026",
-        "video": "info about D:\\ISHTI\\assets\\ishti.ico",
+        "video": "info about {ROOT_WIN}\\assets\\ishti.ico",
         "browser": "open example.com in the browser",
         "trading": "paper account",   # ops require the word 'paper'; 'show my paper trading account' matches none
         "terminal": "show the current directory",

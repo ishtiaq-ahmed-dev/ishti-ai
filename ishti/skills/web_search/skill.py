@@ -7,6 +7,13 @@ _engine = None
 
 import re
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 # Facts about products, prices and releases live on the web, not in the model's memory.
 PRODUCT = re.compile(r"\b(?:price|prices|cost|costs|how\s+much\s+is|specs?|specifications|review|reviews|"
                      r"benchmark|benchmarks|release\s+date|launch\s+date|vs\.?|versus|compare)\b", re.I)
@@ -87,8 +94,8 @@ def run(text, session):
         from ishti.core import state as cstate
         cstate.get_manager().record_search(session.get("id", "default"), query,
                                            [s.get("url", "") for s in res.get("sources", []) if isinstance(s, dict)])
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/skills/web_search/skill.py:run', _exc)
     # "no confident match" after the rewording retries is final: escalating would just loop again. A confident answer
     # was written only from pages that passed the per-page check, so the dispatcher's second model check (which
     # misjudged a correct answer and cost a 25 s deep-research detour) is skipped unless the text itself gives up.

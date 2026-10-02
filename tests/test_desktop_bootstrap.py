@@ -52,7 +52,7 @@ def test_bootstrap_does_not_import_the_desktop_stack():
 
 
 def test_bootstrap_finds_the_real_launcher_in_the_repo_layout():
-    """_project_root() must resolve to D:\\ISHTI in BOTH frozen layouts (onedir: dist\\ISHTI\\ISHTI.exe,
+    """_project_root() must resolve to the checkout root in BOTH frozen layouts (onedir: dist\\ISHTI\\ISHTI.exe,
     onefile: dist\\ISHTI.exe) and from source."""
     sys.path.insert(0, os.path.join(ROOT, "desktop"))
     import exe_bootstrap

@@ -14,7 +14,7 @@ with clearly different names). This one attacks it:
   5. sending a draft records against the SAME profile the draft was grounded in - no stray duplicate profile that
      would then diverge from the real client's history.
 
-Run:  D:\\ISHTI\\venv\\Scripts\\python.exe D:\\ISHTI\\tests\\test_client_isolation.py
+Run:  venv\\Scripts\\python tests\\test_client_isolation.py
 """
 import os
 import sys

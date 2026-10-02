@@ -2,6 +2,13 @@
 from ishti.skills import ground_dates, trace
 from orchestrator.intent_detector import IntentDetector
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 _engine = None
 
 
@@ -43,8 +50,8 @@ def run(text, session):
         from ishti.core import state as cstate
         cstate.get_manager().record_search(session.get("id", "default"), text,
                                            [s.get("url", "") for s in res.get("sources", []) if isinstance(s, dict)])
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/skills/deep_research/skill.py:run', _exc)
     report = res.get("report", "")
     if not (report or "").strip():  # a skill must never answer with blank text
         report = ("I could not put together a usable answer from the web for that. Please try rephrasing it, "

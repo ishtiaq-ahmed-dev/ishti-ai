@@ -40,7 +40,7 @@ def default_eval_set():
     """The regression gate: known requests -> substrings a good answer contains."""
     return [
         {"request": "what is 17 times 23? reply with just the number", "expect": ["391"]},
-        {"request": "where is the ishti project?", "expect": ["D:\\ISHTI"]},
+        {"request": "where is the ishti project?", "expect": [ROOT]},
         {"request": "who is my brother", "expect": ["ahmed"]},          # graph-grounded
         {"request": "remind me in 20 minutes to call Ali", "expect": ["Reminder", "reminder", "set"]},
         {"request": "how much ram am I using", "expect": ["GB", "%"]},

@@ -18,6 +18,13 @@ except ImportError:
 
 import pyttsx3
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 
 class TTSEngine:
     _instance = None
@@ -47,8 +54,8 @@ class TTSEngine:
         if pythoncom:
             try:
                 pythoncom.CoInitialize()
-            except Exception:
-                pass
+            except Exception as _exc:
+                swallowed('voice/tts.py:TTSEngine._speech_worker', _exc)
 
         while True:
             text = self.speech_queue.get()

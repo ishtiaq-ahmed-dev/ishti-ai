@@ -35,6 +35,13 @@ from desktop.overlay import fsm as fsm_mod  # noqa: E402
 from desktop.overlay import mascot as mascot_mod  # noqa: E402
 from desktop.overlay import pills as pills_mod  # noqa: E402
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 SIZES = {"hidden": (420, 3), "petit": (420, 46), "home": (460, 380)}  # hidden = a thin hover strip
 MAX_LEVELS = 48
 BUSY_ON = {"PreToolUse", "UserPromptSubmit", "SubagentStart"}
@@ -178,8 +185,8 @@ window.ishti.setState = function(p) {{
                 self._levels.append(max(0.0, min(1.0, x)))
             if len(self._levels) > MAX_LEVELS:
                 del self._levels[:-MAX_LEVELS]
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('desktop/overlay/window.py:OverlayWindow.set_levels', _exc)
         self.push_state()
         return self.levels()
 
@@ -224,8 +231,8 @@ window.ishti.setState = function(p) {{
         self.last_drop = str(req)
         try:
             self.handle_event("notify", agent="ishti", label=f"file: {os.path.basename(str(path))[:40]}")
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('desktop/overlay/window.py:OverlayWindow.drop_file', _exc)
         return req
 
     def handle_event(self, event, *, agent=None, label="") -> bool:
@@ -237,8 +244,8 @@ window.ishti.setState = function(p) {{
             if self.pills is not None:
                 try:
                     self.pills.apply(ev, agent=agent, label=label)
-                except Exception:
-                    pass
+                except Exception as _exc:
+                    swallowed('desktop/overlay/window.py:OverlayWindow.handle_event', _exc)
             if ev in BUSY_ON:
                 self.fsm.handle("busy_on")
             elif ev in BUSY_OFF:

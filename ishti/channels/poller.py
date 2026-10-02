@@ -20,6 +20,13 @@ import time
 from ishti import CONFIG
 from ishti.channels.telegram_client import TelegramClient, BotAPIError
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 DB_PATH = os.path.join(os.path.dirname(CONFIG["memory"]["db_path"]), "remote_poller.db")
 
 # update kinds we accept; everything else (edited_*, channel_post, ...) never arrives
@@ -110,8 +117,8 @@ class Poller:
         documented stop trick). Any error here is harmless - stop() still joins with a deadline."""
         try:
             self.client.get_updates(self.offset, timeout_s=0, allowed=ALLOWED)
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/channels/poller.py:Poller._kick', _exc)
 
     @property
     def running(self) -> bool:
@@ -160,8 +167,8 @@ class Poller:
                 from ishti import audit
                 with audit.context(skill="channels", initiator="unknown", channel="telegram"):
                     audit.record("remote gate error", f"update {uid}: {type(exc).__name__}: {str(exc)[:120]}")
-            except Exception:
-                pass
+            except Exception as _exc:
+                swallowed('ishti/channels/poller.py:Poller._handle_update', _exc)
         finally:
             self._mark_processed(uid)
             self._advance(uid)
@@ -199,8 +206,8 @@ class Poller:
                                        session=f"tg:{(m.get('chat') or {}).get('id')}"):
                         audit.record("remote command expired (stale)",
                                      f"update {uid}, sent {now - (m.get('date') or now):.0f}s ago")
-                except Exception:
-                    pass
+                except Exception as _exc:
+                    swallowed('ishti/channels/poller.py:Poller.flush_stale', _exc)
             else:
                 # fresh enough to handle normally (gate errors never kill the flush)
                 try:

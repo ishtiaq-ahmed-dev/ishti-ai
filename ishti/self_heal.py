@@ -19,6 +19,13 @@ import requests
 
 from ishti import CONFIG
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 STATE_PATH = os.path.join(os.path.dirname(CONFIG["memory"]["db_path"]), "self_heal_state.json")
 REFLECTIONS_PATH = os.path.join(os.path.dirname(CONFIG["memory"]["db_path"]), "reflections.md")
 
@@ -41,8 +48,8 @@ def _load_state():
                 _state["pending"] = saved.get("pending", [])
                 _state["last_run"] = saved.get("last_run")
                 _state["last_report"] = saved.get("last_report")
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/self_heal.py:_load_state', _exc)
 
 
 def _save_state():
@@ -180,8 +187,8 @@ def trigger_heal() -> Dict[str, Any]:
         router = ModelRouter()
         router.consecutive_failures.clear()
         actions_taken.append("Reset ModelRouter consecutive failure counters")
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/self_heal.py:trigger_heal', _exc)
 
     # 2. Web Search & SearXNG Container
     try:

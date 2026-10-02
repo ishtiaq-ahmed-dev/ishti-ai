@@ -12,6 +12,13 @@ import re
 
 from ishti.arch2 import memory
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 
 def _kw(text: str) -> set:
     stop = {"the", "a", "an", "and", "or", "to", "of", "in", "on", "for", "with", "my", "me", "i",
@@ -57,8 +64,8 @@ def graph_hits(query: str) -> list:
                 lines = [rgraph.describe_edge(e) for e in rgraph.edges_of(name, direction="both")[:4]]
                 if lines:
                     hits.append({"text": "\n".join(lines)})
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/arch2/retrieval.py:graph_hits', _exc)
     # dedupe by first line
     seen, out = set(), []
     for h in hits:
@@ -81,8 +88,8 @@ def memory_hits(query: str) -> list:
         try:
             stored = _json.loads(r["keywords"] or "") if r["keywords"] else []
             kws |= {str(k).lower() for k in stored}
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/arch2/retrieval.py:memory_hits', _exc)
         overlap = len(words & kws)
         if overlap:
             scored.append((_score_row(r, overlap), r))
@@ -114,8 +121,8 @@ def touch_hits(mems) -> None:
     """Record retrieval for the scored hits (feeds decay/importance)."""
     try:
         memory.touch([m["row"]["id"] for m in mems if m.get("row")])
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/arch2/retrieval.py:touch_hits', _exc)
 
 
 def procedures_for(query: str) -> list:
@@ -143,8 +150,8 @@ if __name__ == "__main__":
         _R.DB_PATH = os.path.join(tmp, "g.db")
         _R._conn = None
         _LS.set_db_path(os.path.join(tmp, "l.db"))
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/arch2/retrieval.py:<module>', _exc)
     def _no_vector(q, k=None, max_distance=None):  # the Chroma store stays test-local
         return []
     vector_hits = _no_vector

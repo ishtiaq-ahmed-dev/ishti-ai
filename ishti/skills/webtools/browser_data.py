@@ -45,13 +45,13 @@ def profile_dir(server=None):
 
 def close_chrome(wait=8):
     """Ask Chrome to close (tabs come back on its next start if the owner has 'continue where you left off')."""
-    subprocess.run(["taskkill", "/IM", "chrome.exe"], capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    subprocess.run(["taskkill", "/IM", "chrome.exe"], capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), timeout=15)
     for _ in range(wait * 2):
         if "chrome.exe" not in subprocess.run(["tasklist", "/FI", "IMAGENAME eq chrome.exe"], capture_output=True, text=True,
-                                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout:
+                                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), timeout=15).stdout:
             return True
         time.sleep(0.5)
-    subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), timeout=15)
     time.sleep(1)
     return True
 

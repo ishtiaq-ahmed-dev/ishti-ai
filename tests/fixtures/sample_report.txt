@@ -1,0 +1,9 @@
+ISHTI sample report (test fixture)
+
+ISHTI is a local-first personal assistant. It runs every model on the owner's own PC and keeps its data in the data folder.
+
+Skills are small folders with a manifest and a skill.py. Each skill declares what it may touch (files, network, apps) and a safety tier.
+Tier 0 skills only read. Tier 1 skills make reversible local changes. Tier 2 skills always ask for a yes before acting.
+
+The router picks the skill for a request. Deterministic rules run first; a small model decides the rest.
+When no skill can help, ISHTI says so plainly and logs the gap so a skill can be added later.

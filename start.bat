@@ -16,20 +16,15 @@ if exist "%~dp0venv\Scripts\pythonw.exe" (
     exit /b 0
 )
 
-:: Fallback if venv is missing
-echo [ERROR] Virtual environment not found at %~dp0venv
-echo Creating virtual environment...
-python -m venv "%~dp0venv"
-if errorlevel 1 (
-    echo [FATAL] Failed to create virtual environment. Ensure Python 3.11 is installed.
-    pause
-    exit /b 1
-)
-call "%~dp0venv\Scripts\activate.bat"
-start "" "%~dp0venv\Scripts\pythonw.exe" "%~dp0desktop\launcher.py"
-exit /b 0
+:: No venv yet: ISHTI has not been installed on this PC
+call :need_install
+exit /b 1
 
 :handle_cli
+if not exist "%~dp0venv\Scripts\python.exe" (
+    call :need_install
+    exit /b 1
+)
 call "%~dp0venv\Scripts\activate.bat"
 
 if "%1"=="doctor" (
@@ -80,3 +75,11 @@ if "%1"=="cli" (
 :: Default fallback with args
 "%~dp0venv\Scripts\python.exe" "%~dp0orchestrator\startup.py" %*
 exit /b %errorlevel%
+
+:need_install
+echo.
+echo  ISHTI is not installed on this PC yet.
+echo  Please double-click install.bat in this folder first. It sets everything up for you.
+echo.
+pause
+exit /b 1

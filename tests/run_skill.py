@@ -6,7 +6,7 @@ Usage:
     venv\\Scripts\\python tests\\run_skill.py all --runs 1       # every tests/skills/<skill>/
     venv\\Scripts\\python tests\\run_skill.py weather --dry      # show what would run, run nothing
 
-Per run it outputs a readable table + JSON, updates TEST_STATE.json
+Per run it outputs a readable table + JSON, updates reports/test_state.json
 (feature -> status, attempts, last_result, consecutive_green, last_error, timestamp),
 enforces a per-test timeout, sets ISHTI_TEST_MODE=1, samples GPU/VRAM before+after,
 and asserts the audit log shows no real T2 side effects during the run.
@@ -20,9 +20,8 @@ import subprocess
 import sys
 import time
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STATE_PATH = os.path.join(ROOT, "TEST_STATE.json")
+STATE_PATH = os.path.join(ROOT, "reports", "test_state.json")
 
 
 def gpu_sample():
@@ -35,6 +34,24 @@ def gpu_sample():
         return {"used_mb": int(used), "total_mb": int(total)}
     except Exception:
         return None
+
+
+MAX_BUSY_PCT = 60   # QA batches start only while the GPU is at most this full (Q10: a live ISHTI or another session holds it)
+
+
+def wait_for_idle_gpu(max_wait_s, sampler=None, sleep=time.sleep, clock=time.time):
+    """Q10 policy: a QA batch must not fight a live instance for VRAM (that produced the GpuBusy failures). Wait up to
+    `max_wait_s` for the GPU to drop to MAX_BUSY_PCT, polling; -> (True, snapshot) when it is idle enough (or when nvidia-smi
+    cannot be read: no GPU, nothing to protect), else (False, last snapshot)."""
+    sampler = sampler or gpu_sample
+    deadline = clock() + max_wait_s
+    while True:
+        g = sampler()
+        if g is None or g["used_mb"] * 100 <= g["total_mb"] * MAX_BUSY_PCT:
+            return True, g
+        if clock() >= deadline:
+            return False, g
+        sleep(10)
 
 
 def load_state():
@@ -113,15 +130,25 @@ def update_state(state, res):
 
 
 def main():
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")  # script only: never at import
     ap = argparse.ArgumentParser(description="ISHTI per-skill QA harness")
     ap.add_argument("targets", help="skill name, comma list, or 'all'")
     ap.add_argument("--runs", type=int, default=1)
     ap.add_argument("--timeout", type=int, default=90, help="per-test timeout seconds")
     ap.add_argument("--dry", action="store_true", help="show what would run, run nothing")
     ap.add_argument("--json", action="store_true", help="JSON output only")
+    ap.add_argument("--wait-idle", type=int, default=300, metavar="S",
+                    help="wait up to S seconds for the GPU to be at most 60%% full before starting (default 300)")
+    ap.add_argument("--force", action="store_true", help="run even if the GPU is busy (results may show GpuBusy failures)")
     args = ap.parse_args()
 
     os.environ["ISHTI_TEST_MODE"] = "1"          # global safety switch for everything this harness runs
+    if not args.dry and not args.force:
+        idle, g = wait_for_idle_gpu(args.wait_idle)
+        if not idle:
+            print(f"GPU busy: {g['used_mb']} of {g['total_mb']} MiB in use (limit {MAX_BUSY_PCT}%). Another ISHTI instance or "
+                  f"session is using it, so a QA batch would fail with GpuBusy. Re-run when it is idle, or pass --force.")
+            sys.exit(3)
     names = sorted(os.listdir(os.path.join(ROOT, "tests", "skills"))) \
         if args.targets == "all" else [t.strip() for t in args.targets.split(",") if t.strip()]
     state = load_state()
@@ -148,11 +175,11 @@ def main():
 
     if not args.dry:
         save_state(state)
-    out_path = os.path.join(ROOT, "TEST_STATE_last_run.json")
+    out_path = os.path.join(ROOT, "reports", "test_state_last_run.json")
     json.dump(report, open(out_path, "w", encoding="utf-8"), indent=1)
     green = sum(1 for r in report if r["status"] == "green")
     if not args.json:
-        print(f"\nSummary: {green}/{len(report)} green -> state in TEST_STATE.json, details in {os.path.basename(out_path)}")
+        print(f"\nSummary: {green}/{len(report)} green -> state in reports/test_state.json, details in {os.path.basename(out_path)}")
     sys.exit(0 if green == len(report) and report else 1)
 
 

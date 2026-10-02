@@ -11,7 +11,7 @@ Data sources, in the spec's order (log which one was used - it is printed in the
   1. the local message store (data/chat_digest.db)  -> what ISHTI already saw
   2. the read-only DOM read of the open WhatsApp tab (ishti/skills/whatsapp.read_chat_messages)
   3. an official WhatsApp export (.txt/.zip) the owner hands over -> ingest_export
-  4. an unofficial Baileys reader - NOT IMPLEMENTED, default off (ban risk + npm supply chain; NEEDS.md)
+  4. an unofficial Baileys reader - NOT IMPLEMENTED, default off (ban risk + npm supply chain)
 """
 import os
 import re

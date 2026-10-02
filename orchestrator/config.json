@@ -59,13 +59,13 @@
     "ram": "64GB DDR5"
   },
   "browser": {
-    "profile_dir": "D:\\ISHTI\\data\\chrome_profile",
+    "profile_dir": "data/chrome_profile",
     "executable_path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
     "headless": false,
     "user_agent_prefix": "ISHTI-Agentic-Browser"
   },
   "security": {
-    "sandbox_root": "D:\\ISHTI",
+    "sandbox_root": ".",
     "profile_isolation": true,
     "confirm_consequential_actions": true,
     "consequential_action_types": [
@@ -82,7 +82,7 @@
   },
   "voice": {
     "wake_word": "ishti",
-    "whisper_model": "D:\\ISHTI\\data\\models\\whisper-large-v3-turbo",
+    "whisper_model": "data/models/whisper-large-v3-turbo",
     "whisper_device": "cuda",
     "tts_engine": "sapi5",
     "tts_rate": 185,

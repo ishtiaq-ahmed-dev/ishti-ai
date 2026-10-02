@@ -1,7 +1,7 @@
 """Development: run code (the owner's own snippet in a sandbox folder, or a project script), git status/log/diff,
 commit (local) and push (asks first), run a project's tests, lint with ruff, explain a codebase with the coder
 model, test an API endpoint, summarise errors in a log file. Projects resolve from the owner's saved project
-locations ("the ishti project" -> D:\\ISHTI) or a path in the request."""
+locations ("the ishti project" -> the ISHTI checkout) or a path in the request."""
 import os
 import re
 import subprocess
@@ -202,7 +202,7 @@ def op_lint(m, text, session):
 def op_explain(m, text, session):
     from ishti import llm
     name, path = project(text)
-    readme = next((os.path.join(path, p) for p in ("README.md", os.path.join(".github", "README.md"), os.path.join("md files", "README.md"))
+    readme = next((os.path.join(path, p) for p in ("README.md", os.path.join(".github", "README.md"))
                    if os.path.isfile(os.path.join(path, p))), None)
     tree = []
     for root, dirs, files in os.walk(path):

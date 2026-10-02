@@ -31,6 +31,13 @@ import time
 from ishti.core.settings import get_settings_service
 from ishti import resilience, taskmgr
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 _lock = threading.Lock()
 _PERF: dict = {}
 
@@ -129,8 +136,8 @@ def decompose(request: str, skills: dict) -> list[dict]:
                 if isinstance(s, dict) and s.get("agent") in AGENTS and s.get("task")]
         if subs:
             return subs[:4]
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/agents.py:decompose', _exc)
     # deterministic fallback: capability keyword matching
     low = request.lower()
     assigned = None
@@ -337,8 +344,8 @@ def _perf(agent: str, ok: bool, latency: float):
                        result=f"latency={latency:.1f}s", status="ok" if ok else "failed",
                        reward=0.5 if ok else -0.5, task_id="", step_no=0, domain="agent",
                        source="multi_agent")
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/agents.py:_perf', _exc)
 
 
 def perf() -> dict:

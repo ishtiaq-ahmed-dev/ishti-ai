@@ -40,7 +40,7 @@ id: work_session
 description: Mixed local-file and browser work; owner corrects a misheard file name mid-flow.
 skills: [files, docs, browser, memory]
 steps:
-  - {at: 0s,  say: "find files named invoice in D:/ISHTI/docs"}
+  - {at: 0s,  say: "find files named invoice in {ROOT}/tests/fixtures"}
   - {at: 8s,  say: "summarize the first one"}
   - {at: 25s, say: "no wait, I meant the March invoice, not the first one"}
   - {at: 35s, say: "open example.com in the browser and read the headline"}
@@ -93,7 +93,7 @@ id: voice_session_background_job
 description: Voice Q&A (text-out) while a file scan runs; barge-in still ~150 ms.
 skills: [voice, files, system]
 steps:
-  - {at: 0s,  start_background: "scan D:/ISHTI/docs (read-only)"}
+  - {at: 0s,  start_background: "scan {ROOT}/tests/fixtures (read-only)"}
   - {at: 3s,  voice: "what's my CPU usage"}
   - {at: 12s, voice_barge_in: "new question during the TTS answer"}
 expected:

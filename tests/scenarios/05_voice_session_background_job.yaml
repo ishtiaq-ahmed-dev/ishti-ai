@@ -3,7 +3,7 @@ id: voice_session_background_job
 description: Voice Q&A (text-out) while a file scan runs; barge-in still ~150 ms.
 skills: [voice, files, system]
 steps:
-  - {at: 0s,  start_background: "scan D:/ISHTI/docs (read-only)"}
+  - {at: 0s,  start_background: "scan {ROOT}/tests/fixtures (read-only)"}
   - {at: 3s,  voice: "what's my CPU usage"}
   - {at: 12s, voice_barge_in: "new question during the TTS answer"}
 expected:

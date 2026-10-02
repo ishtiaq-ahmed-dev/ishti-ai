@@ -7,6 +7,13 @@ from ishti.facts import get_facts
 from ishti.skills import trace
 from orchestrator.response_guard import inspect
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 
 ARITHMETIC = re.compile(r"\d\s*(?:[-+*/x×^]|times|plus|minus|divided\s+by|multiplied\s+by|to\s+the\s+power\s+of)\s*\d", re.I)
 
@@ -63,8 +70,8 @@ def build_context(text, domain=""):
         block = lessons.context_for(text, domain=domain)
         if block:
             parts.append(block)
-    except Exception:
-        pass  # learning is an enhancement; a broken lesson store must not sink the reply
+    except Exception as _exc:
+        swallowed('ishti/skills/chat/skill.py:build_context', _exc)  # learning is an enhancement; a broken lesson store must not sink the reply
     return "\n\n".join(parts)
 
 

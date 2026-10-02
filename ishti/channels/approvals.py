@@ -10,6 +10,13 @@ import time
 
 from ishti.channels import policy as policy_mod
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 _lock = threading.Lock()
 _store = {}  # approval_id -> {"action": str, "recap": str, "expires": float, "used": False, "channel": str}
 
@@ -93,8 +100,8 @@ def _audit(action: str, detail: str):
         from ishti import audit
         with audit.context(skill="channels", initiator="owner", channel="remote-gate"):
             audit.record(action, detail)
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/channels/approvals.py:_audit', _exc)
 
 
 def pending() -> int:

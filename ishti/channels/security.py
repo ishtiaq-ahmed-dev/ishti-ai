@@ -24,6 +24,13 @@ import time
 from ishti import CONFIG
 from ishti.channels import policy as policy_mod
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 STATE_PATH = os.path.join(os.path.dirname(CONFIG["memory"]["db_path"]), "remote_security.json")
 
 # ----------------------------------------------------------------- secret store (DPAPI)
@@ -130,8 +137,8 @@ def unpair_all() -> int:
     try:
         from ishti.channels import approvals
         approvals.revoke_all()
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/channels/security.py:unpair_all', _exc)
     return n
 
 

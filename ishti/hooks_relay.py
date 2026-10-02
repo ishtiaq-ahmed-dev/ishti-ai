@@ -39,6 +39,13 @@ from ishti.channels import approvals                          # noqa: E402  (sin
 from desktop.overlay import log as _log                       # noqa: E402  (scrubbed overlay log)
 from desktop.overlay.pills import agent_name                  # noqa: E402  (C14 validation)
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 VERSION = 1
 MAX_EVENT_LEN = 64
 MAX_LABEL_LEN = 200
@@ -259,8 +266,8 @@ def on_bus(msg) -> None:
             return
         label = data.get("text") or data.get("detail") or data.get("message") or ""
         emit(str(msg.get("type")), agent="ishti", label=str(label))
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/hooks_relay.py:on_bus', _exc)
 
 
 def set_paused(paused: bool) -> bool:
@@ -282,8 +289,8 @@ def start(poll_s: float = 2.0) -> None:
     from ishti import events
     try:
         events.subscribe(on_bus)
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/hooks_relay.py:start', _exc)
     if _thread is not None and _thread.is_alive():
         return
     _stop.clear()
@@ -302,8 +309,8 @@ def stop() -> None:
     try:
         from ishti import events
         events.unsubscribe(on_bus)
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/hooks_relay.py:stop', _exc)
     if _thread is not None:
         _thread.join(timeout=3)
     _thread = None

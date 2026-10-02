@@ -10,6 +10,13 @@ import requests
 
 from ishti import CONFIG, keepalive
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 EVERY_S = 300
 _state = {"at": 0.0, "status": "starting", "checks": {}}
 
@@ -90,8 +97,8 @@ def tick(announce=None):
     try:  # D4: keep the correction log exported for the periodic fine-tune
         from ishti import corrections
         corrections.export()
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/health.py:tick', _exc)
     prev = _state.get("checks", {})
     checks = run_checks()
     _state.update(at=time.time(), checks=checks, status="ok" if all(c["ok"] for c in checks.values()) else "degraded")

@@ -15,6 +15,13 @@ import wave
 
 import numpy as np
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 _vc, _lock = None, threading.Lock()
 _last, _timer = 0.0, None
 IDLE_S = int(os.environ.get("ISHTI_CLONE_IDLE_S") or 600)   # same 10-minute rule as every other on-demand model
@@ -69,8 +76,8 @@ def drop(if_idle=False):
     try:
         from ishti import models
         models.log_event("unload", "own-voice converter", f"idle > {IDLE_S // 60}m" if if_idle else "dropped")
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/clone.py:drop', _exc)
     return True
 
 

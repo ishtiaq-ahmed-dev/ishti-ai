@@ -1,0 +1,199 @@
+"""File endpoints for the chat UI: attach a file to a message, and show an exported report in Explorer.
+
+    POST /api/upload   multipart form, field "file"  ->  {ok, path, name, size, kind, mention}
+    POST /api/reveal   JSON {"path": "<file or folder>"}  ->  {ok, revealed, launched}
+
+Contract the UI relies on (N9 chat attachments, CD-13 "open in folder" button):
+  * upload saves into data/uploads/ under a safe unique name and returns the ABSOLUTE path. The UI puts `mention`
+    (e.g. "summarize C:\\...\\data\\uploads\\20261002-101500-report.pdf") into the message, so every document, image and
+    OCR skill that already takes a path works unchanged. 50 MB cap; executable/script types are refused; files older
+    than 30 days are pruned on the next upload.
+  * reveal opens Explorer with the file selected (a folder is just opened). Only paths inside ISHTI's reports/ and
+    data/ folders, or the owner's Documents/ISHTI, Downloads and Desktop, are allowed: it must never become a way to
+    browse or launch arbitrary things. It is a launch action, so it is refused for another website's request and
+    for tunnelled/remote callers, and it only records an audit row (no launch) under ISHTI_TEST_MODE=1.
+Errors are JSON {"error": "<plain words>"} with 400 (bad input), 403 (not allowed), 404 (no such file), 413 (too big).
+
+attach(app) is called once from interface/web_ui/server.py:   from ishti import files_api; files_api.attach(app)
+"""
+import os
+import re
+import subprocess
+import sys
+import time
+
+from fastapi import APIRouter, Request, UploadFile
+from fastapi.responses import JSONResponse
+
+from ishti import ROOT, audit, test_mode
+from ishti.core.logutil import swallowed
+
+router = APIRouter()
+UPLOAD_DIR = os.path.join(ROOT, "data", "uploads")
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+KEEP_DAYS = 30
+KINDS = {
+    "document": {".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv", ".pptx", ".txt", ".md", ".json", ".rtf", ".odt"},
+    "image": {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff", ".heic", ".svg"},
+    "audio": {".mp3", ".wav", ".m4a", ".ogg", ".flac", ".opus", ".aac"},
+    "video": {".mp4", ".mkv", ".mov", ".avi", ".webm"},
+}
+ALLOWED_EXT = set().union(*KINDS.values())
+LOOPBACK = {"127.0.0.1", "localhost", "::1"}
+PROXY_HEADERS = (b"cf-connecting-ip", b"x-forwarded-for", b"forwarded", b"x-real-ip")
+
+
+def _err(msg, code):
+    return JSONResponse({"error": msg}, status_code=code)
+
+
+def kind_of(name):
+    ext = os.path.splitext(name)[1].lower()
+    return next((k for k, exts in KINDS.items() if ext in exts), "")
+
+
+def safe_name(raw):
+    """A file name that cannot escape the folder: base name only, plain characters, bounded length, original extension."""
+    base = os.path.basename(str(raw or "").replace("\\", "/")).strip()
+    stem, ext = os.path.splitext(base)
+    stem = re.sub(r"[^\w .()-]", "_", stem, flags=re.UNICODE).strip(" .") or "file"
+    return stem[:80] + ext.lower()[:10]
+
+
+def prune(days=KEEP_DAYS, folder=None):
+    """Delete uploads older than `days`; returns how many were removed. Never raises."""
+    folder, gone, cutoff = folder or UPLOAD_DIR, 0, time.time() - days * 86400
+    try:
+        for n in os.listdir(folder):
+            p = os.path.join(folder, n)
+            if os.path.isfile(p) and os.path.getmtime(p) < cutoff:
+                os.remove(p)
+                gone += 1
+    except OSError as exc:
+        swallowed("ishti/files_api.py:prune", exc)
+    return gone
+
+
+async def save_upload(file: UploadFile, folder=None):
+    """Stream `file` into the uploads folder -> (info, None) or (None, (message, status)). Partial files never stay."""
+    folder = folder or UPLOAD_DIR
+    name = safe_name(file.filename)
+    ext = os.path.splitext(name)[1]
+    if ext not in ALLOWED_EXT:
+        return None, (f"I can't take a {ext or 'extensionless'} file. Documents, images, audio and video are fine.", 400)
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, f"{time.strftime('%Y%m%d-%H%M%S')}-{name}")
+    n = 1
+    while os.path.exists(path):  # two uploads inside one second
+        n += 1
+        path = os.path.join(folder, f"{time.strftime('%Y%m%d-%H%M%S')}-{n}-{name}")
+    size = 0
+    try:
+        with open(path, "wb") as out:
+            while True:
+                chunk = await file.read(1 << 20)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > MAX_UPLOAD_BYTES:
+                    raise OverflowError
+                out.write(chunk)
+    except OverflowError:
+        os.remove(path)
+        return None, (f"That file is bigger than {MAX_UPLOAD_BYTES // 2**20} MB, which is the most I take.", 413)
+    except OSError as exc:
+        if os.path.exists(path):
+            os.remove(path)
+        return None, (f"I couldn't save that file ({exc.strerror or exc}).", 500)
+    if size == 0:
+        os.remove(path)
+        return None, ("That file is empty.", 400)
+    verb = {"document": "summarize", "image": "describe the image", "audio": "transcribe", "video": "info about"}[kind_of(name)]
+    return {"ok": True, "path": path, "name": os.path.basename(path), "size": size, "kind": kind_of(name),
+            "mention": f"{verb} {path}"}, None
+
+
+@router.post("/api/upload")
+async def upload(req: Request, file: UploadFile):
+    if _not_direct(req.scope):
+        return _err("Uploads are only accepted from this PC's own window.", 403)
+    prune()
+    info, problem = await save_upload(file)
+    if problem:
+        return _err(*problem)
+    audit.record("file uploaded", f"{info['name']} ({info['size']} bytes)", initiator="owner", skill="files_api")
+    return info
+
+
+# ---------------------------------------------------------------- reveal
+def allowed_roots():
+    home = os.path.expanduser("~")
+    return [os.path.join(ROOT, "reports"), os.path.join(ROOT, "data"), os.path.join(home, "Documents", "ISHTI"),
+            os.path.join(home, "Downloads"), os.path.join(home, "Desktop")]
+
+
+def resolve_allowed(path, roots=None):
+    """The real path when it exists and sits inside an allowed folder; else None. Symlinks/.. are resolved first."""
+    if not isinstance(path, str) or not path.strip() or "\x00" in path or path.startswith(("\\\\", "//")):
+        return None  # empty, NUL, or a network (UNC) path
+    real = os.path.normcase(os.path.realpath(path.strip().strip('"')))
+    if not os.path.exists(real):
+        return None
+    for root in roots or allowed_roots():
+        r = os.path.normcase(os.path.realpath(root))
+        try:
+            if os.path.commonpath([real, r]) == r:
+                return os.path.realpath(path.strip().strip('"'))
+        except ValueError:  # different drives
+            continue
+    return None
+
+
+def _not_direct(scope):
+    """True for a request that is NOT a direct call from this PC's own window: another website (Origin/Host), a
+    non-loopback client, or a tunnelled/proxied one. Launch-type actions only serve the owner at this keyboard."""
+    from ishti.lifecycle_api import foreign_web_page
+    client = (scope.get("client") or ("", 0))[0]
+    headers = dict(scope.get("headers") or [])
+    return client not in LOOPBACK or any(h in headers for h in PROXY_HEADERS) or foreign_web_page(scope)
+
+
+def _launch(target):
+    """Explorer with the file selected (a folder is opened). argv list, no shell."""
+    if sys.platform == "win32":
+        arg = target if os.path.isdir(target) else f"/select,{target}"
+        subprocess.Popen(["explorer.exe", arg])  # explorer exits by itself; it is the owner's window, not our child
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", target] if os.path.isdir(target) else ["open", "-R", target])
+    else:
+        subprocess.Popen(["xdg-open", target if os.path.isdir(target) else os.path.dirname(target)])
+
+
+@router.post("/api/reveal")
+async def reveal(req: Request):
+    if _not_direct(req.scope):
+        return _err("Showing a file in Explorer is only possible from this PC's own window.", 403)
+    try:
+        body = await req.json()
+    except ValueError:
+        return _err("Send JSON like {\"path\": \"...\"}.", 400)
+    path = body.get("path") if isinstance(body, dict) else None
+    if not isinstance(path, str) or not path.strip():
+        return _err("Which file? Send {\"path\": \"...\"}.", 400)
+    real = resolve_allowed(path)
+    if real is None:
+        # same words for "not there" and "not allowed": the answer must not map the rest of the disk
+        return _err("I can only show files in ISHTI's reports and data folders or your Documents/ISHTI, Downloads "
+                    "and Desktop - and that file isn't there.", 404)
+    audit.record("reveal in folder", real, initiator="owner", skill="files_api")
+    if test_mode.enabled():
+        return {"ok": True, "revealed": real, "launched": False}
+    try:
+        _launch(real)
+    except OSError as exc:
+        return _err(f"Explorer could not be opened ({exc.strerror or exc}).", 500)
+    return {"ok": True, "revealed": real, "launched": True}
+
+
+def attach(app):
+    app.include_router(router)

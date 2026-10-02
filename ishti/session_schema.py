@@ -131,8 +131,9 @@ if __name__ == "__main__":
     msg = emit(e)
     assert msg and got and got[-1]["type"] == "session" and got[-1]["data"]["state"] == "working"
     assert len(e["label"]) <= MAX_LABEL and len(make("s", "a", "idle", label="L" * 999)["label"]) == MAX_LABEL
-    doc = open(_DOC, encoding="utf-8").read()
-    for needle in ("session_id", "agent", "state", "ishti.session.v1", str(V)):
-        assert needle in doc, needle
+    if os.path.exists(_DOC):  # the schema doc is optional documentation, never a runtime dependency
+        doc = open(_DOC, encoding="utf-8").read()
+        for needle in ("session_id", "agent", "state", "ishti.session.v1", str(V)):
+            assert needle in doc, needle
     print("[self-check] session_schema OK - one envelope for every harness, strict validate, "
-          "forgiving make, bus emit, doc in sync")
+          "forgiving make, bus emit")

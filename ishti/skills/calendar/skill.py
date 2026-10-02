@@ -11,6 +11,13 @@ import uuid
 from ishti import ROOT, llm
 from ishti.skills import ask_first, trace
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 I = re.I
 DB = os.path.join(ROOT, "data", "calendar.db")
 OPS = [
@@ -103,8 +110,8 @@ def op_add(m, text, session):
             with f.lock, f.db:
                 f.db.execute("INSERT INTO reminders(due, text, created) VALUES(?,?,?)",
                              ((start - dt.timedelta(minutes=15)).timestamp(), f"{title} at {start:%H:%M}" + (f" ({place})" if place else ""), time.time()))
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/skills/calendar/skill.py:op_add', _exc)
     when = f"{start:%a %d %b, %H:%M}-{end:%H:%M}" + (f", {repeat}" if repeat else "")
     warn = ("\n⚠ Clashes with: " + ", ".join(f"{o[2]} ({o[0]:%H:%M}-{o[1]:%H:%M})" for o in clash)) if clash else ""
     reply = f"Added **{title}** on {when}" + (f" at {place}" if place else "") + ". I'll remind you 15 minutes before." * (not repeat) + warn

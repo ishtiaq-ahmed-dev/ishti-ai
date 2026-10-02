@@ -6,6 +6,10 @@ import sys
 
 port = int(sys.argv[1]) if len(sys.argv) > 1 else 8888
 
+from ishti import privacy
+
+privacy.install()  # egress guard before anything can open a socket (harden() already ran in ishti/__init__)
+
 from ishti import lifecycle
 
 if not lifecycle.single_instance(port):

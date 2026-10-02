@@ -50,8 +50,15 @@ class MCPHub:
             env = {**os.environ, **({"PLAYWRIGHT_MCP_EXTENSION_TOKEN": token} if token else {})}
         cmd = shutil.which(cfg["command"]) or cfg["command"]
         params = StdioServerParameters(command=cmd, args=cfg.get("args", []), env=env)
+        # stdio_client's default errlog is `sys.stderr` captured when the mcp module was IMPORTED. If that stream was
+        # replaced since (pytest capture, a service wrapper, a closed console) the child launch fails with
+        # "UnsupportedOperation: fileno" - the "internet reach" failure in the runtime log. Give the server's stderr
+        # a real file of its own instead: it always has a fileno and the server's noise leaves the app's console.
+        err_path = os.path.join(os.path.dirname(TOKENS_PATH), "logs", f"mcp_{name}.err.log")
+        os.makedirs(os.path.dirname(err_path), exist_ok=True)
+        errlog = open(err_path, "a", encoding="utf-8", errors="replace")
         try:
-            async with stdio_client(params) as (r, w), ClientSession(r, w) as session:
+            async with stdio_client(params, errlog=errlog) as (r, w), ClientSession(r, w) as session:
                 await session.initialize()
                 q = asyncio.Queue()
                 self.live[name] = (q, (await session.list_tools()).tools)
@@ -67,6 +74,7 @@ class MCPHub:
                 ready.set_exception(exc)
         finally:
             self.live.pop(name, None)
+            errlog.close()
 
     def _reap_orphans(self, name):
         """A server killed without a clean shutdown leaves its MCP child (and that child's Chrome) running,

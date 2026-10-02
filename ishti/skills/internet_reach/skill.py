@@ -29,6 +29,13 @@ from urllib.parse import urlparse
 
 from ishti.untrusted import fence  # transcripts of fetched audio are untrusted data
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 REPO_VERSION = "1.0.0"
 STATE_DIR = os.path.join("data", "reach")
 CHANNELS_FILE = os.path.join(STATE_DIR, "channels.json")
@@ -355,8 +362,8 @@ def run(text: str, session):
         from ishti.skills import trace
         try:
             trace(session, "internet_reach", "probing channels (local probes only)", status="done")
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/skills/internet_reach/skill.py:run', _exc)
         return {"reply": _doctor_report(as_json)}
 
     # --- enable/disable an OPT-IN channel (purely local write, sends nothing)

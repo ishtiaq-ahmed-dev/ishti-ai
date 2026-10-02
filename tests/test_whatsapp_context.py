@@ -1,10 +1,11 @@
 """Tests for the WhatsApp skill behaviour pass (issues 4/5/6): chat-context parsing for replies, verified send
 results, sticky pending slots that survive follow-ups, voice-note dispatch, desktop fallback honesty, and tab
 reuse via browser.open_url. No browser and no MCP server: the browser layer and the LLM are faked. Run:
-    $env:PYTHONIOENCODING='utf-8'; D:\\ISHTI\\venv\\Scripts\\python.exe D:\\ISHTI\\tests\\test_whatsapp_context.py"""
+    $env:PYTHONIOENCODING='utf-8'; venv\\Scripts\\python tests\\test_whatsapp_context.py"""
+import os
 import sys
 
-sys.path.insert(0, r"D:\ISHTI")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ishti.skills.whatsapp import skill
 
@@ -148,7 +149,7 @@ import re
 import sys
 import os
 
-ROOT = r"D:\ISHTI"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 

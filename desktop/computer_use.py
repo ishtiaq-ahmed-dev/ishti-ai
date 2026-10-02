@@ -19,6 +19,13 @@ import subprocess
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 try:
     import pyautogui
     pyautogui.FAILSAFE = True
@@ -112,7 +119,7 @@ def _gpu_cached():
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(ROOT_DIR, "data")
-USER_PROFILE_DIR = os.environ.get("USERPROFILE", r"C:\Users\PC")
+USER_PROFILE_DIR = os.environ.get("USERPROFILE") or os.path.expanduser("~")
 
 # Common search directories on Windows
 DEFAULT_SEARCH_PATHS = [
@@ -389,8 +396,8 @@ class ComputerUseAgent:
                                     start = max(0, idx - 40)
                                     end = min(len(content), idx + 60)
                                     match_snippet = f"...{content[start:end].replace(chr(10), ' ')}..."
-                        except Exception:
-                            pass
+                        except Exception as _exc:
+                            swallowed('desktop/computer_use.py:ComputerUseAgent.search_pc', _exc)
 
                     if matched:
                         try:

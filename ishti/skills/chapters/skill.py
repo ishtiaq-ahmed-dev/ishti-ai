@@ -107,7 +107,7 @@ if __name__ == "__main__":
          "-f", "lavfi", "-i", "color=c=red:s=64x64:d=2", "-f", "lavfi", "-i", "color=c=blue:s=64x64:d=2",
          "-f", "lavfi", "-i", "color=c=green:s=64x64:d=2",
          "-filter_complex", "[0:v][1:v][2:v]concat=n=3:v=1[out]", "-map", "[out]",
-         "-pix_fmt", "yuv420p", "-r", "10", vid], check=True, capture_output=True)
+         "-pix_fmt", "yuv420p", "-r", "10", vid], check=True, capture_output=True, timeout=60)
 
     assert match("chapters for " + vid)
     assert match("detect scenes in " + vid)

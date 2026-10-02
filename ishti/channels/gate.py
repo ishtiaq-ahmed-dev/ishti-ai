@@ -29,6 +29,13 @@ from concurrent.futures import ThreadPoolExecutor
 from ishti.channels import approvals, policy as policy_mod, security
 from ishti.channels.output import prepare_reply
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 PANIC_ALWAYS = {"/kill", "/lock", "/status", "/help"}  # available even while locked
 COMMANDS = ("/status", "/tasks", "/cancel", "/pause", "/resume", "/kill", "/lock", "/unlock",
             "/digest", "/help", "/pair", "/start")
@@ -70,8 +77,8 @@ def _alert(kind: str, detail: str):
     try:
         from ishti import events
         events.publish("remote_alert", {"kind": kind, "detail": detail, "ts": now})
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/channels/gate.py:_alert', _exc)
     return True
 
 
@@ -347,8 +354,8 @@ class Gate:
                 try:
                     from ishti.channels.output import html_escape
                     self.client.edit(chat_id, msg["message_id"], html_escape("Denied - nothing was done."), None)
-                except Exception:
-                    pass
+                except Exception as _exc:
+                    swallowed('ishti/channels/gate.py:Gate._callback', _exc)
             return
         # approve: single-use, action-bound, expiring
         if not approvals.confirm(aid, action):

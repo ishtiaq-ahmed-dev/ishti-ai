@@ -9,6 +9,13 @@ import threading
 from typing import Any, Dict, List, Optional
 from ishti.learning import store
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 _LOCAL = threading.local()
 
 def begin(text: str, sid: str = "", channel: str = "text", dec: Optional[Dict[str, Any]] = None,
@@ -28,8 +35,8 @@ def begin(text: str, sid: str = "", channel: str = "text", dec: Optional[Dict[st
                   reward=0.0, task_id=str(task_id or ""),
                   step_no=int(step_no) if step_no is not None else 0,
                   domain=str(domain or ""), source=str(d.get("source") or "routing"))
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/learning/observe.py:begin', _exc)
     _LOCAL.last_interaction_id = iid
     return iid
 
@@ -67,8 +74,8 @@ def task_begin(goal: str, domain: str = "", source: str = "") -> str:
                   steps="[]", final_status="running", correction="",
                   lessons="[]", reward=0.0, domain=str(domain or ""),
                   source=str(source or ""))
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/learning/observe.py:task_begin', _exc)
     return tid
 
 def task_step(task_id: str, step: int, tool: str, result: Any, success: bool, note: str = "") -> None:
@@ -83,8 +90,8 @@ def task_step(task_id: str, step: int, tool: str, result: Any, success: bool, no
             "result": str(result)[:500], "note": str(note)[:200], "ts": store.now()
         })
         store.write("UPDATE tasks SET steps=? WHERE task_id=?", (store.dump(steps), task_id))
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/learning/observe.py:task_step', _exc)
 
 def task_end(task_id: str, status: str, correction: str = "",
              lessons: Optional[List[str]] = None, reward: Optional[float] = None) -> None:
@@ -102,8 +109,8 @@ def task_end(task_id: str, status: str, correction: str = "",
         set_clauses = [f"{k}=?" for k in fields.keys()]
         args = list(fields.values()) + [task_id]
         store.write(f"UPDATE tasks SET {', '.join(set_clauses)} WHERE task_id=?", tuple(args))
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/learning/observe.py:task_end', _exc)
 
 def recent(limit: int = 50) -> List[Dict[str, Any]]:
     try:

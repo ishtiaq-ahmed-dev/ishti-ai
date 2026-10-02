@@ -19,7 +19,7 @@ _enc = None
 def _pcm16k(path):
     from ishti.skills.media.skill import ed
     raw = subprocess.run([ed().ffmpeg_exe, "-loglevel", "error", "-i", path, "-f", "s16le", "-ac", "1", "-ar", "16000", "-"],
-                         capture_output=True, check=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+                         capture_output=True, check=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), timeout=900).stdout
     return np.frombuffer(raw, np.int16).astype(np.float32) / 32768
 
 

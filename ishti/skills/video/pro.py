@@ -16,6 +16,13 @@ import tempfile
 from ishti import ROOT, llm
 from ishti.skills import trace
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 OUT_DIR = os.path.join(ROOT, "data", "video_output")
 CAPCUT_EXE = os.path.join(os.environ.get("LOCALAPPDATA", ""), "CapCut", "Apps", "CapCut.exe")
 CAPCUT_DRAFTS = os.path.join(os.environ.get("LOCALAPPDATA", ""), "CapCut", "User Data", "Projects", "com.lveditor.draft")
@@ -227,8 +234,8 @@ def capcut_project(src, copy, srt, aspect, duration, name, moments=None):
                 seg.add_filter(cc.FilterType.Enhance, 60)
                 if i < len(moments or []) - 1:
                     seg.add_transition(cc.TransitionType.Flash)
-            except Exception:
-                pass
+            except Exception as _exc:
+                swallowed('ishti/skills/video/pro.py:capcut_project', _exc)
             script.add_segment(seg)
             at += length
         head = cc.TextSegment(copy["headline"], cc.trange("0s", "2.2s"),
@@ -239,8 +246,8 @@ def capcut_project(src, copy, srt, aspect, duration, name, moments=None):
         for seg in (head, tail):
             try:
                 seg.add_animation(cc.TextIntro.Wiping_In)
-            except Exception:
-                pass
+            except Exception as _exc:
+                swallowed('ishti/skills/video/pro.py:capcut_project', _exc)
             script.add_segment(seg, "titles")
         if copy["tagline"]:
             script.add_segment(cc.TextSegment(copy["tagline"], cc.trange("0.4s", f"{max(1.0, duration - 0.8):.2f}s"),

@@ -20,6 +20,13 @@ import json
 import os
 import re
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 SKILLS_DIR = os.path.join(ROOT, "ishti", "skills")
 
@@ -249,8 +256,8 @@ def run(text, session):
     as_json = bool(re.search(r"\bjson\b", t, re.I))
     try:
         trace(session, "security_scan", "scanning ISHTI surfaces (local, read-only)", status="done")
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/skills/security_scan/skill.py:run', _exc)
     findings = scan_all()
     if as_json:
         return {"reply": "```\n" + json.dumps(findings, indent=2, ensure_ascii=False) + "\n```"}

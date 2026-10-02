@@ -15,6 +15,13 @@ import json
 import re
 import time
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 PHONE = re.compile(r"(?:\+\d{1,3}[\s-]?)?(?:\(\d{2,4}\)[\s-]?)?\d{3,4}[\s-]?\d{3,4}[\s-]?\d{3,4}")
 SITE = re.compile(r"https?://[^\s\"'<>)]+", re.I)
@@ -239,8 +246,8 @@ def run(text: str, session) -> dict:
     try:
         from ishti.core.state import get_manager
         state = get_manager().get(session.get("id", "default")).to_dict()
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/skills/find_leads/skill.py:run', _exc)
     followup = any(w in text.lower() for w in ("more like these", "find more", "only the ones"))
     p = parse_request(text, state)
     if followup and not p["locations"]:

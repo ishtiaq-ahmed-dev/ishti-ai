@@ -29,6 +29,13 @@ from tools.web.fetch import WebFetcher
 from orchestrator.model_router import ModelRouter
 from orchestrator.memory.user_profile import get_user_memory
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 CHROME_EXE = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 PROFILE_DIR = os.path.join(ROOT_DIR, "data", "chrome_profile")
 
@@ -172,8 +179,8 @@ class IshtiDoctor:
             try:
                 from ishti import vram as ishti_vram
                 ladder = [r.get("model") for r in (ishti_vram.cfg().get("roles", {}).get("planner", {}).get("rungs") or [])]
-            except Exception:
-                pass
+            except Exception as _exc:
+                swallowed('orchestrator/doctor.py:IshtiDoctor.check_models', _exc)
             ladder = [m for m in ladder if m in installed]
             self._log_result("Models", f"Configured primary '{primary}' not installed",
                              False, f"ISHTI serves '{ladder[0] if ladder else 'the fallback rung'}' instead", is_warning=True)
@@ -358,8 +365,8 @@ class IshtiDoctor:
                 self._log_result("Core", "Laya router", d["source"] == "laya" and not router.laya_error,
                                  router.laya_error or f"{d['skill']} in {d['ms']} ms", is_warning=True)
                 for text, skill, expect in [
-                    ("Project DoctorTest is on D: at D:\\ISHTI", "memory", "Saved"),
-                    ("where is the doctortest project?", "memory", "D:\\ISHTI"),
+                    ("Project DoctorTest is on D: at D:\\Projects\\DoctorTest", "memory", "Saved"),
+                    ("where is the doctortest project?", "memory", "D:\\Projects\\DoctorTest"),
                     ("what's the weather tomorrow?", "weather", "open-meteo"),
                     ("what is 6 times 7? reply with just the number", "chat", "42"),
                     ("how much ram am I using", "system", "RAM"),

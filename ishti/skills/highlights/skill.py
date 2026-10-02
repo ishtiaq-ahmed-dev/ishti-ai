@@ -13,6 +13,13 @@ import subprocess
 
 from ishti.skills import trace
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 I = re.I
 
 PATH = r"[A-Za-z]:[\\/][^\"']+?\.(?:mp4|mkv|mov|avi|webm)"
@@ -33,8 +40,8 @@ def _astats_seconds(path, max_seconds=3600):
             if st.get("codec_type") == "audio" and st.get("sample_rate"):
                 rate = int(st["sample_rate"])
                 break
-    except (FileNotFoundError, ValueError):
-        pass
+    except (FileNotFoundError, ValueError) as _exc:
+        swallowed('ishti/skills/highlights/skill.py:_astats_seconds', _exc)
     try:
         proc = subprocess.run(
             ["ffmpeg", "-hide_banner", "-nostats", "-i", path, "-t", str(max_seconds), "-af",
@@ -105,7 +112,7 @@ if __name__ == "__main__":
          "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
          "-f", "lavfi", "-i", "sine=frequency=440:duration=4",
          "-filter_complex", "[0:a]volume=0.9[a0];[1:a]volume=0.1[a1];[a0][a1]concat=n=2:v=0:a=1[out]",
-         "-map", "[out]", "-ar", "16000", vid], check=True, capture_output=True)
+         "-map", "[out]", "-ar", "16000", vid], check=True, capture_output=True, timeout=60)
 
     assert match("highlights of " + vid)
     assert match("find the best moments in " + vid)

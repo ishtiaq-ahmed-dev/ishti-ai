@@ -10,12 +10,27 @@ import os
 import sys
 import time
 
+import pytest
+
 # Ensure ISHTI root is on sys.path
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from ishti import CONFIG, dispatcher, gpu, llm, models, monitor, self_heal, talk, voice
+
+
+@pytest.fixture
+def all_languages_on(monkeypatch):
+    """These tests are about Urdu/Pashto handling: switch both on for the test only (the owner's real setting, English
+    only by default, lives in the facts store and must not decide the outcome), then let the recogniser re-read it."""
+    from ishti import languages
+    monkeypatch.setattr(languages, "enabled", lambda: ["english", "urdu", "pashto"])
+    monkeypatch.setattr(voice, "_lang_applied", 0.0)
+    monkeypatch.setattr(voice, "_forced_language", None)
+    voice.apply_languages()
+    yield
+    voice._lang_applied = 0.0
 
 
 def test_section_1_model_swap_and_fallbacks():
@@ -90,7 +105,7 @@ def test_section_4_single_voice_orchestration():
         talk.set_subagent_context(False)
 
 
-def test_section_5_language_detection_and_override():
+def test_section_5_language_detection_and_override(all_languages_on):
     print("\n--- [Section 5] Verifying Language Detection Bias & Manual Override ---")
     # Borderline probabilities: English vs Urdu (e.g. 50% en, 45% ur) -> should stay English (primary bias)
     lang_borderline = voice.score_language_probs([("en", 0.50), ("ur", 0.45)])

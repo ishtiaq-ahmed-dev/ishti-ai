@@ -1,6 +1,6 @@
 """desktop_control skill (WP-B2) — INERT until the cua-driver exists and the owner enables it.
 
-Safety architecture (CUA_FEASIBILITY.md + R3):
+Safety architecture:
   - manifest status "disabled" -> the router never selects it until the owner enables it (T2 act)
   - _blocker(): if the cua-driver is not installed, every request answers honestly and does nothing
   - tier split: read-only inspection = T1 (manifest tier); ANY side-effect action = T2 via ask_first,
@@ -71,8 +71,8 @@ def _app_allowed(app: str, cfg: dict) -> bool:
 
 def _blocker() -> str | None:
     if not _driver_available():
-        return ("The cua-driver is not installed on this PC. See CUA_FEASIBILITY.md - installing it "
-                "needs your explicit approval first.")
+        return ("The cua-driver is not installed on this PC, and installing it needs your explicit "
+                "approval first.")
     return None
 
 
@@ -132,7 +132,7 @@ def _inspect(text, session, app, cfg) -> dict:
         trace(session, "desktop_control", "inspect (driver call pending install)", status="done")
         return {"reply": "(desktop_control) Driver present but the inspection runtime is not wired "
                          "yet - this skill is enabled only after the cua feasibility protocol passes "
-                         "(CUA_FEASIBILITY.md).", "sources": []}
+                         "(the driver must first pass a safety check).", "sources": []}
     finally:
         _state["running"] = None
 

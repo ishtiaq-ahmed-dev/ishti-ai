@@ -37,6 +37,13 @@ import zipfile
 
 from ishti import ROOT
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 KEY_SERVICE = "ishti"
 KEY_NAME = "memory_key"
 KEY_DIR = os.path.join(ROOT, "data", "keys")
@@ -77,8 +84,8 @@ def get_or_create_key() -> bytes:
             keyring.set_password(KEY_SERVICE, KEY_NAME, key.decode())
             _key_cache = key
             return _key_cache
-        except Exception:
-            pass  # no keychain: fall through to the key file
+        except Exception as _exc:
+            swallowed('ishti/core/vault.py:get_or_create_key', _exc)  # no keychain: fall through to the key file
         os.makedirs(KEY_DIR, exist_ok=True)
         key_path = os.path.join(KEY_DIR, "memory.key")
         if os.path.isfile(key_path):
@@ -90,8 +97,8 @@ def get_or_create_key() -> bytes:
             f.write(key)
         try:
             os.chmod(key_path, 0o600)  # POSIX; Windows ACLs are the OS defaults
-        except OSError:
-            pass
+        except OSError as _exc:
+            swallowed('ishti/core/vault.py:get_or_create_key', _exc)
         _key_cache = key
         return _key_cache
 
@@ -187,8 +194,8 @@ def set_enabled(on: bool) -> dict:
     try:  # remember the choice next to the memory config it governs
         from ishti.core.settings import get_settings_service
         get_settings_service().update({"memory": {"encrypt_at_rest": bool(on)}})
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/core/vault.py:set_enabled', _exc)
     return out
 
 

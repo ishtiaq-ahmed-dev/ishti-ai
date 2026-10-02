@@ -62,7 +62,7 @@ MISROUTE = {  # text that belongs to another skill
     "web_search": "remind me at 5pm to stretch",
     "reminders": "search for ISHTI local assistant github",
     "apps": "remember my sister's name is Zainab",
-    "video": "show the top level of D:\\ISHTI\\docs",
+    "video": "show the top level of " + os.path.join(ROOT, "tests", "fixtures"),
 }
 STORAGE_CLAIMS = ("i've stored", "i have stored", "saved your password", "remembered your password",
                   "your password is hunter2", "stored your api key", "saved your seed")

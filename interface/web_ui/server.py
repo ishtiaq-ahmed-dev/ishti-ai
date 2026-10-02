@@ -1439,6 +1439,9 @@ app.include_router(learning_api)  # /api/learning/* + /api/memory/* - learning &
 from ishti import lifecycle_api  # noqa: E402  /api/ready, /api/vram, /api/shutdown, /ws/events (docs/API_CONTRACT.md)
 lifecycle_api.attach(app)
 
+from ishti import privacy_api  # noqa: E402  /api/privacy: outbound ledger + Internet switch + egress guard (docs/SAFETY.md)
+privacy_api.attach(app)
+
 from ishti.channels import api as remote_api  # noqa: E402  /api/remote/* + channel boot/stop (docs/API_CONTRACT.md §11)
 remote_api.attach(app)
 

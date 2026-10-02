@@ -111,7 +111,7 @@ def run_script(path, *, timeout_s=120, mem_mb=512, net=False, write_dir=None) ->
             win32job.TerminateJobObject(job, 1)  # the whole job/process tree, not just the direct child
         else:
             subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.pid)], capture_output=True,
-                           creationflags=CREATE_NO_WINDOW)
+                           creationflags=CREATE_NO_WINDOW, timeout=30)
         try:
             out, err = p.communicate(timeout=15)  # drain the pipes so nothing blocks on a full buffer
         except subprocess.TimeoutExpired:

@@ -18,6 +18,13 @@ from __future__ import annotations
 
 import threading
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 _lock = threading.Lock()
 _svc_cache = None
 
@@ -49,8 +56,8 @@ def budgets() -> dict:
         for k, v in mem.items():
             if k.startswith("assembly_") and k[len("assembly_"):] in out and isinstance(v, int) and v > 0:
                 out[k[len("assembly_"):]] = v
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/core/assemble.py:budgets', _exc)
     return out
 
 
@@ -129,8 +136,8 @@ def arch2_block(request: str, state_summary: str = "") -> str:
         from ishti.learning import lessons as L
         lessons = [f"{l['statement']} (confidence {l['confidence']:.2f})"
                    for l in L.guidance_for(request, limit=4)]
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/core/assemble.py:arch2_block', _exc)
     convo = [h["text"][:280] for h in retrieval.vector_hits(request)]
     blocks = [assemble(request,
                        state_summary=state_summary,

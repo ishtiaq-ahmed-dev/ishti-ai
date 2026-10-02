@@ -14,6 +14,13 @@ import os
 
 from ishti import ROOT
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 CONFIG_PATH = os.path.join(ROOT, "data", "chat_digest_config.json")
 DEFAULTS = {
     "hours": 24,
@@ -38,8 +45,8 @@ def config():
             cfg.update({k: v for k, v in user.items() if not k.startswith("_")})
             if isinstance(user.get("usefulness"), dict):
                 cfg["usefulness"] = {**DEFAULTS["usefulness"], **user["usefulness"]}
-    except (OSError, ValueError):
-        pass
+    except (OSError, ValueError) as _exc:
+        swallowed('ishti/skills/chat_digest/window.py:config', _exc)
     return cfg
 
 

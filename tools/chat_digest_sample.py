@@ -21,7 +21,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tests.test_chat_digest import NOW, synthetic                      # noqa: E402
 from ishti.skills.chat_digest import analyze, export, report, store   # noqa: E402
 
-SAMPLES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "reports")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SAMPLES = os.path.join(ROOT, "reports")
 
 
 def screenshot(html_path, png_path, width=1400, height=1800):
@@ -68,7 +69,11 @@ def main():
     made["narrow"] = screenshot(html, os.path.join(SAMPLES, f"{stamp}_chat_digest_narrow.png"), width=680, height=2000)
     truth_path = os.path.join(SAMPLES, "chat_digest_sample_ground_truth.json")
     with open(truth_path, "w", encoding="utf-8") as f:
-        json.dump({"ground_truth": truth, "totals": result["totals"], "files": made}, f, indent=2, default=str)
+        # file paths are stored relative to the checkout so the record is valid on any machine
+        rel = lambda v: (os.path.relpath(v, ROOT).replace(os.sep, "/")  # noqa: E731
+                         if isinstance(v, str) and os.path.isabs(v) else [rel(x) for x in v] if isinstance(v, list) else v)
+        json.dump({"ground_truth": truth, "totals": result["totals"], "files": {k: rel(v) for k, v in made.items()}},
+                  f, indent=2, default=str)
     made["ground_truth"] = truth_path
     print(json.dumps(made, indent=2, default=str))
     print(f"\n[chat_digest_sample] {result['totals']}")

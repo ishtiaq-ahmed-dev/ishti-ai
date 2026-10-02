@@ -1,6 +1,6 @@
 """
 ISHTI Isolated Browser Automation Agent
-Hard-isolated to D:\\ISHTI\\data\\chrome_profile.
+Hard-isolated to <ISHTI root>/data/chrome_profile.
 Strictly prohibits reading, enumerating, or accessing any other Chrome profile or user directory.
 Provides web research, page scraping, screenshot capture, and consequential action gating.
 """
@@ -13,8 +13,17 @@ import json
 from typing import Dict, Any, Optional, List
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "orchestrator", "config.json")
-ISOLATED_PROFILE_DIR = r"D:\ISHTI\data\chrome_profile"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(ROOT, "data")
+ISOLATED_PROFILE_DIR = os.path.join(DATA_DIR, "chrome_profile")
 CHROME_EXECUTABLE = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 
 
@@ -38,14 +47,20 @@ class BrowserAgent:
 
     def _ensure_profile_isolation(self) -> None:
         """
-        Hard constraint verification:
-        Ensure the profile directory is strictly within D:\\ISHTI\\data\\chrome_profile
+        Hard constraint verification: the profile directory must be inside ISHTI's own data folder
+        (a real path-component check, so a sibling like "<root>-evil" or a ".." escape cannot pass)
         and never inside AppData or another user's profile.
         """
-        normalized = os.path.abspath(self.profile_dir)
-        if not normalized.lower().startswith(r"d:\ishti"):
+        normalized = os.path.normcase(os.path.realpath(self.profile_dir))
+        data_root = os.path.normcase(os.path.realpath(DATA_DIR))
+        try:
+            inside = os.path.commonpath([normalized, data_root]) == data_root
+        except ValueError:  # different drives
+            inside = False
+        if not inside:
             raise PermissionError(
-                f"[SECURITY ALERT] Profile directory '{self.profile_dir}' violates isolation boundary! Must be inside D:\\ISHTI."
+                f"[SECURITY ALERT] Profile directory '{self.profile_dir}' violates isolation boundary! "
+                f"Must be inside {DATA_DIR}."
             )
         os.makedirs(self.profile_dir, exist_ok=True)
 
@@ -145,8 +160,8 @@ class BrowserAgent:
                 decoded = base64.b64decode(part).decode("utf-8", errors="ignore")
                 if decoded.startswith("http"):
                     return decoded
-            except Exception:
-                pass
+            except Exception as _exc:
+                swallowed('browser/browser_agent.py:BrowserAgent._decode_redirect', _exc)
         return href
 
     def search_duckduckgo(self, query: str, max_results: int = 4, headless: Optional[bool] = None) -> List[Dict[str, str]]:
@@ -196,9 +211,9 @@ class BrowserAgent:
         return content_data
 
     def capture_screenshot(self, url: str, output_filename: str = "screenshot.png", headless: Optional[bool] = None) -> str:
-        """Captures page screenshot saved into D:\\ISHTI\\data\\"""
+        """Captures page screenshot saved into ISHTI's data folder."""
         effective_headless = headless if headless is not None else self.headless
-        out_dir = r"D:\ISHTI\data"
+        out_dir = DATA_DIR
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, output_filename)
 
@@ -321,7 +336,7 @@ class BrowserAgent:
                 result["page_title"] = page.title()
 
                 # Capture verification screenshot
-                out_path = os.path.join(r"D:\ISHTI\data", f"form_result_{int(time.time())}.png")
+                out_path = os.path.join(DATA_DIR, f"form_result_{int(time.time())}.png")
                 page.screenshot(path=out_path)
                 result["screenshot"] = out_path
 

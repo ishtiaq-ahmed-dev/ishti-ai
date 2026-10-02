@@ -18,6 +18,13 @@ import re
 from ishti.arch2 import memory
 from ishti.core import incognito
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 PROMPT = """You are the memory extractor of a personal assistant. From this exchange, decide what is worth
 remembering LONG-TERM about the owner. Never store transient details, the answer itself, or anything
 the owner would not want kept. Family relationships may ONLY be extracted when the owner explicitly
@@ -233,8 +240,8 @@ def handle_command(text: str) -> str | None:  # noqa: C901
             head += f", in {city}" if city else ""
             head += f" - {role}" if role else ""
             lines.insert(0, head.rstrip(" ,-") + ".")
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/arch2/consolidate.py:handle_command', _exc)
         return ("Here is what I remember about you:\n" + "\n".join(lines)) \
             if lines else "Nothing yet - tell me things and I'll remember them."
     if LEARNED_RE.search(t):

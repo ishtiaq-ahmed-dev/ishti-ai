@@ -56,7 +56,7 @@ def test_injected_runner_proves_argv_and_parsing(tmp_path):
          "detail": "'os' imported but unused"}], r["findings"]
     seen.clear()
     qg.format_check([dirty], runner=fake)
-    assert seen[0][1:3] == ["format", "--check"], seen
+    assert seen[0][1] == "format" and "--check" in seen[0] and "--isolated" in seen[0], seen
 
 
 def test_missing_linter_is_an_honest_note(tmp_path, monkeypatch):

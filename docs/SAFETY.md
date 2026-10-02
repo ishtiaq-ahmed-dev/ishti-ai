@@ -99,18 +99,33 @@ Limits, stated plainly:
 
 ## 5. Network: what leaves the PC
 
-- Every model call is local (Ollama on `127.0.0.1:11434`). Speech recognition and synthesis are local. There is no
-  cloud model in the request path.
-- Web search goes to the local SearXNG container first; the governed search gateway (`ishti/gateway.py`) accepts only
-  loopback endpoints, validates and bounds the query, audits it with `risk=external`, and returns fenced untrusted
-  data. Cloud search backends are opt-in and ship off.
-- Reaching the web at all is the declared job of the 12 `net: ["*"]` skills; the browser skill uses its own profile
-  (`data/mcp_browser_profile`) unless the owner mapped Chrome profiles in `ishti/config.json` (`browser_profiles`).
-- Cloud features added by the 5-repo integration are opt-in and off by default (SOURCED: `FINAL_REPORT_repo_integration.md`,
-  acceptance row "Zero cloud calls by default": PASS, with the caveat that this is evidence from that session's tests,
-  not a guarantee for later edits).
-- Telegram, if the owner pairs it, passes messages through Telegram's servers; the policy file records that
-  acknowledgement (`risk_ack.telegram_cloud`). WhatsApp automation is implemented but off by default.
+The rule: **nothing of yours is sent to a third party.** The only internet traffic is what the owner asks for through a web skill
+(search, weather, markets, ...), a model or voice download the owner starts in Settings, or a remote channel the owner turned on.
+It is enforced in code (`ishti/privacy.py`, tests in `tests/test_privacy.py`) and visible in Settings > Privacy.
+
+- **Egress guard.** Every connection from ISHTI's Python process to a non-loopback, non-LAN address is blocked unless a skill that
+  declares the host in its manifest `scope.net` is running, an owner-started download is active, or the owner enabled that channel.
+  A library thread with no skill context (a telemetry or update-check thread) is therefore refused. Known telemetry hosts are
+  refused even inside a skill that may reach `*`. DNS lookups of outside names are judged before they resolve.
+- **Master switch** (Settings > Privacy, `data/privacy.json`): with Internet for skills OFF, nothing can reach outside at all.
+- **Ledger.** `data/outbound.log` records host, port, who and allowed/blocked for every outside attempt. It never stores a query,
+  URL path, header or body. Settings > Privacy shows it live, with the list of programs that can reach the internet.
+- **Hardening.** Telemetry and update pings of the libraries ISHTI uses are switched off before they load (Hugging Face offline,
+  ChromaDB/posthog, Gradio, OpenTelemetry, LangSmith, CrewAI, npm). Ollama cloud models are disabled. The dashboard window's
+  WebView2 runs with background networking, sync and updates disabled and a loopback-only resolver.
+- **Ollama's tray app** checks ollama.com for updates every hour and Ollama offers no setting to stop it; ISHTI runs its own
+  `ollama serve`, so at every start it closes the tray app and moves its Startup shortcut to the Recycle Bin.
+- Model calls are local (Ollama on `127.0.0.1:11434`); speech recognition and synthesis are local; there is no cloud model in the
+  request path. Web search goes to the local SearXNG container first; the governed search gateway (`ishti/gateway.py`) accepts only
+  loopback endpoints, validates and bounds the query, audits it with `risk=external`, and returns fenced untrusted data.
+- The 12 `net: ["*"]` skills (browser, deep_research, dev, digest, find_leads, ledger, markets, shopping, utilities, web_fetch,
+  web_search, webtools) can reach any site the owner asks for; the others are limited to their manifest hosts or none.
+- Telegram, if the owner pairs it, passes messages through Telegram's servers (policy acknowledgement `risk_ack.telegram_cloud`).
+  WhatsApp automation is implemented but off by default.
+- **Limits, stated plainly:** the guard is Python-level. Ollama's own model downloads, Docker/SearXNG, Node/Playwright, FFmpeg,
+  the owner's Chrome and native extensions that open their own sockets are outside it; they are covered by settings and by
+  `tools/gate_no_cloud.py`, which samples their connections. Docker Desktop's own telemetry cannot be separated from SearXNG's
+  traffic: turn "Send usage statistics" off in Docker Desktop. A Windows Firewall rule for `ollama.exe` / Docker would close the rest.
 
 ## 6. Audit trail
 

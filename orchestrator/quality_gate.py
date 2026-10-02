@@ -25,6 +25,13 @@ import shutil
 import subprocess
 import sys
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)   # `python orchestrator/quality_gate.py` self-check imports ishti.*
@@ -67,8 +74,8 @@ def files_of(targets, exts: tuple = (".py",)) -> list:
                         out.append(os.path.join(dirpath, n))
                         if len(out) >= MAX_FILES:
                             return sorted(set(out))
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('orchestrator/quality_gate.py:files_of', _exc)
     return sorted(set(out))
 
 
@@ -133,7 +140,7 @@ def lint(targets, *, runner=None) -> dict:
     if runner is None and not binary:
         return {"ok": True, "notes": ["ruff not installed - lint skipped"], "findings": [],
                 "output": "", "files": len(files)}
-    code, output = (runner or _default_runner)([binary or "ruff", "check", "--output-format=json", *files])
+    code, output = (runner or _default_runner)([binary or "ruff", "check", "--isolated", "--output-format=json", *files])
     return {"ok": code == 0, "notes": [] if code == 0 else [f"ruff check exited {code}"],
             "findings": _issues(output), "output": output[-OUT_CAP:], "files": len(files)}
 
@@ -147,7 +154,7 @@ def format_check(targets, *, runner=None) -> dict:
     if runner is None and not binary:
         return {"ok": True, "notes": ["ruff not installed - format check skipped"], "findings": [],
                 "files": len(files)}
-    code, output = (runner or _default_runner)([binary or "ruff", "format", "--check", *files])
+    code, output = (runner or _default_runner)([binary or "ruff", "format", "--isolated", "--check", *files])
     findings = [] if code == 0 else [{"severity": "low", "file": (files[0] if files else ""),
                                       "line": 0, "rule": "format",
                                       "detail": "file(s) would be reformatted by ruff format"}]
@@ -173,8 +180,8 @@ def _skill_folders(target) -> list:
                     f = os.path.join(p, d)
                     if os.path.isdir(f) and os.path.isfile(os.path.join(f, "skill.py")):
                         out.append(f)
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('orchestrator/quality_gate.py:_skill_folders', _exc)
     return out
 
 

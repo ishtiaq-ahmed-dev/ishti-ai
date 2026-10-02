@@ -16,6 +16,13 @@ import time
 
 from ishti import ROOT
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 CHECKPOINT_DIR = os.path.join(ROOT, "data", "checkpoints")
 
 TRANSIENT = ("timeout", "timed out", "connection reset", "connection refused", "temporarily",
@@ -60,8 +67,8 @@ def retry(fn, *, attempts: int = 3, base_delay: float = 0.4, max_delay: float = 
     if on_give_up is not None:
         try:
             return on_give_up(last)
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/resilience.py:retry', _exc)
     raise last
 
 
@@ -234,8 +241,8 @@ if __name__ == "__main__":
     try:
         retry(crit, attempts=3, base_delay=0.01)
         raise SystemExit("critical swallowed!")
-    except RuntimeError:
-        pass
+    except RuntimeError as _exc:
+        swallowed('ishti/resilience.py:<module>', _exc)
     # give-up fallback
     assert retry(lambda: 1 / 0, attempts=1, on_give_up=lambda e: "fallback") == "fallback"
     # circuit breaker: opens after 3 fails, fallback answers while open, closes after reset

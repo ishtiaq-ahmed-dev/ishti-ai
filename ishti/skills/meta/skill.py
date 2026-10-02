@@ -1,4 +1,4 @@
-"""About ISHTI itself: skill health (runs every skill's self-check), what it has logged as missing (NEEDS.md), what it
+"""About ISHTI itself: skill health (runs every skill's self-check), what it has logged as missing (the needs log), what it
 accessed/did recently (permission audit from the route log), which skills get used most."""
 import concurrent.futures as cf
 import datetime as dt
@@ -10,10 +10,9 @@ import sys
 import time
 
 from ishti import ROOT
-from ishti.skills import trace
+from ishti.skills import needs_path, trace
 
 I = re.I
-NEEDS = os.path.join(ROOT, "md files", "NEEDS.md")
 OPS = [
     ("health", re.compile(r"\b(?:skill\s+health|check\s+(?:your|all|the)\s+skills|are\s+(?:all\s+)?(?:your|the)\s+skills\s+(?:ok|working)|self[-\s]?test|diagnose\s+(?:your|the)\s+skills)\b", I)),
     ("needs", re.compile(r"\b(?:what\s+(?:have\s+you|did\s+you)\s+(?:flag|log)(?:ged)?|what(?:'s| is)\s+missing|needs\.md|capability\s+gaps?|what\s+can'?t\s+you\s+do)\b", I)),
@@ -27,10 +26,11 @@ OPS = [
                               r"\b(?:update|upgrade)\s+(?:all\s+)?(?:of\s+)?ishti(?:'s)?\s+(?:python\s+)?(?:packages|dependencies)\b", re.I)),
     ("pkg_outdated", re.compile(r"\b(?:outdated|old)\s+(?:python\s+|pip\s+)?packages\b|\b(?:check|any)\s+(?:ishti(?:'s)?\s+)?(?:python\s+|pip\s+)"
                                 r"(?:packages?\s+)?(?:for\s+)?updates\b|\b(?:check\s+)?ishti(?:'s)?\s+(?:python\s+)?packages\s+for\s+updates\b", re.I)),
+    ("confirm_profile", re.compile(r"\bconfirm\s+(?:my\s+|the\s+)?(?:owner\s+)?(?:profile|details)\b", I)),
     ("usage", re.compile(r"\b(?:which|what)\s+skills?\s+(?:do\s+i|did\s+i)\s+use\s+(?:the\s+)?most\b|\bskill\s+usage\b", I)),
     # Self-knowledge (WP-B): identity, live machine facts, model inventory, skill inventory, and the
     # refresh command. Deliberately does NOT take "what can't you do?" - that already answers from
-    # NEEDS.md (op_needs) and two skills must not fight over one phrasing.
+    # the needs log (op_needs) and two skills must not fight over one phrasing.
     ("self_check", re.compile(
         r"\b(?:what\s+(?:are\s+your|is\s+your)\s+(?:specs?|specifications|setup|machine|system)|"
         r"(?:your|the)\s+(?:pc|machine|system)\s+(?:specs?|specifications)|"
@@ -219,19 +219,17 @@ def op_pkg_update(text, session):
 
 
 def op_needs(text, session):
+    path = needs_path()  # data/needs_runtime.md - the one runtime gap log (ishti.skills.log_need writes it)
     try:
-        with open(NEEDS, encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             body = f.read()
     except OSError:
-        return "NEEDS.md isn't there."
+        return "Nothing logged as missing."
     logged = re.findall(r"^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) \[(\w+)\] (.+)$", body, re.M)
-    planned = re.findall(r"^##\s+(\d+\..+)$", body, re.M)  # "## 1. Fine-tune Laya ..."
-    out = []
-    if logged:
-        out.append("Logged while working (newest first):\n" + "\n".join(f"- {t} [{k}] {d[:140]}" for t, k, d in logged[::-1][:12]))
-    if planned:
-        out.append("Open needs in NEEDS.md:\n" + "\n".join(f"- {p[:100]}" for p in planned[:15]))
-    return "\n\n".join(out) or "Nothing logged as missing."
+    if not logged:
+        return "Nothing logged as missing."
+    rows = "\n".join(f"- {t} [{k}] {d[:140]}" for t, k, d in logged[::-1][:12])
+    return "Logged while working (newest first):\n" + rows
 
 
 def _routes(days):
@@ -256,6 +254,21 @@ def op_usage(text, session):
             counts[skill] = counts.get(skill, 0) + 1
     top = sorted(counts.items(), key=lambda kv: -kv[1])[:12]
     return (f"Skills used in the last 30 days ({len(rows)} requests):\n" + "\n".join(f"- {n}: {c}" for n, c in top)) if top else "No usage yet."
+
+
+def op_confirm_profile(text, session):
+    """"confirm my profile": show the details ISHTI holds about the owner and, on a yes, record that they are right.
+    Until then ISHTI says they are unconfirmed and never states them as fact (owner_profile.yaml `confirmed: false`)."""
+    from ishti import selfmodel as sm
+    from ishti.skills import ask_first
+    prof = sm.profile()
+    if prof.get("confirmed"):
+        return "Your owner details are already confirmed."
+    owner = prof.get("owner") or {}
+    shown = "; ".join(f"{k}: {v}" for k, v in owner.items() if v) or "nothing recorded yet"
+    return ask_first(session, "meta", f"These are the details I hold about you - {shown}. Mark them as correct (edit "
+                                      "owner_profile.yaml first if something is wrong)",
+                     lambda: "Done - I will treat your owner details as confirmed." if sm.confirm_profile() else "Done.")
 
 
 REFRESH = re.compile(r"\b(?:refresh|update|reload)\s+(?:your\s+)?self[-\s]?knowledge\b", I)
@@ -285,6 +298,7 @@ def op_self_check(text, session=None):
 if __name__ == "__main__":
     for t, want in {"check your skills": "health", "what have you flagged as missing": "needs", "what have you accessed recently": "audit", "what did you do while I was away": "audit",
                     "show me today's actions": "audit",
+                    "confirm my profile": "confirm_profile",
                     "which skills do I use the most": "usage", "what's the status of my tasks": "tasks",
                     "what are you working on": "tasks", "check ishti's python packages for updates": "pkg_outdated",
                     "any outdated python packages": "pkg_outdated", "update ishti package requests": "pkg_update",
@@ -296,7 +310,7 @@ if __name__ == "__main__":
                     "how much RAM do I have": "self_check"}.items():
         assert next((n for n, rx in OPS if rx.search(t)), None) == want, t
     assert not match("check the weather")
-    # "what can't you do?" must stay with op_needs (it answers from NEEDS.md) - two skills must not
+    # "what can't you do?" must stay with op_needs (it answers from the needs log) - two skills must not
     # fight over one phrasing
     assert next((n for n, rx in OPS if rx.search("what can't you do")), None) == "needs"
     now = time.time()

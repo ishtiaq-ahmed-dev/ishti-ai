@@ -19,6 +19,13 @@ import time
 
 from ishti import CONFIG
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 DB_PATH = CONFIG.get("memory", {}).get(
     "db_path", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "ishti.db"))
 CORRECTIONS_PATH = os.path.join(os.path.dirname(DB_PATH), "corrections.jsonl")
@@ -125,9 +132,9 @@ def inspect_turn(request: str, reply: str, skill: str, dec: dict, session: dict,
     lang_pref = session.get("prefers_language")
     try:
         from ishti.facts import get_facts
-        lang_pref = lang_pref or get_facts().get("owner", {}).get("prefers_language")
-    except Exception:
-        pass
+        lang_pref = lang_pref or get_facts().get("owner").get("prefers_language")
+    except Exception as _exc:
+        swallowed('ishti/monitor.py:inspect_turn', _exc)
 
     has_urdu_script = bool(URDU_REGEX.search(rep_str))
     req_has_urdu_script = bool(URDU_REGEX.search(req_str))

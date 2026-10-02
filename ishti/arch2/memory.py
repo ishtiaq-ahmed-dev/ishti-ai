@@ -24,6 +24,13 @@ import uuid
 
 from ishti import CONFIG, ROOT
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 A2 = lambda: (CONFIG.get("arch") or {}).get("arch2", {})
 MEM = lambda: A2().get("memory", {})
 _lock = threading.RLock()  # reentrant: helpers call conn() (which locks) inside locked sections
@@ -80,8 +87,8 @@ def conn():
                     _conn.execute("UPDATE memories SET content_hash=? WHERE id=?",
                                   (_v.content_hash(_v.decrypt_text(row["content"])), row["id"]))
                 _conn.commit()
-            except Exception:
-                pass
+            except Exception as _exc:
+                swallowed('ishti/arch2/memory.py:conn', _exc)
             _conn.commit()
         return _conn
 
@@ -614,8 +621,8 @@ def forget_hard(target: str) -> dict:
         st = get_semantic()
         if hasattr(st, "delete_where_text"):
             vec = st.delete_where_text(t_low)
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/arch2/memory.py:forget_hard', _exc)
     audit_id = _audit("forget_hard", f"removed everything about '{t_low}' "
                       f"({counts['memories']} memories, {counts['entities']} entities, "
                       f"{counts['edges']} graph edges, {vec} vector snippets)",

@@ -33,6 +33,10 @@ export type Model = {
   residency: string;
   shares_weights_with: string[];
   frees: number;
+  title?: string;
+  note?: string;
+  role?: string;
+  recommended?: boolean;
 };
 
 export type Voice = {
@@ -360,7 +364,7 @@ export function ModelsCard({
   onToggle: () => void;
 }) {
   const { st, msg, busy, act } = useManage();
-  const [showStorage, setShowStorage] = useState(false);
+  const [showStorage, setShowStorage] = useState(true); // the download list is the point of this card: show it
 
   const activePlanner = st?.llm.roles.planner;
   const installedModels = st?.llm.models.filter((m) => m.installed) ?? [];
@@ -539,10 +543,10 @@ export function ModelsCard({
                         <HardDrive className="h-4 w-4 text-muted-foreground" />
                         <div>
                           <div className="font-semibold text-foreground text-xs">
-                            Installed Model Storage
+                            Download or delete models
                           </div>
                           <div className="text-[11px] text-muted-foreground">
-                            {installedModels.length} models installed
+                            {installedModels.length} installed. Press Download to get a model, Delete to free the disk space.
                             {freeable > 0 && (
                               <span className="ml-1 text-amber-600 dark:text-amber-400">
                                 · {gb(freeable)} unused
@@ -598,6 +602,12 @@ export function ModelsCard({
                                         </span>
                                       )}
                                     </div>
+                                    {m.title && (
+                                      <div className="text-[11px] text-foreground/90 mt-0.5">
+                                        <span className="font-medium">{m.title}.</span>{" "}
+                                        <span className="text-muted-foreground">{m.note}</span>
+                                      </div>
+                                    )}
                                     {m.installed && m.shares_weights_with.length > 0 && (
                                       <div className="text-[10px] text-muted-foreground mt-0.5">
                                         shares weights with{" "}

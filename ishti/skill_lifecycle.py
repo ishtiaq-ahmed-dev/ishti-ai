@@ -25,6 +25,13 @@ from collections import Counter
 from ishti import CONFIG, ROOT
 from ishti.skills import trace
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 I = re.I
 SKILLS_DIR = os.path.join(ROOT, "ishti", "skills")
 ROUTE_DB = CONFIG["memory"]["db_path"]
@@ -107,8 +114,8 @@ def report_card(name: str) -> dict:
     try:
         with sqlite3.connect(ROUTE_DB, timeout=10) as c:
             errors = c.execute("SELECT COUNT(*) FROM errors WHERE skill=?", (name,)).fetchone()[0]
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/skill_lifecycle.py:report_card', _exc)
     pr = practice(name)
     return {
         "skill": name,

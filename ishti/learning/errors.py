@@ -15,6 +15,13 @@ import re
 
 from ishti.learning import store
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 TAXONOMY = {
     "wrong_skill": "the wrong capability was chosen for the request",
     "wrong_tool": "the right capability used the wrong tool/route inside it",
@@ -264,8 +271,8 @@ def analyze_failure(text, decision=None, result=None, history=None, task_id=""):
             name = error.get("correct") or error.get("incorrect") or ""
             if len(entities.candidates(name)) >= 2:
                 kind, cause = "entity_resolution_failure", "several entities share this name"
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/learning/errors.py:analyze_failure', _exc)
         lesson = (f"When several people share the name \"{error.get('correct') or 'this name'}\", use "
                   "context and relationship information to pick the right one - and ask when it is ambiguous.")
     elif kind == "wrong_application":

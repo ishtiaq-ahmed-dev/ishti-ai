@@ -197,7 +197,6 @@ def test_memory_contradictions():
     hot = memory.semantic("User's home address is Karkhano Market.", source="explicit_user",
                           confidence=0.95, importance=0.9)
     cold = memory.semantic("User tried a dartboard app once.", importance=0.3, confidence=0.4)
-    conn() if False else None
     raw = __import__("sqlite3").connect(memory.db_path())
     old_ts = time.time() - 40 * 86400  # past the low-importance window, inside the high one
     raw.execute("UPDATE memories SET last_confirmed_at=? WHERE id IN (?, ?)",

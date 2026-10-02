@@ -20,6 +20,13 @@ from typing import Any, Callable
 
 from ishti.core.pipeline import Tracer
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 # ------------------------------------------------------------------ E3: confirmation policy
 
 DEFAULT_CONFIRM_VERBS = ["send", "delete", "remove", "pay", "buy", "order", "purchase", "post",
@@ -190,8 +197,8 @@ class ValidationStage:
                     "Does the answer address the resolved request's topic? Reply yes or no.") or "").lower()
                 if verdict.startswith("no"):
                     return {"ok": False, "on_topic": False, "reason": "judge: off-topic answer"}
-            except Exception:
-                pass
+            except Exception as _exc:
+                swallowed('ishti/core/tools.py:ValidationStage.validate_answer', _exc)
         return {"ok": True, "on_topic": True, "reason": ""}
 
 

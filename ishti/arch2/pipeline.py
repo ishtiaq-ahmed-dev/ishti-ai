@@ -21,6 +21,13 @@ from ishti.arch2 import memory, retrieval
 from ishti.arch2.jsonio import parse_json
 from ishti.skills import trace
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 SHORTLIST_MIN, SHORTLIST_MAX = 5, 20  # the spec's 5-20 window
 
 SYSTEM_PASS1 = """You are ISHTI's reasoning core. You think, plan, call tools and converse.
@@ -29,6 +36,9 @@ Tools available for THIS request (call at most one per turn, by exact name):
 {tools}
 
 Use a tool whenever the request needs the PC, the web, files, messages or any real action.
+Anything that changes by the hour (weather, prices, news, scores) needs a tool: ALWAYS call
+one and never answer it from memory. If a listed tool matches the task exactly (sudoku, calc,
+forecast, ...), call it instead of solving the task yourself.
 Answer directly (no tool) for conversation, explanations and anything the context already
 covers.
 
@@ -212,8 +222,8 @@ def run(request: str, session, skills: dict) -> dict:
                                 f"{user_block}\n\n{evidence}\n\nYour previous draft ignored the topic. "
                                 f"Write the final answer ABOUT: {st.active_topic}."}],
                               role="main", system=FINAL_SYSTEM, temperature=0.2, max_tokens=1024).content or final).strip()
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/arch2/pipeline.py:run', _exc)
     return {"reply": final or "I could not produce an answer - try rephrasing.", "sources": sources,
             "mode": "ARCH2", "tools": tool_log}
 

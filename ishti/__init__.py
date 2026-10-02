@@ -21,3 +21,23 @@ if ROOT not in sys.path:
 
 with open(os.path.join(ROOT, "ishti", "config.json"), encoding="utf-8") as _f:
     CONFIG = json.load(_f)
+
+
+def _relocate(node, home=r"D:\ISHTI"):
+    r"""config.json was written on the owner's PC with absolute D:\ISHTI\... paths. When the project lives in another folder
+    (C:\ISHTI, a Desktop folder, another drive) those paths are rebased to where it really is, in memory only."""
+    if isinstance(node, str):
+        return ROOT + node[len(home):] if node.lower().startswith(home.lower()) else node
+    if isinstance(node, list):
+        return [_relocate(x, home) for x in node]
+    if isinstance(node, dict):
+        return {k: _relocate(v, home) for k, v in node.items()}
+    return node
+
+
+if os.path.normcase(ROOT) != os.path.normcase(r"D:\ISHTI"):
+    CONFIG = _relocate(CONFIG)
+
+# Privacy: no telemetry, offline model hubs, no update pings - set before anything heavy is imported (docs/SAFETY.md).
+from ishti import privacy as _privacy  # noqa: E402
+_privacy.harden()

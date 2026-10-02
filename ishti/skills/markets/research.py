@@ -25,6 +25,13 @@ import numpy as np
 from ishti.skills import md_table, trace
 from ishti.skills.markets import data
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 RISK_PER_TRADE, MAX_ALLOC = 0.015, 0.20
 RNG = np.random.default_rng()
 
@@ -72,16 +79,16 @@ def news(symbol, name):
                 items.append({"title": c.get("title", ""), "summary": (c.get("summary") or "")[:240],
                               "date": (c.get("pubDate") or "")[:10], "source": (c.get("provider") or {}).get("displayName", ""),
                               "url": (c.get("canonicalUrl") or {}).get("url", "")})
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/skills/markets/research.py:news', _exc)
     if len(items) < 3:
         try:
             from tools.web.search import web_search
             items += [{"title": h.title, "summary": h.snippet[:240], "date": "", "source": "web", "url": h.url}
                       for h in web_search(f"{name} news", max_results=8)
                       if not JUNK.search(h.title + " " + h.url) and not QUOTE_PAGE.search(h.title) and about(h.title)]
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/skills/markets/research.py:news', _exc)
     return [n for n in items if n["title"]][:10]
 
 

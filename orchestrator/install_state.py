@@ -23,13 +23,20 @@ import json
 import os
 import time
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 V = 1
 STATE_REL = os.path.join("data", "install_state.json")
 # paths whose contents the install/upgrade process owns; repair may WRITE only under these
 OWNED_PREFIXES = (os.path.join("ishti", "skills") + os.sep, os.path.join("ishti", "skills") + "/")
 # paths that are always the owner's; repair is report-only there
-OWNER_PREFIXES = ("data" + os.sep, "data/", "md files" + os.sep, "md files/")
+OWNER_PREFIXES = ("data" + os.sep, "data/", "reports" + os.sep, "reports/")  # runtime data + generated reports
 MAX_FILES = 3000
 
 
@@ -63,8 +70,8 @@ def _tracked(root: str) -> dict:
             f = os.path.join(root, rel)
             if os.path.isfile(f):
                 out[rel] = _sha(f)
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('orchestrator/install_state.py:_tracked', _exc)
     return out
 
 
@@ -92,8 +99,8 @@ def _load(path: str):
             data = json.load(f)
         if isinstance(data, dict) and data.get("v") == V and isinstance(data.get("files"), dict):
             return data
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('orchestrator/install_state.py:_load', _exc)
     return None
 
 

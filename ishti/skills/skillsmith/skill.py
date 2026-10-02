@@ -173,7 +173,7 @@ def op_create(m, text, session):
     code = unfence(code)
     for attempt in range(2):  # one repair round: the compile error goes back to the coder model
         open(os.path.join(folder, "skill.py"), "w", encoding="utf-8").write(code)
-        syntax = subprocess.run([sys.executable, "-m", "py_compile", os.path.join(folder, "skill.py")], capture_output=True, text=True)
+        syntax = subprocess.run([sys.executable, "-m", "py_compile", os.path.join(folder, "skill.py")], capture_output=True, text=True, timeout=60)
         if syntax.returncode == 0 or attempt:
             break
         trace(session, "coder", "fixing a syntax error in the generated skill", status="start")
@@ -200,7 +200,7 @@ def op_create(m, text, session):
         from ishti.skills import log_need
         log_need("gap", "skillsmith", text, f"couldn't generate a working '{name}' skill (self-check kept failing)")
         return (f"I couldn't build a working '{name}' skill - its own test kept failing after 3 fixes, so I didn't "
-                f"install it (logged in NEEDS.md). Last error:\n```\n{err[-300:]}\n```")
+                f"install it (logged in the needs log). Last error:\n```\n{err[-300:]}\n```")
     review = _review(folder, manifest, "the coder model") + "\nSelf-check: passes."
     preview = code if len(code) < 3500 else code[:3500] + "\n# ..."
     return ask_first(session, "skillsmith", f"{review}\n\n```python\n{preview}\n```\n\nInstall this new skill",

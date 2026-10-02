@@ -1,6 +1,6 @@
 """Local plan review page (WP-ECC, matrix ECC-08; ECC's plan-canvas, browser-only).
 
-Renders the plan documents (IMPLEMENTATION_PLAN.md and friends) as one local page with
+Renders the plan documents (every .md in data/plans/, or the names passed in) as one local page with
 Approve / Request-changes buttons; decisions append to data/plan_decisions.json.
 
 Security posture (matrix ECC-08: "local only (127.0.0.1)"):
@@ -23,12 +23,28 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOOPBACK = ("127.0.0.1", "localhost", "::1")
-DEFAULT_DOCS = ("IMPLEMENTATION_PLAN.md", "REPO_FEATURE_MATRIX.md", "PROGRESS_repo_integration.md")
+PLANS_DIR = os.path.join("data", "plans")  # plan documents to review live here, not among the repo's own docs
 DECISION_KINDS = ("approve", "request-changes")
 MAX_BODY = 64 * 1024
 MAX_DECISIONS = 500
+
+
+def default_docs(root: str = ROOT) -> tuple:
+    """Every .md file in <root>/data/plans (sorted) - the plans waiting for the owner's decision."""
+    try:
+        names = sorted(n for n in os.listdir(os.path.join(root, PLANS_DIR)) if n.lower().endswith(".md"))
+    except OSError:
+        names = []
+    return tuple(os.path.join(PLANS_DIR, n).replace("\\", "/") for n in names)
 
 
 def decisions_path(root: str = ROOT) -> str:
@@ -60,8 +76,11 @@ def _md_to_html(text: str) -> str:
 
 def render(root: str = ROOT, plans=None) -> str:
     """The review page. Total: a missing plan doc is shown as a note, never an error."""
-    docs = tuple(plans) if plans else DEFAULT_DOCS
+    docs = tuple(plans) if plans else default_docs(root)
     sections, nav = [], []
+    if not docs:
+        sections.append("<section class='doc'><div class='body'><p>No plan documents yet - put them in "
+                        "data/plans/ and reload.</p></div></section>")
     for name in docs:
         path = os.path.join(root, name)
         try:
@@ -190,8 +209,8 @@ class _Handler(BaseHTTPRequestHandler):
                     if not chunk:
                         break
                     remaining -= len(chunk)
-            except Exception:
-                pass
+            except Exception as _exc:
+                swallowed('orchestrator/plan_view.py:_Handler.do_POST', _exc)
             self._send(413, b"body too large", "text/plain")
             return
         try:
@@ -239,13 +258,13 @@ def _self_check() -> None:
     import tempfile
     plan = "# Plan\n\n- step one\n- step two\n\n<script>alert(1)</script>\n"
     work = tempfile.mkdtemp()
-    with open(os.path.join(work, "IMPLEMENTATION_PLAN.md"), "w", encoding="utf-8") as f:
+    with open(os.path.join(work, "demo_plan.md"), "w", encoding="utf-8") as f:
         f.write(plan)
-    page = render(work, plans=("IMPLEMENTATION_PLAN.md",))
+    page = render(work, plans=("demo_plan.md",))
     assert "Approve" in page and "Request changes" in page and "step one" in page
     assert "<script>alert(1)</script>" not in page and "&lt;script&gt;" in page, "markup is escaped"
     dec = os.path.join(work, "data", "plan_decisions.json")
-    assert record_decision({"doc": "IMPLEMENTATION_PLAN.md", "decision": "approve"}, dec)
+    assert record_decision({"doc": "demo_plan.md", "decision": "approve"}, dec)
     assert record_decision({"doc": "x", "decision": "request-changes", "note": "fix scope"}, dec)
     assert record_decision({"doc": "x", "decision": "maybe"}, dec) is None
     assert record_decision("junk", dec) is None and record_decision(None, dec) is None
@@ -255,7 +274,7 @@ def _self_check() -> None:
     assert len(load_decisions(os.path.join(work, "missing.json"))) == 0, "missing history is []"
     refused = serve(work, host="0.0.0.0")
     assert refused["ok"] is False and "loopback" in refused["error"]
-    h = serve(work, plans=("IMPLEMENTATION_PLAN.md",), decisions_file=dec)
+    h = serve(work, plans=("demo_plan.md",), decisions_file=dec)
     assert h["ok"] and h["url"].startswith("http://127.0.0.1:")
     import urllib.request
     base = h["url"].rstrip("/")
@@ -263,7 +282,7 @@ def _self_check() -> None:
         body = r.read().decode("utf-8")
     assert r.status == 200 and "Approve" in body
     req = urllib.request.Request(base + "/decision",
-                                 data=json.dumps({"doc": "IMPLEMENTATION_PLAN.md",
+                                 data=json.dumps({"doc": "demo_plan.md",
                                                   "decision": "approve"}).encode(),
                                  headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=5) as r:

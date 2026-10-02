@@ -18,6 +18,13 @@ import requests
 
 from ishti import CONFIG, ROOT
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 DATA = os.path.dirname(CONFIG["memory"]["db_path"])
 STOP_FLAG = os.path.join(DATA, "stop.flag")
 LOG = os.path.join(DATA, "watchdog.log")
@@ -32,8 +39,8 @@ def log(msg):
     try:
         with open(LOG, "a", encoding="utf-8") as f:
             f.write(line + "\n")
-    except OSError:
-        pass
+    except OSError as _exc:
+        swallowed('ishti/watchdog.py:log', _exc)
 
 
 class Watchdog:
@@ -126,8 +133,8 @@ class Watchdog:
         try:
             from ishti.skills import log_need
             log_need("error", "watchdog", why, f"server restarted ({len(self.restarts)} in 10 min)")
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/watchdog.py:Watchdog.restart', _exc)
         if len(self.restarts) >= 5:
             log("crash loop: 5 restarts in 10 minutes - waiting 5 minutes before trying again")
             time.sleep(300)
@@ -140,8 +147,8 @@ class Watchdog:
         and exit on its own; only then kill what is left. (Killing at once skipped the data flush.)"""
         try:
             requests.post(self.url("/api/shutdown"), json={}, timeout=3)  # a no-op if the server started the shutdown itself
-        except requests.RequestException:
-            pass
+        except requests.RequestException as _exc:
+            swallowed('ishti/watchdog.py:Watchdog.stop_gracefully', _exc)
         end = time.time() + STOP_WAIT_S
         while self.proc.poll() is None and time.time() < end:
             time.sleep(0.5)

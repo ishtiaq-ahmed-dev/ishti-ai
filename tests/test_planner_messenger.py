@@ -4,8 +4,9 @@ The owner's log (data/sessions/sess_20260927_110742_0bc6b6.json) shows the reque
 "open whastap and send mesage to bhai hi how are you in two diffrent messages" being split into two plan
 steps, each re-opening the chat and reporting "couldn't find the message box".
 
-Run:  $env:PYTHONIOENCODING='utf-8'; D:\ISHTI\venv\Scripts\python.exe D:\ISHTI\tests\test_planner_messenger.py
+Run:  $env:PYTHONIOENCODING='utf-8'; venv\Scripts\python tests\test_planner_messenger.py
 """
+import os
 import sys
 
 # Script-style regression check (no test_ functions; documented run is the direct python
@@ -16,7 +17,7 @@ if "pytest" in sys.modules:
     pytest.skip("planner regression script; run directly: python tests/test_planner_messenger.py",
                 allow_module_level=True)
 
-sys.path.insert(0, r"D:\ISHTI")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import ishti.router as router_mod  # noqa: E402
 import ishti.planner as planner  # noqa: E402

@@ -14,6 +14,13 @@ import zipfile
 from ishti import ROOT
 from ishti.skills import ask_first, trace
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 I = re.I
 PATH = re.compile(r"[A-Za-z]:\\[^\"'<>|?*\n]+?(?=\s+(?:and|to|with|into|in|as)\s|\"|'|$|[,;])")
 TEXT_EXT = {".txt", ".md", ".py", ".js", ".ts", ".tsx", ".json", ".csv", ".html", ".css", ".xml", ".yml", ".yaml",
@@ -225,15 +232,20 @@ def op_dupes_delete(m, text, session):
 
     def trash():
         from send2trash import send2trash
-        n = 0
+        n, failed = 0, []
         for p in extra:
             try:
                 send2trash(p)
                 n += 1
-            except OSError:
-                pass
+            except OSError as _exc:
+                swallowed('ishti/skills/fileops/skill.py:op_dupes_delete.trash', _exc)
+                failed.append(os.path.basename(p))
         session["dupes"] = None
-        return f"Moved {n} duplicate copies to the Recycle Bin (restore them from there if needed)."
+        msg = f"Moved {n} duplicate copies to the Recycle Bin (restore them from there if needed)."
+        if failed:  # never claim the whole job was done when some copies could not be moved
+            msg += (f" {len(failed)} could not be moved (in use or no permission), so they are still there: "
+                    + ", ".join(failed[:5]) + (" ..." if len(failed) > 5 else ""))
+        return msg
     return ask_first(session, "fileops", f"Move {len(extra)} duplicate copies to the Recycle Bin, keeping the oldest of each", trash)
 
 
@@ -378,7 +390,7 @@ def robocopy(src, dst, mirror=False):
     """(ok, summary). robocopy exit codes below 8 mean success (1 = files copied, 0 = nothing new)."""
     args = ["robocopy", src, dst, "/MIR" if mirror else "/E", "/XO", "/R:1", "/W:1", "/NP", "/NFL", "/NDL", "/MT:8"]
     p = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), timeout=7200)
     stats = re.search(r"Files\s*:\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)", p.stdout)
     total, copied, _, _, failed, extra = map(int, stats.groups()) if stats else (0, 0, 0, 0, 0, 0)
     ok = p.returncode < 8

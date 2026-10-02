@@ -7,8 +7,21 @@ import importlib
 import importlib.util
 import json
 import os
+import sys
+
+if "pytest" not in sys.modules:  # every request path imports the skills: a dead console/pipe must never fail a request
+    from ishti import safe_stdio
+    safe_stdio.install()
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(os.path.dirname(HERE))
+
+
+def needs_path():
+    """Where runtime gaps and errors are logged: data/needs_runtime.md (ISHTI's own data, never a repo document).
+    ISHTI_NEEDS_LOG overrides it (tests point it at a scratch file). Every reader (the meta skill, the
+    lifecycle's gap discovery) goes through this one function."""
+    return os.environ.get("ISHTI_NEEDS_LOG") or os.path.join(ROOT_DIR, "data", "needs_runtime.md")
 
 
 # import name -> pip package, where they differ (manifests list import names)
@@ -21,7 +34,7 @@ PIP_NAME = {"PIL": "pillow", "docx": "python-docx", "pptx": "python-pptx", "cv2"
 
 def install_missing(skill, modules, runner=None):
     """pip-install the missing packages a skill's manifest declares (only those - never arbitrary names), into
-    ISHTI's own Python. Returns what is still missing afterwards (reported by the caller and in NEEDS.md)."""
+    ISHTI's own Python. Returns what is still missing afterwards (reported by the caller and in the needs log)."""
     import re
     import subprocess
     import sys
@@ -132,7 +145,9 @@ class Skill:
         if missing:  # D6: install what ISHTI's own manifests declare, then look again
             missing = install_missing(self.name, missing)
         if missing:
-            self.problem = f"missing python packages: {', '.join(missing)} (auto-install failed - see NEEDS.md)"
+            fix = " ".join(PIP_NAME.get(m, m) for m in missing)
+            self.problem = (f"missing python packages: {', '.join(missing)} (auto-install failed - "
+                            f"run: venv\\Scripts\\python -m pip install {fix})")
         else:
             clean_rel = rel_dir.replace("/", ".").replace("\\", ".")
             mod_path = f"ishti.skills.{clean_rel}.skill"
@@ -222,19 +237,27 @@ def ask_first(session, skill, question, action):
 
 
 def log_need(kind, skill, request, detail):
-    """Errors and capability gaps go to NEEDS.md (what was asked, what failed, why) instead of being swallowed.
-    The same kind+skill+detail is logged once."""
+    """Errors and capability gaps go to the needs log (what was asked, what failed, why) instead of being
+    swallowed. The same kind+skill+detail is logged once. Logging must never break the caller, but a log that
+    cannot be written is reported on stderr once per process instead of vanishing."""
+    import sys
     import time
-    path = os.path.join(os.path.dirname(os.path.dirname(HERE)), "md files", "NEEDS.md")
+    path = needs_path()
     key = f"[{kind}] {skill}: {detail}"[:200]
     try:
-        with open(path, encoding="utf-8") as f:
-            if key in f.read():
-                return
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        try:
+            with open(path, encoding="utf-8") as f:
+                if key in f.read():
+                    return
+        except FileNotFoundError:
+            pass
         with open(path, "a", encoding="utf-8") as f:
             f.write(f"\n- {time.strftime('%Y-%m-%d %H:%M')} {key} - asked: \"{request[:120]}\"")
-    except OSError:
-        pass
+    except OSError as e:
+        if not getattr(log_need, "_warned", False):
+            log_need._warned = True
+            print(f"[needs] cannot write {path}: {e}", file=sys.stderr)
 
 
 def ground_dates(text, today=None):

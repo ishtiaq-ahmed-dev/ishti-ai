@@ -6,6 +6,13 @@ client that connects late gets them replayed. Coalescing (vram_status at most on
 import threading
 import time
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 REPLAY = ("boot_stage", "vram_status", "error")
 _subs, _latest, _lock = [], {}, threading.Lock()
 
@@ -19,8 +26,8 @@ def publish(type_, data):
     for fn in subs:
         try:
             fn(msg)
-        except Exception:  # one broken listener must not stop the others
-            pass
+        except Exception as _exc:  # one broken listener must not stop the others
+            swallowed('ishti/events.py:publish', _exc)
     return msg
 
 

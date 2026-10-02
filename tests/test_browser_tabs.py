@@ -1,10 +1,11 @@
 """Tests for browser-skill tab reuse (issue 6): tabs() parsing of real browser_tabs output, find_tab() matching
 (exact/host/domain), open_url() reusing an already-open tab, and the browser_navigate interception. No browser
 and no MCP server: the MCP layer is faked. Run:
-    $env:PYTHONIOENCODING='utf-8'; D:\\ISHTI\\venv\\Scripts\\python.exe D:\\ISHTI\\tests\\test_browser_tabs.py"""
+    $env:PYTHONIOENCODING='utf-8'; venv\\Scripts\\python tests\\test_browser_tabs.py"""
+import os
 import sys
 
-sys.path.insert(0, r"D:\ISHTI")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ishti.skills.browser import skill
 

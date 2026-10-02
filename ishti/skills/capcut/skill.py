@@ -19,6 +19,13 @@ from ishti import llm
 from ishti.skills import trace
 from tools.video.capcut_controller import get_capcut_controller
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 CAPCUT_CUES = re.compile(r"\b(?:cap\s?cut|jian\s?ying|draft_content\.json|draft_info\.json)\b|剪映", re.I)
 VIDEO_EXT = (".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".wmv")
 SRT_EXT = (".srt", ".ass", ".vtt")
@@ -49,8 +56,8 @@ def _find_media(name_or_text: str, exts: tuple = VIDEO_EXT) -> Optional[str]:
             hits = get_computer_use_agent().search_pc(stem, extensions=list(exts), max_results=1)
             if hits and os.path.isfile(hits[0]["path"]):
                 return hits[0]["path"]
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/skills/capcut/skill.py:_find_media', _exc)
     return None
 
 

@@ -24,6 +24,14 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+# Privacy: WebView2 flags (no background networking/sync/updates/telemetry, loopback-only resolver) and the no-telemetry
+# environment, set before the window or the backend starts so both inherit them (ishti/privacy.py).
+try:
+    from ishti import privacy
+    os.environ.update(privacy.webview2_env())
+except Exception:
+    pass
+
 from desktop.focus_ishti import is_running, focus_window, reveal_window
 from desktop.shutdown import shutdown
 from desktop import backend_watch, timeline

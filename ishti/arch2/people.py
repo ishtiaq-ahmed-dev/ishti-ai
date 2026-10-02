@@ -24,6 +24,13 @@ import time
 
 from ishti.arch2 import memory
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 CHANNEL_ALIASES = {"whatsapp": "messaging", "telegram": "messaging", "sms": "messaging",
                    "message": "messaging", "email": "email", "mail": "email"}
 _STRONG = ("email", "phone", "org")     # disambiguators strong enough to pick alone
@@ -171,8 +178,8 @@ def _entity_keys(e: dict) -> dict:
         from ishti import rgraph
         for edge in rgraph.edges_of(e["name"], rel="works_at", direction="out"):
             orgs.add(edge["d_name"].lower())
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/arch2/people.py:_entity_keys', _exc)
     return {"email": emails, "phone": phones, "org": orgs, "relation": {rel} if rel and rel != "unknown" else set()}
 
 

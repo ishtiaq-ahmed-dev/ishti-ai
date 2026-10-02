@@ -22,5 +22,5 @@
   "path": "ishti/skills/desktop_control",
   "test_file": "tests/skills/desktop_control/test_desktop_control.py",
   "x_remote_forbidden": true,
-  "x_blocker": "cua-driver (cua_driver_cli on PATH or CUA_DRIVER_TOKEN set) - see CUA_FEASIBILITY.md; enabling requires the owner's explicit yes (T2)"
+  "x_blocker": "cua-driver (cua_driver_cli on PATH or CUA_DRIVER_TOKEN set); enabling requires the owner's explicit yes (T2)"
 }

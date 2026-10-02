@@ -11,6 +11,13 @@ import subprocess
 import threading
 import time
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 _heavy = threading.Semaphore(1)
 
 
@@ -36,8 +43,8 @@ def unload_idle_models():
     for m in freed:
         try:
             models.unload_model(m, reason="gpu_slot_demand")
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/gpu.py:unload_idle_models', _exc)
     return freed
 
 

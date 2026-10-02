@@ -17,8 +17,36 @@ from ishti.channels.gate import Gate
 from ishti.channels.poller import Poller
 from ishti.channels.telegram_client import TelegramClient
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 _lock = threading.Lock()
 _service: "RemoteService | None" = None
+
+
+def next_step(channel: str, enabled: bool, token: bool, paired: bool, running: bool, risk_ack: bool = False) -> str:
+    """One plain sentence that says what the owner has to do next for this channel (or that nothing is needed).
+    The owner's device/account steps (a bot token, a pairing message) cannot be done by ISHTI, so it says exactly which."""
+    if channel == "telegram":
+        if running:
+            return "Telegram is on and listening."
+        if not token:
+            return ("Telegram needs a bot token: create a bot with @BotFather, then paste its token in Settings > Remote "
+                    "Control > Telegram (or POST it to /api/remote/telegram/token).")
+        if not paired:
+            return "Telegram has a token but no paired phone: click Pair Telegram, then send /pair <code> to your bot."
+        return "Telegram is ready but switched off: turn it on in Settings > Remote Control."
+    if running:
+        return "WhatsApp (your own 'Message yourself' chat) is on."
+    if not enabled:
+        return ("WhatsApp is off. To use it, tick the risk note and switch it on in Settings > Remote Control > WhatsApp; "
+                "it only reads and replies in your own 'Message yourself' chat.")
+    return ("WhatsApp is switched on but not running: open WhatsApp Web in the browser and log in." if risk_ack
+            else "WhatsApp is switched on but its risk note is not accepted yet (Settings > Remote Control > WhatsApp).")
 
 
 class RemoteService:
@@ -73,14 +101,21 @@ class RemoteService:
     def health(self) -> dict:
         pol = policy_mod.load()
         sec = security.status()
+        tg_running = bool(self.poller and self.poller.running)
+        wa_running = bool(self.whatsapp and self.whatsapp.running)
+        wa_ack = bool((pol.get("risk_ack") or {}).get("whatsapp_automation"))
         out = {
             "telegram": {"enabled": bool(pol.get("telegram_enabled")), "token_stored": sec["token_stored"],
-                         "paired_ids": sec["paired_ids"], "running": bool(self.poller and self.poller.running),
-                         "poller": self.poller.health() if self.poller else None},
+                         "paired_ids": sec["paired_ids"], "running": tg_running,
+                         "poller": self.poller.health() if self.poller else None,
+                         "next_step": next_step("telegram", bool(pol.get("telegram_enabled")), sec["token_stored"],
+                                                bool(sec["paired_ids"]), tg_running)},
             "whatsapp": {"enabled": bool(pol.get("whatsapp_enabled")),
-                         "risk_ack": bool((pol.get("risk_ack") or {}).get("whatsapp_automation")),
-                         "running": bool(self.whatsapp and self.whatsapp.running),
-                         "last_error": self.whatsapp.last_error if self.whatsapp else ""},
+                         "risk_ack": wa_ack,
+                         "running": wa_running,
+                         "last_error": self.whatsapp.last_error if self.whatsapp else "",
+                         "next_step": next_step("whatsapp", bool(pol.get("whatsapp_enabled")), False, False,
+                                                wa_running, wa_ack)},
             "pin_set": sec["pin_set"], "locked": sec["locked"], "lockout_s": sec["lockout_s"],
             "approvals_pending": approvals.pending(), "started_at": self.started_at,
             "privacy_notice": "Telegram/WhatsApp messages pass through their servers - not local. "
@@ -108,8 +143,8 @@ class RemoteService:
         try:
             from ishti import events
             events.publish("remote_push", {"kind": kind, "text": text[:300], "urgent": urgent})
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/channels/service.py:RemoteService.push', _exc)
         try:
             from ishti.channels import output
             quiet = policy_mod.load().get("quiet_hours") or {}
@@ -124,8 +159,8 @@ class RemoteService:
                     for ch in output.prepare_reply(text)[0]:
                         self.client.send(chat_id, output.html_escape(ch))
                     return True
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/channels/service.py:RemoteService.push', _exc)
         return False
 
 

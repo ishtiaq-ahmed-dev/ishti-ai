@@ -11,6 +11,13 @@ import re
 import time
 from typing import Callable, Protocol, runtime_checkable
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 TraceFn = Callable[..., None]
 
 _SENT = re.compile(r"(?<=[.!?])\s+")
@@ -35,8 +42,8 @@ class Tracer:
             self.fn(type="stage", stage=stage, status=status,
                     input=str(input_summary)[:120], output=str(output_summary)[:160],
                     error=error, ms=round(ms, 1), **extra)
-        except Exception:
-            pass  # observability must never break the turn
+        except Exception as _exc:
+            swallowed('ishti/core/pipeline.py:Tracer.emit', _exc)  # observability must never break the turn
 
     class _Span:
         def __init__(self, tracer: "Tracer", stage: str, input_summary: str):
@@ -204,5 +211,5 @@ class LocalTalkerTTS:
         try:
             from ishti.talk import talker
             talker().stop()
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/core/pipeline.py:LocalTalkerTTS.stop', _exc)

@@ -17,6 +17,13 @@ import threading
 
 from ishti.core.settings import get_settings_service
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 _lock = threading.Lock()
 _cache: dict | None = None
 
@@ -117,15 +124,15 @@ def retrieve(request: str, skills: dict, k: int = 12, domain: str | None = None,
                 scored[n] = float(c)
         if dec.get("skill") and dec["skill"] in recs:
             scored[dec["skill"]] = max(scored.get(dec["skill"], 0.0), float(dec.get("confidence") or 1.0))
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/skills/registry.py:retrieve', _exc)
     for name, s in skills.items():  # deterministic matches always considered
         if name in recs and not name in scored and s.status != "broken":
             try:
                 if s.matches(request):
                     scored[name] = max(scored.get(name, 0.0), 0.9)
-            except Exception:
-                pass
+            except Exception as _exc:
+                swallowed('ishti/skills/registry.py:retrieve', _exc)
     ranked = sorted(recs.items(), key=lambda kv: (-scored.get(kv[0], 0.0), kv[0]))
     k = max(5, min(20, k))
     hot = [n for n, _r in ranked if scored.get(n, 0.0) > 0]      # what routing picked for THIS request

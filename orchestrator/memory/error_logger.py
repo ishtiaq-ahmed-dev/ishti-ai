@@ -42,7 +42,7 @@ class ErrorLogger:
             return "Search provider returned anti-bot or rate-limit challenge. MultiProviderSearch automatically fails over to alternate providers."
 
         if "module" in msg_lower or "importerror" in msg_lower:
-            return "Missing python dependency. Run `D:\\ISHTI\\venv\\Scripts\\pip.exe install <package_name>` inside the project virtual environment."
+            return "Missing python dependency. Run `venv\\Scripts\\pip.exe install <package_name>` from the ISHTI folder."
 
         return f"Inspect stack trace in {subsystem} subsystem. Check relevant configuration in orchestrator/config.json."
 

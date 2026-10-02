@@ -45,6 +45,6 @@ collect_ignore = [
     "test_stt_threads.py",
     "test_vram_governor_pressure.py",
     # --- script-first with 3 pytest tests: its `__main__` block runs all three, and importing it
-    #     loads the planner model and hardcodes D:\ISHTI. Run it as a script, not as a module. --------
+    #     loads the planner model and hardcodes the checkout path. Run it as a script, not as a module. --------
     "test_whatsapp_context.py",
 ]

@@ -1,0 +1,6 @@
+# Spark-X2.5-4B Q8_0 (8-bit), 4.4 GB: the default brain as the ISHTI brain (planner role).
+# ollama create ishti-spark2.5-q8:4b -f ishti/spark2.5-q8.Modelfile
+# Source: ollama.com/maternion/spark-x2.5:4b-q8_0 (XHToken/Spark-X2.5-4B, Apache-2.0). Same weights and the author's sampling
+# settings as the full-size build; num_ctx 8192 because the /v1 endpoint cannot set the context per request.
+FROM maternion/spark-x2.5:4b-q8_0
+PARAMETER num_ctx 8192

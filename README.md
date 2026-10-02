@@ -3,93 +3,104 @@
   <img src="assets/ishti_logo.png#gh-light-mode-only" alt="ISHTI: Personal AI Assistant" width="460" />
 </p>
 
-# ISHTI: a local-first personal AI assistant
+# ISHTI: your private assistant on your own PC
 
-ISHTI is a personal assistant that runs on one Windows PC. The language models run in a local
-[Ollama](https://ollama.com) server, speech recognition (faster-whisper) and speech synthesis (Kokoro, Piper) run on
-the machine, memory is stored in local SQLite and ChromaDB files, and there is no cloud model in the request path.
-You use it from a desktop app (a window around a React dashboard), by voice, or, if you choose to pair it, from your
-phone. It answers questions, searches the web, controls files and apps, keeps reminders and notes, and uses 124 skills
-through one dispatcher. Actions with side effects (sending a message, deleting files, buying, running commands) stop
-and wait for your explicit yes.
+ISHTI is a personal assistant that lives on your Windows PC. You can type to it or talk to it. It answers questions,
+keeps your reminders and notes, finds files, opens apps, writes and reads documents, and translates to and from
+Urdu and Pashto. It is **100% private**: the AI runs on your own graphics card, and everything it remembers stays in
+a folder on your PC. Nothing is sent to a company's servers.
 
-"No cloud at runtime" has one honest exception: skills whose job is to fetch the web (search, browsing, research) reach
-the internet, and each skill's allowed network domains are declared in its manifest. Telegram, if you enable it, passes
-messages through Telegram's servers. See [docs/SAFETY.md](docs/SAFETY.md).
+## What you need
 
-## Quick start
+- Windows 10 or Windows 11
+- An NVIDIA graphics card. 8 GB of video memory is recommended; 16 GB gives the best results.
+- About 25 GB of free disk space
+- Internet, only for the first install (to download the programs and AI models once)
 
-On the project's PC, after the one-time setup in [docs/SETUP.md](docs/SETUP.md):
+## Install (3 steps)
 
-```bat
-start.bat        :: opens the ISHTI desktop app (splash, then the dashboard); no console window
-stop.bat         :: clean shutdown, releases the GPU
-start.bat test   :: runs the offline test suite
-```
+1. **Get the project.** On the project's GitHub page, click the green **Code** button, then **Download ZIP**.
+   Open the ZIP and drag the folder to a short place such as `C:\ISHTI`. (If you know Git, `git clone` works too.)
+2. **Double-click `install.bat`.** A black window opens and tells you what it is doing. It may ask a few Yes/No
+   questions: press **Enter** to accept the suggestion. The first time takes 20 to 40 minutes, mostly downloading.
+   You can leave it alone. If it stops, just double-click `install.bat` again; it carries on where it stopped.
+3. **Double-click the ISHTI icon on your desktop.** The installer put it there. That is all.
 
-The dashboard is at `http://127.0.0.1:8888`. Logs are in `%LOCALAPPDATA%\ISHTI\logs\ishti.log`. The microphone is OFF
-until you switch it on.
+The installer needs [Ollama](https://ollama.com/download) (a free program that runs AI models). If you do not have
+it, the installer tells you where to get it and waits for you.
 
-There is no `requirements.txt` yet; the Python environment exists only as the git-ignored `venv\` folder, so a fresh
-machine has to rebuild it by hand (package list in [docs/SETUP.md](docs/SETUP.md)).
+## First use
 
-## How it is built
+- The ISHTI window opens in a couple of seconds.
+- A **Starting up** panel shows ISHTI getting ready. This takes a short while the first time.
+- When it says ISHTI is ready, type a message and press Enter. Or say something, if you have switched the
+  microphone on (see Settings below).
 
-Every input (typed, spoken, scheduled, remote) calls one function, `ishti.dispatcher.handle`. It tries the cheapest
-checks first: a pending yes/no, instant reflex commands, deterministic skill triggers, then a small local router model
-(Laya), then the default `chat` skill backed by the main language model. A VRAM governor keeps every model fully on the
-GPU and downshifts to lighter models instead of ever splitting one across CPU and GPU.
+Try asking:
 
-| Architecture | What it is | Status |
-|---|---|---|
-| **arch1** (default) | Dispatcher cascade: reflex, rules, Laya router, 124 skills, a planner for multi-skill requests | Default, best tested |
-| **arch2** | Two-pass "brain": intent router shortlists skills, the main model thinks and calls tools, a validation pass checks each tool run, the main model writes the answer; plus a four-layer memory | Implemented, switchable (config, dashboard card, or "use arch 2"); needs live Ollama |
-| **Profiles** | Six named configurations in `ishti/core/architectures.py` (`simple_voice`, `router_single_agent`, `memory_augmented`, `multi_agent_orchestrator`, `flowise_flow`, `custom`) | Only `multi_agent_orchestrator` and `flowise_flow` change the request path; the other four run the arch1 path today |
+1. "What is the weather today?"
+2. "Remind me to call Ali tomorrow at 5 pm."
+3. "Find my files named invoice."
+4. "Translate 'good morning, how are you?' into Urdu."
+5. "Write a short, polite email asking for a day off."
 
-The profile names `voice_lite`, `four_role`, `agent_team` and `flow_hybrid` that appear in some planning notes do not
-exist anywhere in this repository.
+ISHTI asks you before it does anything that cannot be undone, such as deleting files or sending a message.
 
-## Documentation
+## Settings, explained simply
+
+Open **Settings** inside the ISHTI window.
+
+- **Language:** English is always on. You can switch Urdu and Pashto on if you want them.
+- **Models & voices:** choose which AI model ISHTI uses, download new ones, and delete the ones you do not need
+  (this frees disk space). You can also pick the voice ISHTI speaks with.
+- **Privacy:** see and control everything that leaves your PC (more below).
+
+The microphone and voice control are **off** until you turn them on yourself.
+
+## Our privacy promise
+
+- Nothing is sent anywhere unless you ask a web skill to look something up (for example, the weather or a web search).
+- There is no tracking and no telemetry.
+- In **Settings -> Privacy** you can switch the internet off completely. ISHTI then works only with what is on your PC.
+- The same page lists every outside connection, so you can see for yourself.
+
+## If something goes wrong
+
+**The window does not open.** Wait 20 seconds, then double-click ISHTI again. Still nothing? Double-click `stop.bat`
+in the ISHTI folder, then start ISHTI again. If it keeps happening, run `install.bat` again; it repairs what is missing.
+
+**"Ollama not found."** Install Ollama from <https://ollama.com/download>, then double-click `install.bat` again.
+
+**The AI model is too big for my graphics card.** Open **Settings -> Models & voices** and choose a smaller model.
+Smaller models are faster and use less memory.
+
+**ISHTI does not speak, or I hear no sound.** Check that your speakers or headphones are the Windows default and are
+not muted. In **Settings -> Models & voices**, make sure a voice is downloaded and selected. For the microphone, turn
+it on first.
+
+**ISHTI answers very slowly.** Close games and other programs that use the graphics card. A smaller model also helps.
+
+**I want to see what went wrong.** The log files are in `%LOCALAPPDATA%\ISHTI\logs`. Paste that into the address bar
+of a File Explorer window and press Enter. The installer's own log is `install.log` in the ISHTI folder.
+
+**How do I check my installation?** Open a Command Prompt in the ISHTI folder and run
+`venv\Scripts\python tools\install.py --check`. It lists what is in place and what is missing.
+
+**How do I shut ISHTI down properly?** Use the **Shut down** button in the app, or close the window. Both stop ISHTI
+cleanly and give your graphics card back.
+
+**How do I uninstall?** Delete the ISHTI folder and the ISHTI icon on your desktop. The AI models are stored by Ollama, not
+in this folder. To remove them too, uninstall Ollama from Windows Settings -> Apps.
+
+## Learn more
 
 | Read this | For |
 |---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Processes, request flow, architectures, memory, VRAM governor, lifecycle, desktop shell |
-| [docs/SETUP.md](docs/SETUP.md) | Install, run, test, troubleshooting |
-| [docs/SKILLS.md](docs/SKILLS.md) | The 124 skills by category, the skill contract, how to add one |
-| [docs/SAFETY.md](docs/SAFETY.md) | Tiers T0-T3, confirmation gates, scope, kill switch, audit trail, remote control |
-| [docs/API_CONTRACT.md](docs/API_CONTRACT.md) | HTTP and WebSocket contract (machine-checked by `tests/test_lifecycle_contract.py`) |
-| [docs/MODEL_DECISIONS.md](docs/MODEL_DECISIONS.md) | Per-role model ladders measured on this machine |
-| [docs/TESTING.md](docs/TESTING.md), [tests/README.md](tests/README.md) | Every test type and the per-skill harness |
-| [docs/SETTINGS.md](docs/SETTINGS.md), [docs/LEARNING_INTERFACE.md](docs/LEARNING_INTERFACE.md), [docs/SESSION_SCHEMA.md](docs/SESSION_SCHEMA.md), [docs/UX_MOTION.md](docs/UX_MOTION.md) | Reference docs |
-| [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [docs/VENDOR_PINS.md](docs/VENDOR_PINS.md) | Integrations, licenses, pinned upstream repositories |
-| [NEEDS.md](NEEDS.md), [ISSUES.md](ISSUES.md) | Open owner decisions and blocked items; the verified issue log |
-| [docs/build-history/](docs/build-history/README.md) | Per-session reports, audits, research and superseded docs (history, not reference) |
+| [docs/SETUP.md](docs/SETUP.md) | Install details, running, testing, troubleshooting |
+| [docs/SAFETY.md](docs/SAFETY.md) | How ISHTI asks permission, limits itself, and keeps a record of what it did |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How ISHTI is built, for developers |
+| [docs/SKILLS.md](docs/SKILLS.md) | Everything ISHTI can do, and how to add a new ability |
 
-## Current status (as of 2026-10-02, branch `feat/repo-integration`)
-
-What is recorded, with sources. I (the documentation pass) did not re-run the suites or start the backend.
-
-- **Verdict at the last full report: READY WITH KNOWN ISSUES**, all remaining items owner-gated rather than code defects
-  ([FINAL_REPORT_repo_integration.md](docs/build-history/repo-integration/FINAL_REPORT_repo_integration.md), 2026-10-02).
-- **Offline test suite:** 445 collected, 445 passed on 2026-10-02 after the last wiring commit
-  ([TEST_RESULTS.md](docs/build-history/qa/backend-2026-09-29/TEST_RESULTS.md), PART 3). Cycle-4 performance work recorded the
-  suite green again afterwards ([PERFORMANCE_CYCLE4.md](PERFORMANCE_CYCLE4.md)). Today's default configuration
-  collects 464 tests.
-- **Per-skill harness:** 120 features recorded in `TEST_STATE.json`, 117 green and 3 red at their last run: `web_search`
-  and `deep_research` (2026-10-01, network/GPU dependent) and `shopping` (2026-09-30).
-- **Skills:** 124 manifests; 121 working, 3 shipped disabled by design (`desktop_control`, `internet_reach`, `security_scan`).
-- **Performance (Cycle 4, MEASURED on the author's RTX 5070 Ti machine, [PERF_LOG.md](PERF_LOG.md)):** a loopback
-  Ollama read dropped from 15.5 ms to 0.5 ms, `/api/system` from 150 ms to 2.5 ms, the UI JavaScript bundle on the wire
-  from about 1.0 MB to 288 KB, and a skills-health check after restart from about 72-80 s to 0.56 s.
-- **Not verified on this machine:** a live microphone turn (no working input device found), real Telegram/WhatsApp
-  end to end (needs the owner's token and pairing), the `cua-driver` desktop-control backend (not installed), and
-  anything on another PC or a smaller GPU. Windows is the only platform tested.
-- **Known documentation/code gaps:** `docs/SETTINGS.md` describes `/api/settings` routes and a `/settings` page that
-  are not present in the server code; `config.json` still contains absolute `D:\ISHTI\...` paths; two NEEDS files
-  exist (`NEEDS.md` is the curated one, `md files/NEEDS.md` is the log ISHTI writes to at runtime; `NEEDS.md` N25).
-
-## Credits and licenses
-
-ISHTI is built on open-source components, listed with licenses in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-UI components in `interface/app/src/components/rare/` are from [Rare UI](https://rareui.com) (MIT + Commons Clause +
-Attribution). The logo and icons in `assets/` are generated by `tools/generate_brand_assets.py`.
+For developers: `start.bat doctor` checks the system, `start.bat test` runs the offline tests, and
+`start.bat server` runs only the backend. Third-party software and licences are listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

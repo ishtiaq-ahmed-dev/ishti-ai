@@ -2,7 +2,7 @@
 can actually deliver audio (not just appear in a list). Writes a machine-readable verdict to
 data/audio_devices.json and prints a human summary.
 
-Run:  D:\\ISHTI\\venv\\Scripts\\python.exe D:\\ISHTI\\tools\\probe_audio_devices.py
+Run:  venv\\Scripts\\python tools\\probe_audio_devices.py
 """
 import json
 import os

@@ -11,7 +11,7 @@ in the wrong history entry, or in the wrong task record. Also covered: ten topic
 request it is about (and NOT cancelling it), one failing skill not taking the conversation down (crash isolation), and
 a sensitive (T2) confirmation staying with its own topic.
 
-Run:  D:\\ISHTI\\venv\\Scripts\\python.exe D:\\ISHTI\\tests\\test_multitopic.py
+Run:  venv\\Scripts\\python tests\\test_multitopic.py
 """
 import os
 import sys

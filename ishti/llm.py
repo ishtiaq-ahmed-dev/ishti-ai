@@ -19,8 +19,7 @@ STYLE = (
     "4. NO UNREQUESTED CODE: Never answer in code, code blocks (```python, ```json, etc.), or scripts unless the owner "
     "explicitly asks you to write code or a program. Answer normal questions, math, explanations, and advice in natural language.\n"
     "5. Direct & concise: Answer directly in plain language. No conversational filler, no repeating the question back.\n"
-    "6. Language: Reply only in English, Urdu or Pashto - whichever the owner used (Urdu script in Urdu script, Roman "
-    "Urdu in Roman Urdu). Never answer in any other language."
+    "6. Language: Reply only in English."   # style() swaps this line for the owner's Settings -> Language choice (ishti/languages.py)
 )
 
 _cfg = CONFIG["llm"]
@@ -205,7 +204,8 @@ def style() -> str:
     from ishti.facts import get_facts
     owner = get_facts().get("owner")
     prefs = [f"- {a.removeprefix('prefers_').replace('_', ' ')}: {v}" for a, v in owner.items() if a.startswith("prefers_")]
-    out = STYLE
+    from ishti import languages
+    out = STYLE.replace("6. Language: Reply only in English.", "6. " + languages.style_rule())
     if owner.get("instructions"):
         out += "\n\nThe owner's instructions (always follow them):\n" + owner["instructions"]
     if prefs:

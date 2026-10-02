@@ -57,6 +57,24 @@ def _catalog():
         return {}
 
 
+# Models the owner can download from Settings -> Language models even if they were never installed. `pull` = the registry model to
+# download when it is not `name` itself; `build` = a same-weights ISHTI variant created after the download (the 8192-token context
+# the planner needs - Ollama's /v1 endpoint cannot set it per request). Sizes are the registry's, checked 2026-10-02.
+RECOMMENDED = [
+    {"name": "ishti-spark2.5-q8:4b", "pull": "maternion/spark-x2.5:4b-q8_0", "build": {"num_ctx": 8192}, "size": 4_400_000_000, "role": "planner",
+     "title": "Main brain - balanced (recommended)", "note": "Spark 2.5, Q8: about half the size of the full model with almost the same quality. Fits 8 GB graphics cards."},
+    {"name": "ishti-spark2.5:4b", "pull": "maternion/spark-x2.5:4b-f16", "build": {"num_ctx": 8192}, "size": 8_200_000_000, "role": "planner",
+     "title": "Main brain - full quality", "note": "Spark 2.5, unquantized. Best quality; needs a 16 GB graphics card to share it with the other models."},
+    {"name": "ishti-spark2.5-q4:4b", "pull": "maternion/spark-x2.5:4b-q4_K_M", "build": {"num_ctx": 8192}, "size": 2_600_000_000, "role": "planner",
+     "title": "Main brain - smallest", "note": "Spark 2.5, Q4: for 6 GB graphics cards. A little less accurate."},
+    {"name": "gemma3:4b", "size": 3_300_000_000, "role": "translator", "title": "Translator and image reader",
+     "note": "Needed only if you switch on Urdu or Pashto (Settings > Language), or ask ISHTI to look at a picture."},
+    {"name": "nomic-embed-text", "size": 274_000_000, "role": "embeddings", "title": "Memory search", "note": "Lets ISHTI find things in its memory. Small and required."},
+    {"name": "qwen2.5-coder:7b", "size": 4_700_000_000, "role": "coder", "title": "Code helper - small", "note": "Writes and explains code. Good on 8-12 GB cards."},
+    {"name": "qwen2.5-coder:14b", "size": 9_000_000_000, "role": "coder", "title": "Code helper - large", "note": "Better code answers; needs a 16 GB card."},
+]
+
+
 def llm_state():
     tags = requests.get(f"{OLLAMA}/api/tags", timeout=10).json().get("models", [])
     loaded = {m["name"] for m in requests.get(f"{OLLAMA}/api/ps", timeout=10).json().get("models", [])}
@@ -81,6 +99,17 @@ def llm_state():
                        "loaded": n in loaded, "roles": [r for r, v in used.items() if _same(v, n)],
                        "residency": tier(n) if n in installed else "", "shares_weights_with": twins,
                        "frees": 0 if twins else (installed[n]["size"] if n in installed else 0)})
+    plain = lambda n: n[:-7] if n.endswith(":latest") else n   # noqa: E731  ("nomic-embed-text:latest" is "nomic-embed-text")
+    have = {plain(m["name"]) for m in models}
+    rec = {r["name"]: r for r in RECOMMENDED}
+    for m in models:  # what each installed/known model is for, in plain words
+        if plain(m["name"]) in rec:
+            r = rec[plain(m["name"])]
+            m.update(title=r["title"], note=r["note"], role=r["role"])
+    for r in RECOMMENDED:
+        if r["name"] not in have:
+            models.append({"name": r["name"], "installed": False, "size": r["size"], "loaded": False, "roles": [], "residency": "",
+                           "shares_weights_with": [], "frees": 0, "title": r["title"], "note": r["note"], "role": r["role"], "recommended": True})
     return {"roles": roles, "models": models}
 
 
@@ -130,10 +159,15 @@ def delete_model(name):
 
 
 def pull_model(name):
+    rec = next((r for r in RECOMMENDED if r["name"] == name), {})
+    source = rec.get("pull", name)
+
     def job():
         JOBS[name] = {"status": "starting", "done": 0, "total": 0}
         try:
-            with requests.post(f"{OLLAMA}/api/pull", json={"model": name, "stream": True}, stream=True, timeout=None) as r:
+            # Ollama itself fetches the model from its registry when the owner presses Download (our process only talks to Ollama on
+            # this PC); nothing about the owner is sent.
+            with requests.post(f"{OLLAMA}/api/pull", json={"model": source, "stream": True}, stream=True, timeout=None) as r:
                 for line in r.iter_lines():
                     if line:
                         d = json.loads(line)
@@ -141,6 +175,10 @@ def pull_model(name):
                                           total=d.get("total", JOBS[name]["total"]))
                         if d.get("error"):
                             raise RuntimeError(d["error"])
+            if rec.get("build"):  # same weights, ISHTI's context size (a few KB of metadata, instant)
+                JOBS[name]["status"] = "preparing"
+                r = requests.post(f"{OLLAMA}/api/create", json={"model": name, "from": source, "parameters": rec["build"], "stream": False}, timeout=300)
+                r.raise_for_status()
             JOBS[name]["status"] = "done"
             _audit(f"downloaded model {name}")
         except Exception as exc:

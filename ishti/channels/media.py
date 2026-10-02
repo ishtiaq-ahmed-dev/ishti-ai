@@ -17,6 +17,13 @@ import time
 from ishti import CONFIG
 from ishti.channels import policy as policy_mod
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 UPLOAD_DIR = os.path.join(os.path.dirname(CONFIG["memory"]["db_path"]), "uploads", "remote")
 # COU-18 (coucou sweepable inbox): ONE folder for files dropped/received - isolated from
 # the owner's real files and from data/uploads/remote, swept one file at a time.
@@ -69,8 +76,8 @@ def _voice(v: dict, client) -> str:
         from ishti import audit
         with audit.context(skill="channels", channel="telegram"):
             audit.record("remote voice note transcribed", f"{len(text)} chars")
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/channels/media.py:_voice', _exc)
     return text
 
 
@@ -195,8 +202,8 @@ def drop(path, source: str = "overlay") -> str | None:
             from ishti import audit
             with audit.context(skill="channels", channel=str(source)[:40]):
                 audit.record("file dropped", f"{name} ({size} bytes via {source})")
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/channels/media.py:drop', _exc)
         if size <= INLINE_CAP:
             with open(dst, "rb") as f:
                 raw = f.read()

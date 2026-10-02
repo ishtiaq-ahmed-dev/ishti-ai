@@ -385,7 +385,7 @@ def op_screen_record(m, text, session):
 
 def op_webcam_record(m, text, session):
     p = subprocess.run([ed().ffmpeg_exe, "-hide_banner", "-list_devices", "true", "-f", "dshow", "-i", "dummy"],
-                       capture_output=True, text=True, creationflags=NO_WINDOW)
+                       capture_output=True, text=True, creationflags=NO_WINDOW, timeout=30)
     cams = re.findall(r'"([^"]+)" \(video\)', p.stderr)
     if not cams:
         log_need("gap", "media", text, "no webcam connected")

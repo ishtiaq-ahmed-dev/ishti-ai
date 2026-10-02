@@ -315,7 +315,7 @@ NO_RESEARCH = lambda req, s=None: {"ok": True, "sources": [], "queries": [],    
 
 
 def test_impossible_request_is_refused_with_the_exact_gap_named(monkeypatch, sandbox_drafts):
-    """Acceptance 2: no fake success - the reply names what is missing and logs it to NEEDS.md."""
+    """Acceptance 2: no fake success - the reply names what is missing and logs it to the needs log."""
     logged = []
     monkeypatch.setattr(sc, "log_need", lambda kind, skill, req, detail: logged.append(detail))
     monkeypatch.setattr(design, "vram_check", lambda *a, **k: {"ok": True, "note": "stub", "coder": "x"})

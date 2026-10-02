@@ -13,6 +13,7 @@ import sys
 import time
 import wave
 import numpy as np
+import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
@@ -20,6 +21,19 @@ if ROOT not in sys.path:
 
 from ishti import voice as V
 from ishti.voice import synthesize
+
+@pytest.fixture
+def all_languages_on(monkeypatch):
+    """These tests are about Urdu/Pashto handling: switch both on for the test only (the owner's real setting, English
+    only by default, lives in the facts store and must not decide the outcome), then let the recogniser re-read it."""
+    from ishti import languages
+    monkeypatch.setattr(languages, "enabled", lambda: ["english", "urdu", "pashto"])
+    monkeypatch.setattr(V, "_lang_applied", 0.0)
+    monkeypatch.setattr(V, "_forced_language", None)
+    V.apply_languages()
+    yield
+    V._lang_applied = 0.0
+
 
 RATE = 16000
 
@@ -69,7 +83,7 @@ def _model_device(model) -> str:
         return ""
 
 
-def test_stt_all_languages():
+def test_stt_all_languages(all_languages_on):
     print("========================================================================")
     print("  TESTING STT ACCURACY & LATENCY (whisper-large-v3-turbo, CUDA float16)")
     print("========================================================================")

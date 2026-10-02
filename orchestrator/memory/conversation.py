@@ -1,7 +1,7 @@
 """
 ISHTI Multi-Turn Conversation Memory & Session Manager
 Maintains conversation dialogue history across turns, supports new chat creation,
-and persists sessions to disk in D:\\ISHTI\\data\\sessions\\
+and persists sessions to disk in the data/sessions folder
 """
 
 import os
@@ -11,6 +11,13 @@ import json
 import uuid
 import re
 from typing import Dict, Any, List, Optional
+
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SESSIONS_DIR = os.path.join(ROOT_DIR, "data", "sessions")
@@ -145,8 +152,8 @@ class ConversationManager:
                             "message_count": len(data.get("messages", [])),
                             "last_message": data["messages"][-1]["content"][:80] if data.get("messages") else "",
                         })
-                except Exception:
-                    pass
+                except Exception as _exc:
+                    swallowed('orchestrator/memory/conversation.py:ConversationManager.list_sessions', _exc)
 
         # Sort newest updated first
         sessions.sort(key=lambda s: s.get("updated_at", ""), reverse=True)

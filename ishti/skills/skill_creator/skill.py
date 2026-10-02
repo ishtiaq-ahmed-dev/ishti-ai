@@ -11,7 +11,7 @@ This is the ORCHESTRATOR: it reuses what already exists instead of growing a sec
   ownership gates   - ishti.skills.ask_first (T2) + ishti.test_mode.guarded (test safety)
   scope             - ishti.scope (one narrow exception for ishti/skills/_drafts)
   model + budget    - ishti.llm.ask(role="coder") under the VRAM governor (ishti.vram.admit)
-  logging           - ishti.skills.trace + ishti.audit.record + log_need -> NEEDS.md
+  logging           - ishti.skills.trace + ishti.audit.record + log_need -> the needs log (data/needs_runtime.md)
 Stages live in their own modules so each is testable alone: gap, research, design, vetting, drafts,
 sandbox. Architecture: IMPLEMENTATION_PLAN.md section 3 (WP-A).
 
@@ -213,7 +213,7 @@ def build(request, session=None, *, llm_fn=None, research_fn=None, gap_fn=None) 
         if not gen["ok"]:
             log_need("gap", "skill_creator", request, "code generation failed: " + gen["reason"][:200])
             trace(session, "skill_creator", "the coder model could not produce it", status="error")
-            return {"reply": f"I couldn't build this one: {gen['reason']} I logged the gap in NEEDS.md "
+            return {"reply": f"I couldn't build this one: {gen['reason']} I logged the gap "
                              f"with exactly what's missing rather than pretending it works.",
                     "sources": [], "stage": "implement", "draft": name, "facts": facts}
         with open(os.path.join(folder, "skill.py"), "w", encoding="utf-8") as f:
@@ -232,7 +232,7 @@ def build(request, session=None, *, llm_fn=None, research_fn=None, gap_fn=None) 
             log_need("gap", "skill_creator", request, "dependency blocked by vetting: " + why)
             trace(session, "skill_creator", "a dependency did not pass vetting", status="error")
             return {"reply": f"I didn't install anything - a dependency failed the pre-install checks: "
-                             f"{why}. That's recorded in the draft's vetting.json and in NEEDS.md.",
+                             f"{why}. That's recorded in the draft's vetting.json and in the needs log.",
                     "sources": [], "stage": "vetting", "draft": name, "facts": facts}
         limit = drafts.caps(name)
         if not limit["ok"]:
@@ -272,7 +272,7 @@ def build(request, session=None, *, llm_fn=None, research_fn=None, gap_fn=None) 
             trace(session, "skill_creator", "its test never passed - not installing it", status="error")
             return {"reply": f"I couldn't get it working: after {attempt} attempt(s) its own test still "
                              f"fails ({str(last.get('reason', ''))[:200]}). I did NOT install it; the "
-                             f"diagnosis and exactly what's missing are in NEEDS.md.",
+                             f"diagnosis and exactly what's missing are in the needs log.",
                     "sources": [], "stage": "test", "draft": name, "facts": facts}
 
         # 8. package as DISABLED, then the owner's explicit yes to install it (T2)

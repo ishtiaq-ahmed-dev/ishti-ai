@@ -13,7 +13,7 @@ from ishti import events, lifecycle, vram
 router = APIRouter()
 # still answered while shutting down (everything else gets 503)
 ALWAYS = frozenset(("/api/health", "/api/ready", "/api/vram", "/api/shutdown", "/api/focus", "/ws/events", "/api/status"))  # exact paths
-GUARDED = ("/api/shutdown", "/api/ollama", "/api/vram", "/api/focus", "/ws/events")  # state-changing / sensitive: no foreign websites
+GUARDED = ("/api/shutdown", "/api/ollama", "/api/vram", "/api/focus", "/ws/events", "/api/settings", "/api/manage", "/api/privacy")  # state-changing / sensitive: no foreign websites
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 PROXY_HEADERS = (b"cf-connecting-ip", b"x-forwarded-for", b"forwarded", b"x-real-ip")
 

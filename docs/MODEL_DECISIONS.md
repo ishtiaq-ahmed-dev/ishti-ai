@@ -21,6 +21,15 @@ The policy lives in `models_ladder.yaml`; the code is `ishti/vram.py` (governor)
 > 29 Sep tables improves by ~2 GB; voice-session downshift now lands on the 14B (rung 1), not the 7B.
 > Everything below the update line describes the pre-Spark state.
 
+## Current default (2026-10-02)
+The planner is **Spark-X2.5-4B Q8_0** (`ishti-spark2.5-q8:4b`, 4.4 GB, 8192 context), measured with `python -m ishti.vram_calibrate`:
+4,488 MiB on the GPU, 127.5 tok/s, 34 ms to first token, 5/5 on the fixed quality prompts - the same quality score as the
+unquantized build (`ishti-spark2.5:4b`: 8,165 MiB, 82.6 tok/s, 5/5). The full-size build and a Q4 build (2.6 GB) are one click away in
+Settings > Language models. Whatever the owner picks there is the top rung of that role's ladder; the rungs below it are the
+installed ladder models that are lighter, heaviest first (`vram._owner_first`). Models without a context in their Modelfile run through a
+same-weights `-c4k` alias because Ollama 0.35 chooses a context itself (gemma3:4b loaded at 131072 = 6.4 GB). English is the only
+language by default, so the translator model is not loaded unless Urdu or Pashto is switched on.
+
 ## What changed since the 28 Sep version, and why (corrections first)
 
 | Earlier statement | What measurement shows |

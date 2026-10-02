@@ -10,6 +10,13 @@ import time
 from typing import Dict, Any, List, Optional
 import requests
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
 REFLECTIONS_PATH = os.path.join(os.path.dirname(__file__), "memory", "reflections.md")
 
@@ -44,8 +51,8 @@ class ModelRouter:
             res = requests.get(f"{self.host}/api/tags", timeout=5)
             if res.status_code == 200:
                 return {m["name"]: m.get("size", 0) for m in res.json().get("models", [])}
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('orchestrator/model_router.py:ModelRouter.get_model_sizes', _exc)
         return {}
 
     def get_installed_models(self) -> List[str]:
@@ -88,6 +95,14 @@ class ModelRouter:
         except vram.GpuBusy:
             guard.__exit__(None, None, None)
             raise
+        except requests.Timeout as exc:
+            # Ollama did not answer within the governor's load timeout (it is busy or hung). Going on "ungoverned" would
+            # wait for the same server again, minutes per attempt (one profiling run lost 6 min to three such reads, P6-3):
+            # report it as busy at once and let the caller answer without the model.
+            guard.__exit__(None, None, None)
+            busy = vram.GpuBusy("The model server is not answering (it timed out while loading the model).")
+            busy.timed_out = True
+            raise busy from exc
         except requests.HTTPError as exc:  # Ollama refused the load (missing model / OOM): never send the raw call
             guard.__exit__(None, None, None)
             raise vram.GpuBusy(
@@ -227,6 +242,8 @@ class ModelRouter:
             from ishti import vram
             if type(exc) is vram.GpuBusy:  # refused (busy / missing model / cannot fit): the raw call would OOM or 404
                 print(f"[ModelRouter] generate refused: {exc}")
+                if getattr(exc, "timed_out", False):  # the server itself is stuck: another model would wait just as long
+                    return ""
                 alt = self._installed_alternative(requested)
                 if alt != requested:  # the configured name does not exist here: answer with one that does
                     print(f"[ModelRouter] {requested} is not installed - using {alt}")
@@ -428,8 +445,8 @@ class ModelRouter:
                         f"Switch primary model from '{current_primary}' to fallback '{fallback}'"
                     )
                     return None
-            except Exception:
-                pass
+            except Exception as _exc:
+                swallowed('orchestrator/model_router.py:ModelRouter.record_failure_and_maybe_heal', _exc)
             if current_primary != fallback and fallback:
                 print(f"[ModelRouter] Self-healing: Switching primary model from '{current_primary}' to fallback '{fallback}'!")
                 self.config["ollama"]["primary_model"] = fallback

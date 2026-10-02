@@ -23,7 +23,7 @@ sys.path.insert(0, ROOT)
 
 
 def smi():
-    out = subprocess.run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"], capture_output=True, text=True).stdout
+    out = subprocess.run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=15).stdout
     return int(out.strip().splitlines()[0])
 
 

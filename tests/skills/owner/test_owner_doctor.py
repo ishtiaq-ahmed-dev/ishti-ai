@@ -2,7 +2,7 @@
 
 Bug: `owner` skill's diagnostics path (orchestrator/doctor.py) ran live web searches and page fetches
 with no overall cap, so on a slow/offline network the "run diagnostics" request hung >90 s (the QA
-harness timed it out - see TEST_STATE.json owner=red). Fix: `check_all(budget_s=45)` skips the
+harness timed it out - see reports/test_state.json owner=red). Fix: `check_all(budget_s=45)` skips the
 remaining LIVE checks when the budget is spent; static checks always complete.
 """
 import os

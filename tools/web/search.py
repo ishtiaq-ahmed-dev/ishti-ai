@@ -15,7 +15,7 @@ from typing import List, Dict, Any, Optional
 import requests
 from bs4 import BeautifulSoup
 
-ROOT_DIR = r"D:\ISHTI"
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
@@ -39,34 +39,75 @@ DOCKER_DESKTOP = r"C:\Program Files\Docker\Docker\Docker Desktop.exe"
 _heal = {"last": 0.0}
 
 
-def ensure_searxng(wait_s: float = 90) -> bool:
+def _docker(*args, timeout=30):
+    """One docker CLI call -> CompletedProcess (argv list, no shell, hidden window)."""
+    import subprocess
+    flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    return subprocess.run(["docker", *args], capture_output=True, text=True, timeout=timeout, creationflags=flags)
+
+
+def create_searxng() -> bool:
+    """Create the SearXNG container once (it has never existed on a fresh PC): the run line documented in
+    ishti/searxng/settings.yml, bound to 127.0.0.1 only, with a random secret kept in data/searxng_secret.
+    Pulls the searxng/searxng image the first time (a download), so it only runs when asked for:
+        venv/Scripts/python -c "from tools.web.search import create_searxng; print(create_searxng())"
+    """
+    import secrets
+    secret_path = os.path.join(ROOT_DIR, "data", "searxng_secret")
+    os.makedirs(os.path.dirname(secret_path), exist_ok=True)
+    if not os.path.isfile(secret_path):
+        with open(secret_path, "w", encoding="utf-8") as f:
+            f.write(secrets.token_hex(32))
+    with open(secret_path, encoding="utf-8") as f:
+        secret = f.read().strip()
+    port = SearxngSearchProvider.URL.rsplit(":", 1)[-1]
+    r = _docker("run", "-d", "--name", SEARXNG_CONTAINER, "--restart", "unless-stopped",
+                "-p", f"127.0.0.1:{port}:8080", "-v", f"{os.path.join(ROOT_DIR, 'ishti', 'searxng')}:/etc/searxng",
+                "-e", f"SEARXNG_SECRET={secret}", "searxng/searxng", timeout=900)
+    return r.returncode == 0
+
+
+def ensure_searxng(wait_s: float = 90, create: bool = False) -> bool:
     """Degraded-mode self-heal: start the SearXNG container, launching Docker Desktop first if its engine is
-    down (after a reboot neither is running and search silently fell back to poor providers)."""
+    down (after a reboot neither is running and search silently fell back to poor providers).
+    A container that is Up but whose published port does not answer (seen after a host reboot: SW-12) is
+    restarted once, which re-applies the port mapping. A container that does not exist is created only with
+    create=True (it downloads an image the first time)."""
     import subprocess
     import time
     url = SearxngSearchProvider.URL + "/healthz"
-    ok = lambda: requests.get(url, timeout=2).status_code == 200
+
+    def ok():
+        try:
+            return requests.get(url, timeout=2).status_code == 200
+        except Exception:
+            return False
+    if ok():
+        return True
     try:
-        if ok():
-            return True
-    except Exception:
-        pass
-    flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-    run = lambda *a: subprocess.run(["docker", *a], capture_output=True, text=True, timeout=30, creationflags=flags)
-    try:
-        if run("info").returncode != 0 and os.path.isfile(DOCKER_DESKTOP):
+        if _docker("info").returncode != 0 and os.path.isfile(DOCKER_DESKTOP):
             subprocess.Popen([DOCKER_DESKTOP], close_fds=True)
         deadline = time.time() + wait_s
-        while time.time() < deadline:
-            if run("start", SEARXNG_CONTAINER).returncode == 0:
+        started, restarted = False, False
+        while time.time() < deadline and not started:
+            r = _docker("start", SEARXNG_CONTAINER)
+            if r.returncode == 0:
+                started = True
                 break
+            if "no such container" in (r.stderr or "").lower():
+                if create and create_searxng():
+                    started = True
+                    break
+                print(f"[SearXNG] container '{SEARXNG_CONTAINER}' does not exist - create it once with create_searxng()")
+                return False
             time.sleep(3)
+        check_until = min(deadline, time.time() + 12)
         while time.time() < deadline:
-            try:
-                if ok():
-                    return True
-            except Exception:
-                pass
+            if ok():
+                return True
+            if started and not restarted and time.time() >= check_until:
+                _docker("restart", SEARXNG_CONTAINER, timeout=60)  # up but unreachable: re-apply the port mapping
+                restarted = True
             time.sleep(1.5)
     except (OSError, subprocess.SubprocessError):
         pass
@@ -455,7 +496,7 @@ class NewsSearchProvider(WebSearchProvider):
 
 class PlaywrightBrowserSearchProvider(WebSearchProvider):
     """
-    High-fidelity fallback using Playwright inside the isolated profile D:\\ISHTI\\data\\chrome_profile.
+    High-fidelity fallback using Playwright inside the isolated profile <ISHTI root>/data/chrome_profile.
     """
     @property
     def name(self) -> str:
@@ -467,7 +508,7 @@ class PlaywrightBrowserSearchProvider(WebSearchProvider):
 
     def search(self, query: str, max_results: int = 5) -> List[WebSearchResult]:
         results: List[WebSearchResult] = []
-        profile_dir = r"D:\ISHTI\data\chrome_profile"
+        profile_dir = os.path.join(ROOT_DIR, "data", "chrome_profile")
         chrome_exe = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 
         try:

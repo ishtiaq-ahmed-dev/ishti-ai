@@ -21,6 +21,13 @@ import sys
 import urllib.parse
 import urllib.request
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
+
 # `python ishti/gateway.py` (the documented self-check) puts ishti/ first on sys.path; put the repo
 # root back so the module's own `ishti.*` imports resolve.
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -87,8 +94,8 @@ def _record(action: str, detail: str) -> None:
         from ishti import audit
         with audit.context(skill="gateway", initiator="judgment"):
             audit.record(action, detail)
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/gateway.py:_record', _exc)
 
 
 # --------------------------------------------------------------------- transport

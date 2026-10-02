@@ -46,6 +46,8 @@ import { cn } from "@/lib/utils";
 import { ModelsCard, VoiceCard, WhisperCard } from "@/components/ModelsVoices";
 import { RemoteControl } from "@/components/RemoteControl";
 import { ArchitectureCard } from "@/components/ArchitectureCard";
+import { LanguageSettings } from "@/components/LanguageSettings";
+import { PrivacyPanel } from "@/components/PrivacyPanel";
 
 export function Page({
   title,
@@ -2324,6 +2326,10 @@ export function Settings({ onToggleNav }: { onToggleNav?: () => void }) {
         {/* ========================================================
              SECTION 0: Architecture (arch1 dispatcher vs arch2 two-pass brain)
              ======================================================== */}
+        <LanguageSettings />
+
+        <PrivacyPanel />
+
         <ArchitectureCard />
 
         {/* ========================================================

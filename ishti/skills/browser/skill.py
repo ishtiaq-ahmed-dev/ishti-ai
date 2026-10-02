@@ -1,6 +1,6 @@
 """Browser skill: local LLM + Playwright MCP tools, programmatic (accessibility refs) only.
 A site already open in a tab is reused (browser_tabs select), never reopened from scratch.
-Screenshot/coordinate clicking needs a local vision model - logged in NEEDS.md."""
+Screenshot/coordinate clicking needs a local vision model - logged in the needs log."""
 import json
 import os
 import re
@@ -13,6 +13,13 @@ from ishti import CONFIG, llm
 from ishti.skills import answer_of, trace
 from ishti.untrusted import guard, scan
 from orchestrator.intent_detector import IntentDetector
+
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
 
 ALLOWED = {"browser_navigate", "browser_navigate_back", "browser_snapshot", "browser_click", "browser_type",
            "browser_fill_form", "browser_press_key", "browser_select_option", "browser_hover",
@@ -308,8 +315,8 @@ def _call(name, args):
                 try:
                     _call("browser_tabs", {"action": "select", "index": i})
                     return f"reused the open {host} tab\n{_call('browser_snapshot', {})}"
-                except Exception:
-                    pass  # any tab trouble: navigate below, exactly like before
+                except Exception as _exc:
+                    swallowed('ishti/skills/browser/skill.py:_call', _exc)  # any tab trouble: navigate below, exactly like before
     return _plain_call(name, args)
 
 
