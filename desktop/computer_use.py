@@ -64,6 +64,35 @@ _DISKS_TTL_S = 5.0
 _CPU_PRIMED = False
 
 
+def installed_apps() -> Dict[str, str]:
+    """{lowercase app name: Start-menu shortcut} for every app installed for this user or all users - how Windows itself lists them."""
+    roots = [os.path.join(os.environ.get(v, ""), r"Microsoft\Windows\Start Menu\Programs") for v in ("PROGRAMDATA", "APPDATA")]
+    out = {}
+    for root in roots:
+        for lnk in glob.glob(os.path.join(root, "**", "*.lnk"), recursive=True):
+            name = os.path.basename(lnk)[:-4].lower()
+            if not any(w in name for w in ("uninstall", "readme", "help", "documentation", "website", "release notes")):
+                out.setdefault(name, lnk)
+    return out
+
+
+def find_installed(name: str) -> Optional[str]:
+    """The Start-menu shortcut for an app the owner names loosely ("brave", "brawe browser", "spotify"), or None."""
+    import difflib
+    import re as _re
+    key = _re.sub(r"\s+(?:app|application|browser)$", "", name.lower().strip())
+    apps = installed_apps()
+    if not key or not apps:
+        return None
+    for n, lnk in apps.items():  # whole-word containment first: "brave" -> "Brave"
+        if key == n or _re.search(rf"\b{_re.escape(key)}\b", n):
+            return lnk
+    close = difflib.get_close_matches(key, list(apps), n=1, cutoff=0.75)  # a typo: "brawe" -> "brave"
+    if not close:
+        close = [n for n in apps if difflib.SequenceMatcher(None, key, n.split()[0]).ratio() >= 0.8][:1]
+    return apps[close[0]] if close else None
+
+
 def _cpu_percent_fast() -> float:
     """Non-blocking CPU% (no 0.1 s sleep). The first call primes psutil's baseline and waits 50 ms
     once, so even the first answer is real instead of 0.0."""
@@ -254,7 +283,7 @@ class ComputerUseAgent:
 
         # Direct executable search if not in aliases
         if not exe:
-            found = shutil.which(key) or shutil.which(f"{key}.exe")
+            found = shutil.which(key) or shutil.which(f"{key}.exe") or find_installed(key)
             if found:
                 exe = found
             else:
@@ -267,6 +296,9 @@ class ComputerUseAgent:
                 os.startfile(exe)
                 return {"status": "success", "app": app_name, "details": f"Launched URI scheme: {exe}"}
 
+            if exe.lower().endswith(".lnk"):  # an installed app found through its Start-menu shortcut (Brave, Spotify, Discord...)
+                os.startfile(exe, arguments=f'"{os.path.abspath(target_file)}"' if target_file else "")
+                return {"status": "success", "app": app_name, "details": f"Launched {os.path.basename(exe)[:-4]}"}
             resolved = exe if os.path.isabs(exe) else shutil.which(exe)
             if not resolved:
                 # Trusted alias not on PATH (e.g. CapCut.exe): ShellExecute resolves it via App Paths,

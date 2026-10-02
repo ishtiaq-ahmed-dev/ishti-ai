@@ -20,6 +20,23 @@ TOLA_G, OUNCE_G = 11.6638, 31.1035
 _cache = {}
 
 
+
+def as_markets(fn):
+    """Every fetch in this module is the markets skill's declared network use (scope.net), whoever asked for it - the digest,
+    the ledger's portfolio, the trading desk or a background check. Without this, a call made outside a markets request ran as
+    nobody and the privacy guard blocked api.binance.com (owner's report)."""
+    import functools
+
+    @functools.wraps(fn)
+    def run(*a, **k):
+        from ishti import audit
+        if audit.current().get("skill") == "markets":
+            return fn(*a, **k)
+        with audit.context(skill="markets"):
+            return fn(*a, **k)
+    return run
+
+
 def cached(key, ttl, fn):
     """Market data changes by the minute; a short cache keeps repeated questions instant."""
     hit = _cache.get(key)
@@ -30,6 +47,7 @@ def cached(key, ttl, fn):
     return value
 
 
+@as_markets
 def fx_rates(base="USD"):
     return cached(f"fx:{base}", 600, lambda: requests.get(f"https://open.er-api.com/v6/latest/{base}", timeout=10).json()["rates"])
 
@@ -38,6 +56,7 @@ def fx(base, target):
     return fx_rates(base.upper())[target.upper()]
 
 
+@as_markets
 def metal(symbol="XAU"):
     """Spot price in USD per troy ounce."""
     return cached(f"metal:{symbol}", 300, lambda: float(
@@ -52,6 +71,7 @@ COIN_SYMS = {
 }
 
 
+@as_markets
 def crypto_id(name):
     def find():
         clean = name.lower().strip()
@@ -69,6 +89,7 @@ def crypto_id(name):
     return cached(f"cgid:{name.lower()}", 86400, find)
 
 
+@as_markets
 def crypto(coin_id, vs="usd"):
     """{'price', 'change_24h'} in vs currency."""
     def fetch():
@@ -102,6 +123,7 @@ def crypto(coin_id, vs="usd"):
     return cached(f"cg:{coin_id}:{vs}", 60, fetch)
 
 
+@as_markets
 def crypto_history(coin_id, days=365):
     def fetch():
         try:
@@ -123,6 +145,7 @@ def crypto_history(coin_id, days=365):
     return cached(f"cgh:{coin_id}:{days}", 900, fetch)
 
 
+@as_markets
 def psx(symbol):
     """Live PSX quote from dps.psx.com.pk (first stats block = the regular market)."""
     def fetch():
@@ -147,6 +170,7 @@ def psx(symbol):
     return cached(f"psx:{symbol.upper()}", 60, fetch)
 
 
+@as_markets
 def psx_symbols():
     """{symbol: company name} of the KSE-100, to recognise PSX companies by name."""
     def fetch():
@@ -158,6 +182,7 @@ def psx_symbols():
         return {}
 
 
+@as_markets
 def stock(symbol):
     """yfinance: {'symbol','name','currency','closes','info'}; None if unknown."""
     import yfinance as yf
@@ -178,6 +203,7 @@ def stock(symbol):
     return cached(f"yf:{symbol.upper()}", 300, fetch)
 
 
+@as_markets
 def find_ticker(name):
     """Company name -> ticker via Yahoo's search ('nvidia' -> NVDA)."""
     import yfinance as yf

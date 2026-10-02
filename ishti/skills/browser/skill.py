@@ -130,6 +130,9 @@ BROWSER_CUE = re.compile(r"\b(?:browser|chrome|website|site|web\s*page|page|tab|
 
 
 def match(text):
+    from ishti.skills.apps.skill import IN_BROWSER
+    if (m := IN_BROWSER.match(text)) and not re.match(r"(?:google\s+)?chrome$", m["browser"], re.I):
+        return False  # "open youtube in brave": the owner's own Brave/Edge/Firefox app, not ISHTI's Chrome automation
     return bool(TRIGGER.search(text)) or (IntentDetector.classify(text)["mode"] in ("BROWSER_FORM", "BROWSER_VISIBLE")
                                           and bool(BROWSER_CUE.search(text)))
 
