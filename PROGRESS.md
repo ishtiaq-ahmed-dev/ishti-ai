@@ -457,3 +457,27 @@ Then: new master prompt Cycle 1 starts from a clean, tagged tree.
 - Still open by design (owner decision or per-site judgement), listed plainly in SWEEP_REPORT.md
   section 4: CD-11 ruff, CD-13, Issue 30, SC-05/06/11, Issue 22/24, SC-23, SC-10, Q10, N22-N26,
   Need 2/3/13, and the F1 digest flake (characterised, deliberately not weakened).
+
+## 5-repo integration session (2026-10-01/02, branch feat/repo-integration)
+
+Loop: Acquire -> Audit -> Research -> Plan -> Build -> Test -> Review. Repos pinned in
+VENDOR_PINS.md (open-dots, ecc, hey-jev, agent-reach, coucou); every feature dispositioned in
+REPO_FEATURE_MATRIX.md (128 rows; completeness proved in COMPLETENESS_AUDIT.md, unmapped=0).
+
+Work packages landed (each with 3-consecutive-green tests):
+- WP-OD: gateway receipts; `ishti/gateway.py` loopback-only governed search (OD-14);
+  `ishti/workspace.py` path confinement (OD-15); `ishti/api_sessions.py` + origin gate on every
+  mutating /api/remote route (OD-12/23).
+- WP-REACH: `internet_reach` skill (registry, doctor, SSRF-guarded local transcribe).
+- WP-ECC: `security_scan` skill; `orchestrator/quality_gate.py` (lint/format + code-reviewer +
+  security-reviewer, wired into skill_creator.register as a blocking gate); install-state drift +
+  ownership-scoped repair in the doctor; `ModelRouter.route()` fallback decisions;
+  `ishti/session_schema.py` + docs/SESSION_SCHEMA.md; local plan view.
+- WP-JEV: STT vocabulary correction + spoken-duration parsing; `ishti/dictation.py` (PTT + dictation,
+  explicit sessions only, honest holes, JSONL history).
+- WP-COUCOU: owner-only named-pipe IPC + hook relay (300 ms budget); overlay FSM/pills/log scrub/
+  safe links; unified inbox + fenced file drops; original mascot; OPT-IN integration pills;
+  island window shell + waveform. All new skills start disabled; OPT-INs ship OFF.
+
+Evidence and numbers: TEST_RESULTS.md (PART 2); per-repo verdicts: FINAL_REPORT_repo_integration.md;
+sign-off: REVIEW_SIGNOFF.md; completeness: COMPLETENESS_AUDIT.md (runs 1+2).

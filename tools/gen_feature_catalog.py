@@ -113,6 +113,86 @@ core = [
     ("CORE-16", "MCP client (tools via MCP servers)", "core", "ishti/mcp_client.py", "core",
      "mcp config", "mcp servers", "none", "Local MCP tool servers; sandboxed tools.",
      "server down -> graceful", "checked via resilience", "mock MCP", "partial (unverified in suite)"),
+    ("CORE-17", "Governed local search gateway (OD-14)", "core", "ishti/gateway.py", "T0",
+     "none", "audit, local SearXNG", "none",
+     "Loopback-only searches; cloud endpoints refused before any transport; results fenced as untrusted data.",
+     "cloud_calls == 0; non-loopback refused", "tests/test_governed_search.py", "injected transport", "works"),
+    ("CORE-18", "Workspace path confinement (OD-15)", "core", "ishti/workspace.py", "T1",
+     "workspace root", "none", "none",
+     "realpath-confined paths, read/write size caps, Windows escape refusal with reasons.",
+     "escapes refused; outside file untouched", "tests/test_workspace_confinement.py", "scratch tree + junction", "works"),
+    ("CORE-19", "Browser sessions + cross-site origin gate (OD-12/23)", "core",
+     "ishti/api_sessions.py; ishti/channels/api.py", "T1", "in-memory", "api middleware", "none",
+     "Hashed in-memory sessions (restart-invalid), rotation, cross-site refused 403 before auth.",
+     "untrusted origin 403; old session invalid after restart", "tests/test_api_sessions.py", "starlette request scopes", "works"),
+    ("CORE-20", "Overlay island: window, pipe, relay, pills, inbox, log (COU-01..22, JEV-04)", "UI",
+     "desktop/overlay/; ishti/overlay_pipe.py; ishti/hooks_relay.py; ishti/channels/media.py", "T1",
+     "named pipe, uploads/inbox", "approvals, pills, pywebview", "none (GUI)",
+     "Hover island, session pills, owner-only pipe, single-use approval cards, fenced file drops, scrubbed log, waveform.",
+     "owner-only pipe enforcement; hook budget <= 300 ms; no secrets in log",
+     "tests/test_overlay_*.py; tests/test_hooks_relay.py; tests/test_relay_never_blocks.py; tests/test_channels_inbox.py",
+     "fake window factory, injected transport", "works"),
+    ("CORE-21", "Pre-merge quality gate + review roles (ECC-01/04)", "core",
+     "orchestrator/quality_gate.py", "T0", "none", "ruff, security_scan", "none",
+     "ruff lint/format plus code/security reviewer roles -> one verdict; high findings block skill install.",
+     "seeded bad files blocked; drafts with eval never register", "tests/test_quality_gate.py", "seeded files", "works"),
+    ("CORE-22", "Install-state drift + installer ops (ECC-12, COU-15)", "core",
+     "orchestrator/install_state.py; orchestrator/install_ops.py", "T1", "data/install_state.json, backups",
+     "doctor", "none",
+     "Drift vs baseline; backup-first writes; ownership-tagged merge; scoped uninstall.",
+     "foreign entries preserved; only owned entries removed",
+     "tests/test_install_state.py; tests/test_install_ops.py", "scratch tree", "works"),
+    ("CORE-23", "Model route with fallback chain (ECC-13)", "core", "orchestrator/model_router.py:route()", "core",
+     "none", "VRAM governor (call time)", "ollama tags",
+     "One decision object {model, fallback, chain, latency}; stale config names resolved; no load in the decision.",
+     "fallback coverage 1.0; decision < 5 ms", "tests/test_model_route.py", "injected installed list", "works"),
+    ("CORE-24", "Harness-neutral session schema v1 (ECC-09)", "core",
+     "ishti/session_schema.py; docs/SESSION_SCHEMA.md", "core", "none", "events bus", "none",
+     "One envelope for every harness; strict validate, forgiving make, bus emit.",
+     "junk -> problems not exceptions; doc in sync", "tests/test_session_schema.py", "synthetic sessions", "works"),
+    ("CORE-25", "Dictation + push-to-talk (JEV-02/03)", "core", "ishti/dictation.py", "T1",
+     "data/dictation_history.jsonl", "voice (local STT), pynput", "whisper (local)",
+     "Explicit sessions only: PTT hold-to-talk, dictation phrases, JSONL history; failed chunks never pasted.",
+     "no session -> nothing records; holes preserved with audio path", "tests/test_dictation.py",
+     "injected transcribe/paste/binder", "works"),
+    ("CORE-26", "Local plan review page (ECC-08)", "UI", "orchestrator/plan_view.py", "T1",
+     "data/plan_decisions.json", "none", "none",
+     "Loopback-only page; escaped plan markdown; approve/request-changes decisions recorded.",
+     "non-loopback refused before a socket; markup escaped", "tests/test_plan_view.py", "http on port 0", "works"),
+    ("CORE-27", "Original mascot + OPT-IN integration pills (COU-08/10/11)", "UI",
+     "desktop/overlay/mascot.py; desktop/overlay/integrations.py", "T1", "none", "pywebview window", "none",
+     "Original Pebble art + synthesized chime; 7 provider pills OFF until explicit opt-in.",
+     "no imitation markers; zero credential/network calls before opt-in",
+     "tests/test_overlay_mascot.py; tests/test_overlay_integrations.py", "injected fetch/cred", "works"),
+    ("CORE-28", "Telegram remote-control channel (outbound long-polling)", "core",
+     "ishti/channels/telegram_client.py; ishti/channels/poller.py; ishti/channels/gate.py; "
+     "ishti/channels/policy.py; ishti/channels/approvals.py; ishti/channels/output.py; "
+     "ishti/channels/service.py; ishti/channels/api.py",
+     "T0 read / T1 default / T2 step-up", "data (policy+state), no inbound ports", "httpx", "none",
+     "Numeric-ID allowlist, pairing, rate limits, stale-command expiry, panic commands "
+     "(/kill /lock /unlock /status /tasks /cancel /pause /resume /digest /help), remote-forbidden classifier, "
+     "single-use expiring T2 approvals, output redaction + chunking, voice-in (local STT), CSV attachments.",
+     "untrusted sender ignored; T2 approval single-use + expiring; default OFF; cloud calls = 1 backend only",
+     "tests/test_channels.py (mock Bot API, 13 acceptance tests, 3x green)", "mock Bot API",
+     "works, default OFF (needs token N22 + pairing)"),
+    ("CORE-29", "WhatsApp self-chat adapter (designated chat only)", "core",
+     "ishti/channels/whatsapp_channel.py", "T2 sends (dispatcher gate)", "designated self-chat only",
+     "existing whatsapp skill tab machinery", "none",
+     "Self-chat-only remote channel over the already-open WhatsApp Web tab; default OFF behind policy + risk_ack; "
+     "human-paced sends; other chats never read.",
+     "designated chat only; default OFF; paced", "self-check + tests/test_channels.py (adapter row)",
+     "mock tab", "works, default OFF (owner decision N23)"),
+    ("CORE-30", "/api/remote/* + health section + lifecycle", "core",
+     "ishti/channels/api.py; interface/web_ui/server.py", "local-only writes", "/api/remote/*", "FastAPI",
+     "none",
+     "/api/remote/{status,pair/*,revoke,policy,telegram/token,pin,enable,test}; remote section in /api/health; "
+     "boot/stop lifecycle.", "contract §11 green", "ishti/channels/api.py self-check; tests/contract_test.py",
+     "synthetic requests", "works"),
+    ("CORE-31", "Remote Control settings UI", "UI",
+     "interface/app/src/components/RemoteControl.tsx", "local-only", "Settings section", "React", "none",
+     "Channel toggles (default OFF), token storage, pairing code display, panic PIN, revoke sessions, "
+     "policy viewer, recent remote activity.", "npm run build exit 0", "checked against /api/remote contract §11",
+     "synthetic", "works"),
 ]
 
 skill_ids = {s["id"] for s in skills}
@@ -165,6 +245,14 @@ for name, hint in extra_missing:
 A("| LoRA training pipeline | `ishti/learning/` has lessons/corrections; no trainer/weights anywhere in repo | MISSING (weights) - lessons work; fine-tuning does not exist |")
 A("| Chat upload picker (D1-D4) | NEEDS.md N9; no paperclip component in Chat.tsx | MISSING (UI) - documented BLOCKED |")
 A("| Live microphone hardware | NEEDS.md N7: no mic/speaker connected (`Error querying device -1`) | BLOCKED (hardware) - pipeline tested in-process |")
+A("")
+A("## Product findings (open)")
+A("")
+A("| ID | Feature | Finding | Evidence |")
+A("|---|---|---|---|")
+A("| FINDING-QA-CALC-1 | calc | `solve 2x + 3 = 11 for x` lets a raw parser exception escape (crash, not a graceful reply); NOT fixed | "
+  "`python -c \"import ishti.skills.calc.skill as s; s.run('solve 2x + 3 = 11 for x', {})\"` -> uncaught SyntaxError "
+  "(recorded 2026-09-30; reproduced 2026-10-02) |")
 A("")
 
 out = os.path.join(ROOT, "FEATURE_CATALOG.md")

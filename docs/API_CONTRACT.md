@@ -539,3 +539,82 @@ Also embedded in `GET /api/health` as the `remote` key (same shape, no `recent`)
 - Stale commands (queued while the PC was off; older than `stale_command_max_age_s`, default 300 s)
   expire with an explanation instead of executing.
 - Unknown senders, group/channel chats and inline queries are ignored silently (capped alert only).
+
+---
+
+## 12. WP repo-integration additions (2026-10-02)
+
+Contracts introduced by the 5-repo integration (matrix rows in `REPO_FEATURE_MATRIX.md`, tests named
+per row). All local-only; none weakens an existing gate.
+
+### 12.1 Governed local search (OD-14) - `ishti/gateway.py`
+
+- `search(query, *, limit=8, base=None, timeout=8.0, transport=None)` ->
+  `{"ok": true, "backend": "searxng-local", "query", "results": [{title,url,snippet}], "answers", "cloud_calls": 0}`
+  or `{"ok": false, "refused": bool, "error": "..."}`. Never raises.
+- The endpoint must be loopback (`127.0.0.1`/`localhost`/`::1`); anything else is refused BEFORE any
+  transport runs (cloud backends are OPT-IN and off). Calls audit `risk=external`; results are
+  untrusted data (`as_text()` fences them). `stats()["cloud_calls"]` stays 0 by construction.
+- `probe()` returns `{"ok", "detail"}` for the doctor. Tests: `tests/test_governed_search.py`.
+
+### 12.2 Workspace path confinement (OD-15) - `ishti/workspace.py`
+
+- `Workspace(root, max_bytes=8 MiB)` with `check/resolve/contains/read_bytes/read_text/write_text/
+  ensure_dir/delete/list`. Every path is realpath-confined to the root; `..`, absolute escapes,
+  drive-relative `C:x`, UNC/device prefixes, alternate data streams, reserved device names and
+  trailing dot/space components are refused with a reason; symlinks/junctions that leave the root
+  are refused. All methods total (None/False/[]) - no exceptions. Tests: `tests/test_workspace_confinement.py`.
+
+### 12.3 Browser sessions + origin gate (OD-12/23) - `ishti/api_sessions.py`
+
+- `SessionStore` stores only SHA-256 hashes in memory (a restart invalidates every session);
+  `create/get/refresh/revoke/revoke_all/expire`; `origin_ok(origin, host, sec_fetch_site)` refuses
+  `cross-site`/`same-site` and Origin/Host mismatches.
+- Every state-changing `/api/remote/*` route calls `_origin_ok()` FIRST: a cross-site browser context
+  gets `403 {"error": "cross-site request refused"}` regardless of token. Cookie posture is
+  HttpOnly + Secure + SameSite=Strict (`session_cookie_flags()`). Tests: `tests/test_api_sessions.py`.
+
+### 12.4 Overlay IPC + relay (COU-02/04/12/13/21) - `ishti/overlay_pipe.py`, `ishti/hooks_relay.py`
+
+- Pipe: `\\.\pipe\ishti-overlay-<SID>`, owner-only DACL, MAX_MSG 64 KiB (oversized discarded, never
+  delivered), send budget default 300 ms; `send()` never raises and never blocks past budget.
+- Envelope v1: `{"v":1, "kind": "hook"|"approval.opened"|"question", ...}`. Inbound approval
+  decisions are single-use, action-bound (`approval_id` + `action_id` must match) and replay/spoof
+  fail; questions are popped on answer; junk returns None. Tests: `tests/test_overlay_pipe.py`,
+  `tests/test_relay_never_blocks.py`, `tests/test_hooks_relay.py`.
+
+### 12.5 Overlay island + state payload (COU-01/03/10/11/14/16/17/18/22, JEV-04)
+
+- `desktop/overlay/window.py::OverlayWindow.state()` -> `{"v":1, "state": hidden|petit|home,
+  "compact", "unread", "busy", "pills": [{agent,state,ticker,since}], "mood", "levels",
+  "click_through", "no_activate", "size"}`; pushed to the page as
+  `window.ishti.setState(<json>)`. Window options: on_top, frameless, non-resizable, no easy-drag,
+  best-effort `WS_EX_NOACTIVATE`; the page shell is `pointer-events:none` (click-through).
+- Inbox: `ishti/channels/media.py::inbox_put/inbox_sweep/inbox_take/drop` - unique names,
+  single-use take, traversal-safe, small text inlined FENCED as untrusted data.
+- Integrations: `desktop/overlay/integrations.py::status()` -> `off|paused|missing-cred|ok|error`;
+  off until `opt_in()`, zero credential/network calls before that.
+
+### 12.6 Voice dictation + PTT (JEV-02/03) - `ishti/dictation.py`
+
+- `Dictation.push_chunk(audio)` -> `{"ok", "index", "text", "pasted"}` or an honest failure
+  ("chunk N failed (...) - not pasted"); with no active session it refuses: nothing records.
+  History is JSONL (`data/dictation_history.jsonl`, bounded); failed audio paths are preserved.
+  `start/stop/start_ptt/release/apply_phrase/bind_ptt`. Tests: `tests/test_dictation.py`.
+
+### 12.7 Session schema (ECC-09) - `ishti/session_schema.py`, `docs/SESSION_SCHEMA.md`
+
+- `make/validate/conforms/emit`; bus type `"session"`; `agent` regex `^[a-z0-9-]{1,24}$`, states
+  `idle|thinking|working|finished|error|ratelimit|question`. Tests: `tests/test_session_schema.py`.
+
+### 12.8 Dev-side gates (ECC-01/04/08/12/13, COU-15)
+
+- `orchestrator/quality_gate.py::gate(target)` -> `{"ok", "verdict": pass|changes-requested,
+  "reviews": [code-reviewer, security-reviewer], "findings"}`; high security findings block
+  `skill_creator.register()` (drafts.review_gate).
+- `orchestrator/install_state.py` (drift + ownership-scoped repair; doctor check `[7b]`) and
+  `orchestrator/install_ops.py` (backup/diff/confirm-veto/merge/scoped-uninstall, `_owner` tags).
+- `ModelRouter.route(role, installed=None, risk="", budget="")` -> decision with ordered fallback
+  chain and per-call latency; performs no load.
+- `orchestrator/plan_view.py` serves the plan review page on loopback only (`serve()` refuses any
+  other host); decisions append to `data/plan_decisions.json` via `POST /decision`.

@@ -783,3 +783,17 @@ Verified: check_skills **81 skills / 174 assertions / 231 labelled requests OK**
 
 **Next actions:** finish transcribing domains 21–35 item-level (done in ROADMAP; item-level
 ledger continues below), then build batch B skills one by one.
+
+## Repo-integration additions (2026-10-02; see REPO_FEATURE_MATRIX.md)
+
+New skills (both start `status` per the manifest; net scope explicit):
+
+| Skill | Rows | What it is | Tests |
+|---|---|---|---|
+| `internet_reach` | REACH-01..29 | Channel/backend registry with doctor probes, SSRF-guarded local transcribe, OPT-IN login channels OFF | `tests/skills/internet_reach/` (40 green x3) |
+| `security_scan` | ECC-06 | Local deterministic scanner for skill manifests, skill code, MCP config, tracked secrets | `tests/skills/security_scan/` (23 green x3) |
+
+New core modules (not skills; catalogued in FEATURE_CATALOG.md CORE-17..CORE-27): gateway (governed
+local search), workspace (path confinement), api_sessions (hashed sessions + origin gate),
+dictation (PTT/dictation), session_schema, overlay pipe/relay/fsm/pills/log/window/mascot/
+integrations, quality_gate, install_state, install_ops, plan_view, and `ModelRouter.route()`.

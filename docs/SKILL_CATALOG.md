@@ -1,6 +1,6 @@
 # SKILL CATALOG — every skill from the spec's domains 21-35 (Part A4)
 
-Generated from the live Skill Registry (`ishti/skills/registry.py`) on 2026-09-29 16:07. **119 skills loaded**, 119 implemented, 0 partial/broken.
+Generated from the live Skill Registry (`ishti/skills/registry.py`) on 2026-10-02 06:38. **124 skills loaded**, 121 implemented, 3 partial/broken.
 
 Statuses: **implemented** = loaded + passing self-check/tests · **partial** = exists with named gaps · **planned** = Tier-3/optional, design note present · **blocked** = loads broken (see NEEDS.md).
 
@@ -11,7 +11,7 @@ Statuses: **implemented** = loaded + passing self-check/tests · **partial** = e
 | ✅ apps | implemented | medium risk, v1.0.0 — Opens desktop apps from a fixed alias list or PATH (never through a shell), or focuses an open window. Wraps d |
 | ✅ automation | implemented | medium risk, v1.0.0 — "When X, do Y" rules the owner sets in plain words: a new file in a folder, battery low, disk space low, CPU o |
 | ✅ desktop | implemented | medium risk, v1.0.0 — Desktop & OS control: minimize/maximize/close windows, clipboard, screenshots and screen reading (local vision |
-| ✅ meta | implemented | low risk, v1.0.0 — About ISHTI itself: skill health (runs every skill's self-check), what it logged as missing in NEEDS.md, a per |
+| ✅ meta | implemented | low risk, v1.1.0 — About ISHTI itself: skill health (runs every skill's self-check), what it logged as missing in NEEDS.md, a per |
 | ✅ screen_control | implemented | high risk, v1.0.0 — Real mouse, keyboard and scroll control of this PC: click at coordinates or on the text you name (the screen i |
 | ✅ screen_understand | implemented | low risk, v1.0.0 — Look at any window, region or the whole screen and answer questions about it: 'what does the error on my scree |
 | ✅ security | implemented | high risk, v1.0.0 — Password strength (zxcvbn) and breach check (Have I Been Pwned range API - only 5 characters of a hash leave t |
@@ -52,6 +52,7 @@ Statuses: **implemented** = loaded + passing self-check/tests · **partial** = e
 | ✅ Async task manager (priority queue, cancel cascade, GPU semaphore, checkpoints) | implemented | ishti.taskmgr — D1-D5; self-check + tests/test_prompt3_skills.py |
 | ✅ taskctl skill (list/pause/resume/cancel by voice) | implemented | ishti/skills/taskctl — D4 |
 | ✅ calendar | implemented | medium risk, v1.0.0 — ISHTI's own calendar (no Outlook account on this PC): add events (daily/weekly repeats) with a clash warning a |
+| ✅ chat_digest | implemented | low risk, v1.0.0 — The 24-hour chat digest: reads (READ-ONLY) every chat, group and community the owner saw in the last rolling 2 |
 | ✅ digest | implemented | low risk, v1.0.0 — The daily brief: weather, next prayer, today's reminders, markets watchlist, top headlines and screen time, ga |
 | ✅ docs | implemented | medium risk, v1.0.0 — Documents, PDF and Office: merge/split/compress PDFs, extract PDF tables to Excel, Word<->PDF through Microsof |
 | ✅ focus | implemented | medium risk, v1.0.0 — Focus sprints (Pomodoro): start a timed sprint on a task, a countdown the background loop checks, a spoken ann |
@@ -69,6 +70,7 @@ Statuses: **implemented** = loaded + passing self-check/tests · **partial** = e
 | ✅ Skill failover inside agents (next skill on repeated failure) | implemented | ishti.agents._run_agent — C5 |
 | ✅ braintrain | implemented | medium risk, v1.0.0 — The brain fine-tuning pipeline, conversational: how many training examples are logged, export the curated data |
 | ✅ dev | implemented | medium risk, v1.0.0 — Development: run a pasted Python snippet (sandbox folder, time limit) or a project script, git status/log, com |
+| ✅ skill_creator | implemented | high risk, v1.0.0 — When nothing I have can do what you asked, I research it, design it, build it, test it in a sandbox, do the ta |
 | ✅ skillsmith | implemented | high risk, v1.0.0 — Grows ISHTI: installs a skill from a GitHub repo or has the coder model write a new one - validates the skill  |
 
 ## Domain 27 — Observability & Monitoring
@@ -147,6 +149,7 @@ Statuses: **implemented** = loaded + passing self-check/tests · **partial** = e
 | Skill | Status | Notes |
 |---|---|---|
 | ✅ browser | implemented | high risk — Drives a real (visible, isolated-profile) browser through the Playwright MCP server: the local LLM plans tool  |
+| 🟡 internet_reach | partial | medium risk — ISHTI's capability layer for the internet (Agent-Reach design, MIT): an ordered backend registry per platform  |
 | ✅ online_fallback | implemented | high risk — For jobs this PC can't do locally (heavy media and conversions): finds a free online tool (reusing ones that w |
 | ✅ web_fetch | implemented | low risk — Reads a URL given in the request (direct HTTP, then the local headless browser) and answers about it with the  |
 | ✅ web_search | implemented | low risk — Live internet answer: multi-provider search (Bing Lite, Wikipedia, GitHub, arXiv, Playwright fallback), reads  |

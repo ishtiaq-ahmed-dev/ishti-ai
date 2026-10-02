@@ -2,6 +2,10 @@
 
 Rule: no feature may be silently dropped. Dispositions: PORT (as-is, local/Windows) · ADAPT (local/Windows replacement) · IMPROVE (ISHTI has it; merge best of both + measured before/after) · OPT-IN (cloud/account; OFF by default, user keys, consent, read-only unless T2, local data handling) · SKIP-WITH-PROOF (impossible/not allowed; justification + NEEDS.md entry).
 Sources verified against the pins in `VENDOR_PINS.md` on 2026-10-01; per-repo reads in `docs/repos/*.md`.
+Re-audited against the newest upstream at project end (2026-10-02, `COMPLETENESS_AUDIT.md` run 2):
+open-dots / hey-jev / agent-reach unchanged at their pins; ecc moved `c70874f` -> `ef648e0` (release 2.2.3 + ECC-only
+naming + ja-JP docs - no new features); coucou moved `f6f7c93` -> `8a5c263` (Linux beta + pill catalog/multi-provider
+chat) -> rows COU-23..COU-25 below.
 Status legend: `mapped` (disposition set, awaiting build) · `tested` (test ID green 3x) · `blocked` (NEEDS.md) · `proved-skip`.
 
 ## open-dots (pin 5abe1b3)
@@ -156,6 +160,9 @@ Status legend: `mapped` (disposition set, awaiting build) · `tested` (test ID g
 | COU-20 | coucou | macOS notch app (SwiftUI, App Store entitlements, xcodegen) | NotchBuddy/ | n/a (Windows) | SKIP-WITH-PROOF | hardware/platform-only (MacBook notch, App Store, entitlements); Windows top-edge island covers the idea (COU-01). NEEDS.md | T1 | none | T-C20 | proved-skip | NotchBuddy/ |
 | COU-21 | coucou | Hook install for Claude Code / Gemini CLI / Antigravity (mac) | Settings installers | n/a for ISHTI runtime | ADAPT | ISHTI's own hooks: relay accepts events from ISHTI dispatcher + any local agent via coucou_agent-style field (windows pipe pattern works cross-terminal) | T1 | COU-12 | T-C21 | mapped | docs/AGENTS.md |
 | COU-22 | coucou | Safe-link handling: only http/https open from overlay | SafeWebURL.swift, tests | untrusted.py + phishing_check | IMPROVE | adopt allow-list scheme validation for any link rendered in overlay; test javascript:/file: rejected | T1 | COU-01 | T-C22 | mapped | SafeWebURL.swift |
+| COU-23 | coucou | Linux support: layer-shell island, Unix-socket hook relay, AppImage/CI packaging | platform/linux.rs, hook/src/unix.rs, linux.yml (upstream 8a5c263, post-pin) | n/a (Windows desktop) | SKIP-WITH-PROOF | Post-pin upstream addition (Linux beta). ISHTI targets Windows 11 only; no Linux hardware/target and no owner ask. The Windows equivalents (island COU-01, relay COU-13) are already built. NEEDS.md | T1 | none | T-C23 | proved-skip | upstream diff f6f7c93..8a5c263 |
+| COU-24 | coucou | Pill catalog: declare your own tools in Settings (install/uninstall + inline diff preview) | PillCatalog.swift (upstream adfef6b, post-pin) | desktop/overlay/integrations.py + orchestrator/install_ops.py | ADAPT | Already covered: COU-08 provider pills (OFF until explicit opt-in) + COU-15 backup/diff/confirm/ownership-scoped merge. Recorded so the upstream delta is explicitly dispositioned; no new build needed | T1 | COU-08 | T-C08 + T-C15 | tested | upstream diff adfef6b |
+| COU-25 | coucou | Multi-provider chat (Google/OpenAI keys, per-provider model pick, provider-change animation) | ClaudeService.swift, SettingsView.swift (upstream adfef6b, post-pin) | ISHTI local chat (planner) + model ladder; cloud = OPT-IN | OPT-IN | Post-pin upstream addition. Cloud LLM providers stay OFF by default (same rationale as COU-19, local-only invariant); if ever enabled: keys in Credential Manager, explicit consent, per-provider choice mirrored from the ladder. Animation folds into COU-10 | T2 | COU-10 | T-C25 | mapped | upstream diff adfef6b |
 
 ## Summary counts (by disposition, excluding proved-skip rows counted separately)
 
@@ -165,7 +172,7 @@ Status legend: `mapped` (disposition set, awaiting build) · `tested` (test ID g
 | ecc | 30 | 15 | 0 | 11 | 2 | 2 |
 | hey-jev | 23 | 2 | 5 | 14 | 0 | 2 |
 | agent-reach | 30 | 6 | 2 | 10 | 11 | 1 |
-| coucou | 22 | 11 | 2 | 4 | 1 | 4 |
-| **Total** | **128** | **36** | **13** | **53** | **17** | **9** |
+| coucou | 25 | 11 | 3 | 4 | 2 | 5 |
+| **Total** | **131** | **36** | **14** | **53** | **18** | **10** |
 
 Every SKIP-WITH-PROOF row is mirrored in `NEEDS.md` (Section "SKIP-WITH-PROOF"). Counts are re-derived by script in `COMPLETENESS_AUDIT.md`; any row added there must appear here.

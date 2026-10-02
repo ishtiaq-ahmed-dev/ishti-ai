@@ -19,13 +19,24 @@ Master log lives in `PROGRESS.md`; this file is the repo-integration resume poin
 6. `NEEDS.md` N27-N38 (9 skip proofs + hey-jev license ask + Windows-Sandbox elevation + OPT-IN enablement list).
 7. `THIRD_PARTY_NOTICES.md` written.
 
-## Next (resume here)
+## Done (Phase 4-6)
 
-8. PHASE 4 build, merge order: WP-OD -> WP-REACH -> WP-ECC -> WP-JEV -> WP-INTEGRATE(partial) -> WP-COUCOU.
-   Each feature: implement -> unit tests -> feature test -> peer review -> security review -> integration test
-   (full offline suite after each merge). New skills start DISABLED (T2 enable), manifest convention.
-9. PHASE 5: TEST_RESULTS.md (per-feature, per-repo 3x-green, security, voice, overlay, concurrency, lifecycle, regression).
-10. PHASE 6: review gate; COMPLETENESS_AUDIT run 2 vs newest upstream; REVIEW_SIGNOFF.md; FINAL_REPORT.md verdict.
+8. PHASE 4 build, merge order WP-OD -> WP-REACH -> WP-ECC -> WP-JEV -> WP-INTEGRATE(partial) -> WP-COUCOU -
+   **complete** (14 commits). Each feature: implement -> unit tests -> feature test -> peer review -> security
+   review -> integration test (full offline suite after each merge). New skills start DISABLED (T2 enable).
+9. PHASE 5: `TEST_RESULTS.md` **PART 2** - per-feature suites + 3x-green logs, measured before/after numbers,
+   security numbers, regression (442/442 green, `_work/suite_final_verify.log`).
+10. PHASE 6: `REVIEW_SIGNOFF.md` (gate over the branch, triaged; 0 real high findings) +
+    `FINAL_REPORT_repo_integration.md` (per-repo verdicts) + `COMPLETENESS_AUDIT.md` run 2 vs newest upstream
+    (open-dots/hey-jev/agent-reach unchanged; ecc moved docs-only; coucou moved -> COU-23..25 dispositioned).
+`FEATURE_CATALOG.md` regenerated from an extended generator (124 skills + 31 core rows, idempotent),
+`docs/SKILL_CATALOG.md`, `docs/API_CONTRACT.md` §12, `THIRD_PARTY_NOTICES.md` addendum, `REPO_FEATURE_MATRIX.md`
+(131 rows).
+
+## Remaining (owner-gated only - no code work outstanding)
+
+- N36 hey-jev license ask; N39 owner-approved live-STT set; N22/N23 real Telegram/WhatsApp pairing;
+  N7 microphone hardware; cua-driver install. See `FINAL_REPORT_repo_integration.md` section "Blocked".
 
 ## Environment facts measured 2026-10-01 (do not re-claim unmeasured)
 

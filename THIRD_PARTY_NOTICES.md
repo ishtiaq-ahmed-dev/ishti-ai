@@ -43,3 +43,19 @@ installer discipline, pill lifecycle, log scrubbing. ISHTI's overlay code is ori
 yt-dlp, gh CLI, feedparser, Jina Reader (r.jina.ai), bili-cli/OpenCLI/twitter-cli/rdt-cli (OPT-IN
 login-state backends) — each keeps its own license; ISHTI only shells out to locally installed
 binaries after a doctor probe, and none is auto-installed (installs are T2-gated).
+
+## Implementation addendum (2026-10-02, WP-OD/ECC/JEV/COUCOU builds)
+
+- All five repos remain design references ONLY. No source text, assets, names, rule text or config
+  is copied or redistributed; `vendor/` stays a read-only pin.
+- The overlay mascot, its SVG art and its chime are ISHTI originals (`desktop/overlay/mascot.py`,
+  marker `data-ishti-mascot="pebble-v1"`); coucou's Mochi character, icons and 28 sounds are NOT
+  imitated (enforced by assertions in `tests/test_overlay_mascot.py`).
+- `orchestrator/quality_gate.py` uses the ruff already present in the project venv; no npm package
+  (`ecc-universal`, `ecc-agentshield`, hookify) is installed or invoked.
+- hey-jev has no license: only generic behaviour patterns (PTT, dictation chunking, duration
+  phrasing) were re-implemented from the public README/description; owner outreach tracked at
+  NEEDS.md N36.
+- Local runtimes already owned by ISHTI remain the only STT/TTS/LLM: faster-whisper, Fish Speech
+  (if enabled) and Ollama. No cloud STT/LLM/TTS call exists in any new module (gateway refuses
+  non-loopback endpoints outright).

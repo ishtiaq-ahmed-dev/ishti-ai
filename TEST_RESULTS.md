@@ -563,3 +563,75 @@ Result: **13/13 PASS** (mock Telegram Bot API; the same suite re-runs against th
 | Real-bot end-to-end run (RC-15) | N22: token via @BotFather + pairing produces the owner's numeric ID |
 | cua-driver install + 5-task protocol | owner-gated installer (read-before-run); N24/N25 |
 | Live VRAM/grounding measurements | N24: Ollama not running all session (not started by me, per safety rules) |
+
+---
+
+# PART 2 - 5-repo integration (2026-10-02, branch `feat/repo-integration`)
+
+Scope: the WP-OD / WP-REACH / WP-ECC / WP-JEV / WP-COUCOU work packages; every row of
+`REPO_FEATURE_MATRIX.md` (128 rows) has a disposition and the shipped modules are catalogued as
+`FEATURE_CATALOG.md` CORE-17..CORE-31. Raw run logs are in `_work/` (named below where cited).
+The working tree also contained the owner's pending Cycle-4 performance edits (vram/models/
+gateway-adjacent files); they were present during the runs below and are not part of this branch's commits.
+
+## 1. Final offline regression (all WPs merged)
+
+- Command: `venv\Scripts\python.exe -m pytest tests -q -p no:warnings` (pytest.ini excludes the generated
+  per-skill suites, which run separately via `tests/run_skill.py`).
+- Result: **442 collected / 442 passed, 0 failed, 0 errors, exit code 0** - log `_work/suite_final_verify.log`
+  (442 progress dots, no `F`/`E`). Re-run of the same command also exited 0 before the evidence docs were written.
+- Each new suite was run 3 consecutive times green before its commit; those per-file runs are in `_work/`
+  (`focused_c2_*.log`, `gate_suite*.log`, `c4_suite*.log`, `browser_3x_run*.log`, `suite_*_final*.log`).
+
+## 2. New suites and what each proves
+
+| Suite (collected tests) | Acceptance proven |
+|---|---|
+| `tests/test_governed_search.py` (10) | Loopback-only search; non-loopback/lookalike/cloud endpoint refused BEFORE any transport; results fenced as untrusted; `cloud_calls == 0` |
+| `tests/test_workspace_confinement.py` (27) | realpath root confinement: `..`, drive-relative, UNC, ADS, reserved devices, trailing dot/space, over-long names, symlink/junction escapes refused; size caps |
+| `tests/test_api_sessions.py` (12) | Hashed in-memory sessions (SHA-256 only, restart-invalid), rotation kills old token, TTL/idle expiry, cookie posture, cross-site 403 before auth |
+| `tests/test_quality_gate.py` (8) | ruff lint/format + code/security reviewer roles -> one verdict; dangerous draft (eval) blocked from `skill_creator.register()` |
+| `tests/test_install_state.py` (7) | Drift vs baseline; auto-fix limited to switching off a broken skill; owner prefixes never touched; doctor check [7b] |
+| `tests/test_install_ops.py` (7) | Backup-first writes, unified diff, confirm veto, ownership-tagged merge (nested/foreign entries untouched), scoped uninstall |
+| `tests/test_model_route.py` (7) | One decision object with ordered fallback chain; stale config names resolved via installed alternatives; decision performs no load |
+| `tests/test_session_schema.py` (7) | Harness-neutral session envelope: strict validate, forgiving make, bus emit; junk -> problems, not exceptions |
+| `tests/test_plan_view.py` (6) | Loopback-only plan review page; markup escaped (never injected); decisions appended bounded; non-loopback host refused |
+| `tests/test_dictation.py` (10) | PTT + dictation only in explicit sessions; no session -> nothing records; failed chunks never pasted, holes preserved with audio path |
+| `tests/test_overlay_pipe.py` (9) + `test_relay_never_blocks.py` (4) + `test_hooks_relay.py` (14) | Owner-only pipe DACL; 64 KiB cap (oversized discarded); send never blocks past the 300 ms budget; single-use action-bound approvals; questions popped; junk -> None |
+| `tests/test_overlay_window.py` (8) | Island window state payload v1; levels clamped/bounded; click-through; hook events drive pills/busy/unread |
+| `tests/test_channels_inbox.py` (9) | Sandbox inbox: unique names, single-use take, traversal-safe, oldest-first sweep; text drops fenced as untrusted data |
+| `tests/test_overlay_mascot.py` (9) | Original "Pebble" marker art (no imitation of coucou assets); clamped gaze; timed mood revert; once-only greet; synthesized chime |
+| `tests/test_overlay_integrations.py` (9) | 7 provider pills OFF until explicit opt-in: zero credential/network calls, idle->paused, missing-cred never fetches |
+
+Total: 163 tests in the 17 integration suites, all inside the 442-test run above.
+
+## 3. Measured improvements (BEFORE -> AFTER)
+
+| Feature (row) | Metric | BEFORE | AFTER | How measured |
+|---|---|---|---|---|
+| Spoken-duration parsing (JEV-17) | Correct parses over 26 fixed spoken phrases | **10/26 (38.5%)** | **26/26 (100%)** | `_work/duration_before.json` / `_work/duration_after.json` (same phrases, same parser entry) |
+| Post-STT vocabulary correction (JEV-08) | Correction coverage over 13 known mishearings | **0/13 (0%)** | **13/13 (100%)** | `tests/test_voice_vocabulary.py::test_fixed_set_measured_coverage` (layer bypassed = identity vs `apply()` wired into `voice.transcribe`) |
+| Model route + fallback chain (ECC-13) | Decision coverage / per-decision latency | **0/4 roles, 0.0001 ms** | **4/4 roles, 0.0016 ms** (budget < 5 ms) | `_work/measure_route.py` -> `_work/route_measure.json` (injected installed list, no load) |
+| Pre-merge quality gate (ECC-01/04) | Gate verdict coverage | no gate existed | one verdict over ruff lint/format + code/security reviewers; high findings block install | `tests/test_quality_gate.py` (8 tests, seeded bad files) |
+| Security scan of ISHTI's own surfaces (ECC-06) | Findings by severity | n/a | **23 findings, 0 high** (23 medium: wildcard net scopes, sandboxed destructive-file calls) | `scan_all()` re-run 2026-10-02 (command recorded in this part) |
+| Overlay hook relay (COU-12/13) | Send budget | no overlay existed | bounded at 300 ms; oversized (64 KiB cap) discarded, never delivered | `tests/test_relay_never_blocks.py` + `tests/test_overlay_pipe.py` |
+
+## 4. Invariants held (each has a test)
+
+- Zero cloud calls by construction: gateway refuses non-loopback before transport; integration pills fetch nothing until owner opt-in.
+- Owner-only IPC: pipe DACL + restricted token + impersonation; no other-user read/write.
+- Cross-site requests refused 403 BEFORE auth, regardless of token.
+- Sessions hashed at rest and restart-invalid; refresh rotates and kills the old token.
+- Mic stays OFF unless a session exists; failed/empty dictation chunks are never pasted.
+- Installer merge/uninstall never touch foreign or nested config entries; owner prefixes untouched.
+
+## 5. BLOCKED (owner/environment, with reasons)
+
+| Item | Why |
+|---|---|
+| hey-jev code reuse | Repo has **NO LICENSE**: behaviour-only integration, no code copied (N36) |
+| coucou visual assets | All-rights-reserved: original ISHTI art only; mascot tests assert no imitation markers |
+| Live microphone hardware / live STT accuracy set | N7 hardware absent; N39 owner-approved voice test set missing |
+| `desktop_control` live use | cua-driver not installed (N24/N25); skill ships manifest-DISABLED |
+| Real Telegram end-to-end | N22: token + pairing from the owner |
+
