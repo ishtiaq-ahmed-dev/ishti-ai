@@ -47,6 +47,9 @@ Empty lists are fine. If nothing is worth remembering, reply {{}}."""
 
 PROMPT_RE = re.compile(r"\{.*\}", re.S)
 NEVER_RELATION = "unknown"
+IDENTITY = re.compile(r"\bname(?:'s|\s+is|d)\b|\bcalled\b|\b(?:brother|sister|mother|father|son|daughter|wife|husband|cousin|uncle|aunt|"
+                      r"nephew|niece|grand(?:father|mother))\b", re.I)
+TAUGHT = re.compile(r"\bhow\s+i\s+(?:like|want|prefer)\b|\b(?:always|every\s+time|whenever|when\s+i\s+say|workflow|procedure|steps?|from\s+now\s+on|first\b.{0,80}\bthen)\b", re.I)
 
 
 def extract(text: str, reply: str) -> dict:
@@ -102,6 +105,10 @@ def apply(d: dict, request: str = "") -> dict:
         if not f:
             continue
         explicit = _explicit_in_request(req_low, f)
+        if not explicit and IDENTITY.search(f):
+            # names and family are only ever what the owner said, never a guess: the extractor stored "The owner's name is
+            # Bai." and "Your brother's name is Ishaq Ahmed" (wrong spelling) as inferences, and ISHTI repeated them
+            continue
         r = memory.reconcile(f, source="explicit_user" if explicit else "inference",
                              importance=0.75 if explicit else 0.45,
                              confidence=0.95 if explicit else 0.5)
@@ -111,7 +118,10 @@ def apply(d: dict, request: str = "") -> dict:
         if e:
             memory.episodic(e)
             stored["episodic"] += 1
-    for p in (d.get("procedural") or [])[:3]:
+    # a procedure is something the owner TAUGHT ("whenever I say X, do Y", "first ... then ..."), not one turn the extractor
+    # generalised: "assignment submission workflow: 1. identify the file to submit" made ISHTI ask for a file path for a to-do
+    taught = bool(TAUGHT.search(req_low))
+    for p in (d.get("procedural") or [])[:3] if taught else []:
         if isinstance(p, dict) and p.get("name") and p.get("steps"):
             memory.procedural(str(p["name"])[:120], steps=[str(s)[:200] for s in p["steps"]][:12],
                               keywords=[str(p["name"]).lower()])
@@ -184,6 +194,9 @@ def handle_command(text: str) -> str | None:  # noqa: C901
     about my family', 'what have you learned from my behavior', 'don't remember this
     conversation'. Returns the reply, or None when the text is not a memory command."""
     t = (text or "").strip()
+    from ishti.skills.relationships import skill as relationships
+    if relationships.match(t):  # "my brother is Irfan" / "who is my brother": the relationship graph is the one place kin lives
+        return None
     if INCOG_ON_RE.search(t):
         incognito.set_enabled(True)
         return "Incognito mode ON for this conversation - nothing from it is being written to memory."

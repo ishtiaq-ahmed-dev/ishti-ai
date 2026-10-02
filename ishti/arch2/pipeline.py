@@ -61,7 +61,9 @@ FINAL_SYSTEM = """You are ISHTI. Write the final answer to the owner.
 Rules: clean readable formatting; bullet points for lists; a Markdown table for comparisons
 or numbers; no unrequested code; direct and concise; reply in English, Urdu or Pashto -
 whichever the owner used.
-Tool results and the context below are your evidence - never invent what they do not show."""
+Tool results and the context below are your evidence - never invent what they do not show.
+If a tool failed or returned nothing useful, say so in one sentence and what you can do next. Never claim an action the
+tool results do not show (a message sent, a file edited, a task added)."""
 
 CONFIRM_RE = re.compile(r"\b(?:send|message|reply|delete|remove|erase|pay|buy|order|purchase|post|publish|"
                         r"install|uninstall|kill|shut\s*down|restart|transfer|forward|empty)\b", re.I)
@@ -116,14 +118,24 @@ def _needs_confirmation(text: str) -> bool:
     return bool(CONFIRM_RE.search(text or ""))
 
 
-DETERMINISTIC = {"sudoku", "calc"}
-
-
 def _run_tool(skills, name, text, session, tool_log):
     try:
         return skills[name].run(text, session) or {"reply": f"The {name} skill had nothing to do for this."}
     except Exception as exc:  # same containment as the dispatcher: the turn carries on
         return {"reply": f"The {name} skill failed: {type(exc).__name__}: {str(exc)[:140]}"}
+
+
+def _not_a_repeat(reply: str, session) -> str:
+    """Small models sometimes start a new answer by copying the previous one word for word ("how many days until eid" came back
+    as "15% of 2400 = 360 ..."). The copied part is cut; if nothing else is left, the copy is not passed off as an answer."""
+    prev = next((str(m.get("content") or "").strip() for m in reversed(session.get("history", [])) if m.get("role") == "assistant"), "")
+    if len(prev) < 12 or prev not in reply:
+        return reply
+    rest = reply.replace(prev, "").strip()
+    return rest or LOST
+
+
+LOST = "Sorry - I lost the thread there. Could you say that once more?"
 
 
 def _parse_tool_call(text: str):
@@ -132,24 +144,22 @@ def _parse_tool_call(text: str):
     d = parse_json(text)
     if isinstance(d, dict) and isinstance(d.get("tool"), str) and d["tool"].strip():
         return {"tool": d["tool"].strip(), "input": str(d.get("input") or "")}
+    # Spark/GLM-style native call: <tool_call>web_search<arg_key>query</arg_key><arg_value>...</arg_value></tool_call> - it was
+    # shown to the owner as text instead of being run (owner-style test, "how many days until eid")
+    if m := NATIVE_CALL.search(text or ""):
+        args = dict(re.findall(r"<arg_key>\s*(.*?)\s*</arg_key>\s*<arg_value>\s*(.*?)\s*</arg_value>", m["args"], re.S))
+        value = args.get("input") or args.get("query") or next(iter(args.values()), "")
+        return {"tool": m["tool"].strip(), "input": str(value)}
     return None
+
+
+NATIVE_CALL = re.compile(r"<tool_call>\s*(?P<tool>[\w.-]+)(?P<args>.*?)(?:</tool_call>|$)", re.S)
 
 
 def run(request: str, session, skills: dict) -> dict:
     """The two-pass turn. session is the dispatcher's View (trace, history, pending...).
     Returns {"reply", "sources"} like any skill."""
     from ishti import llm  # openai import lives here; arch2 must load without it
-
-    # Exact-answer skills (a solver, sympy) answer by themselves: asking the 14B model first only risked a wrong
-    # "solution" in prose (arch_compare sudoku_row1) and cost a whole model turn.
-    if DETERMINISTIC & set(skills):
-        from ishti import router
-        dec = router.route(request, skills)
-        if dec.get("skill") in DETERMINISTIC and dec.get("source") == "rule":
-            out = _run_tool(skills, dec["skill"], request, session, [])
-            if isinstance(out, dict) and out.get("reply") and "had nothing to do" not in out["reply"]:
-                trace(session, "tool", f"{dec['skill']}: answered exactly, no model needed", status="done")
-                return {**out, "mode": "ARCH2"}
 
     context = retrieval.assemble_context(request)
     # D3: the conversation-state summary (active topic / task / constraints) is pinned
@@ -158,7 +168,7 @@ def run(request: str, session, skills: dict) -> dict:
     if state_summary:
         context = f"CONVERSATION STATE:\n{state_summary}\n\n{context}"
     tool_block = _tool_manifests(skills, request)
-    system1 = SYSTEM_PASS1.format(tools=tool_block, context=context or "(none)")
+    system1 = llm.style() + "\n\n" + SYSTEM_PASS1.format(tools=tool_block, context=context or "(none)")
     msgs = session.get("history", [])[-8:] + [{"role": "user", "content": request}]
 
     tool_log, sources = [], []
@@ -169,7 +179,11 @@ def run(request: str, session, skills: dict) -> dict:
         call = _parse_tool_call(reply)
         if not call:
             trace(session, "model", "answered directly", status="done")
-            return {"reply": reply, "sources": sources, "mode": "ARCH2"}
+            clean = _not_a_repeat(reply, session)
+            if clean is LOST and round_no == 0:  # it only repeated the last answer: ask once more without the history it copied
+                msgs = [{"role": "user", "content": request}]
+                continue
+            return {"reply": clean, "sources": sources, "mode": "ARCH2"}
         name, tool_input = call["tool"], call["input"]
         if name not in skills or skills[name].status == "broken":
             trace(session, "tool", f"model asked for unknown tool '{name}'", status="error")
@@ -219,8 +233,9 @@ def run(request: str, session, skills: dict) -> dict:
                            for t in tool_log) or "(no tools were needed)"
     state_line = session.get("state_summary") or ""
     user_block = f"User request: {request}" + (f"\n\nConversation context (the topic is fixed - do not drift):\n{state_line}" if state_line else "")
-    final = (llm.chat([{"role": "user", "content": f"{user_block}\n\n{evidence}\n\nWrite the final answer."}],
-                      role="main", system=FINAL_SYSTEM, temperature=0.3, max_tokens=1024,
+    final_system = llm.style() + "\n\n" + FINAL_SYSTEM  # the same rules as every answer: honest about actions, names exact, brief
+    final = (llm.chat(session.get("history", [])[-6:] + [{"role": "user", "content": f"{user_block}\n\n{evidence}\n\nWrite the final answer."}],
+                      role="main", system=final_system, temperature=0.3, max_tokens=1024,
                       on_token=session.get("on_token")).content or "").strip()
 
     # D5: is the answer about the resolved topic? A deterministic floor (no model) keeps a
@@ -235,10 +250,10 @@ def run(request: str, session, skills: dict) -> dict:
             final = (llm.chat([{"role": "user", "content":
                                 f"{user_block}\n\n{evidence}\n\nYour previous draft ignored the topic. "
                                 f"Write the final answer ABOUT: {st.active_topic}."}],
-                              role="main", system=FINAL_SYSTEM, temperature=0.2, max_tokens=1024).content or final).strip()
+                              role="main", system=final_system, temperature=0.2, max_tokens=1024).content or final).strip()
     except Exception as _exc:
         swallowed('ishti/arch2/pipeline.py:run', _exc)
-    return {"reply": final or "I could not produce an answer - try rephrasing.", "sources": sources,
+    return {"reply": _not_a_repeat(final, session) if final else "I could not produce an answer - try rephrasing.", "sources": sources,
             "mode": "ARCH2", "tools": tool_log}
 
 

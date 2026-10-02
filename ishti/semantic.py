@@ -71,7 +71,10 @@ class Semantic:
         if col.count() == 0:
             return []
         res = col.query(query_embeddings=embed([f"search_query: {query}"]), n_results=min(k, col.count()))
-        return [d for d, dist in zip(res["documents"][0], res["distances"][0]) if dist <= max_distance]
+        # Only what the OWNER said comes back. ISHTI's own old replies were fed to the model as "relevant past context" and it
+        # repeated them word for word - including wrong ones ("Ishan Ahmed, it seems there might be a mix-up..." came back as the
+        # answer to "If I am speaking, don't speak"). The owner's words are the memory; ISHTI's past answers are not evidence.
+        return list(dict.fromkeys(d.split("\nISHTI:")[0] for d, dist in zip(res["documents"][0], res["distances"][0]) if dist <= max_distance))
 
 
 _sem = None

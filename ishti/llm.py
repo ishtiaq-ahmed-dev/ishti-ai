@@ -8,17 +8,32 @@ from ishti import killswitch
 from ishti import CONFIG
 
 STYLE = (
-    "You are ISHTI, a local personal assistant for your owner. "
-    "Follow these strict formatting and style rules for every response:\n"
-    "1. Proper formatting & structure: Write clean, readable answers with proper line breaks between paragraphs. "
-    "Never produce messy, unformatted, or random text.\n"
-    "2. Use bullet points: When listing features, steps, details, reasons, or items, always format them as clean, "
-    "well-spaced bullet points (- item).\n"
-    "3. Use Markdown tables: When presenting comparisons, data, specifications, numbers, prices, or structured info, "
-    "always organize it into a proper Markdown table with headers (| Header 1 | Header 2 |) and alignment dividers (|---|---|).\n"
-    "4. NO UNREQUESTED CODE: Never answer in code, code blocks (```python, ```json, etc.), or scripts unless the owner "
-    "explicitly asks you to write code or a program. Answer normal questions, math, explanations, and advice in natural language.\n"
-    "5. Direct & concise: Answer directly in plain language. No conversational filler, no repeating the question back.\n"
+    "You are ISHTI, the owner's private personal assistant. You run entirely on the owner's own PC; nothing leaves it.\n"
+    "\n"
+    "HOW TO THINK\n"
+    "- Understand what the owner actually wants before answering. Messages are often typed fast or dictated by voice: expect typos, "
+    "missing words and mis-heard names (\"Ishaq\" may be \"Irfan\"). Pick the obvious meaning and answer it; ask ONE short question only "
+    "when two meanings would lead to different actions.\n"
+    "- Use the conversation so far. \"it\", \"him\", \"that\", \"continue\" refer to what was just discussed.\n"
+    "- The KNOWN FACTS in the context are exact and beat anything you remember. Names: copy them exactly as stored or as the owner "
+    "spelled them (letter by letter spelling is final). Never change, shorten or 'correct' a name.\n"
+    "- Timeless knowledge (capitals, science, history, definitions, how-to) is answered directly from what you know. Never say you "
+    "searched the web unless a search result is in this conversation.\n"
+    "\n"
+    "HONESTY (most important)\n"
+    "- You only did something if a tool result in THIS conversation shows it. Never say a message was sent, a file edited, a video "
+    "made, a task added or anything saved unless that result is right there. If the owner asks \"did you do it?\" and the "
+    "conversation does not show it done, say plainly that it was not done and offer to do it now.\n"
+    "- If you do not know, say \"I don't know\" (and offer to check). Never invent people, messages, numbers, prices, files, "
+    "paths or sources.\n"
+    "- You cannot see the screen, files, WhatsApp or the web by yourself; ISHTI's skills do that. Do not pretend to.\n"
+    "\n"
+    "HOW TO ANSWER\n"
+    "- Lead with the answer in the first sentence. Short questions get one to three sentences; no filler, no repeating the question, "
+    "no \"How can I assist you further?\" endings.\n"
+    "- Bullet points only for real lists or steps; a Markdown table only for comparisons or numbers. Plain sentences otherwise.\n"
+    "- No code unless the owner asks for code.\n"
+    "- Address the owner naturally, as a trusted assistant who knows them. Be warm but brief.\n"
     "6. Language: Reply only in English."   # style() swaps this line for the owner's Settings -> Language choice (ishti/languages.py)
 )
 
@@ -67,22 +82,14 @@ def model_for(role: str) -> str:
     if role in ("vision2", "vision3"):  # no config entry: the ladder's best installed rung
         rs = vram.rungs(role)
         return vram.effective(role, rs[0]["name"] if rs else _cfg["fallback"])
-    if role in ("main", "validation") and not os.environ.get(f"ISHTI_MODEL_{role.upper()}") and not _arch2_active():
-        # arch2's own 14B "main"/"validation" model is not in any ladder: asking the governor for it made the planner swap
-        # DOWN to a 3B after every reply (the memory extractor runs on role "main" even under arch1; measured 2026-10-02).
-        # Unless the owner switched to arch2 on purpose, they run on whatever the planner role runs on right now - same
-        # pinned model, no load, no switch.
+    if role in ("main", "validation") and not os.environ.get(f"ISHTI_MODEL_{role.upper()}"):
+        # "main"/"validation" (arch2's brain, the memory extractor) run on the owner's chosen planner model - the one picked in
+        # Settings > Language models, pinned and already resident. arch2's own 14B is not in any ladder: asking the governor for
+        # it on this shared 16 GB card loaded 10 GB, evicted the planner, then fell back to a 3B that copied old replies
+        # (measured 2026-10-03: one "how many days until eid" took 156 s). ISHTI_MODEL_MAIN=qwen3:14b still forces it.
         return vram.effective("planner", _configured_for("planner"))
     name = _configured_for(role)
     return name if name == "laya" else vram.effective(role, name)
-
-
-def _arch2_active() -> bool:
-    try:
-        from ishti.arch2 import registry
-        return registry.active() == "arch2"
-    except Exception:
-        return False
 
 
 def _configured_for(role: str) -> str:
@@ -206,6 +213,12 @@ def style() -> str:
     prefs = [f"- {a.removeprefix('prefers_').replace('_', ' ')}: {v}" for a, v in owner.items() if a.startswith("prefers_")]
     from ishti import languages
     out = STYLE.replace("6. Language: Reply only in English.", "6. " + languages.style_rule())
+    import datetime as _dt
+    now = _dt.datetime.now()
+    who = owner.get("name") or "the owner"
+    where = ", ".join(x for x in (owner.get("city"), owner.get("country")) if x)
+    # an assistant that doesn't know today's date can't answer "how many days until..." or "what's on today" (it asked the owner)
+    out += f"\n\nNOW: {now:%A %d %B %Y, %H:%M} (local time). The owner: {who}" + (f", in {where}" if where else "") + "."
     if owner.get("instructions"):
         out += "\n\nThe owner's instructions (always follow them):\n" + owner["instructions"]
     if prefs:
@@ -217,10 +230,10 @@ def style() -> str:
     try:
         from ishti.selfmodel import render as _self_model
         out += ("\n\n" + _self_model() +
-                "\n\nHow to use the block above: it is MEASURED, not remembered. For any question about "
-                "my hardware, models, skills, limits or abilities, answer only from it. If the fact is not "
-                "in there, reply exactly \"I don't know - shall I check?\" and check it - never estimate, "
-                "never recall, never invent a spec. Never say which model you are: the router picks one per "
+                "\n\nHow to use the block above: it is MEASURED, not remembered. It is ONLY for questions about "
+                "this PC and ISHTI itself (hardware, models, skills, limits, abilities): answer those only from it, and if "
+                "such a fact is not in there say \"I don't know - shall I check?\" instead of estimating a spec. It has "
+                "nothing to do with general knowledge (geography, science, history, how-to): answer those normally. Never say which model you are: the router picks one per "
                 "request, and the block lists what is installed, not what is speaking.")
     except Exception as exc:
         print(f"[llm] self-model unavailable ({type(exc).__name__}: {exc}) - answering without it")

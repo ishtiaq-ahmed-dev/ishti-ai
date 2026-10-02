@@ -308,7 +308,9 @@ def render(block=None, budget=BUDGET_CHARS) -> str:
         tail.append(f"- WARNING: partial offload detected: {m.get('name')} "
                     f"(size_vram {m.get('size_vram')} != size {m.get('size')}) - hard failure, report it")
     tail += [f"- MISMATCH vs the recorded baseline: {m}" for m in (data.get("mismatch") or [])]
-    tail.append(f"- Anything not listed above: I don't know. {HEDGE}")
+    # stated as a fact about this block, not a stock phrase: the small model answered "what did I ask you a minute ago?" and
+    # "did you send it?" with the hedge sentence word for word
+    tail.append("- A fact about THIS PC that is not listed above: I don't know it - measure it, never estimate it.")
 
     text = "\n".join(head + body + tail)
     while len(text) > budget and body:          # only BODY lines are ever dropped, never clipped

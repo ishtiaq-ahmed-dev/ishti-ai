@@ -27,6 +27,7 @@ def _isolate(monkeypatch):
     for name in ("_remember", "_learn", "_learn_turn", "_arch2_consolidate", "_ftlog"):
         monkeypatch.setattr(D, name, lambda *a, **k: None)
     monkeypatch.setattr(D.planner, "candidate", lambda *a, **k: False)
+    monkeypatch.setattr(D, "_arch_registry", lambda: None)   # these ledgers are arch1's: the owner's arch2 setting must not reroute them
     monkeypatch.setattr(D, "preferred_language", lambda: "English")   # the owner's language lock: every reply is checked against it
     monkeypatch.setattr(D, "translate", lambda *a, **k: pytest.fail("an English reply must not go through the translator"))
 

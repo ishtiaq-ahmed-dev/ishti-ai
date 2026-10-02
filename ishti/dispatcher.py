@@ -22,7 +22,7 @@ from ishti import CONFIG, ROOT
 from ishti.facts import get_facts
 from ishti import planner, router as router_mod
 from ishti.router import route
-from ishti.skills import answer_of, ask_first, load_skills, log_need
+from ishti.skills import answer_of, ask_first, enable_skill, load_skills, log_need
 from orchestrator.memory.conversation import get_conversation_manager
 from orchestrator.memory.error_logger import ErrorLogger
 from orchestrator.response_guard import is_safe_for_history
@@ -247,6 +247,9 @@ def contextualize(text, s) -> str:
     Part D2: the Conversation State Manager resolves first (topic-anchored, deterministic, instant);
     the LLM rewriter is only asked when the state cannot resolve. Every resolved request is stored in
     the session (s["resolved_request"]) so validation and skills see WHAT we're acting on."""
+    if _rule_owned(text):  # a skill's own trigger already understands it exactly: never rewrite the owner's words
+        resolve_request(text, s)  # still updates the conversation state (topic, entities)
+        return text
     resolved = resolve_request(text, s)
     if resolved is None:
         # state had nothing to anchor on: fall back to the original LLM rewriter for FOLLOW_UP phrasings
@@ -370,6 +373,11 @@ T2_ACTION = re.compile(r"\b(?:send|message|reply|delete|remove|erase|pay|buy|ord
 # First-person claims that an action happened. Only trusted when the skill marks the run verified; a skill that
 # says it could not confirm the action gets the claim followed by an honest note (the owner's WhatsApp sends
 # were reported as done while nothing had gone out).
+ACTION_CLAIM = re.compile(r"\b(?:reminder|timer|alarm|task|message|video|file|event|meeting)s?\b[^.\n]{0,40}\b(?:has\s+been|is|was|been)\s+"
+                          r"(?:set|scheduled|added|cancel+ed|sent|saved|deleted|created|edited|opened|booked|updated)\b"
+                          r"|^\s*[-*]?\s*\**(?:reminder|timer|alarm)\s+(?:set|scheduled|cancel+ed)\b"
+                          r"|\bi(?:'ve|\s+have)?\s+(?:set|scheduled|added|cancel+ed|opened|saved|sent|created|edited|deleted|booked)\s+"
+                          r"(?:a|an|the|your|it|that|this)\b", re.I | re.M)
 CLAIM = re.compile(r"\b(?:i(?:'ve| have)?\s+(?:sent|shared|posted|published|uploaded|forwarded|moved|deleted|paid|"
                    r"ordered|booked|installed|created|saved)|(?:sent|delivered|shared|posted)\s+"
                    r"(?:it|that|this|the\s+\w+|['\"])|i\s+have\s+already\s+(?:sent|done))", re.I)
@@ -471,7 +479,10 @@ def _run(text, s, dec):
         s["trace"](type="step", skill=name, status="start", why=why(dec), text=text)
         tier = SKILLS[name].manifest.get("tier", "T1")
         try:
-            if tier == "T3" and not CONFIG.get("allow_t3", {}).get(name):  # permission check before, not after
+            if dec.get("needs_enable"):  # a switched-off skill is what this needs: turning it on is the owner's call
+                out = ask_first(s, name, f"That needs the {name.replace('_', ' ')} skill, which is switched off. Turn it on and do it",
+                                lambda n=name, t=text: enable_skill(n) and (SKILLS[n].run(t, s) or {"reply": "Turned on. Nothing to do for that."}))
+            elif tier == "T3" and not CONFIG.get("allow_t3", {}).get(name):  # permission check before, not after
                 out = {"reply": f"The {name} skill is blocked (tier T3). Enable it per skill in config.json "
                                 f"\"allow_t3\" if you really want it."}
             elif tier == "T2" and dec.get("source") != "pending" and _repeat(s, name, text):
@@ -534,6 +545,46 @@ def _run(text, s, dec):
     return name, out, dec
 
 
+_N = r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)"
+# ISHTI's research progress lines, as the microphone hears them back from the speakers (all from the owner's chat):
+# "Found three sources, opening the top three." / "We have five sources opening the top four." / "Searching the internet for-"
+ECHO = re.compile(r"\b(?:found|we\s+have)\s+" + _N + r"\s+(?:re)?sources?\s*(?:,|\.|opening|$)|\bopening\s+the\s+top\s+" + _N + r"\b|"
+                  r"^\s*searching\s+the\s+(?:internet|web)\s+for\b|\bwatching\s+the\s+internet\s+for\b|\btrying\s+a\s+different\s+search\b|"
+                  r"^\s*(?:re)?sources?,?\s+opening\b", re.I)
+LEAD_IN = re.compile(r"^\s*(?:hey|hi|hello(?!\s+world)|ok(?:ay)?|so|bro|yaar|ishti|listen|well)\b[,!.]?\s+", re.I)
+
+
+def _calm(text):
+    """ALL-CAPS typing ("WHO IS MY BROTHER") reads as normal case: names, rules and the models all expect it. Quoted text and paths
+    keep their case."""
+    # "Hey who is my brother?" / "bro, how are you" / "ok so open whatsapp": the greeting is not part of the request
+    while (m := LEAD_IN.match(text)) and len(text[m.end():].split()) >= 2:
+        text = text[m.end():]
+    letters = [c for c in text if c.isalpha()]
+    if len(letters) < 4 or sum(c.isupper() for c in letters) / len(letters) < 0.8:
+        return text
+    parts = re.split(r'("[^"]*"|\'[^\']*\'|[A-Za-z]:\\[^\s"]+)', text)
+    out = "".join(p if i % 2 else p.lower() for i, p in enumerate(parts))
+    return out[:1].upper() + out[1:]
+
+
+GENERAL = {"chat", "web_search", "memory", "deep_research"}  # open-ended: the arch2 brain decides those itself
+
+
+def _rule_owned(text):
+    """A request a skill's own trigger claims exactly ("send hi to Ali on WhatsApp", "my brother is Irfan", "remind me at 5") runs
+    that skill directly, in both architectures. arch2's brain picking among 20 tools by itself sent WhatsApp requests to web search
+    and stored the owner's brother under a misspelled name (owner's chats, 2026-10-02/03)."""
+    try:
+        dec = route(text, SKILLS)
+        if dec.get("skill") == "chat":  # "did you send it?" is answered from the conversation, never re-run or improvised
+            from ishti.skills.chat.skill import DID_YOU
+            return bool(DID_YOU.match(text))
+        return dec.get("source") in ("rule", "learned") and dec.get("skill") not in GENERAL
+    except Exception:
+        return False
+
+
 def handle(text: str, session_id: str = None, channel: str = "text", on_token=None, on_event=None) -> dict:
     """on_token(str): live stream of the reply for skills that generate it token by token.
     on_event(dict): live trace (route, plan, steps, tool calls) for the UI's Thinking panel and graph.
@@ -560,6 +611,13 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
                                     "session": sid, "channel": channel})
     s = View(shared, trace=trace, on_token=on_token)
     s["trace"](type="received", text=text, channel=channel)
+    text = _calm(text)
+    if ECHO.search(text) and len(text.split()) <= 14:
+        # ISHTI's own progress line came back through the microphone ("Found three sources, opening the top three." was
+        # transcribed and searched for, in the owner's chat): never act on it.
+        out = {"reply": "(That was my own status line coming back through the microphone - I ignored it.)", "sources": [], "silent": True}
+        return _finish(text, sid, get_conversation_manager(), s, events, t0, channel, "echo", out,
+                       {"skill": "echo", "source": "rule", "confidence": 1.0})
 
     # Independent requests of one chat run at once; a follow-up, a yes/no or a correction waits for the
     # requests already running, because it is about their answer.
@@ -634,7 +692,11 @@ def already_in(reply, lang):
     if lang == "Urdu":
         return bool(URDU.search(reply)) and not PASHTO.search(reply)
     if lang == "English":
-        return looks_english(reply)
+        # Latin script is English here: skills and models answer in English, and the word-count heuristic sent short replies like
+        # "You like: short, friendly updates." to the translator, which rewrote them ("I enjoy...") - only another script needs it
+        if URDU.search(reply) or DEVANAGARI.search(reply) or any(c.isalpha() and ord(c) > 0x24F for c in reply):
+            return False
+        return sum(w.lower() in _FOREIGN_WORDS for w in re.findall(r"[A-Za-z']+", reply)) < 2  # French/German/Spanish still translate
     return False  # Roman Urdu: skills answer in English, always rewritten
 
 
@@ -642,6 +704,10 @@ _EN_WORDS = frozenset("the a an and or of to in on at for with from is are was w
                       "they he she not no yes can will would should could have has had do does did if then than as by about what "
                       "which who when where how there here my me our us them his her its so but also just more most some any "
                       "all one two please sorry ok okay".split())
+
+
+_FOREIGN_WORDS = frozenset("je suis est les des une pour vous avec nous mais très ich und nicht der die das ist mit für heute keine "
+                           "el los las que para por una pero muy".split())
 
 
 def looks_english(reply):
@@ -841,7 +907,8 @@ def _handle(text, sid, conv, s, events, t0, channel):
 
     # 4b. ARCH2 active: the two-pass brain handles the turn (router -> Qwen3-14B -> tools ->
     # validation -> Qwen3-14B). Same session, trace, gates and memory as arch1.
-    if not pending and (registry.active() if (registry := _arch_registry()) else "arch1") == "arch2":
+    if (not pending and (registry.active() if (registry := _arch_registry()) else "arch1") == "arch2"
+            and not _rule_owned(text)):
         from ishti.arch2 import pipeline
         text = contextualize(text, s)          # D3: arch2 also gets the resolved request
         if text.startswith("__CLARIFY__"):
@@ -849,10 +916,15 @@ def _handle(text, sid, conv, s, events, t0, channel):
             return _finish(text, sid, conv, s, events, t0, channel, "resolve_ambiguous", out,
                            {"skill": "resolve_ambiguous", "source": "resolver", "confidence": 1.0})
         name, out = "arch2", pipeline.run(text, s, SKILLS)
-        dec = {"skill": "arch2", "source": "arch2", "confidence": 1.0}
-        s["trace"](type="route", skill=name, source="arch2", confidence=1.0,
-                   why="ARCH2 is active: the two-pass pipeline answers.")
-        return _finish(text, sid, conv, s, events, t0, channel, name, out, dec)
+        if not out.get("tools") and ACTION_CLAIM.search(str(out.get("reply") or "")):
+            # the brain SAID it set/sent/cancelled something but ran no tool ("Reminder set ... I will remind you 15 minutes
+            # before" - nothing was set, owner-style test 2026-10-03): never pass that on; the skills handle it below
+            s["trace"](type="tool", name="verify", label="the answer claimed an action no tool did - handing it to the skills", status="error")
+        else:
+            dec = {"skill": "arch2", "source": "arch2", "confidence": 1.0}
+            s["trace"](type="route", skill=name, source="arch2", confidence=1.0,
+                       why="ARCH2 is active: the two-pass pipeline answers.")
+            return _finish(text, sid, conv, s, events, t0, channel, name, out, dec)
 
     # 4c. MULTI-AGENT profile: the supervisor decomposes, specialists run the pieces (Prompt 3).
     if not pending:

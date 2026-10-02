@@ -41,6 +41,8 @@ def smalltalk(clause):
 def candidate(text, skills=None, session=None):
     if len(text.split()) < 6:
         return False
+    if re.match(r"\s*(?:what\s+)?if\b", text, re.I):
+        return False  # "if I spend 250 on groceries and 175 on fuel, how much..." is one hypothetical question, not two tasks
     if not skills:
         return bool(GATE.search(text))
     found = clause_skills(text, skills)
