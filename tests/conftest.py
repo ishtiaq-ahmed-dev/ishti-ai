@@ -32,6 +32,36 @@ tests/test_lifecycle.py is a special case: it calls sys.exit() at import time, w
 with INTERNALERROR. Its contract-style sibling tests/test_lifecycle_contract.py is a real pytest module
 (e2e-marked) and still runs.
 """
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _scratch_facts_store(request, tmp_path):
+    """Never write test data into the owner's real store (ishti.db).
+
+    Tests that call a skill's run() directly (the generated per-skill suites, the adversarial
+    passes, the duration parser) used to create reminders/facts rows in D:\\ISHTI\\data\\ishti.db -
+    the live reminders table had 289 junk rows ('qa-stretch', 'stretch???', 'email: to a@b.com').
+    Every non-e2e test now gets its own scratch facts database; e2e tests drive the real app and
+    are excluded. The module is imported lazily so collection of a checkout without the venv deps
+    still works.
+    """
+    if request.node.get_closest_marker("e2e"):
+        yield
+        return
+    try:
+        import ishti.facts as facts_mod
+    except Exception:  # noqa: BLE001 - collection must survive missing optional deps
+        yield
+        return
+    saved = facts_mod._facts
+    facts_mod._facts = facts_mod.Facts(str(tmp_path / "facts.db"))
+    try:
+        yield
+    finally:
+        facts_mod._facts = saved
+
+
 collect_ignore = [
     # --- call sys.exit() / abort the run at import time ---------------------------------------------
     "test_lifecycle.py",

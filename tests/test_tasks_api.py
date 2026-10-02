@@ -65,3 +65,17 @@ def test_bad_input_is_refused_and_restoring_works(api):
     back = client.post("/api/reminders", json={"text": "deleted by mistake", "due": due}).json()
     rows = client.get("/api/reminders?include_done=1").json()["reminders"]
     assert [r["id"] for r in rows] == [back["id"]] and rows[0]["text"] == "deleted by mistake"
+
+
+def test_clear_done_empties_only_the_done_group(api):
+    """The Tasks page's Clear done button: finished rows go, open ones stay. The route must not be
+    shadowed by POST /api/reminders/{rid}."""
+    client, _f = api
+    keep = _mk(client, "still open", time.time() + 3600)
+    for i in range(3):
+        rid = _mk(client, f"finished {i}", time.time() + 3600)
+        assert client.post(f"/api/reminders/{rid}/done", json={}).json()["updated"] == 1
+    assert client.post("/api/reminders/clear_done", json={}).json()["cleared"] == 3
+    rows = client.get("/api/reminders?include_done=1").json()["reminders"]
+    assert [r["id"] for r in rows] == [keep] and rows[0]["done"] is False
+    assert client.post("/api/reminders/clear_done", json={}).json()["cleared"] == 0   # idempotent

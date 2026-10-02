@@ -1339,6 +1339,15 @@ async def reminders_endpoint(include_done: int = 0, limit: int = 500):
     return {"reminders": _reminder_rows(bool(include_done), limit)}
 
 
+@api.post("/api/reminders/clear_done")
+async def reminder_clear_done_endpoint():
+    """Empty the Done group (Tasks page, after an explicit confirm). Only finished rows are removed."""
+    f = _reminders_db()
+    with f.lock, f.db:
+        n = f.db.execute("DELETE FROM reminders WHERE done=1").rowcount
+    return {"cleared": n}
+
+
 @api.post("/api/reminders")
 async def reminder_create_endpoint(req: Request):
     """Add a reminder straight from the Tasks page - also how Undo puts a deleted one back."""

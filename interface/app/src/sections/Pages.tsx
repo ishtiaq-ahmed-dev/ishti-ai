@@ -124,6 +124,7 @@ export function Tasks({ onToggleNav }: { onToggleNav?: () => void }) {
   const [draftDue, setDraftDue] = useState("");
   const [undo, setUndo] = useState<{ text: string; due: number } | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
   // done tasks come back too: completing one must never make it vanish (it moves to the Done group)
   const load = () => getJSON<{ reminders: Reminder[] }>("/api/reminders?include_done=1")
     .then((d) => setItems(d.reminders ?? []))
@@ -172,6 +173,12 @@ export function Tasks({ onToggleNav }: { onToggleNav?: () => void }) {
     if (!undo) return;
     await postJSON("/api/reminders", { text: undo.text, due: undo.due }).catch(() => {});
     setUndo(null);
+    load();
+  };
+  const clearDone = async () => {
+    setConfirmClear(false);
+    setItems((cur) => cur.filter((r) => !r.done));   // optimistic; the reload confirms
+    await postJSON("/api/reminders/clear_done", {}).catch(() => {});
     load();
   };
   const startEdit = (r: Reminder) => { setEditing(r.id); setDraft(r.text); setDraftDue(localInput(r.due)); };
@@ -296,7 +303,30 @@ export function Tasks({ onToggleNav }: { onToggleNav?: () => void }) {
 
             {listFilter !== "open" && doneTasks.length > 0 && (
               <div className="pt-4">
-                <div className="pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Done</div>
+                <div className="flex items-center justify-between pb-1.5">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Done ({doneTasks.length})
+                  </div>
+                  {confirmClear ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] text-muted-foreground">Remove all {doneTasks.length} finished tasks?</span>
+                      <button type="button" onClick={clearDone}
+                        className="rounded-lg bg-danger px-2 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-danger/90 cursor-pointer">
+                        Clear done
+                      </button>
+                      <button type="button" onClick={() => setConfirmClear(false)}
+                        className="rounded-lg border border-border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted cursor-pointer">
+                        Keep
+                      </button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => setConfirmClear(true)}
+                      title="Empty the Done group (asks first)"
+                      className="rounded-lg border border-border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger cursor-pointer">
+                      Clear done
+                    </button>
+                  )}
+                </div>
                 <div className="space-y-1.5">{sorted(doneTasks).map((r) => renderRow(r, true))}</div>
               </div>
             )}
