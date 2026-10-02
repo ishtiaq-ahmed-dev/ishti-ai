@@ -384,8 +384,11 @@ def research(name, text, session, local_cur):
                      f"action ({p['action']}). Do not add any number that is not in the facts.\n\n{json.dumps(facts, default=str)[:3500]}",
                      temperature=0.2, max_tokens=320)
     lines.append(debate.strip())
-    log_call(sym, label, cur, price, p)
-    return "\n\n".join(lines), f"https://finance.yahoo.com/quote/{sym}"
+    reply = "\n\n".join(lines)
+    data_used = {"symbol": sym, "kind": kind, "days": int(len(df)), "headlines": len(heads),
+                 "sources": ["Yahoo Finance"] + (["PSX"] if kind == "psx" else []) + (["CoinGecko"] if kind == "crypto" else [])}
+    log_call(sym, label, cur, price, p, question=text, analysis=reply, data_used=data_used)
+    return reply, f"https://finance.yahoo.com/quote/{sym}"
 
 
 def plan_rows(p, t, sim, text, local_cur, cur, kind, money):
@@ -428,14 +431,61 @@ def _db():
     with f.lock, f.db:
         f.db.execute("CREATE TABLE IF NOT EXISTS market_calls(ts REAL, symbol TEXT, name TEXT, currency TEXT, price REAL, "
                      "action TEXT, entry REAL, stop REAL, t1 REAL, t2 REAL)")
+        cols = {r[1] for r in f.db.execute("PRAGMA table_info(market_calls)")}
+        for col in ("question", "analysis", "data"):   # H: history keeps the question, the full write-up and the data used
+            if col not in cols:
+                f.db.execute(f"ALTER TABLE market_calls ADD COLUMN {col} TEXT")
     return f
 
 
-def log_call(sym, name, cur, price, p):
+def log_call(sym, name, cur, price, p, question="", analysis="", data_used=None):
     f = _db()
     with f.lock, f.db:
-        f.db.execute("INSERT INTO market_calls VALUES (?,?,?,?,?,?,?,?,?,?)",
-                     (time.time(), sym, name, cur, price, p["action"], p.get("entry"), p.get("stop"), p.get("t1"), p.get("t2")))
+        f.db.execute("INSERT INTO market_calls(ts, symbol, name, currency, price, action, entry, stop, t1, t2, question, analysis, data) "
+                     "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                     (time.time(), sym, name, cur, price, p["action"], p.get("entry"), p.get("stop"), p.get("t1"),
+                      p.get("t2"), question or "", analysis or "", json.dumps(data_used or {})))
+
+
+_CALL_COLS = ("rowid, ts, symbol, name, currency, price, action, entry, stop, t1, t2, question, analysis, data")
+
+
+def _call_json(r):
+    try:
+        data = json.loads(r[13] or "{}")
+    except (TypeError, ValueError):
+        data = {}
+    return {"id": r[0], "ts": r[1], "symbol": r[2], "name": r[3], "currency": r[4], "price": r[5],
+            "action": r[6], "entry": r[7], "stop": r[8], "t1": r[9], "t2": r[10],
+            "question": r[11] or "", "analysis": r[12] or "", "data": data}
+
+
+def history_rows(q="", limit=200):
+    """Saved analyses, newest first (lesson: a LIMIT must cut the oldest rows, never the newest)."""
+    f = _db()
+    limit = max(1, min(int(limit or 200), 500))
+    with f.lock:
+        if (q or "").strip():
+            like = f"%{q.strip()}%"
+            rows = f.db.execute(f"SELECT {_CALL_COLS} FROM market_calls WHERE symbol LIKE ? OR name LIKE ? OR question LIKE ? "
+                                "OR action LIKE ? OR analysis LIKE ? ORDER BY ts DESC LIMIT ?",
+                                (like, like, like, like, like, limit)).fetchall()
+        else:
+            rows = f.db.execute(f"SELECT {_CALL_COLS} FROM market_calls ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
+    return [_call_json(r) for r in rows]
+
+
+def get_call(cid):
+    f = _db()
+    with f.lock:
+        r = f.db.execute(f"SELECT {_CALL_COLS} FROM market_calls WHERE rowid=?", (int(cid),)).fetchone()
+    return _call_json(r) if r else None
+
+
+def delete_call(cid):
+    f = _db()
+    with f.lock, f.db:
+        return f.db.execute("DELETE FROM market_calls WHERE rowid=?", (int(cid),)).rowcount
 
 
 def track_record():

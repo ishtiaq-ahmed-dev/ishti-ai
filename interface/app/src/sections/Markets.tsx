@@ -1,16 +1,22 @@
 import { AnimatePresence, motion } from "motion/react";
-import { LineChart, Plus, RefreshCw, Search, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { getJSON, postJSON } from "@/lib/api";
+import { ArrowLeft, History, LineChart, Play, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { del, getJSON, postJSON } from "@/lib/api";
 import { AnimatedCounter } from "@/components/rare/animated-counter";
 import { Markdown } from "@/components/Markdown";
 import { Page } from "@/sections/Pages";
+import { cn } from "@/lib/utils";
 
 type Item = {
   kind: string; id: string; label: string; name?: string; price?: number; currency?: string; unit?: string;
   change_pct?: number | null; spark?: number[]; error?: string;
 };
 type Chart = { symbol: string; dates: string[]; closes: number[]; currency: string };
+type Saved = {
+  id: number; ts: number; symbol: string; name: string; currency: string; price?: number; action: string;
+  entry?: number; stop?: number; t1?: number; t2?: number; question?: string; analysis?: string;
+  data?: { days?: number; headlines?: number; sources?: string[]; kind?: string };
+};
 
 const SYM: Record<string, string> = { USD: "$", EUR: "€", GBP: "£" };
 const decimalsFor = (v: number) => (v >= 1000 ? 0 : v >= 10 ? 2 : 4);
@@ -72,11 +78,21 @@ function PriceChart({ chart }: { chart: Chart }) {
   );
 }
 
+const actionTone = (a: string) =>
+  a.startsWith("BUY") ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
+    : a === "WAIT" ? "border-amber-500/30 bg-amber-500/10 text-amber-500"
+      : a === "AVOID" ? "border-red-500/30 bg-red-500/10 text-red-500"
+        : "border-border bg-muted text-muted-foreground";
+
+const money = (v: number | undefined, cur: string) =>
+  v == null ? "-" : `${SYM[cur] ?? ""}${v.toLocaleString(undefined, { maximumFractionDigits: 2 })}${SYM[cur] ? "" : ` ${cur}`}`;
+
 export function Markets({ onToggleNav }: { onToggleNav?: () => void }) {
   const [items, setItems] = useState<Item[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
   const [add, setAdd] = useState("");
+  const [tab, setTab] = useState<"live" | "history">("live");
   const [addError, setAddError] = useState("");
   const [analysis, setAnalysis] = useState<{ reply: string; charts: Chart[] } | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -87,7 +103,37 @@ export function Markets({ onToggleNav }: { onToggleNav?: () => void }) {
   const analyze = async (what: string) => {
     if (!what.trim()) return;
     setQ(what); setAnalyzing(true); setAnalysis(null);
-    try { setAnalysis(await getJSON(`/api/markets/analyze?q=${encodeURIComponent(what.trim())}`)); } finally { setAnalyzing(false); }
+    try {
+      setAnalysis(await getJSON(`/api/markets/analyze?q=${encodeURIComponent(what.trim())}`));
+      if (tab === "history") void loadHistory();   // a fresh run from the History tab shows up in the list too
+    } finally { setAnalyzing(false); }
+  };
+
+  // ---- History tab: every saved question and analysis (H)
+  const [saved, setSaved] = useState<Saved[] | null>(null);
+  const [hq, setHq] = useState("");
+  const [openSaved, setOpenSaved] = useState<Saved | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const loadHistory = useCallback((search = "") => {
+    return getJSON<{ items: Saved[] }>(`/api/markets/history?q=${encodeURIComponent(search)}`)
+      .then((d) => setSaved(d.items ?? []))
+      .catch(() => setSaved([]));
+  }, []);
+  useEffect(() => { if (tab === "history") void loadHistory(hq); }, [tab, loadHistory, hq]);
+  const rerun = async (s: Saved) => {
+    setBusyId(s.id);
+    try {
+      const d = await postJSON<{ question: string; result: { reply?: string; charts?: Chart[] } }>(`/api/markets/history/${s.id}/rerun`, {});
+      setAnalysis({ reply: d.result?.reply ?? "", charts: d.result?.charts ?? [] });
+      setQ(d.question || s.question || s.name);
+      setTab("live");
+      await loadHistory(hq);
+    } finally { setBusyId(null); }
+  };
+  const removeSaved = async (s: Saved) => {
+    await del(`/api/markets/history/${s.id}`).catch(() => {});
+    setOpenSaved((cur) => (cur?.id === s.id ? null : cur));
+    await loadHistory(hq);
   };
   const addItem = async () => {
     if (!add.trim()) return;
@@ -105,6 +151,16 @@ export function Markets({ onToggleNav }: { onToggleNav?: () => void }) {
       onToggleNav={onToggleNav}
       action={<button type="button" onClick={load} title="Refresh" className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs cursor-pointer hover:bg-muted">
         <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh</button>}>
+      <div role="tablist" aria-label="Markets view" className="mb-4 inline-flex rounded-xl border border-border bg-muted/40 p-0.5 text-xs font-medium">
+        {([["live", "Live"], ["history", "History"]] as const).map(([k, label]) => (
+          <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
+            className={cn("flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition-colors cursor-pointer",
+              tab === k ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground")}>
+            {k === "history" && <History className="h-3.5 w-3.5" />}{label}
+          </button>))}
+      </div>
+
+      {tab === "live" && (<>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {items === null ? (
           Array.from({ length: 6 }).map((_, i) => (
@@ -180,6 +236,71 @@ export function Markets({ onToggleNav }: { onToggleNav?: () => void }) {
           )}
         </AnimatePresence>
       </section>
+      </>)}
+
+      {tab === "history" && (
+        <section className="rounded-2xl border border-border bg-background p-4 sm:p-5" data-testid="markets-history">
+          {openSaved ? (
+            <div>
+              <button type="button" onClick={() => setOpenSaved(null)} className="mb-3 flex items-center gap-1 text-xs text-accent cursor-pointer">
+                <ArrowLeft className="h-3.5 w-3.5" /> All saved analyses</button>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-base font-semibold">{openSaved.name || openSaved.symbol}</h2>
+                <span className="text-xs text-muted-foreground">{openSaved.symbol}</span>
+                <span className={cn("rounded-md border px-2 py-0.5 text-[11px] font-semibold", actionTone(openSaved.action))}>{openSaved.action}</span>
+                <span className="ml-auto text-xs text-muted-foreground">{new Date(openSaved.ts * 1000).toLocaleString()}</span>
+              </div>
+              {openSaved.question && <p className="mt-1 text-xs text-muted-foreground">You asked: {openSaved.question}</p>}
+              <dl className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-5">
+                {([["Price then", openSaved.price], ["Buy near", openSaved.entry], ["Stop", openSaved.stop], ["Target 1", openSaved.t1], ["Target 2", openSaved.t2]] as const).map(([k, v]) => (
+                  <div key={k} className="rounded-lg border border-border/70 bg-card/40 p-2"><dt className="text-muted-foreground">{k}</dt>
+                    <dd className="font-semibold tabular-nums">{money(v, openSaved.currency)}</dd></div>))}
+              </dl>
+              {openSaved.data?.sources && (
+                <p className="mt-2 text-[11px] text-muted-foreground">Data used: {openSaved.data.sources.join(", ")}
+                  {openSaved.data.days ? ` · ${openSaved.data.days} days of prices` : ""}{openSaved.data.headlines ? ` · ${openSaved.data.headlines} headlines` : ""}</p>)}
+              <div className="mt-4 rounded-xl border border-border/60 bg-card/30 p-3 text-sm">
+                {openSaved.analysis ? <Markdown text={openSaved.analysis} /> : <p className="text-muted-foreground">The write-up was not saved for this older entry. Run it again to get a fresh one.</p>}
+              </div>
+              <div className="mt-3 flex gap-2">
+                <button type="button" disabled={busyId === openSaved.id} onClick={() => rerun(openSaved)}
+                  className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40 cursor-pointer"><Play className="h-3.5 w-3.5" /> {busyId === openSaved.id ? "Running…" : "Run again"}</button>
+                <button type="button" onClick={() => removeSaved(openSaved)}
+                  className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-danger hover:bg-danger/10 cursor-pointer"><Trash2 className="h-3.5 w-3.5" /> Delete</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input value={hq} onChange={(e) => setHq(e.target.value)} placeholder="Search your saved analyses: symbol, name, question or BUY / WAIT / AVOID…"
+                  aria-label="Search history" className="w-full rounded-xl border border-border bg-background py-2 pl-9 pr-3 text-sm outline-none focus:border-accent" />
+              </div>
+              {saved === null ? <p className="mt-4 text-sm text-muted-foreground">Loading…</p>
+                : saved.length === 0 ? <p className="mt-6 text-center text-sm text-muted-foreground">{hq ? "Nothing matches that search." : "Nothing saved yet. Every analysis you ask for is kept here with its buy / sell plan."}</p>
+                : (
+                  <ul className="mt-3 divide-y divide-border/60">
+                    {saved.map((s) => (
+                      <li key={s.id} className="flex flex-wrap items-center gap-2 py-2.5">
+                        <button type="button" onClick={() => setOpenSaved(s)} className="min-w-0 flex-1 text-left cursor-pointer">
+                          <span className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-semibold">{s.name || s.symbol}</span>
+                            <span className="text-[11px] text-muted-foreground">{s.symbol}</span>
+                            <span className={cn("rounded-md border px-1.5 py-0.5 text-[10px] font-semibold", actionTone(s.action))}>{s.action}</span>
+                          </span>
+                          <span className="block truncate text-[11px] text-muted-foreground">
+                            {new Date(s.ts * 1000).toLocaleString()} · {s.question || "analysis"}{s.entry != null ? ` · buy near ${money(s.entry, s.currency)}` : ""}{s.t1 != null ? ` · target ${money(s.t1, s.currency)}` : ""}</span>
+                        </button>
+                        <button type="button" title="Run again" disabled={busyId === s.id} onClick={() => rerun(s)}
+                          className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 cursor-pointer"><Play className="h-3.5 w-3.5" /></button>
+                        <button type="button" title="Delete" onClick={() => removeSaved(s)}
+                          className="rounded-lg p-1.5 text-muted-foreground hover:bg-danger/10 hover:text-danger cursor-pointer"><Trash2 className="h-3.5 w-3.5" /></button>
+                      </li>))}
+                  </ul>)}
+            </>
+          )}
+        </section>
+      )}
     </Page>
   );
 }
