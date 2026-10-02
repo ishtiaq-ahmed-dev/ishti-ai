@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { Bot, Brain, CandlestickChart, UserRound, Cpu, FolderKanban, GraduationCap, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, Power, Settings as SettingsIcon, Sparkles, Minimize2, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { getJSON } from "@/lib/api";
+import { getJSON, postJSON } from "@/lib/api";
 import { Chat } from "@/sections/Chat";
 import { Memory, Settings, Skills, System, Tasks } from "@/sections/Pages";
 import { Learning } from "@/sections/Learning";
@@ -9,6 +9,7 @@ import { Overview } from "@/sections/Overview";
 import { AboutYou } from "@/sections/AboutYou";
 import { Markets } from "@/sections/Markets";
 import { NotificationBell } from "@/components/rare/notification-bell";
+import { NotificationPopover, type Notif } from "@/components/NotificationCenter";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { IshtiBrand } from "@/components/IshtiBrand";
 import { initChatFontSize } from "@/lib/font-size";
@@ -52,8 +53,10 @@ type Key = (typeof NAV)[number]["key"];
 type Fact = { entity: string; attr: string; value: string };
 
 function parseHash(raw: string): Key | null {
-  const clean = raw.replace(/^#\/?/, "").toLowerCase().split("/")[0].split("?")[0] as Key;
-  return NAV.some((n) => n.key === clean) ? clean : null;
+  const clean = raw.replace(/^#\/?/, "").toLowerCase().split("/")[0].split("?")[0];
+  // #notifications is the Notifications tab of the Tasks page (no separate nav entry)
+  const alias = (clean === "notifications" ? "tasks" : clean) as Key;
+  return NAV.some((n) => n.key === alias) ? alias : null;
 }
 
 function getInitialPage(): Key {
@@ -73,7 +76,9 @@ export default function App() {
   const [page, setPageState] = useState<Key>(getInitialPage);
   const [owner, setOwner] = useState("Ishtiaq Ahmed");
   const [projects, setProjects] = useState<Fact[]>([]);
-  const [alerts, setAlerts] = useState<string[]>([]);
+  const [notifs, setNotifs] = useState<Notif[]>([]);
+  const [unread, setUnread] = useState(0);
+  const [showNotifs, setShowNotifs] = useState(false);
   const [busy, setBusy] = useState(false);
   const [showNav, setShowNav] = useState(() => {
     try {
@@ -119,7 +124,7 @@ export default function App() {
       } else {
         window.close();
       }
-    }, 6000);
+    }, 3000);
   }, []);
 
   const handleMinimizeToTray = useCallback(() => {
@@ -237,10 +242,14 @@ export default function App() {
           try {
             const msg = JSON.parse(m.data);
             if (msg.type === "assistant_message" && String(msg.data?.reply ?? "").startsWith("⏰")) {
-              setAlerts((a) => [msg.data.reply, ...a].slice(0, 20));
               if (typeof Notification !== "undefined" && Notification?.permission === "granted") {
                 new Notification("ISHTI", { body: msg.data.reply });
               }
+            } else if (msg.type === "notification" && msg.data) {
+              const n = msg.data as Notif;
+              setNotifs((cur) => [n, ...cur.filter((x) => x.id !== n.id)].slice(0, 50));
+              setUnread((u) => (n.read ? u : u + 1));
+              try { window.dispatchEvent(new CustomEvent("ishti-notification")); } catch {}
             } else if (msg.type === "vram_status" && msg.data) {
               const d = msg.data;
               const used = d.gpu?.used_mb ?? d.used_mb ?? 0;
@@ -326,6 +335,54 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {  // bell popover: outside click or Escape closes it
+    if (!showNotifs) return;
+    const onDown = (ev: MouseEvent) => {
+      const t = ev.target as HTMLElement | null;
+      if (t && t.closest("[data-notif-root]")) return;
+      setShowNotifs(false);
+    };
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === "Escape") setShowNotifs(false); };
+    document.addEventListener("mousedown", onDown, true);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown, true);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [showNotifs]);
+
+  const loadNotifications = useCallback(() => {
+    getJSON<{ notifications: Notif[]; unread: number }>("/api/notifications")
+      .then((d) => { setNotifs(d.notifications ?? []); setUnread(d.unread ?? 0); })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    loadNotifications();
+    const onSync = () => loadNotifications();
+    window.addEventListener("ishti-notification", onSync);
+    return () => window.removeEventListener("ishti-notification", onSync);
+  }, [loadNotifications]);
+
+  const markAllRead = useCallback(() => {
+    setNotifs((cur) => cur.map((n) => ({ ...n, read: true })));
+    setUnread(0);
+    postJSON("/api/notifications/read", {}).catch(() => {}).finally(() => window.dispatchEvent(new CustomEvent("ishti-notification")));
+  }, []);
+
+  const markOneRead = useCallback((id: number) => {
+    setNotifs((cur) => cur.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    setUnread((u) => Math.max(0, u - 1));
+    postJSON("/api/notifications/read", { id }).catch(() => {}).finally(() => window.dispatchEvent(new CustomEvent("ishti-notification")));
+  }, []);
+
+  const viewAllNotifications = useCallback(() => {
+    setShowNotifs(false);
+    setPage("tasks");
+    try { window.history.replaceState(null, "", "#notifications"); } catch {}
+    try { window.dispatchEvent(new CustomEvent("ishti-tasks-tab", { detail: "notifications" })); } catch {}
+  }, [setPage]);
+
   const handleLogoClick = useCallback(() => {
     setPage("chat");
     try {
@@ -356,7 +413,7 @@ export default function App() {
                     onClick={handleLogoClick}
                     title="ISHTI - Start New Chat"
                   />
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1" data-notif-root>
                     <button
                       type="button"
                       onClick={toggleNav}
@@ -367,11 +424,11 @@ export default function App() {
                     </button>
                     <ThemeToggle size={28} />
                     <NotificationBell
-                      count={alerts.length}
+                      count={unread}
                       size={28}
                       color="violet"
-                      onClick={() => { setPage("tasks"); setAlerts([]); }}
-                      title={alerts.length > 0 ? `${alerts.length} reminder${alerts.length > 1 ? "s" : ""}` : "Reminders"}
+                      onClick={() => setShowNotifs((v) => !v)}
+                      title={unread > 0 ? `${unread} unread notification${unread > 1 ? "s" : ""}` : "Notifications"}
                     />
                   </div>
                 </div>
@@ -468,6 +525,32 @@ export default function App() {
           </AnimatePresence>
         </main>
       </div>
+
+      {/* Notification popover (the bell): the mini inbox, newest first. Closing on outside click/Escape is a
+          document listener rather than a full-screen catcher, so a stuck exit can never block the app. */}
+      <AnimatePresence>
+        {showNotifs && (
+          <>
+            <motion.div
+              data-notif-root
+              initial={{ opacity: 0, y: -6, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -6, scale: 0.98 }}
+              transition={{ duration: 0.15 }}
+              className="fixed left-3 top-14 z-50 w-[340px] max-w-[calc(100vw-24px)]"
+            >
+              <NotificationPopover
+                items={notifs}
+                unread={unread}
+                onMarkAll={markAllRead}
+                onMarkOne={markOneRead}
+                onViewAll={viewAllNotifications}
+                onClose={() => setShowNotifs(false)}
+              />
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* Exit confirmation dialog: Quit / Minimize to tray / Cancel + Remember choice */}
       {showExitModal && (

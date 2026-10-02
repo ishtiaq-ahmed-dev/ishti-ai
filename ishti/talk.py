@@ -15,6 +15,27 @@ import numpy as np
 BLOCK = 512  # output frames per callback (~23 ms at 22.05 kHz): pause/stop take effect within one block
 SENTENCE_END = re.compile(r"(?<=[.!?۔؟])\s+|\n+")
 
+# Process chatter is never spoken (owner rule E): step labels, progress lines and tool names belong on screen.
+# Only the final answer is voiced - this filter sits at the single point every spoken line passes through.
+# Deliberately specific: a real answer that merely starts with "Opening hours..." or "Found three flights..."
+# must still be spoken, so the verbs are pinned to their progress complements.
+CHATTER = re.compile(
+    r"^\s*(?:searching the (?:internet|web)|looking (?:it|that|this) up|googling|browsing the web|"
+    r"opening the top \d+|opening whatsapp(?: web| desktop)?|opening the (?:app|browser|chat|folder)\b|"
+    r"reading through|reading the (?:results|sources|page)|scanning the|fetching the (?:page|data|results)|"
+    r"found \d+\s*sources?|\d+\s*sources? (?:answer|found)|trying a different search|"
+    r"step \d+|tool[:\s]|skill[:\s]|waiting for your earlier request|transcribing|"
+    r"rendering the|cutting the (?:clip|video)|downloading|installing|uploading|report finished|"
+    r"let me (?:check|look|see)|one moment|give me a (?:second|moment))"
+    r"(?!\w)(?!\s+(?:is|are|was|were|will|would|can|has|have)\b)",  # "Searching the web is..." is a statement
+    re.I)
+
+
+def is_process_chatter(text) -> bool:
+    """True when a line is a step/progress notice rather than something worth hearing."""
+    t = str(text or "").strip()
+    return (not t) or bool(CHATTER.match(t))
+
 # Single-Voice Orchestration Gate (Section 4):
 # Only the designated main orchestrator agent has speech authority.
 # Sub-agents execute silently in isolated contexts and return compressed text.
@@ -62,8 +83,8 @@ class Talker:
     # ---- producing ----
     def say(self, text):
         text = text.strip()
-        if not text:
-            return
+        if not text or is_process_chatter(text):
+            return  # never narrate the process: only the answer is spoken
         if not is_voice_allowed():
             # Single-voice orchestration: sub-agents work silently and never speak directly
             return

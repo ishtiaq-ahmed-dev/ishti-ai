@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUp, AudioLines, Maximize2, MessageSquare, Mic, Minimize2, Network, PanelLeft, PanelLeftClose, Plus, Square, X } from "lucide-react";
+import { ArrowUp, AudioLines, Check, Copy, FolderOpen, Maximize2, MessageSquare, Mic, Minimize2, Network, PanelLeft, PanelLeftClose, Pencil, Plus, Square, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { del, getJSON, postJSON, streamChat, type Result, type Source, type TraceEvent } from "@/lib/api";
 import { ActivityGraph, ConversationGraph, type Turn } from "@/components/ActivityGraph";
@@ -316,6 +316,116 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     }
   };
 
+  // ---------------- Recent chats: select / rename / delete-with-undo / share (all local) ----------------
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [undo, setUndo] = useState<{ token: string; ids: string[] } | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareFormat, setShareFormat] = useState<"md" | "pdf">("md");
+  const [shareDir, setShareDir] = useState("");
+  const [shareName, setShareName] = useState("");
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareResult, setShareResult] = useState<{ path: string; copied?: boolean } | null>(null);
+  const [shareError, setShareError] = useState("");
+
+  const toggleSelected = useCallback((id: string) => {
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const saveRename = useCallback(async (id: string) => {
+    const title = renameDraft.trim();
+    setRenaming(null);
+    if (!title) return;
+    try {
+      const d = await postJSON<{ title: string }>(`/api/sessions/${id}/rename`, { title });
+      setSessions((cur) => cur.map((s) => (s.session_id === id ? { ...s, title: d.title } : s)));
+    } catch (err) {
+      console.warn("[chat] rename failed:", err);
+    }
+  }, [renameDraft]);
+
+  const deleteSelected = useCallback(async () => {
+    const ids = [...selected];
+    if (!ids.length) return;
+    setConfirmingDelete(false);
+    try {
+      const d = await postJSON<{ undo_token: string; deleted: string[] }>("/api/sessions/delete", { ids });
+      setSelecting(false);
+      setSelected(new Set());
+      setSessions((cur) => cur.filter((s) => !d.deleted.includes(s.session_id)));
+      setUndo({ token: d.undo_token, ids: d.deleted });
+      if (sessionId && d.deleted.includes(sessionId)) {
+        try { localStorage.removeItem("ishti-session-id"); } catch {}
+        newChat();
+      }
+    } catch (err) {
+      console.warn("[chat] delete failed:", err);
+    }
+  }, [selected, sessionId, newChat]);
+
+  const undoDelete = useCallback(async () => {
+    if (!undo) return;
+    try { await postJSON("/api/sessions/undo", { undo_token: undo.token }); } catch (err) { console.warn("[chat] undo failed:", err); }
+    setUndo(null);
+    loadSessions();
+  }, [undo, loadSessions]);
+
+  useEffect(() => {  // the undo window is 8 s; after that the trash folder is cleared at next startup
+    if (!undo) return;
+    const t = setTimeout(() => setUndo(null), 8000);
+    return () => clearTimeout(t);
+  }, [undo]);
+
+  const openShare = useCallback(() => {
+    setShareError("");
+    setShareResult(null);
+    setShareFormat("md");
+    setShareDir("");
+    setShareName(`ishti-chats-${new Date().toISOString().slice(0, 10)}.md`);
+    setShareOpen(true);
+  }, []);
+
+  const doExport = useCallback(async () => {
+    setShareBusy(true);
+    setShareError("");
+    setShareResult(null);
+    try {
+      const d = await postJSON<{ path: string }>("/api/sessions/export", {
+        ids: [...selected], format: shareFormat, dir: shareDir.trim(), name: shareName.trim() || undefined,
+      });
+      setShareResult({ path: d.path });
+    } catch (err) {
+      setShareError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setShareBusy(false);
+    }
+  }, [selected, shareFormat, shareDir, shareName]);
+
+  const copySelectedAsText = useCallback(async () => {
+    try {
+      const parts: string[] = [];
+      for (const id of selected) {
+        const d = await getJSON<{ title: string; messages: { role: string; content: string }[] }>(`/api/sessions/${id}/messages`);
+        parts.push(`## ${d.title}`, "");
+        for (const m of d.messages) parts.push(`${m.role === "user" ? "You" : "ISHTI"}: ${m.content}`);
+        parts.push("");
+      }
+      await navigator.clipboard.writeText(parts.join("\n"));
+      setShareResult({ path: "", copied: true });
+    } catch (err) {
+      setShareError("Copy failed: " + (err instanceof Error ? err.message : String(err)));
+    }
+  }, [selected]);
+
+  const allSelected = sessions.length > 0 && sessions.every((s) => selected.has(s.session_id));
+
   const patch = (id: number, f: (m: Msg) => Msg) => setMsgs((all) => all.map((m) => (m.id === id ? f(m) : m)));
 
   const adjustTextareaHeight = useCallback(() => {
@@ -460,13 +570,28 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                     </button>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={newChat}
-                  className="flex items-center gap-1 rounded-lg bg-accent-soft px-2 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent hover:text-white cursor-pointer"
-                >
-                  <Plus className="h-3.5 w-3.5" /> New
-                </button>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => { setSelecting((v) => !v); setSelected(new Set()); setConfirmingDelete(false); }}
+                    title={selecting ? "Leave selection mode" : "Select chats"}
+                    className={cn(
+                      "rounded-lg border px-2 py-1 text-xs font-medium transition-colors cursor-pointer",
+                      selecting
+                        ? "border-accent bg-accent-soft text-accent"
+                        : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    {selecting ? "Cancel" : "Select"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={newChat}
+                    className="flex items-center gap-1 rounded-lg bg-accent-soft px-2 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent hover:text-white cursor-pointer"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> New
+                  </button>
+                </div>
               </div>
               <div className="scroll-thin flex-1 min-h-0 space-y-1.5 overflow-y-auto p-2.5">
                 {sessions.length ? (
@@ -475,7 +600,8 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                     return (
                       <div
                         key={x.session_id}
-                        onClick={() => selectSession(x.session_id)}
+                        onClick={() => (selecting ? toggleSelected(x.session_id) : selectSession(x.session_id))}
+                        onDoubleClick={(e) => { if (!selecting) { e.stopPropagation(); setRenaming(x.session_id); setRenameDraft(x.title); } }}
                         className={cn(
                           "group relative flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm transition-all duration-200 select-none",
                           isSelected
@@ -488,6 +614,18 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                           <div className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-accent shadow-[0_0_10px_var(--color-accent)]" />
                         )}
 
+                        {/* Selection checkbox (select mode only) */}
+                        {selecting && (
+                          <span
+                            className={cn(
+                              "grid h-4 w-4 shrink-0 place-items-center rounded border transition-colors",
+                              selected.has(x.session_id) ? "border-accent bg-accent text-white" : "border-border",
+                            )}
+                          >
+                            {selected.has(x.session_id) && <Check className="h-3 w-3" />}
+                          </span>
+                        )}
+
                         {/* Chat Icon */}
                         <MessageSquare
                           className={cn(
@@ -498,17 +636,32 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                           )}
                         />
 
-                        {/* Topic Title */}
-                        <span
-                          className={cn(
-                            "min-w-0 flex-1 truncate text-[13.5px] leading-snug",
-                            isSelected
-                              ? "text-foreground font-semibold"
-                              : "text-foreground/80 group-hover:text-foreground font-medium"
-                          )}
-                        >
-                          {x.title}
-                        </span>
+                        {/* Topic Title (click the pencil or double-click to rename: Enter saves, Esc cancels) */}
+                        {renaming === x.session_id ? (
+                          <input
+                            autoFocus
+                            value={renameDraft}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => setRenameDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") { e.preventDefault(); saveRename(x.session_id); }
+                              if (e.key === "Escape") { e.preventDefault(); setRenaming(null); }
+                            }}
+                            onBlur={() => saveRename(x.session_id)}
+                            className="min-w-0 flex-1 rounded-md border border-accent/60 bg-background px-1.5 py-0.5 text-[13px] text-foreground outline-none"
+                          />
+                        ) : (
+                          <span
+                            className={cn(
+                              "min-w-0 flex-1 truncate text-[13.5px] leading-snug",
+                              isSelected
+                                ? "text-foreground font-semibold"
+                                : "text-foreground/80 group-hover:text-foreground font-medium"
+                            )}
+                          >
+                            {x.title}
+                          </span>
+                        )}
 
                         {/* Trailing Timestamp & Action */}
                         <div className="shrink-0 flex items-center ml-1">
@@ -524,6 +677,14 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                             {ago(x.updated_at)}
                           </span>
                           <div className="hidden group-hover:flex group-has-[[data-state=open]]:flex items-center">
+                            <button
+                              type="button"
+                              title="Rename chat"
+                              onClick={(e) => { e.stopPropagation(); setRenaming(x.session_id); setRenameDraft(x.title); }}
+                              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
                             <DeleteButton
                               size="sm"
                               onConfirm={() => deleteSession(x.session_id)}
@@ -539,6 +700,59 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                   </div>
                 )}
               </div>
+
+              {/* Select-mode action bar: select all, delete (confirmed) or share the chosen chats */}
+              {selecting && (
+                <div className="shrink-0 border-t border-border bg-card/60 p-2.5">
+                  <div className="flex items-center justify-between gap-1.5 px-0.5 pb-2 text-[11px] text-muted-foreground">
+                    <button
+                      type="button"
+                      onClick={() => setSelected(allSelected ? new Set() : new Set(sessions.map((s) => s.session_id)))}
+                      className="font-medium transition-colors hover:text-foreground cursor-pointer"
+                    >
+                      {allSelected ? "Clear all" : "Select all"}
+                    </button>
+                    <span>{selected.size} selected</span>
+                  </div>
+                  {confirmingDelete ? (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={deleteSelected}
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-danger px-2 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-danger/90 cursor-pointer"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Delete {selected.size}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmingDelete(false)}
+                        className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
+                      >
+                        Keep
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        disabled={!selected.size}
+                        onClick={() => setConfirmingDelete(true)}
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-danger/90 px-2 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-danger disabled:cursor-default disabled:opacity-40 cursor-pointer"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Delete
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!selected.size}
+                        onClick={openShare}
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-border px-2 py-1.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted disabled:cursor-default disabled:opacity-40 cursor-pointer"
+                      >
+                        <Copy className="h-3.5 w-3.5" /> Share
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Draggable resize handle */}
@@ -571,6 +785,93 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
           </motion.aside>
         )}
       </AnimatePresence>
+
+      {/* Undo toast: 8 s to bring deleted chats back (they wait in data/sessions/.trash).
+          No AnimatePresence here on purpose: an interrupted exit animation used to leave the toast
+          in the DOM (and on top of the action bar, eating clicks). It unmounts the moment undo clears. */}
+      {undo && (
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+            className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
+            <div className="flex items-center gap-3 rounded-2xl border border-border bg-background/95 px-4 py-2.5 shadow-2xl backdrop-blur-md">
+              <Trash2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="text-xs text-foreground">
+                {undo.ids.length} chat{undo.ids.length > 1 ? "s" : ""} deleted
+              </span>
+              <button type="button" onClick={undoDelete}
+                className="rounded-lg bg-accent px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-accent/90 cursor-pointer">
+                Undo
+              </button>
+              <button type="button" onClick={() => setUndo(null)} title="Dismiss"
+                className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted cursor-pointer">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </motion.div>
+      )}
+
+      {/* Share: save the chosen chats to a local Markdown/PDF file, or copy them as text. Nothing is uploaded. */}
+      {shareOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-background p-5 shadow-2xl">
+            <h3 className="text-sm font-semibold text-foreground">
+              Share {selected.size} chat{selected.size > 1 ? "s" : ""}
+            </h3>
+            <p className="mt-1 text-[11px] text-muted-foreground">Saved on this PC only - nothing is uploaded.</p>
+            <div className="mt-4 space-y-3">
+              <div>
+                <div className="text-[11px] font-medium text-muted-foreground">Format</div>
+                <div className="mt-1 flex gap-2">
+                  {(["md", "pdf"] as const).map((f) => (
+                    <button key={f} type="button" onClick={() => { setShareFormat(f); setShareName((n) => n.replace(/\.(md|pdf)$/i, `.${f}`)); }}
+                      className={cn("rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer",
+                        shareFormat === f ? "border-accent bg-accent-soft text-accent" : "border-border text-muted-foreground hover:text-foreground")}>
+                      {f === "md" ? "Markdown (.md)" : "PDF (.pdf)"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] font-medium text-muted-foreground">Folder (empty = ISHTI's own exports folder)</div>
+                <input value={shareDir} onChange={(e) => setShareDir(e.target.value)} spellCheck={false}
+                  placeholder={"e.g. D:\\Documents\\ISHTI"}
+                  className="mt-1 w-full rounded-lg border border-border bg-muted/30 px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-accent" />
+              </div>
+              <div>
+                <div className="text-[11px] font-medium text-muted-foreground">File name</div>
+                <input value={shareName} onChange={(e) => setShareName(e.target.value)} spellCheck={false}
+                  className="mt-1 w-full rounded-lg border border-border bg-muted/30 px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-accent" />
+              </div>
+            </div>
+            {shareError && <p className="mt-3 text-[11px] text-danger">{shareError}</p>}
+            {shareResult?.copied && <p className="mt-3 text-[11px] text-emerald-500">Copied to the clipboard.</p>}
+            {shareResult?.path && (
+              <div className="mt-3 rounded-lg border border-border/60 bg-muted/30 p-2">
+                <p className="break-all text-[11px] text-muted-foreground">{shareResult.path}</p>
+                <button type="button" onClick={() => postJSON("/api/reveal", { path: shareResult.path }).catch(() => {})}
+                  className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-accent hover:underline cursor-pointer">
+                  <FolderOpen className="h-3 w-3" /> Show in folder
+                </button>
+              </div>
+            )}
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
+              <button type="button" onClick={copySelectedAsText}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer">
+                <Copy className="h-3.5 w-3.5" /> Copy as text
+              </button>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => { setShareOpen(false); setShareResult(null); setShareError(""); }}
+                  className="rounded-xl border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted cursor-pointer">
+                  Close
+                </button>
+                <button type="button" disabled={shareBusy} onClick={doExport}
+                  className="rounded-xl bg-accent px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-accent/90 disabled:opacity-50 cursor-pointer">
+                  {shareBusy ? "Saving…" : `Save ${shareFormat.toUpperCase()}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main chat conversation view */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">

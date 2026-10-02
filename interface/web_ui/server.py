@@ -27,6 +27,7 @@ from orchestrator.memory.error_logger import ErrorLogger
 from voice.tts import speak, speakable
 from orchestrator.memory.user_profile import get_user_memory
 from ishti.dispatcher import api as ishti_api, handle as ishti_handle, HOOKS as ISHTI_HOOKS
+from ishti import notifications as notifications_store
 # Speed (Cycle 4): cached pre-compression, cache headers, selective gzip - with its own offline test.
 from interface.web_ui.static_perf import CachedStaticFiles, SelectiveGZipMiddleware
 
@@ -105,8 +106,11 @@ async def _capture_loop():
     from ishti import CONFIG
     from ishti.skills.reminders.skill import start as start_reminders
 
-    def announce(msg):  # due reminders: HUD always, spoken unless the owner muted audio
+    def announce(msg, kind="job"):  # due reminders: HUD always, spoken unless the owner muted audio
         sync_event_callback("assistant_message", {"reply": "⏰ " + msg})
+        text = str(msg or "").strip()
+        # persistent bell entry (survives restarts); the announced prefix tells reminders/timers apart
+        notifications_store.add("reminder" if text.lower().startswith(("reminder", "timer")) else kind, text)
         if get_user_memory().get_preferences().audio_output:
             from ishti.voice import speak as piper_speak
             piper_speak(msg)
@@ -128,7 +132,7 @@ async def _capture_loop():
     start_clipboard_history()  # "clipboard history": last 100 text copies, local SQLite, secrets skipped
     from ishti import health, killswitch
     from ishti.talk import talker as _pc_talker
-    health.start(announce)  # A1: degrading components are flagged before they fail
+    health.start(lambda m: announce(m, kind="alert"))  # A1: degrading components are flagged before they fail
     killswitch.on_kill(lambda: _pc_talker().stop() and "PC speech")  # A2: whatever the PC is saying stops
     if not os.environ.get("ISHTI_WATCHDOG"):  # no watchdog process: the hotkey lives here (works unless this process hangs)
         try:
@@ -499,6 +503,7 @@ def _execute(prompt, session_id, on_token=None, on_event=None) -> dict:
                             prompt, session_id)
     except Exception as exc:
         ErrorLogger.log_error(subsystem="SERVER", error=exc, user_prompt=prompt, context="execute endpoint")
+        notifications_store.add("error", f"Request failed: {str(exc)[:200]}")
         res = {"error": str(exc), "final_answer": f"Server error: {str(exc)[:200]}"}
     last_execution_state = res
     if res.get("mode") == "DEEP_RESEARCH":
@@ -588,6 +593,107 @@ async def activate_session(session_id: str):
 
 
 # ========================================================
+# NOTIFICATION API (the bell: reminders, jobs, downloads, alerts, errors)
+# ========================================================
+@app.get("/api/notifications")
+async def list_notifications(limit: int = 50):
+    return JSONResponse({"notifications": notifications_store.recent(limit), "unread": notifications_store.unread()})
+
+
+@app.post("/api/notifications/read")
+async def notifications_mark_read(req: Request):
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    nid = body.get("id") if isinstance(body, dict) else None
+    return JSONResponse({"unread": notifications_store.mark_read(nid),
+                         "marked": "all" if nid in (None, "") else nid})
+
+
+# ========================================================
+# CHAT MANAGEMENT API (rename, bulk delete with undo, local share/export)
+# ========================================================
+def _safe_session_ids(raw) -> list:
+    """Only real session ids: no path separators can reach the sessions folder."""
+    return [str(i) for i in (raw or [])
+            if str(i).startswith("sess_") and "/" not in str(i) and "\\" not in str(i)]
+
+
+@app.post("/api/sessions/{session_id}/rename")
+async def rename_session(session_id: str, req: Request):
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    saved = get_conversation_manager().rename_session(session_id, (body or {}).get("title", ""))
+    if saved is None:
+        return JSONResponse({"error": "That chat is gone, or the title was empty."}, status_code=400)
+    return JSONResponse({"ok": True, "session_id": session_id, "title": saved})
+
+
+@app.post("/api/sessions/delete")
+async def delete_sessions(req: Request):
+    """Delete selected chats, but keep them in a trash folder for the undo toast (8 s)."""
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    ids = _safe_session_ids((body or {}).get("ids"))
+    token = get_conversation_manager().trash(ids)
+    return JSONResponse({"ok": True, "deleted": ids, "undo_token": token, "undo_seconds": 8})
+
+
+@app.post("/api/sessions/undo")
+async def undo_delete_sessions(req: Request):
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    restored = get_conversation_manager().restore((body or {}).get("undo_token"))
+    return JSONResponse({"ok": True, "restored": restored})
+
+
+@app.post("/api/sessions/export")
+async def export_sessions(req: Request):
+    """Share: write the chosen chats to a local Markdown/PDF file the owner picked. Nothing leaves this PC."""
+    import time
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    body = body if isinstance(body, dict) else {}
+    ids = _safe_session_ids(body.get("ids"))
+    fmt = "pdf" if str(body.get("format", "md")).lower() == "pdf" else "md"
+    from ishti import files_api
+    wanted = str(body.get("dir") or "").strip()
+    folder = os.path.realpath(wanted) if wanted else os.path.join(ROOT_DIR, "data", "exports")
+    roots = [os.path.realpath(r) for r in files_api.allowed_roots()]
+    if not any(folder == r or folder.startswith(r + os.sep) for r in roots) or not os.path.isdir(folder):
+        return JSONResponse({"error": "I can only save into ISHTI's reports/data folders or your Documents/ISHTI, "
+                                      "Downloads and Desktop."}, status_code=403)
+    markdown = get_conversation_manager().export_markdown(ids)
+    if not ids:
+        return JSONResponse({"error": "Pick at least one chat to share."}, status_code=400)
+    name = files_api.safe_name(body.get("name") or f"ishti-chats-{time.strftime('%Y%m%d-%H%M%S')}.{fmt}")
+    if not name.lower().endswith("." + fmt):
+        name = os.path.splitext(name)[0] + "." + fmt
+    path = os.path.join(folder, name)
+    method = ""
+    try:
+        from ishti.skills.chat_digest import export as digest_export
+        written = digest_export.save_pdf(markdown, path=path) if fmt == "pdf" else digest_export.save_md(markdown, path=path)
+        # save_pdf answers (path, engine); save_md answers the path
+        saved = written[0] if isinstance(written, (tuple, list)) else written
+        method = str(written[1]) if isinstance(written, (tuple, list)) and len(written) > 1 else ""
+    except Exception as exc:
+        return JSONResponse({"error": f"Could not write the file: {exc}"}, status_code=500)
+    if not saved or not os.path.isfile(saved):
+        return JSONResponse({"error": "The export came back empty."}, status_code=500)
+    return JSONResponse({"ok": True, "path": saved, "format": fmt, "chats": len(ids), "method": method})
+
+
+# ========================================================
 # ERROR LOG API
 # ========================================================
 @app.get("/api/errors")
@@ -612,7 +718,7 @@ async def trigger_rebenchmark():
 
     scores = await loop.run_in_executor(None, run_bm)
     await broadcast_event("benchmark_completed", {"scores": scores})
-    speak("Model re-benchmarking complete. Optimal models selected.", wait=False)
+    notifications_store.add("job", "Model re-benchmarking complete", body="The best models were selected.")  # shown in the bell, not spoken
     return JSONResponse({"status": "success", "scores": scores})
 
 

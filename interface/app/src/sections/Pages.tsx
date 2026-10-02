@@ -36,7 +36,6 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { del, getJSON, postJSON } from "@/lib/api";
-import { TaskList, type Task } from "@/components/rare/task-list";
 import { DeleteButton } from "@/components/rare/delete-button";
 import { AnimatedCounter } from "@/components/rare/animated-counter";
 import { ThemeSwitch } from "@/components/ThemeToggle";
@@ -48,6 +47,7 @@ import { RemoteControl } from "@/components/RemoteControl";
 import { ArchitectureCard } from "@/components/ArchitectureCard";
 import { LanguageSettings } from "@/components/LanguageSettings";
 import { PrivacyPanel } from "@/components/PrivacyPanel";
+import { NotificationsPanel } from "@/components/NotificationCenter";
 
 export function Page({
   title,
@@ -98,24 +98,234 @@ const Card = ({ children, className = "" }: { children: ReactNode; className?: s
   <div className={`rounded-2xl border border-border bg-background p-4 ${className}`}>{children}</div>
 );
 
-// ---------------------------------------------------------------- Tasks (reminders & timers)
+// ---------------------------------------------------------------- Tasks (reminders, timers & notifications)
+type Reminder = { id: number; due: number; text: string; done: boolean; repeat?: string; created?: number };
+
+function localInput(ts: number): string {
+  const d = new Date(ts * 1000);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function dueLabel(ts: number): string {
+  return new Date(ts * 1000).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
+}
+
 export function Tasks({ onToggleNav }: { onToggleNav?: () => void }) {
-  const [items, setItems] = useState<{ id: number; due: number; text: string }[]>([]);
-  const load = () => getJSON<{ reminders: typeof items }>("/api/reminders").then((d) => setItems(d.reminders));
+  const [items, setItems] = useState<Reminder[]>([]);
+  const [tab, setTab] = useState<"tasks" | "notifications">(() => {
+    try { return window.location.hash.replace(/^#\/?/, "").startsWith("notifications") ? "notifications" : "tasks"; } catch { return "tasks"; }
+  });
+  const [unreadNotifs, setUnreadNotifs] = useState(0);
+  const [listFilter, setListFilter] = useState<"open" | "done" | "all">("open");
+  const [sortBy, setSortBy] = useState<"due" | "created" | "text">("due");
+  const [editing, setEditing] = useState<number | null>(null);
+  const [draft, setDraft] = useState("");
+  const [draftDue, setDraftDue] = useState("");
+  const [undo, setUndo] = useState<{ text: string; due: number } | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  // done tasks come back too: completing one must never make it vanish (it moves to the Done group)
+  const load = () => getJSON<{ reminders: Reminder[] }>("/api/reminders?include_done=1")
+    .then((d) => setItems(d.reminders ?? []))
+    .catch((err) => console.warn("[tasks] load failed:", err));
+
+  useEffect(() => {  // the undo window for a deleted task
+    if (!undo) return;
+    const t = setTimeout(() => setUndo(null), 8000);
+    return () => clearTimeout(t);
+  }, [undo]);
   useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, []);
-  const tasks: Task[] = items.map((r) => ({
-    id: String(r.id),
-    label: `${new Date(r.due * 1000).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })} · ${r.text}`,
-  }));
+  useEffect(() => {
+    const loadUnread = () => getJSON<{ unread: number }>("/api/notifications")
+      .then((d) => setUnreadNotifs(d.unread ?? 0)).catch(() => {});
+    loadUnread();
+    window.addEventListener("ishti-notification", loadUnread);
+    return () => window.removeEventListener("ishti-notification", loadUnread);
+  }, []);
+  useEffect(() => {
+    // the bell's "View all" works even when Tasks is already mounted (hash writes do not fire hashchange)
+    const onTab = (e: Event) => setTab((e as CustomEvent).detail === "notifications" ? "notifications" : "tasks");
+    window.addEventListener("ishti-tasks-tab", onTab);
+    return () => window.removeEventListener("ishti-tasks-tab", onTab);
+  }, []);
+  const selectTab = (next: "tasks" | "notifications") => {
+    setTab(next);
+    try { window.history.replaceState(null, "", next === "notifications" ? "#notifications" : "#tasks"); } catch {}
+  };
+  const toggleDone = async (r: Reminder) => {
+    setItems((cur) => cur.map((x) => (x.id === r.id ? { ...x, done: !r.done } : x)));   // stays on screen
+    await postJSON(`/api/reminders/${r.id}/${r.done ? "open" : "done"}`, {}).catch(() => {});
+    load();
+  };
+  const snooze = async (r: Reminder, minutes: number) => {
+    setBusyId(r.id);
+    await postJSON(`/api/reminders/${r.id}/snooze`, { minutes }).catch(() => {});
+    setBusyId(null);
+    load();
+  };
+  const removeTask = async (r: Reminder) => {
+    await del(`/api/reminders/${r.id}`).catch(() => {});
+    setItems((cur) => cur.filter((x) => x.id !== r.id));
+    setUndo({ text: r.text, due: r.due });
+  };
+  const undoDelete = async () => {
+    if (!undo) return;
+    await postJSON("/api/reminders", { text: undo.text, due: undo.due }).catch(() => {});
+    setUndo(null);
+    load();
+  };
+  const startEdit = (r: Reminder) => { setEditing(r.id); setDraft(r.text); setDraftDue(localInput(r.due)); };
+  const saveEdit = async (r: Reminder) => {
+    const text = draft.trim();
+    const due = draftDue ? Math.floor(new Date(draftDue).getTime() / 1000) : r.due;
+    setEditing(null);
+    await postJSON(`/api/reminders/${r.id}`, { text, due }).catch(() => {});
+    load();
+  };
+  const openTasks = items.filter((r) => !r.done);
+  const doneTasks = items.filter((r) => r.done);
+  const sorted = (rows: Reminder[]) => [...rows].sort((a, b) =>
+    sortBy === "text" ? a.text.localeCompare(b.text)
+      : sortBy === "created" ? (a.created ?? 0) - (b.created ?? 0)
+        : a.due - b.due);
+
+  const renderRow = (r: Reminder, done: boolean) => (
+    <div key={r.id}
+      className={cn("group flex items-center gap-2.5 rounded-xl border border-border/60 bg-card/40 px-3 py-2.5 transition-colors hover:border-accent/40", done && "opacity-70")}>
+      <button type="button" onClick={() => toggleDone(r)} title={done ? "Mark as not done" : "Mark as done"}
+        className={cn("grid h-5 w-5 shrink-0 place-items-center rounded-md border transition-colors cursor-pointer",
+          done ? "border-accent bg-accent text-white" : "border-border hover:border-accent")}>
+        {done && <Check className="h-3.5 w-3.5" />}
+      </button>
+      {editing === r.id ? (
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <input value={draft} autoFocus onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") saveEdit(r); if (e.key === "Escape") setEditing(null); }}
+            className="min-w-[180px] flex-1 rounded-md border border-accent/60 bg-background px-2 py-1 text-[13px] text-foreground outline-none" />
+          <input type="datetime-local" value={draftDue} onChange={(e) => setDraftDue(e.target.value)}
+            className="rounded-md border border-border bg-background px-2 py-1 text-[11px] text-foreground outline-none focus:border-accent" />
+          <button type="button" onClick={() => saveEdit(r)}
+            className="rounded-lg bg-accent px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-accent/90 cursor-pointer">Save</button>
+          <button type="button" onClick={() => setEditing(null)}
+            className="rounded-lg border border-border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted cursor-pointer">Cancel</button>
+        </div>
+      ) : (
+        <>
+          <div className="min-w-0 flex-1">
+            <div className={cn("truncate text-[13.5px] text-foreground", done && "line-through opacity-70")}>{r.text}</div>
+            <div className="text-[11px] text-muted-foreground">
+              {dueLabel(r.due)}{r.repeat ? ` · repeats (${r.repeat})` : ""}
+            </div>
+          </div>
+          <div className="hidden shrink-0 items-center gap-1 group-hover:flex">
+            <button type="button" disabled={busyId === r.id} onClick={() => snooze(r, 10)} title="Snooze 10 minutes"
+              className="rounded-lg border border-border px-2 py-1 text-[10.5px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40 cursor-pointer">+10m</button>
+            <button type="button" disabled={busyId === r.id} onClick={() => snooze(r, 60)} title="Snooze 1 hour"
+              className="rounded-lg border border-border px-2 py-1 text-[10.5px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40 cursor-pointer">+1h</button>
+            <button type="button" onClick={() => startEdit(r)} title="Edit title or time"
+              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer">
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <button type="button" onClick={() => removeTask(r)} title="Delete (can be undone for 8 s)"
+              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger cursor-pointer">
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+  const tabs = (
+    <div className="flex items-center gap-1 rounded-xl border border-border bg-muted/30 p-1">
+      {([["tasks", "Tasks"], ["notifications", "Notifications"]] as const).map(([key, label]) => (
+        <button key={key} type="button" onClick={() => selectTab(key)}
+          className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+            tab === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+          {label}
+          {key === "notifications" && unreadNotifs > 0 && (
+            <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold text-white">{unreadNotifs}</span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
   return (
-    <Page title="Tasks" subtitle="Reminders and timers. Tick one to cancel it. Add more from chat: “remind me at 5pm to …”." onToggleNav={onToggleNav}>
-      <Card>
-        {tasks.length ? (
-          <TaskList tasks={tasks} accent="#6e56cf" onTasksChange={(next) => {
-            next.filter((t) => t.done).forEach((t) => postJSON(`/api/reminders/${t.id}/done`).then(load));
-          }} />
-        ) : <p className="text-sm text-muted-foreground">Nothing scheduled.</p>}
-      </Card>
+    <Page title="Tasks" action={tabs}
+      subtitle={tab === "tasks"
+        ? "Reminders and timers. Tick a task to mark it done (it moves to Done, nothing disappears); use the icons to snooze, edit or delete. Add more from chat: “remind me at 5pm to …”."
+        : "Everything ISHTI told you about — reminders, finished jobs, downloads, alerts and errors."}
+      onToggleNav={onToggleNav}>
+      {tab === "tasks" ? (
+        <>
+          <Card>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 pb-3">
+              <div className="flex items-center gap-1 rounded-xl border border-border bg-muted/30 p-1">
+                {([["open", "Open"], ["done", "Done"], ["all", "All"]] as const).map(([key, label]) => (
+                  <button key={key} type="button" onClick={() => setListFilter(key)}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                      listFilter === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+                    {label}{key === "open" ? ` (${openTasks.length})` : key === "done" ? ` (${doneTasks.length})` : ""}
+                  </button>
+                ))}
+              </div>
+              <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                Sort
+                <select value={sortBy} onChange={(e) => setSortBy(e.target.value as "due" | "created" | "text")}
+                  className="rounded-lg border border-border bg-background px-2 py-1 text-[11px] text-foreground outline-none focus:border-accent">
+                  <option value="due">by time</option>
+                  <option value="created">by added</option>
+                  <option value="text">A to Z</option>
+                </select>
+              </label>
+            </div>
+
+            {items.length === 0 && (
+              <p className="pt-4 text-sm text-muted-foreground">
+                Nothing scheduled. Add one from chat: “remind me at 5pm to …”.
+              </p>
+            )}
+
+            {listFilter !== "done" && openTasks.length > 0 && (
+              <div className="pt-3">
+                {listFilter === "all" && (
+                  <div className="pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Open</div>
+                )}
+                <div className="space-y-1.5">{sorted(openTasks).map((r) => renderRow(r, false))}</div>
+              </div>
+            )}
+
+            {listFilter !== "open" && doneTasks.length > 0 && (
+              <div className="pt-4">
+                <div className="pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Done</div>
+                <div className="space-y-1.5">{sorted(doneTasks).map((r) => renderRow(r, true))}</div>
+              </div>
+            )}
+
+            {listFilter === "open" && openTasks.length === 0 && items.length > 0 && (
+              <p className="pt-4 text-sm text-muted-foreground">
+                Nothing open — {doneTasks.length} done. Switch to Done to see {doneTasks.length === 1 ? "it" : "them"}.
+              </p>
+            )}
+          </Card>
+
+          {undo && (
+            <div className="mt-3 flex items-center gap-3 rounded-2xl border border-border bg-background px-4 py-2.5 shadow-sm">
+              <Trash2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="text-xs text-foreground">Task deleted</span>
+              <button type="button" onClick={undoDelete}
+                className="rounded-lg bg-accent px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-accent/90 cursor-pointer">
+                Undo
+              </button>
+              <button type="button" onClick={() => setUndo(null)} title="Dismiss"
+                className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted cursor-pointer">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+        </>
+      ) : (
+        <NotificationsPanel />
+      )}
     </Page>
   );
 }

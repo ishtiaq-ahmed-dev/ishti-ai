@@ -128,25 +128,9 @@ def _ftlog(text, reply, name, dec, channel):
         print(f"[dispatcher] ftlog write skipped: {exc}")
 
 
-# Spoken progress for voice requests: the steps an owner would want to hear while waiting, one at a time.
-NARRATE = re.compile(r"^(?:Searching the internet|Trying a different search|Found \d+ sources|Reading through|"
-                     r"\d+ sources? answer|writing|rendering|cutting a|transcribing|checking the video|open WhatsApp)", re.I)
-_narrated = {"at": 0.0}
-
-
-def narrate(ev):
-    from ishti.talk import is_voice_allowed
-    if not is_voice_allowed():
-        return
-    label = str(ev.get("label") or ev.get("detail") or "")
-    if ev.get("type") != "tool" or not NARRATE.search(label) or time.time() - _narrated["at"] < 3:
-        return
-    _narrated["at"] = time.time()
-    try:
-        from ishti.voice import speak
-        speak(re.split(r"[:(]", label)[0].strip().rstrip(".") + ".")  # "Searching the internet." not the whole query
-    except Exception:
-        pass
+# Process chatter is NEVER spoken (owner rule E): step labels, tool names and progress lines are shown on the
+# dashboard only. Voice answers are the final reply alone (ishti/talk.py enforces the same rule at the speech
+# boundary, so no path can narrate a step).
 
 
 def _learn(text):
@@ -568,8 +552,6 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
         if HOOKS["emit"]:  # every step also goes to the dashboard's live stream (voice/wake requests have no chat tab)
             HOOKS["emit"]("trace", {**{k: v for k, v in ev.items() if k not in ("sample", "results")},
                                     "session": sid, "channel": channel})
-        if channel == "voice":
-            narrate(ev)
     s = View(shared, trace=trace, on_token=on_token)
     s["trace"](type="received", text=text, channel=channel)
 
@@ -1191,6 +1173,13 @@ async def media(path: str, download: int = 0):
     return FileResponse(real, media_type=MEDIA_EXT[ext], filename=os.path.basename(real) if download else None)
 
 
+def _as_skill(name, fn, *args):
+    """Run `fn` as the named skill: the dashboard's Markets page is the owner asking for market data, so its calls to the data
+    sources are that skill's declared network use (ishti/privacy.py judges every connection by the running skill)."""
+    with audit.context(skill=name, initiator="owner"):
+        return fn(*args)
+
+
 @api.get("/api/markets/watchlist")
 async def markets_watch():
     import asyncio
@@ -1200,7 +1189,7 @@ async def markets_watch():
         import concurrent.futures as cf
         def safe(item):
             try:
-                return mk.quote(item)
+                return _as_skill("markets", mk.quote, item)
             except Exception as exc:
                 return {**item, "label": item["id"], "error": f"{type(exc).__name__}"}
         with cf.ThreadPoolExecutor(8) as pool:
@@ -1216,7 +1205,7 @@ async def markets_watch_edit(req: Request):
     body = await req.json()
     items = mk.watchlist()
     if body.get("add"):
-        item = await asyncio.get_running_loop().run_in_executor(None, mk.resolve, str(body["add"])[:60])
+        item = await asyncio.get_running_loop().run_in_executor(None, _as_skill, "markets", mk.resolve, str(body["add"])[:60])
         if not item:
             return JSONResponse({"error": f"couldn't find '{body['add']}'"}, status_code=404)
         if item not in items:
@@ -1231,7 +1220,7 @@ async def markets_analyze(q: str):
     """The analyzer page: the same answer the chat gives for 'analyze <q>', plus chart data."""
     import asyncio
     from ishti.skills.markets import skill as mk
-    out = await asyncio.get_running_loop().run_in_executor(None, mk.run, f"analyze {q[:80]} stock", {})
+    out = await asyncio.get_running_loop().run_in_executor(None, _as_skill, "markets", mk.run, f"analyze {q[:80]} stock", {})
     return out or JSONResponse({"error": "nothing found"}, status_code=404)
 
 
@@ -1326,19 +1315,130 @@ async def voice_endpoint(audio: UploadFile, session_id: str = Form(None)):
 
 
 # ---- data for the app's sections (Tasks, Settings, System, activity heatmap) ----
+def _reminders_db():
+    from ishti.skills.reminders.skill import _db
+    return _db()
+
+
+def _reminder_rows(include_done=False, limit=200):
+    """Every reminder with its done flag (the Tasks page keeps completed ones visible in a Done group)."""
+    f = _reminders_db()
+    where = "" if include_done else " WHERE done=0"
+    with f.lock:
+        rows = f.db.execute("SELECT id, due, text, done, repeat, created FROM reminders" + where +
+                            # open ones soonest first; finished ones most recent first (the LIMIT must cut the OLD ones: 200 old
+                            # finished reminders used to hide every newly completed task)
+                            " ORDER BY done ASC, CASE WHEN done=0 THEN due END ASC, CASE WHEN done=1 THEN due END DESC LIMIT ?",
+                            (int(limit),)).fetchall()
+    return [{"id": r[0], "due": r[1], "text": r[2] or "", "done": bool(r[3]),
+             "repeat": r[4] or "", "created": r[5]} for r in rows]
+
+
 @api.get("/api/reminders")
-async def reminders_endpoint():
-    from ishti.skills.reminders.skill import _db, _pending
-    return {"reminders": [{"id": i, "due": d, "text": t} for i, d, t in _pending(_db())]}
+async def reminders_endpoint(include_done: int = 0, limit: int = 500):
+    return {"reminders": _reminder_rows(bool(include_done), limit)}
+
+
+@api.post("/api/reminders")
+async def reminder_create_endpoint(req: Request):
+    """Add a reminder straight from the Tasks page - also how Undo puts a deleted one back."""
+    import datetime as _dt
+    import time as _time
+    body = await req.json()
+    text = str((body or {}).get("text") or "").strip()[:300]
+    due = (body or {}).get("due")
+    if not text or due in (None, ""):
+        return JSONResponse({"error": "A reminder needs a text and a time."}, status_code=400)
+    try:
+        due_ts = float(due)
+    except (TypeError, ValueError):
+        try:
+            due_ts = _dt.datetime.fromisoformat(str(due).replace("Z", "")).timestamp()
+        except ValueError:
+            return JSONResponse({"error": "I could not read that time."}, status_code=400)
+    f = _reminders_db()
+    with f.lock, f.db:
+        cur = f.db.execute("INSERT INTO reminders(due, text, created) VALUES(?,?,?)", (due_ts, text, _time.time()))
+    return {"id": cur.lastrowid, "due": due_ts, "text": text, "done": False}
 
 
 @api.post("/api/reminders/{rid}/done")
 async def reminder_done_endpoint(rid: int):
-    from ishti.skills.reminders.skill import _db
-    f = _db()
+    f = _reminders_db()
     with f.lock, f.db:
         n = f.db.execute("UPDATE reminders SET done=1 WHERE id=?", (rid,)).rowcount
     return {"updated": n}
+
+
+@api.post("/api/reminders/{rid}/open")
+async def reminder_open_endpoint(rid: int):
+    """Un-complete: a ticked task stays in the list and can be put back to open."""
+    f = _reminders_db()
+    with f.lock, f.db:
+        n = f.db.execute("UPDATE reminders SET done=0 WHERE id=?", (rid,)).rowcount
+    return {"updated": n}
+
+
+@api.post("/api/reminders/{rid}")
+async def reminder_update_endpoint(rid: int, req: Request):
+    """Edit a reminder's text and/or its due time (epoch seconds or ISO date-time)."""
+    import datetime as _dt
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    body = body if isinstance(body, dict) else {}
+    fields, values = [], []
+    if str(body.get("text") or "").strip():
+        fields.append("text=?")
+        values.append(str(body["text"]).strip()[:300])
+    if body.get("due") not in (None, ""):
+        try:
+            due_ts = float(body["due"])
+        except (TypeError, ValueError):
+            try:
+                due_ts = _dt.datetime.fromisoformat(str(body["due"]).replace("Z", "")).timestamp()
+            except ValueError:
+                return JSONResponse({"error": "I could not read that time."}, status_code=400)
+        fields.append("due=?")
+        values.append(due_ts)
+    if not fields:
+        return JSONResponse({"error": "Nothing to change."}, status_code=400)
+    f = _reminders_db()
+    with f.lock, f.db:
+        n = f.db.execute(f"UPDATE reminders SET {', '.join(fields)} WHERE id=?", (*values, rid)).rowcount
+    return {"updated": n}
+
+
+@api.post("/api/reminders/{rid}/snooze")
+async def reminder_snooze_endpoint(rid: int, req: Request):
+    """Push a reminder later by N minutes (default 10) and make sure it is open again."""
+    import time as _time
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    try:
+        minutes = max(1, int((body or {}).get("minutes") or 10))
+    except (TypeError, ValueError):
+        minutes = 10
+    f = _reminders_db()
+    with f.lock:
+        row = f.db.execute("SELECT due FROM reminders WHERE id=?", (rid,)).fetchone()
+    if not row:
+        return JSONResponse({"error": "That reminder is gone."}, status_code=404)
+    due = max(float(row[0] or 0), _time.time()) + minutes * 60
+    with f.lock, f.db:
+        f.db.execute("UPDATE reminders SET due=?, done=0 WHERE id=?", (due, rid))
+    return {"id": rid, "due": due, "snoozed_minutes": minutes}
+
+
+@api.delete("/api/reminders/{rid}")
+async def reminder_delete_endpoint(rid: int):
+    f = _reminders_db()
+    with f.lock, f.db:
+        n = f.db.execute("DELETE FROM reminders WHERE id=?", (rid,)).rowcount
+    return {"deleted": n}
 
 
 @api.get("/api/prefs")

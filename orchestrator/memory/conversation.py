@@ -10,6 +10,7 @@ import time
 import json
 import uuid
 import re
+import shutil
 from typing import Dict, Any, List, Optional
 
 try:  # best-effort failure log (never breaks the module if logging is unavailable)
@@ -29,6 +30,10 @@ class ConversationManager:
         self.sessions_dir = sessions_dir
         os.makedirs(self.sessions_dir, exist_ok=True)
         self.active_session_id: Optional[str] = None
+        try:
+            self.purge_trash()  # an undo window that was interrupted (crash/close) must not leak folders
+        except Exception as _exc:
+            swallowed('orchestrator/memory/conversation.py:ConversationManager.__init__', _exc)
         self._ensure_initial_session()
 
     def _ensure_initial_session(self) -> str:
@@ -180,6 +185,89 @@ class ConversationManager:
             except Exception:
                 return False
         return False
+
+    def rename_session(self, session_id: str, title: str) -> Optional[str]:
+        """Set a chat's title (one line, max 80 chars). Returns the saved title, or None if the chat is gone."""
+        session = self.load_session(session_id)
+        clean = re.sub(r"\s+", " ", str(title or "")).strip()[:80]
+        if not session or not clean or "/" in session_id or "\\" in session_id:
+            return None
+        session["title"] = clean
+        self._save_session(session_id, session)
+        return clean
+
+    def trash(self, ids) -> str:
+        """Move chats out of the list into data/sessions/.trash/<token>/ so undo can put them back (8 s toast).
+        Returns the token restore() needs. Never touches a chat that is not there."""
+        token = f"{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+        folder = os.path.join(self.sessions_dir, ".trash", token)
+        os.makedirs(folder, exist_ok=True)
+        want = {str(i) for i in (ids or []) if str(i).startswith("sess_") and "/" not in str(i) and "\\" not in str(i)}
+        for sid in want:
+            src = os.path.join(self.sessions_dir, f"{sid}.json")
+            if os.path.isfile(src):
+                try:
+                    os.replace(src, os.path.join(folder, f"{sid}.json"))
+                except OSError as _exc:
+                    swallowed('orchestrator/memory/conversation.py:ConversationManager.trash', _exc)
+        if self.active_session_id in want:
+            self._ensure_initial_session()
+        return token
+
+    def restore(self, token) -> int:
+        """Put the chats from one trash folder back; returns how many came back."""
+        folder = os.path.join(self.sessions_dir, ".trash", os.path.basename(str(token or "")))
+        back = 0
+        if os.path.isdir(folder):
+            for name in os.listdir(folder):
+                if name.endswith(".json"):
+                    try:
+                        os.replace(os.path.join(folder, name), os.path.join(self.sessions_dir, name))
+                        back += 1
+                    except OSError as _exc:
+                        swallowed('orchestrator/memory/conversation.py:ConversationManager.restore', _exc)
+            try:
+                os.rmdir(folder)
+            except OSError:
+                pass
+        return back
+
+    def purge_trash(self, max_age_s: int = 3600) -> int:
+        """Drop trash folders left behind by a closed undo window. Startup hygiene; never a live chat."""
+        base = os.path.join(self.sessions_dir, ".trash")
+        gone = 0
+        if os.path.isdir(base):
+            for name in os.listdir(base):
+                path = os.path.join(base, name)
+                try:
+                    if os.path.isdir(path) and time.time() - os.path.getmtime(path) > max_age_s:
+                        shutil.rmtree(path)
+                        gone += 1
+                except OSError as _exc:
+                    swallowed('orchestrator/memory/conversation.py:ConversationManager.purge_trash', _exc)
+        return gone
+
+    def export_markdown(self, ids) -> str:
+        """One readable Markdown document for the chosen chats (newest first): title, date, every message and source."""
+        docs = []
+        for sid in ids or []:
+            s = self.load_session(sid)
+            if not s:
+                continue
+            lines = [f"## {s.get('title') or sid}", "",
+                     f"*{s.get('created_at', '')} · {len(s.get('messages', []))} messages*", ""]
+            for m in s.get("messages", []):
+                who = "**You**" if m.get("role") == "user" else "**ISHTI**"
+                lines += [f"{who} · {m.get('timestamp', '')}", "", str(m.get("content", "")).strip(), ""]
+                for src in m.get("sources") or []:
+                    if isinstance(src, dict) and src.get("url"):
+                        lines.append(f"- [{src.get('title') or src['url']}]({src['url']})")
+                if any(isinstance(src, dict) and src.get("url") for src in (m.get("sources") or [])):
+                    lines.append("")
+            docs.append("\n".join(lines))
+        when = time.strftime("%Y-%m-%d %H:%M")
+        return (f"# ISHTI chats\n\nExported {when} · {len(docs)} chat(s) · made on this PC, nothing was sent\n\n"
+                + "\n---\n\n".join(docs))
 
     def _save_session(self, session_id: str, data: Dict[str, Any]) -> None:
         fpath = os.path.join(self.sessions_dir, f"{session_id}.json")

@@ -98,7 +98,7 @@ def _on_backend_lost():
     showing a dead app. No confirm dialog here - this is not the user's X click (found 2026-09-29)."""
     global _shutting_down
     _shutting_down = True                      # on_closing must not pop its exit dialog
-    _schedule_hard_exit(after_s=2.0)           # armed FIRST in case destroy blocks
+    _schedule_hard_exit(after_s=2.0)           # armed FIRST: destroy() may block on the GUI thread
     _destroy_all_windows()
 
 
@@ -168,6 +168,25 @@ def _destroy_all_windows():
                 pass
     except Exception:
         pass
+    # Also destroy the stored handle directly, in case webview.windows is stale or empty
+    try:
+        w = _remember.get("win")
+        if w is not None:
+            w.destroy()
+    except Exception:
+        pass
+    # Last resort: use Win32 to force-close any remaining ISHTI windows
+    try:
+        import win32gui
+        import win32con
+        def _enum_and_destroy(hwnd, _):
+            if win32gui.IsWindowVisible(hwnd):
+                title = win32gui.GetWindowText(hwnd)
+                if title == TITLE or "ISHTI - Intelligent Personal Assistant" in title or "127.0.0.1:8888" in title:
+                    win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
+        win32gui.EnumWindows(_enum_and_destroy, None)
+    except Exception:
+        pass
 
 
 TITLE = "ISHTI - Intelligent Personal Assistant"
@@ -192,13 +211,16 @@ class MainApi:
 
     def force_close(self):
         _trigger_detached_shutdown()
-        _schedule_hard_exit()           # armed FIRST: destroy() may block on the GUI thread
+        # The last-resort exit is armed FIRST but with room for a clean close (3 s): destroy() can block on a wedged GUI thread
+        # (2026-09-29: overlay at 100%, window stayed), and if it does, nothing after it would ever run - so the guarantee
+        # that the process (and with it the window) ends must not depend on destroy() returning.
+        _schedule_hard_exit(after_s=3.0)
+        _destroy_all_windows()          # pywebview destroy of every window, the stored handle, then a Win32 WM_CLOSE fallback
         try:
             if self._win:
                 self._win.destroy()
         except Exception:
             pass
-        _destroy_all_windows()          # in case the primary handle went stale
 
     def show_window(self):
         if self._win:
