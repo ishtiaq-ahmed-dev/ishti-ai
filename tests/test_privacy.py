@@ -13,6 +13,7 @@ EXT = "93.184.216.34"  # a public address (example.com); never actually dialled 
 
 @pytest.fixture
 def guard(tmp_path, monkeypatch):
+    privacy.uninstall()  # an earlier test in this process may have imported the server app, which installs the guard for real
     monkeypatch.setattr(privacy, "SETTINGS_PATH", str(tmp_path / "privacy.json"))
     monkeypatch.setattr(privacy, "LEDGER_PATH", str(tmp_path / "outbound.log"))
     monkeypatch.setattr(audit, "DB", str(tmp_path / "audit.db"))  # scope._deny writes an audit row: not the owner's log

@@ -158,6 +158,12 @@ def _schedule_hard_exit(after_s=1.5):
         os._exit(0)
 
 
+def _note(what, exc):
+    """Closing must never raise, but a close path that fails should leave a trace (pythonw has no console: logging only)."""
+    import logging
+    logging.getLogger("ishti.window").warning("%s failed: %s: %s", what, type(exc).__name__, exc)
+
+
 def _destroy_all_windows():
     try:
         import webview
@@ -173,8 +179,8 @@ def _destroy_all_windows():
         w = _remember.get("win")
         if w is not None:
             w.destroy()
-    except Exception:
-        pass
+    except Exception as exc:
+        _note("destroy stored window", exc)
     # Last resort: use Win32 to force-close any remaining ISHTI windows
     try:
         import win32gui
@@ -185,8 +191,8 @@ def _destroy_all_windows():
                 if title == TITLE or "ISHTI - Intelligent Personal Assistant" in title or "127.0.0.1:8888" in title:
                     win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
         win32gui.EnumWindows(_enum_and_destroy, None)
-    except Exception:
-        pass
+    except Exception as exc:
+        _note("Win32 WM_CLOSE fallback", exc)
 
 
 TITLE = "ISHTI - Intelligent Personal Assistant"

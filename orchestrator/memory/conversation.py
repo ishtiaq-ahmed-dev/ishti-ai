@@ -228,8 +228,8 @@ class ConversationManager:
                         swallowed('orchestrator/memory/conversation.py:ConversationManager.restore', _exc)
             try:
                 os.rmdir(folder)
-            except OSError:
-                pass
+            except OSError as _exc:  # a file the owner dropped in there: leave the folder
+                swallowed('orchestrator/memory/conversation.py:ConversationManager.restore.rmdir', _exc)
         return back
 
     def purge_trash(self, max_age_s: int = 3600) -> int:
