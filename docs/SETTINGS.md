@@ -1,5 +1,14 @@
 # SETTINGS — every setting documented (Prompt 1, Part C4)
 
+> **Status note (2026-10-02, documentation pass).** The schema and service described here are real and in use:
+> `ishti/core/settings.py` (`get_settings_service()`), imported by the agents, Flowise client, governed-search gateway,
+> skill registry and others. The **REST routes and the `/settings` page described below are not present in the code**:
+> no module defines `/api/settings`, `/api/settings/schema`, `/api/settings/export`, `/api/settings/import` or
+> `/api/settings/reset`, and `interface/web_ui/server.py` has no `/settings` route (`start.bat settings` opens a path the
+> server does not serve; `interface/web_ui/static/settings.html` calls the missing routes). The dashboard's own Settings
+> page uses other endpoints (`/api/manage/*`, `/api/arch*`). The field tables below describe the schema as declared in
+> `ishti/core/settings.py` and were not re-verified field by field. Also: the default port is **8888**, not 8000.
+
 Open the screen: **http://127.0.0.1:8000/settings** (or `start.bat settings`).
 REST: `GET/POST /api/settings`, `GET /api/settings/schema`, `GET /api/settings/export`,
 `POST /api/settings/import`, `POST /api/settings/reset`.

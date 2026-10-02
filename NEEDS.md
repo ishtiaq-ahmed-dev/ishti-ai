@@ -37,7 +37,7 @@ To compile the standalone `.exe` installer from `installer/ishti.nsi`:
 Nothing below blocks the backend; each item says exactly what is needed and what happens until then.
 
 ## N1. Your own prompt set, to grade the lighter models
-The quality column in `MODEL_DECISIONS.md` comes from six fixed prompts I wrote (arithmetic, JSON extraction, a table, an Urdu
+The quality column in `docs/MODEL_DECISIONS.md` comes from six fixed prompts I wrote (arithmetic, JSON extraction, a table, an Urdu
 translation that only checks for Arabic script, a tool call, reading a number from an image). On them the 7B planner rung
 **fails the Urdu prompt** and both coder rungs fail the tool-call prompt. Whether that matters depends on your real use.
 *Needed:* 10–20 prompts you care about (especially Urdu/Pashto, plans, tool use) in a text file; then
@@ -45,7 +45,7 @@ translation that only checks for Arabic script, a tool call, reading a number fr
 and heavy vision jobs, and the UI receives a `model_switch` event saying so.
 
 ## N2. Decide: quantized KV cache (`OLLAMA_KV_CACHE_TYPE=q8_0`)
-Left **off** (`f16`). The numbers from `tests/kv_cache_probe.py` are in `MODEL_DECISIONS.md`; enabling it also needs an Ollama
+Left **off** (`f16`). The numbers from `tests/kv_cache_probe.py` are in `docs/MODEL_DECISIONS.md`; enabling it also needs an Ollama
 restart, which ISHTI only does for an Ollama it started itself (see N5). *Needed:* your OK after reading the quality result
 (recall test + fixed prompts), then `POST /api/ollama/settings {"kv_cache_type":"q8_0"}` and `POST /api/ollama/apply`.
 
@@ -153,7 +153,9 @@ The table controls are verified in the built bundle and the report itself was sc
 session. *Needed:* start ISHTI and ask me to capture it, or take the screenshot yourself after asking for a
 digest.
 
-## N21. computer_use has no ISHTI_TEST_MODE guard on real actions
+## N21. computer_use has no ISHTI_TEST_MODE guard on real actions — DONE (Prompt 6)
+*Resolved 2026-10-02: `launch_app` and `focus_window` now do nothing but record an audit entry when `ISHTI_TEST_MODE=1` (`tests/test_computer_use_guard.py`). The text below is the original finding.*
+
 `desktop/computer_use.py::launch_app` (aliases -> shutil.which -> `os.startfile`/subprocess, DETACHED) and
 `focus_window` execute for real regardless of `ISHTI_TEST_MODE=1` — the T2 block-at-last-step gate lives in
 the dispatcher only, so direct `run()` calls (any test, skill-to-skill hook) bypass it for app control.
@@ -248,7 +250,9 @@ of a real generation run.
 `ISHTI_TEST_MODE=1`, samples `/api/ps` before and after so a partial offload cannot hide, and never
 auto-answers the owner's gate). *What I measured:* see `TEST_RESULTS.md` for the runs that were attempted.
 
-## N23. `ishti/config.json` names a coder model that is not installed — YOUR DECISION
+## N23. `ishti/config.json` names a coder model that is not installed — DONE (Prompt 6)
+*Resolved 2026-10-02: `llm.models.coder` now names `ishti-qwen2.5-coder:14b` (the model the fallback always chose; the config no longer relies on a silent fallback). The text below is the original finding.*
+
 `llm.models.coder = "qwen3-coder:30b-a3b"`; `ollama list` has no such model, so `ishti/llm.py:89-94`
 silently falls back to `ishti-qwen2.5-coder:14b` (the ladder's rung 0, which is what `design.vram_check()`
 reports). It works today, but the config is a lie and the fallback only holds while the model list is
@@ -302,12 +306,12 @@ Partway through this pass, **another agent session** (working on "Remote Control
 cua") committed 5 commits into the same repo: `0f1bb99`, `eedb20e`, `c3dbb91`, `e8a6cfc`, `8f740d9`, `cfd005b`.
 Consequences observed, not guessed:
 - `git commit -am`-style commits from that session **swept my in-flight, uncommitted files into its commits**;
-- it **archived my plan** to `IMPLEMENTATION_PLAN_skillcreator.md` and took the canonical
+- it **archived my plan** to `docs/build-history/skill-creator/IMPLEMENTATION_PLAN_skillcreator.md` and took the canonical
   `IMPLEMENTATION_PLAN.md` name;
 - it **overwrote `RESEARCH.md` (73,080 → 31,311 bytes) and `FINAL_REPORT.md`** with its own content;
 - it appended its own `N21`–`N26`, so **`NEEDS.md` now has two different `N21` entries** and two `N22`–`N26` ranges.
 My code, tests and my sections in `PROGRESS.md`, `ISSUES.md`, `TEST_RESULTS.md` and `NEEDS.md` were **not**
-damaged, and the restored copies `RESEARCH_skillcreator.md` (72,634 B) and `FINAL_REPORT_skillcreator.md`
+damaged, and the restored copies `docs/build-history/skill-creator/RESEARCH_skillcreator.md` (72,634 B) and `docs/build-history/skill-creator/FINAL_REPORT_skillcreator.md`
 hold the originals. I deliberately did **not** overwrite the other session's files.
 *Needed:* your decision on (a) which of the two sessions is canonical for the shared deliverable names, and
 (b) how the `NEEDS.md` numbering collision should be resolved (this section uses N21–N30, theirs uses
@@ -433,3 +437,17 @@ NOT built, awaiting an explicit owner ask (these stay `mapped` in REPO_FEATURE_M
 Composio connectors (the local MCP connector framework is the replacement path), OD-08 GitHub
 create-issue connector (the read-only gh channel exists; write actions stay T2 and unbuilt),
 OD-22 third-party remote computer provider. *Needed:* say the word if you want any of these.
+
+## P6-A. Decide: Spark-X2.5 F16 (8.2 GB) as the planner vs the 80 % VRAM budget - YOUR DECISION
+Spark F16 + the gemma3 translator + embeddings do not fit under the 80 % budget (13.0 GB) next to Windows' own GPU use, so the
+governor moves the planner to the 7B rung whenever the translator loads (Urdu / Pashto / Roman-Urdu replies, or non-English
+text), then back up after 90 s: two model loads per cycle. English replies no longer use the translator (Prompt 6, R1), so
+English-only use is unaffected. Options: (a) the Q8_0 build of Spark (4.4 GB, same repo, not downloaded - needs your yes to
+download), (b) `budget_pct: 85` in `models_ladder.yaml`, (c) keep as is. Evidence: `ISSUES.md` P6-2.
+
+## P6-B. Not measured in Prompt 6
+- A real microphone turn and the Telegram/WhatsApp live channels (need your devices/tokens; unchanged from N7).
+- Cold Ollama start by ISHTI (Ollama here is started by its tray app, so ISHTI always finds it running; the 0.3 s connect-timeout
+  change in the start loop is covered by code reading and the offline tests, not by a live cold start).
+- First launch on a second monitor layout / other display scale: `window_state.geometry` is unit-tested for clamping, the live
+  test ran on the 2560x1440 / 125 % screen only.

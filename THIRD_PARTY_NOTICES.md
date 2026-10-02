@@ -1,6 +1,6 @@
 # THIRD_PARTY_NOTICES — vendored/reused material from the 5-repo integration
 
-Pins and licenses: `VENDOR_PINS.md` (clone date 2026-10-01). `vendor/` is git-ignored; nothing from
+Pins and licenses: `docs/VENDOR_PINS.md` (clone date 2026-10-01). `vendor/` is git-ignored; nothing from
 these repos is redistributed by ISHTI except where explicitly stated below (nothing is).
 
 ## 1. open-dots — MIT, (c) 2026 Anil-matcha
@@ -20,7 +20,7 @@ Supply-chain note: ECC itself warns to install only from its official channels �
 ## 3. hey-jev — NO LICENSE (all rights reserved by default)
 Upstream: https://github.com/henryklunaris/hey-jev @ 24e4b378350d999d2b45ff2549ea039c2bc7863d
 Use: **behaviour reference only** (wake/PTT/dictation/compound/timers/vocabulary flows described in
-`docs/repos/hey-jev.md`). No source text, assets, or names are copied. Owner outreach for a license
+`docs/build-history/repo-integration/repos/hey-jev.md`). No source text, assets, or names are copied. Owner outreach for a license
 is recorded in NEEDS.md (N36).
 
 ## 4. agent-reach — MIT, (c) 2025 Agent Eyes
@@ -59,3 +59,58 @@ binaries after a doctor probe, and none is auto-installed (installs are T2-gated
 - Local runtimes already owned by ISHTI remain the only STT/TTS/LLM: faster-whisper, Fish Speech
   (if enabled) and Ollama. No cloud STT/LLM/TTS call exists in any new module (gateway refuses
   non-loopback endpoints outright).
+
+---
+
+# Bundled third-party material used at runtime (merged 2026-10-02 from the former `md files/THIRD_PARTY_NOTICES.md`)
+
+The components below ARE shipped or used by ISHTI (unlike the design-reference repos above). Source of this section: the former `md files/THIRD_PARTY_NOTICES.md`, archived at `docs/build-history/superseded/THIRD_PARTY_NOTICES_md-files-copy.md`.
+
+## R1. Rare UI (https://rareui.com)
+Components in `interface/app/src/components/rare/` are from Rare UI (https://github.com/swamimalode07/rare-ui). They are used unmodified, except for small adaptations (Next.js Link replaced with a button), under this license:
+
+```
+MIT + Commons Clause License Condition v1.0 + Attribution
+
+Copyright (c) 2026 Swami Malode
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, and distribute the Software as part of an
+application, website, or product, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+Attribution Requirement
+
+Any project that ships any part of the Software must credit Rare UI with a
+visible link to https://rareui.com, placed where a visitor or user can find it,
+such as a site footer, an about page, a credits screen or a README. The credit
+and the copyright notice above must not be removed from the source you copied.
+
+Commons Clause Restriction
+
+You may use this Software, including for any commercial purpose, so long as you
+do not sell, sublicense, or redistribute the components themselves, whether
+alone, in a bundle, or as a ported version.
+
+No Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## R2. Chatterbox (https://github.com/resemble-ai/chatterbox)
+
+Used as a library (the voice-conversion half, `chatterbox.vc`) to turn ISHTI's speech into the owner's own voice for
+voice notes he sends; weights `ResembleAI/chatterbox` (s3gen.safetensors, conds.pt) in `data/clone`. MIT License,
+Copyright (c) 2025 Resemble AI. Its package pins torch 2.6, which can't run on this GPU (RTX 5070 Ti, sm_120), so it is
+installed with `pip install --no-deps chatterbox-tts` plus librosa, s3tokenizer, diffusers, resemble-perth,
+conformer==0.3.2, omegaconf and einops; ISHTI keeps torch 2.11+cu128. Output carries Resemble's Perth watermark.

@@ -105,6 +105,7 @@ Emitted as stages advance or change:
     "id": "skills_loaded",
     "label": "Loading skills",
     "done": true,
+    "status": "done",
     "stage": "planner_warm",
     "progress": 57,
     "error": null
@@ -112,6 +113,11 @@ Emitted as stages advance or change:
   "ts": 1759132805.0
 }
 ```
+`status` (added 2026-10-02, optional for clients) is `pending | loading | done | error`. Stages no longer run strictly in order:
+the engine -> main model chain, the memory, and the skills -> voice chain load side by side, so several stages can be `loading`
+at once and `done` events arrive in completion order. `stages[]` in `GET /api/ready` keeps the documented order and carries the same `status`.
+`/api/execute*` and chat requests sent before the brain stages are done are queued and answered when they finish (a trace event
+`{"type":"tool","name":"startup","status":"waiting","label":"ISHTI is still starting up - loading ..."}` says what is loading).
 
 #### B. `vram_status`
 Emitted ~1/sec on change (5s heartbeat) by `ishti.vram.start_sampler()`:
@@ -416,7 +422,7 @@ All child processes spawned by ISHTI are assigned to a Windows Job Object (`JOB_
 
 <!-- shape:stage -->
 ```json
-{"id": "string", "label": "string", "done": "bool"}
+{"id": "string", "label": "string", "done": "bool", "status?": "string"}
 ```
 
 <!-- shape:vram -->

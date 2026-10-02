@@ -585,3 +585,58 @@ accepts text). All gates green afterwards: 2x full
 offline suite, `check_skills` 122/236/333, LIVE `python -m ishti.check`, full `perf_guard` PASS. Rows that
 remain open are listed in SWEEP_REPORT.md section 4 with the reason each is not a code fix.
 
+
+---
+
+# Prompt 6 findings (2026-10-02)
+
+Found while fixing the launcher and profiling requests; fixes are in `docs/build/OPTIMIZATION_LOG.md`. Open items first.
+
+### P6-1: the router picks `weather` for "what time is it" inside a multi-task request - FIXED (exact phrasings)
+`planner.clause_skills` routes each clause on its own; Laya gave `weather` 0.68 for "what time is it", so "what time is it and
+also what is 9 plus 4" answered with a forecast (2 outbound open-meteo.com calls) instead of the time. The instant `reflex`
+layer only ran for whole requests. Now `reflex.pure()` (side-effect-free: time / date / day only - `answer()` also acts on the
+PC for volume and stop-talking) is checked for every plan step in `dispatcher.run_step`, so a step that is just the clock
+question is answered locally whichever skill the plan gave it. Residual: a step the planning model rewrites into a different
+wording ("what is the current time") is not an exact reflex phrase and still goes to the skill the plan chose.
+
+### P6-2: Spark-X2.5 F16 as planner (8.2 GB) cannot share the GPU with the translator under the 80 % budget - OPEN (owner)
+With Windows' own use (~1-3 GB) the 80 % budget is 13.0 GB: Spark F16 (8.2) + gemma3 translator (2.7) + embeddings (0.3) +
+desktop does not fit, so the governor moves the planner to the 7B rung whenever the translator is needed, then back up after
+the hysteresis (two model loads per cycle). Since R1 English replies no longer need the translator, so it only happens for
+Urdu/Pashto/Roman-Urdu owners and for other-language replies. Options (owner's call): the Q8_0 build of Spark (4.4 GB, in the
+same repo, not downloaded), or `budget_pct: 85` in `models_ladder.yaml`.
+
+### P6-3: a plan step can wait minutes on Ollama through `ModelRouter` - OPEN (not reproduced)
+One profiling run of the multi-task request took 364 s: the plan sent "what time is it" to the browser skill, which escalated
+to deep research; `[ModelRouter] VRAM governor skipped (ReadTimeout ... read timeout=120)` appeared three times (6 min) with
+`generate HTTP 404` after each. A second run of the same request finished in 2.7 s (P6-1 path), so this needs the same
+planner draw to reproduce. The 120 s read timeout in `vram._post` for a load is far above any real load (the largest measured
+is 25 s).
+
+### P6-4: gemma3-c2k:12b and other stale aliases from before the context pin remain in the Ollama store - OPEN (cosmetic)
+Aliases are cheap (same weights) and never removed by ISHTI.
+
+### P6-5: pywebview js_api objects must not hold window objects in public attributes - FIXED
+Root cause of the launcher's frozen splash. `tests/test_launcher_window.py::test_js_api_objects_hold_no_public_non_callable_attributes`.
+
+### P6-6: closed loopback ports take 2.0 s to refuse (this PC) - FIXED
+Every "is it up yet?" poll of a service that was still starting paid 2 s. `desktop/focus_ishti.is_running`, `lifecycle._health`, `lifecycle.ollama_up` now use a 0.25-0.3 s connect timeout. Any new liveness probe must too.
+
+### P6-7: Ollama 0.35 picks a model's context size itself - FIXED
+See OPTIMIZATION_LOG R5. `vram.rung_num_ctx` pins every rung. The governor's footprints for the old unpinned names (`gemma3:4b`) are no longer used; new `-c4k` aliases are measured on first load.
+
+### P6-8: thinking models returned empty content - FIXED
+`llm.chat` defaults `reasoning_effort="none"`. OPTIMIZATION_LOG R2.
+
+### P6-9: `main`/`validation` roles made the governor shrink the planner after every reply - FIXED
+OPTIMIZATION_LOG R3.
+
+### P6-10: own-voice converter never unloaded, Piper kept every voice - FIXED
+OPTIMIZATION_LOG, selective loading section.
+
+### P6-11: Laya contacted huggingface.co at every boot - FIXED
+Offline-first load.
+
+### P6-12: 797 files of `tools/flowise/node_modules` were tracked in git - FIXED
+`git rm --cached`; `node_modules/` is ignored.

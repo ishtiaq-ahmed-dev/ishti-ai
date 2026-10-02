@@ -8,7 +8,7 @@ The policy lives in `models_ladder.yaml`; the code is `ishti/vram.py` (governor)
 > **2026-09-30 update — new brain: Spark-X2.5-4B (unquantized F16), measured.** Ollama upgraded to 0.35.0
 > (0.31.2 could not run the `spark2_5` architecture; models/settings untouched by the upgrade).
 > The planner's rung 0 is now `ishti-spark2.5:4b` (F16 = unquantized, Apache-2.0, source chain and SHA-verified
-> local GGUF in `docs/MODEL_ACQUISITION_spark2.5.md`); the 14B drops to rung 1.
+> local GGUF in `docs/build-history/prompts-1-4/MODEL_ACQUISITION_spark2.5.md`); the 14B drops to rung 1.
 > Measured (`python -m ishti.vram_calibrate ishti-spark2.5:4b`, in `data/vram.db`): **8165 MiB fully on GPU at
 > 8192 ctx, 84.6 tok/s, 43 ms first token, 3.3 s load** — ~2 GB lighter than the 14B and faster.
 > **Thinking model — quality 5/5 after the harness fix (2026-09-30, same day).** The calibrate harness's

@@ -3,118 +3,93 @@
   <img src="assets/ishti_logo.png#gh-light-mode-only" alt="ISHTI: Personal AI Assistant" width="460" />
 </p>
 
-# ISHTI: local-first personal AI assistant
+# ISHTI: a local-first personal AI assistant
 
-Runs 100% on this PC after setup: Ollama LLMs, Laya routing, SQLite + ChromaDB memory, faster-whisper STT, Piper TTS and the Playwright MCP browser. No cloud API calls at runtime.
+ISHTI is a personal assistant that runs on one Windows PC. The language models run in a local
+[Ollama](https://ollama.com) server, speech recognition (faster-whisper) and speech synthesis (Kokoro, Piper) run on
+the machine, memory is stored in local SQLite and ChromaDB files, and there is no cloud model in the request path.
+You use it from a desktop app (a window around a React dashboard), by voice, or, if you choose to pair it, from your
+phone. It answers questions, searches the web, controls files and apps, keeps reminders and notes, and uses 124 skills
+through one dispatcher. Actions with side effects (sending a message, deleting files, buying, running commands) stop
+and wait for your explicit yes.
 
-```
-request (text or voice)
-   │
-   ▼
-dispatcher (FastAPI, ishti/dispatcher.py)
-   ├─ pending confirmation?  → back to the skill that asked
-   ├─ several tasks? ("…and then…") → LLM plan → skills in order ({prev} carries answers)
-   ├─ skill triggers (regex)  ─┐
-   ├─ Laya typed decisions    ─┼→ skill  →  reply (+ Piper audio)
-   └─ default: chat           ─┘
-          skills: memory · reminders · folders · weather · web_search · deep_research · web_fetch · browser (MCP)
-                  files · apps · system · video · chat
-          memory: exact facts (SQLite)  >  semantic recall (ChromaDB)
-```
+"No cloud at runtime" has one honest exception: skills whose job is to fetch the web (search, browsing, research) reach
+the internet, and each skill's allowed network domains are declared in its manifest. Telegram, if you enable it, passes
+messages through Telegram's servers. See [docs/SAFETY.md](docs/SAFETY.md).
 
-## Run
+## Quick start
+
+On the project's PC, after the one-time setup in [docs/SETUP.md](docs/SETUP.md):
 
 ```bat
-start.bat                 :: starts ISHTI desktop application (launches window & auto-closes CMD)
-start.bat cli             :: starts ISHTI in interactive terminal REPL mode
-stop.bat                  :: cleanly terminates ISHTI web servers and background processes
-python -m ishti [port]    :: server only
-python -m ishti.check     :: end-to-end check: routing accuracy + memory + live skill + LLM
+start.bat        :: opens the ISHTI desktop app (splash, then the dashboard); no console window
+stop.bat         :: clean shutdown, releases the GPU
+start.bat test   :: runs the offline test suite
 ```
 
-First-time model setup (the `/v1` API can't set context size per request, so 12k-context tags are created once):
+The dashboard is at `http://127.0.0.1:8888`. Logs are in `%LOCALAPPDATA%\ISHTI\logs\ishti.log`. The microphone is OFF
+until you switch it on.
 
-```bat
-ollama pull qwen2.5:14b
-ollama pull qwen2.5-coder:14b
-ollama pull nomic-embed-text
-ollama create ishti-qwen2.5:14b -f ishti\planner.Modelfile
-ollama create ishti-qwen2.5-coder:14b -f ishti\coder.Modelfile
-ollama create ishti-spark2.5:4b -f ishti\spark2.5.Modelfile   :: the configured planner (ishti/config.json -> llm.models.planner)
-venv\Scripts\python -m piper.download_voices en_US-lessac-medium --data-dir data\piper
-docker run -d --name ishti-searxng --restart unless-stopped -p 127.0.0.1:8890:8080 -v D:/ISHTI/ishti/searxng:/etc/searxng -e SEARXNG_SECRET=<random hex> searxng/searxng
-```
+There is no `requirements.txt` yet; the Python environment exists only as the git-ignored `venv\` folder, so a fresh
+machine has to rebuild it by hand (package list in [docs/SETUP.md](docs/SETUP.md)).
 
-Web search goes through the local SearXNG container first (Google/Brave/DuckDuckGo/Wikipedia aggregated). If Docker isn't running, it falls back to Wikipedia/GitHub/arXiv/Bing.
+## How it is built
 
-The Python packages are in `venv` (`torch` cu128, `laya`, `chromadb`, `mcp`, `faster-whisper`, `piper-tts`, `openai`, `fastapi`). The browser MCP server runs through `npx @playwright/mcp` (Node 24).
+Every input (typed, spoken, scheduled, remote) calls one function, `ishti.dispatcher.handle`. It tries the cheapest
+checks first: a pending yes/no, instant reflex commands, deterministic skill triggers, then a small local router model
+(Laya), then the default `chat` skill backed by the main language model. A VRAM governor keeps every model fully on the
+GPU and downshifts to lighter models instead of ever splitting one across CPU and GPU.
 
-## Layout
-
-| Path | What |
-|---|---|
-| `ishti/config.json` | Models per role (planner/coder/fast), memory paths, search roots, router, MCP servers, voice. **Swap models here, no code changes.** |
-| `ishti/dispatcher.py` | `handle(text, session_id, channel)`, plus `/api/chat`, `/api/voice`, `/api/stt`, `/api/skills`, `/api/facts` |
-| `ishti/planner.py` | Multi-skill plans: connector+verb gate → LLM splits into `(skill, request)` steps → run in order; stops at any pending confirmation |
-| `ishti/router.py` | Skill triggers → Laya `typed-decisions` (fp16, ~35 ms): skill choice + per-skill yes/no + `router_questions()` → default |
-| `ishti/llm.py` | The only LLM client (Ollama OpenAI-compatible `/v1`) |
-| `ishti/facts.py` | Exact fact store: one row per (entity, attribute), updated in place, previous value kept; routing log |
-| `ishti/semantic.py` | ChromaDB + `nomic-embed-text` for conversation context |
-| `ishti/mcp_client.py` | Thin MCP client: persistent stdio sessions per configured server |
-| `ishti/voice.py` | faster-whisper `large-v3` (CUDA, int8_float16) + Piper |
-| `ishti/wake.py` | Hands-free: say **"hey jarvis, …"** (openWakeWord) → record until silence (Silero VAD) → dispatcher → spoken reply |
-| `ishti/skills/<name>/` | `manifest.json` + `skill.py` per skill |
-| `interface/web_ui/` | HUD (FastAPI + WebSocket); `/api/execute` goes through the dispatcher |
-| `orchestrator/`, `tools/`, `browser/`, `desktop/`, `voice/` | Tools the skills reuse (search, fetch, weather, file search, FFmpeg), the doctor, and the HUD's session/profile stores |
-| `AUDIT.md` / `NEEDS.md` | What was found broken and fixed / what's blocked and why |
-
-## Memory
-
-- **Exact facts win.** "Project Falcon is on D: at D:\work\falcon" stores that path. "Where is falcon?" answers straight from SQLite, with no searching.
-- **Changes update the same record.** Examples: "I moved falcon to D:\archive\falcon", "I finished falcon", "this is now working" ("this" means the last project mentioned).
-- **Unknown locations:** ISHTI searches D:, then Desktop, then Downloads (breadth-first, depth 4, 10 s per root), lists what it found, and saves your pick.
-- **"open falcon"** (or "open falcon in vs code" / "in terminal") opens the saved location.
-- **Wrong skill?** Say "that should have been web search" (or "use the browser for that"). The last request re-runs with that skill, and the correction is logged as training data for Laya.
-- **Semantic memory** (ChromaDB) holds past conversation. Recalls that mention an entity with an exact fact are dropped.
-
-## Skills
-
-Each skill is a folder with a manifest:
-
-```json
-{"name": "weather", "version": "1.0.0", "description": "...",
- "route": "weather, temperature, rain or forecast for a place and day",   // Laya's criterion
- "priority": 20,                                                          // trigger order
- "laya": true,                                   // false = trigger-only, not offered to Laya
- "needs": {"python": ["requests"], "models": [], "mcp": [], "apis": ["open-meteo.com"]},
- "status": "working"}                                  // working | needs-upgrade | broken
-```
-
-`skill.py` exposes `run(text, session) -> {"reply", "sources"} | None`. `None` means "not mine", and the dispatcher tries the next choice. It can also expose `match(text) -> bool` as a deterministic trigger. If a skill fails to import or is missing a dependency, it is marked `broken` and skipped; nothing else breaks. Upgrading a skill means replacing its folder.
-
-| Skill | Does | Built on |
+| Architecture | What it is | Status |
 |---|---|---|
-| memory | locations, statuses, remembered facts | SQLite, file search |
-| weather | real forecast | Open-Meteo (free, no key) |
-| web_search | live answers with citations | local SearXNG → Wikipedia / GitHub / arXiv / Bing fallback + page reader |
-| browser | open sites, read, click, fill forms | Playwright MCP + local LLM tool calls |
-| deep_research | explicitly requested research reports | multi-query search + parallel reading + relevance filter |
-| web_fetch | answer about a URL in the request | direct HTTP → local headless browser |
-| reminders | 'remind me in 20 min to…', 'at 5pm', 'tomorrow at 9', timers, list, cancel; fired by voice + HUD, missed ones announced at next start | SQLite + 1 s background loop |
-| owner | mute/unmute, who am I, what do you know about me, what can you do, run diagnostics | fact store + skill manifests + doctor |
-| chat | everything else; code questions use the coder model | Ollama |
-| folders | 'how many PDFs in my downloads', largest/newest files, and organizing a folder into type subfolders (preview → yes → move, never overwrites, 'undo that') | stdlib; known folders from the Windows registry |
-| files | find files on this PC by name/type/content | `desktop/computer_use.search_pc` |
-| apps | open or switch to desktop apps (alias list / PATH, never a shell) | `desktop/computer_use` |
-| system | CPU / RAM / GPU / disk status | psutil + nvidia-smi |
-| video | trim, extract audio, vertical 9:16, speed, compress, thumbnail, info | FFmpeg (NVENC) via `tools/video` |
+| **arch1** (default) | Dispatcher cascade: reflex, rules, Laya router, 124 skills, a planner for multi-skill requests | Default, best tested |
+| **arch2** | Two-pass "brain": intent router shortlists skills, the main model thinks and calls tools, a validation pass checks each tool run, the main model writes the answer; plus a four-layer memory | Implemented, switchable (config, dashboard card, or "use arch 2"); needs live Ollama |
+| **Profiles** | Six named configurations in `ishti/core/architectures.py` (`simple_voice`, `router_single_agent`, `memory_augmented`, `multi_agent_orchestrator`, `flowise_flow`, `custom`) | Only `multi_agent_orchestrator` and `flowise_flow` change the request path; the other four run the arch1 path today |
 
-**Adding a skill:** first look for an open-source library or repo that already does it, and wrap it (as `weather` wraps Open-Meteo and `browser` wraps Playwright MCP). If only a commercial product does it, write `ishti/skills/<name>/SPEC.md` describing how it works (from public docs/demos) and how to build it locally, then log it in NEEDS.md for a later build session.
+The profile names `voice_lite`, `four_role`, `agent_team` and `flow_hybrid` that appear in some planning notes do not
+exist anywhere in this repository.
 
-## Safety
+## Documentation
 
-- Consequential actions (buy, pay, send, submit, post, delete, log in, Enter on a submit form) stop and wait for an explicit "yes". A timeout or error means **no**.
-- Unknown app names are refused rather than passed to a shell. Shell commands from the legacy planner always need confirmation.
-- Remote/tunnelled requests need the token in `data/api_token` (see `remote/tunnel_setup.md`); only unproxied localhost is trusted.
-- The browser defaults to its own profile (`data/mcp_browser_profile`); the owner may additionally map their own Chrome profiles per server (main/login) in Settings -> browser_profiles, which the browser skill then uses for those sessions.
-- The HUD mic records locally and is transcribed by whisper on this PC (Chrome's Web Speech API, which sends audio to Google, was removed).
+| Read this | For |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Processes, request flow, architectures, memory, VRAM governor, lifecycle, desktop shell |
+| [docs/SETUP.md](docs/SETUP.md) | Install, run, test, troubleshooting |
+| [docs/SKILLS.md](docs/SKILLS.md) | The 124 skills by category, the skill contract, how to add one |
+| [docs/SAFETY.md](docs/SAFETY.md) | Tiers T0-T3, confirmation gates, scope, kill switch, audit trail, remote control |
+| [docs/API_CONTRACT.md](docs/API_CONTRACT.md) | HTTP and WebSocket contract (machine-checked by `tests/test_lifecycle_contract.py`) |
+| [docs/MODEL_DECISIONS.md](docs/MODEL_DECISIONS.md) | Per-role model ladders measured on this machine |
+| [docs/TESTING.md](docs/TESTING.md), [tests/README.md](tests/README.md) | Every test type and the per-skill harness |
+| [docs/SETTINGS.md](docs/SETTINGS.md), [docs/LEARNING_INTERFACE.md](docs/LEARNING_INTERFACE.md), [docs/SESSION_SCHEMA.md](docs/SESSION_SCHEMA.md), [docs/UX_MOTION.md](docs/UX_MOTION.md) | Reference docs |
+| [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [docs/VENDOR_PINS.md](docs/VENDOR_PINS.md) | Integrations, licenses, pinned upstream repositories |
+| [NEEDS.md](NEEDS.md), [ISSUES.md](ISSUES.md) | Open owner decisions and blocked items; the verified issue log |
+| [docs/build-history/](docs/build-history/README.md) | Per-session reports, audits, research and superseded docs (history, not reference) |
+
+## Current status (as of 2026-10-02, branch `feat/repo-integration`)
+
+What is recorded, with sources. I (the documentation pass) did not re-run the suites or start the backend.
+
+- **Verdict at the last full report: READY WITH KNOWN ISSUES**, all remaining items owner-gated rather than code defects
+  ([FINAL_REPORT_repo_integration.md](docs/build-history/repo-integration/FINAL_REPORT_repo_integration.md), 2026-10-02).
+- **Offline test suite:** 445 collected, 445 passed on 2026-10-02 after the last wiring commit
+  ([TEST_RESULTS.md](docs/build-history/qa/backend-2026-09-29/TEST_RESULTS.md), PART 3). Cycle-4 performance work recorded the
+  suite green again afterwards ([PERFORMANCE_CYCLE4.md](PERFORMANCE_CYCLE4.md)). Today's default configuration
+  collects 464 tests.
+- **Per-skill harness:** 120 features recorded in `TEST_STATE.json`, 117 green and 3 red at their last run: `web_search`
+  and `deep_research` (2026-10-01, network/GPU dependent) and `shopping` (2026-09-30).
+- **Skills:** 124 manifests; 121 working, 3 shipped disabled by design (`desktop_control`, `internet_reach`, `security_scan`).
+- **Performance (Cycle 4, MEASURED on the author's RTX 5070 Ti machine, [PERF_LOG.md](PERF_LOG.md)):** a loopback
+  Ollama read dropped from 15.5 ms to 0.5 ms, `/api/system` from 150 ms to 2.5 ms, the UI JavaScript bundle on the wire
+  from about 1.0 MB to 288 KB, and a skills-health check after restart from about 72-80 s to 0.56 s.
+- **Not verified on this machine:** a live microphone turn (no working input device found), real Telegram/WhatsApp
+  end to end (needs the owner's token and pairing), the `cua-driver` desktop-control backend (not installed), and
+  anything on another PC or a smaller GPU. Windows is the only platform tested.
+- **Known documentation/code gaps:** `docs/SETTINGS.md` describes `/api/settings` routes and a `/settings` page that
+  are not present in the server code; `config.json` still contains absolute `D:\ISHTI\...` paths; two NEEDS files
+  exist (`NEEDS.md` is the curated one, `md files/NEEDS.md` is the log ISHTI writes to at runtime; `NEEDS.md` N25).
+
+## Credits and licenses
+
+ISHTI is built on open-source components, listed with licenses in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+UI components in `interface/app/src/components/rare/` are from [Rare UI](https://rareui.com) (MIT + Commons Clause +
+Attribution). The logo and icons in `assets/` are generated by `tools/generate_brand_assets.py`.

@@ -201,3 +201,11 @@ PERFORMANCE_REPORT.md for numbers and the proposed fixes (translator gate is the
 ERROR: No matching distribution found for zxingcpp
  - asked: "auto-install"
 - 2026-10-01 19:58 [error] planners: JSONDecodeError: Expecting value: line 1 column 1 (char 0) - asked: "make flashcards"
+- 2026-10-01 21:38 [error] dispatcher: GpuBusy: The graphics card is busy: gemma3:4b needs about 2.7 GB and only 0.2 GB is free within the 80% GPU budget (in use: qwen3 - asked: "brain training status"
+- 2026-10-01 23:37 [error] dispatcher: GpuBusy: The graphics card is busy: ishti-spark2.5:4b needs about 8.0 GB and only 1.3 GB is free within the 80% GPU budget (in us - asked: "Search about Sony WH-1000XM5"
+- 2026-10-02 00:03 [error] dispatcher: GpuBusy: The model could not be loaded onto the graphics card (500). - asked: "how much RAM is free"
+- 2026-10-02 13:30 [error] chat: GpuBusy: The graphics card is busy: ishti-spark2.5:4b needs about 8.0 GB and only 0.0 GB is free within the 80% GPU budget (in us - asked: "what is 7 plus 5?"
+- 2026-10-02 13:31 [error] dispatcher: GpuBusy: The graphics card is busy: gemma3:4b needs about 2.7 GB and only 0.0 GB is free within the 80% GPU budget (in use: nomic - asked: "what is 7 plus 5?"
+- 2026-10-02 13:31 [error] chat: GpuBusy: The graphics card is busy: ishti-qwen2.5-coder:14b needs about 9.9 GB and only 0.0 GB is free within the 80% GPU budget  - asked: "explain what a mutex is in two sentences"
+- 2026-10-02 13:40 [error] browser: UnsupportedOperation: fileno - asked: "internet reach"
+- 2026-10-02 13:41 [error] health: 7 failures in the last hour - asked: "errors"
