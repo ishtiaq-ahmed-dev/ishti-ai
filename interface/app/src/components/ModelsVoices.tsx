@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
+  X,
   ChevronDown,
   Cpu,
   Download,
@@ -335,20 +336,47 @@ function OwnVoice() {
   );
 }
 
-function Progress({ job }: { job?: Job }) {
+function Progress({ job, jobKey }: { job?: Job; jobKey?: string }) {
+  const [asked, setAsked] = useState(false);
   if (!job || job.status === "done") return null;
+  const running = !["error", "cancelled", "cancelling"].includes(job.status);
+  const cancel = async () => {
+    if (!jobKey) return;
+    setAsked(true);
+    try {
+      await postJSON("/api/manage/cancel", { key: jobKey });
+    } catch {
+      setAsked(false);
+    }
+  };
   return (
-    <span
-      className={cn(
-        "text-[10px] font-mono font-medium",
-        job.status === "error" ? "text-danger" : "text-accent animate-pulse"
+    <span className="flex items-center gap-1.5">
+      <span
+        className={cn(
+          "text-[10px] font-mono font-medium",
+          job.status === "error" ? "text-danger" : job.status === "cancelled" ? "text-muted-foreground" : "text-accent animate-pulse"
+        )}
+      >
+        {job.status === "error"
+          ? `failed: ${job.error}`
+          : job.status === "cancelled"
+          ? "cancelled - unfinished files removed"
+          : job.status === "cancelling" || asked
+          ? "cancelling…"
+          : job.total
+          ? `${Math.round((100 * job.done) / job.total)}%`
+          : job.status}
+      </span>
+      {running && jobKey && !asked && (
+        <button
+          type="button"
+          onClick={cancel}
+          title="Cancel this download and delete the unfinished files"
+          className="flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:border-danger/50 hover:text-danger cursor-pointer"
+        >
+          <X className="h-3 w-3" /> Cancel
+        </button>
       )}
-    >
-      {job.status === "error"
-        ? `failed: ${job.error}`
-        : job.total
-        ? `${Math.round((100 * job.done) / job.total)}%`
-        : job.status}
     </span>
   );
 }
@@ -617,7 +645,7 @@ export function ModelsCard({
                                   </div>
 
                                   <div className="flex items-center gap-2 shrink-0">
-                                    <Progress job={jobOf(m.name)} />
+                                    <Progress job={jobOf(m.name)} jobKey={m.name} />
                                     {m.installed ? (
                                       <button
                                         type="button"
@@ -1017,7 +1045,7 @@ export function VoiceCard({
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <Progress job={f.job} />
+                                  <Progress job={f.job} jobKey={f.key} />
                                   {f.installed ? (
                                     <button
                                       type="button"
@@ -1196,7 +1224,7 @@ export function WhisperCard({
                         </div>
 
                         <div className="flex items-center gap-2 shrink-0">
-                          <Progress job={jobOf(`whisper:${w.name}`)} />
+                          <Progress job={jobOf(`whisper:${w.name}`)} jobKey={`whisper:${w.name}`} />
                           {isSelected ? (
                             <span className="flex items-center gap-1 rounded-lg bg-accent/20 px-2.5 py-1 text-[11px] font-semibold text-accent">
                               <CheckCircle2 className="h-3.5 w-3.5" />

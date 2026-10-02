@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import threading
 import time
 
@@ -20,6 +21,76 @@ CONFIG_PATH = os.path.join(ROOT, "ishti", "config.json")
 DATA = os.path.dirname(CONFIG["memory"]["db_path"])
 CATALOG = os.path.join(DATA, "model_catalog.json")  # models seen here once - so a deleted one can be downloaded again
 JOBS = {}  # key -> {"status", "done", "total", "error"} for downloads in progress
+CANCEL = {}  # key -> threading.Event: set by cancel_download(); the download thread notices, stops and removes what it had fetched
+
+
+class _Cancelled(Exception):
+    pass
+
+
+def _begin(key, **info):
+    CANCEL[key] = threading.Event()
+    JOBS[key] = {"status": "starting", "done": 0, "total": 0, **info}
+    return CANCEL[key]
+
+
+def _swallow(where, exc):
+    from ishti.core.logutil import swallowed
+    swallowed(where, exc)
+
+
+def _notify(title, body=""):
+    try:
+        from ishti import notifications
+        notifications.add("download", title, body)
+    except Exception as exc:  # the bell is a courtesy: a download must never fail because of it
+        _swallow("ishti/manage.py:_notify", exc)
+
+
+def cancel_download(key):
+    """Stop a running download. The thread doing it removes the incomplete model/files (see each job) and ends as 'cancelled'."""
+    job, ev = JOBS.get(key), CANCEL.get(key)
+    if not job or not ev or job.get("status") in ("done", "error", "cancelled"):
+        raise ValueError("there is no download running for that")
+    job["status"] = "cancelling"
+    ev.set()
+    _audit(f"cancelled download {key}")
+
+
+def _ollama_models_dir():
+    return os.environ.get("OLLAMA_MODELS") or os.path.join(os.path.expanduser("~"), ".ollama", "models")
+
+
+def remove_partial_blobs(since):
+    """Ollama keeps a '...-partial' file per unfinished layer. After a cancelled pull those are dead weight (GBs): delete the ones this
+    pull created (modified since `since`). Returns how many bytes were freed."""
+    freed = 0
+    blobs = os.path.join(_ollama_models_dir(), "blobs")
+    if os.path.isdir(blobs):
+        for name in os.listdir(blobs):
+            path = os.path.join(blobs, name)
+            try:
+                if "-partial" in name and os.path.getmtime(path) >= since - 5:
+                    freed += os.path.getsize(path)
+                    os.remove(path)
+            except OSError as exc:
+                _swallow("ishti/manage.py:remove_partial_blobs", exc)
+    return freed
+
+
+def cleanup_incomplete():
+    """At start: remove '.part' files a crashed or killed download left in ISHTI's own data folder. Returns the paths removed."""
+    gone = []
+    for root, _dirs, files in os.walk(DATA):
+        for f in files:
+            if f.endswith(".part"):
+                path = os.path.join(root, f)
+                try:
+                    os.remove(path)
+                    gone.append(path)
+                except OSError as exc:
+                    _swallow("ishti/manage.py:cleanup_incomplete", exc)
+    return gone
 HF_PIPER = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/{lang}/{speaker}/{quality}/{name}"
 KOKORO_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/{file}"
 S2_URL = "https://huggingface.co/rodrigomt/s2-pro-gguf/resolve/main/{file}"
@@ -161,26 +232,47 @@ def delete_model(name):
 def pull_model(name):
     rec = next((r for r in RECOMMENDED if r["name"] == name), {})
     source = rec.get("pull", name)
+    ev = _begin(name)
 
     def job():
-        JOBS[name] = {"status": "starting", "done": 0, "total": 0}
+        t0 = time.time()
+        try:
+            had = {m["name"] for m in requests.get(f"{OLLAMA}/api/tags", timeout=10).json().get("models", [])}
+        except Exception:
+            had = set()
         try:
             # Ollama itself fetches the model from its registry when the owner presses Download (our process only talks to Ollama on
             # this PC); nothing about the owner is sent.
             with requests.post(f"{OLLAMA}/api/pull", json={"model": source, "stream": True}, stream=True, timeout=None) as r:
                 for line in r.iter_lines():
+                    if ev.is_set():
+                        r.close()  # closing the stream ends the pull on Ollama's side too
+                        raise _Cancelled()
                     if line:
                         d = json.loads(line)
                         JOBS[name].update(status=d.get("status", ""), done=d.get("completed", JOBS[name]["done"]),
                                           total=d.get("total", JOBS[name]["total"]))
                         if d.get("error"):
                             raise RuntimeError(d["error"])
+            if ev.is_set():
+                raise _Cancelled()
             if rec.get("build"):  # same weights, ISHTI's context size (a few KB of metadata, instant)
                 JOBS[name]["status"] = "preparing"
                 r = requests.post(f"{OLLAMA}/api/create", json={"model": name, "from": source, "parameters": rec["build"], "stream": False}, timeout=300)
                 r.raise_for_status()
             JOBS[name]["status"] = "done"
             _audit(f"downloaded model {name}")
+            _notify(f"Model downloaded: {name}", "It is ready to use in Settings > Language models.")
+        except _Cancelled:
+            time.sleep(1.5)  # let Ollama drop the connection before its partial files are removed
+            for m in {name, source} - had:  # only what this download added: a model the owner already had is never touched
+                try:
+                    requests.delete(f"{OLLAMA}/api/delete", json={"model": m}, timeout=30)
+                except requests.RequestException as exc:
+                    _swallow("ishti/manage.py:pull_model.cancel", exc)
+            freed = remove_partial_blobs(t0)
+            JOBS[name].update(status="cancelled", done=0)
+            _notify(f"Download cancelled: {name}", f"The unfinished download was removed ({freed / 1e9:.1f} GB freed).")
         except Exception as exc:
             JOBS[name].update(status="error", error=str(exc)[:200])
     threading.Thread(target=job, daemon=True).start()
@@ -252,16 +344,44 @@ def delete_whisper(name):
     _audit(f"deleted whisper {name}")
 
 
+def whisper_state_ok(name):
+    d = _model_dir(name)
+    return any(f == "model.bin" for _, _, fs in os.walk(d) for f in fs) if os.path.isdir(d) else False
+
+
 def download_whisper(name):
+    key = f"whisper:{name}"
+    ev = _begin(key, status="downloading")
+    code = "from faster_whisper import download_model; download_model(%r)" % name
+
     def job():
-        JOBS[f"whisper:{name}"] = {"status": "downloading", "done": 0, "total": 0}
+        existed = whisper_state_ok(name)
+        env = {**os.environ, "HF_HUB_OFFLINE": "0", "TRANSFORMERS_OFFLINE": "0"}  # the owner pressed Download: this child may reach the hub
         try:
-            from faster_whisper import download_model
-            download_model(name)
-            JOBS[f"whisper:{name}"]["status"] = "done"
+            exe = sys.executable.replace("pythonw.exe", "python.exe")
+            proc = subprocess.Popen([exe, "-c", code], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, creationflags=NO_WINDOW)
+            while proc.poll() is None:
+                if ev.is_set():  # a subprocess, so the transfer can really be stopped
+                    proc.terminate()
+                    try:
+                        proc.wait(10)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                    raise _Cancelled()
+                JOBS[key]["done"] = _size(_whisper_dir(name))
+                time.sleep(0.5)
+            if proc.returncode:
+                raise RuntimeError((proc.stderr.read() or b"").decode("utf-8", "replace")[-200:] or f"exit {proc.returncode}")
+            JOBS[key]["status"] = "done"
             _audit(f"downloaded whisper {name}")
+            _notify(f"Speech model downloaded: whisper {name}")
+        except _Cancelled:
+            if not existed:
+                shutil.rmtree(_whisper_dir(name), ignore_errors=True)  # the unfinished download, not a model the owner already had
+            JOBS[key].update(status="cancelled", done=0)
+            _notify(f"Download cancelled: whisper {name}", "The unfinished download was removed.")
         except Exception as exc:
-            JOBS[f"whisper:{name}"].update(status="error", error=str(exc)[:200])
+            JOBS[key].update(status="error", error=str(exc)[:200])
     threading.Thread(target=job, daemon=True).start()
 
 
@@ -357,9 +477,11 @@ def delete_files(key):
 
 def download_files(key):
     e = engines()[key]
+    ev = _begin(key, status="downloading")
 
     def job():
-        JOBS[key] = {"status": "downloading", "done": 0, "total": 0}
+        created = []  # files this job finished: removed again when the owner cancels (an engine is all or nothing)
+        part = None
         try:
             for path, url in e["files"]:
                 if os.path.isfile(path):
@@ -368,17 +490,31 @@ def download_files(key):
                 with requests.get(url, stream=True, timeout=60) as r:
                     r.raise_for_status()
                     JOBS[key]["total"] += int(r.headers.get("content-length", 0))
-                    with open(path + ".part", "wb") as f:
+                    part = path + ".part"
+                    with open(part, "wb") as f:
                         for chunk in r.iter_content(1 << 20):
+                            if ev.is_set():
+                                raise _Cancelled()
                             f.write(chunk)
                             JOBS[key]["done"] += len(chunk)
-                os.replace(path + ".part", path)
+                os.replace(part, path)
+                part = None
+                created.append(path)
             if e.get("docker_image") and not _docker_size(e["docker_image"]):
                 JOBS[key]["status"] = "building the engine (Docker, ~10 min)"
                 subprocess.run(["docker", "build", "-t", e["docker_image"], os.path.join(DATA, "s2", "docker")], capture_output=True,
                                timeout=7200, creationflags=NO_WINDOW)
             JOBS[key]["status"] = "done"
             _audit(f"downloaded voice files {key}")
+            _notify(f"Voice files downloaded: {key}")
+        except _Cancelled:
+            for path in created + ([part] if part else []):
+                try:
+                    os.remove(path)
+                except OSError as exc:
+                    _swallow("ishti/manage.py:download_files.cancel", exc)
+            JOBS[key].update(status="cancelled", done=0, total=0)
+            _notify(f"Download cancelled: {key}", "The unfinished files were removed.")
         except Exception as exc:
             JOBS[key].update(status="error", error=str(exc)[:200])
     threading.Thread(target=job, daemon=True).start()
