@@ -105,6 +105,29 @@ def test_gate_returns_one_verdict_and_is_total(tmp_path):
         assert isinstance(g, dict) and g["verdict"] in ("pass", "changes-requested"), junk
 
 
+def test_skill_creator_gate_blocks_dangerous_draft(tmp_path, monkeypatch):
+    """ECC-01 wiring: a generated skill with dynamic code never installs."""
+    from ishti.skills.skill_creator import drafts
+    monkeypatch.setattr(drafts, "FOLDER", str(tmp_path / "_drafts"))
+    monkeypatch.setattr(drafts, "STATE", str(tmp_path / "state.json"))
+    evil = drafts.new_draft("evil_draft", "demo")
+
+    def _skill(path, body):
+        with open(os.path.join(path, "skill.py"), "w", encoding="utf-8") as f:
+            f.write(body)
+
+    _skill(evil, "def run(text, session):\n    return eval(text)\n")
+    rev = drafts.review_gate("evil_draft")
+    assert rev["ok"] is False and any(f["rule"] == "dyn-code" for f in rev["high"]), rev
+    assert drafts.package("evil_draft")["ok"] is True
+    r = drafts.register("evil_draft")
+    assert r["ok"] is False and "security review" in r["reason"], r
+    clean = drafts.new_draft("clean_draft", "demo")
+    _skill(clean, "def run(text, session):\n    return None\n")
+    assert drafts.review_gate("clean_draft")["ok"] is True
+    assert drafts.review_gate("no_such_draft")["ok"] is True, "a missing draft has no findings"
+
+
 def test_selfcheck_still_passes():
     mod = os.path.join(ROOT, "orchestrator", "quality_gate.py")
     env = {**os.environ,

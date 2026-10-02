@@ -151,6 +151,26 @@ def assert_no_self_modification(before, after) -> None:
                              f"{before.get(key)!r} -> {after.get(key)!r}")
 
 
+def review_gate(name) -> dict:
+    """ECC-01: run the code-reviewer + security-reviewer roles over this draft.
+
+    Advisory for lint/structure (a generated draft may need a cleanup pass), BLOCKING on a high
+    security finding (dynamic code, secrets, safety bypasses) - a generated skill must never be
+    installed with those. Returns {"ok", "verdict", "high", "findings"}; total.
+    """
+    try:
+        from orchestrator import quality_gate
+        g = quality_gate.gate(draft_dir(name))
+        highs = [f for f in g.get("findings", []) if f.get("severity") == "high"]
+        return {"ok": not highs, "verdict": g.get("verdict", "pass"), "high": highs[:5],
+                "findings": g.get("findings", [])[:20]}
+    except Exception as exc:
+        return {"ok": False, "verdict": "changes-requested", "high": [],
+                "findings": [{"severity": "high", "file": name, "line": 0, "rule": "gate-error",
+                              "detail": f"review gate unavailable ({type(exc).__name__})",
+                              "fix": "run orchestrator.quality_gate manually"}]}
+
+
 def package(name) -> dict:
     """Promote a tested draft to a v0.1.0 package: status stays 'disabled' until the owner says yes."""
     folder = draft_dir(name)
@@ -189,6 +209,13 @@ def register(name) -> dict:
                                        f"(a new skill must arrive DISABLED)"}
     if not os.path.isfile(os.path.join(folder, "skill.py")):
         return {"ok": False, "reason": "draft has no skill.py"}
+    # ECC-01 peer + security review gate: high security findings block the install outright.
+    review = review_gate(name)
+    if not review["ok"]:
+        rules = ", ".join(sorted({f["rule"] for f in review["high"]})) or "high finding"
+        record(name, review_blocked=rules)
+        return {"ok": False, "review": review,
+                "reason": f"security review blocked registration: {rules}"}
     # A FIRST registration has nothing to back up yet (the folder does not exist), so this returns "".
     # That is only the right answer for an UPDATE, where the live folder is the previous version.
     backup = _backup(name, m.get("version", "0.1.0"))
@@ -201,9 +228,10 @@ def register(name) -> dict:
         # rollback() honestly reports "no backup exists yet". Found by
         # test_rollback_restores_the_previous_version; ISSUES.md SC-24.
         backup = _backup(name, m.get("version", "0.1.0"))
-    record(name, status="disabled", installed=True, backup=backup)
+    record(name, status="disabled", installed=True, backup=backup, review_verdict=review["verdict"])
     return {"ok": True, "message": str(out), "installed_to": src, "backup": backup,
-            "status": "disabled", "note": "registered DISABLED - enabling needs the owner's explicit yes"}
+            "status": "disabled", "review": review,
+            "note": "registered DISABLED - enabling needs the owner's explicit yes"}
 
 
 def enable(name) -> dict:
