@@ -51,3 +51,25 @@ _work/
 
 # runtime-generated reports (chat digest PDFs etc.) - regenerable skill output
 reports/*.pdf
+
+# Prompt 6 repo hygiene (2026-10-02)
+node_modules/
+tools/flowise/node_modules/
+.pytest_cache/
+.ruff_cache/
+.venv/
+*.pyo
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+# vendored upstream repos are pinned by hash in docs/build-history (VENDOR_PINS) and never committed: 165 MB of other people's code
+vendor/
+# raw run output (regenerable): only the evidence images/markdown under docs/build/evidence are kept
+docs/build/evidence/*.log
+docs/build/evidence/*.txt
+# machine-local state
+window.json
+*.tmp
