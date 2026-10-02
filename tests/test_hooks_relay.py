@@ -214,6 +214,22 @@ def test_on_bus_maps_only_peekable_events(sandbox):
     assert hooks_relay.on_bus("not-a-dict") is None      # never raises
 
 
+def test_on_bus_maps_session_envelopes_to_pills(sandbox):
+    """ECC-09: a session envelope published on the bus reaches the overlay as a pill lifecycle event
+    (the schema's normalized state maps back onto the hook events the pills speak)."""
+    from ishti import session_schema
+    env = session_schema.make("s-1", "claude-cc", "working", label="Bash")
+    hooks_relay.on_bus({"type": "session", "data": env})
+    got = _decoded(sandbox)
+    assert got["kind"] == "hook" and got["event"] == "PreToolUse", got
+    assert got["agent"] == "claude-cc" and got["label"] == "Bash", got
+    # an empty/invalid envelope falls back honestly instead of raising
+    hooks_relay.on_bus({"type": "session", "data": {"state": "nonsense", "agent": "BAD NAME"}})
+    got2 = _decoded(sandbox)
+    assert got2["event"] == "SessionStart" and got2["agent"] == "ishti", got2
+    hooks_relay.on_bus({"type": "session", "data": None})   # never raises
+
+
 def test_selfcheck_still_passes():
     """The module's own __main__ block: real pipe, sandboxed audit, full decision matrix."""
     mod = os.path.join(ROOT, "ishti", "hooks_relay.py")

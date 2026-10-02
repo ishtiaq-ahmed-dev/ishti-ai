@@ -46,7 +46,12 @@ MAX_RECAP_LEN = 300
 OPENED_RE = re.compile(r"^(.*) \((ap_[0-9a-f]+)\)")
 CARDS_CAP = 200
 # the events bus types worth a peek card; vram/model chatter stays out of the island
-BUS_EVENTS = ("remote_push", "remote_alert", "error")
+BUS_EVENTS = ("remote_push", "remote_alert", "error", "session")
+# ECC-09 session envelopes carry a normalized STATE, not a hook event name; the overlay pills speak
+# hook events, so map back onto the same lifecycle the relay already emits (COU-03 wiring).
+STATE_EVENT = {"idle": "SessionStart", "thinking": "UserPromptSubmit", "working": "PreToolUse",
+               "finished": "Stop", "error": "PostToolUseFailure", "ratelimit": "RateLimit",
+               "question": "Notification"}
 
 _lock = threading.Lock()
 _paused = False
@@ -240,11 +245,18 @@ def _answer(data) -> dict | None:
 # --------------------------------------------------------------------------- bus + lifecycle
 
 def on_bus(msg) -> None:
-    """events.publish fan-out -> overlay peek (COU-03 runtime wiring)."""
+    """events.publish fan-out -> overlay peek (COU-03 runtime wiring).
+    "session" envelopes (ishti/session_schema.py, ECC-09) become the same pill lifecycle the hook
+    relay already emits, so any harness that speaks the schema lights up the overlay unchanged."""
     try:
         if not isinstance(msg, dict) or msg.get("type") not in BUS_EVENTS:
             return
         data = msg.get("data") or {}
+        if msg.get("type") == "session":
+            state = str(data.get("state") or "idle")
+            label = data.get("label") or data.get("detail") or ""
+            emit(STATE_EVENT.get(state, "SessionStart"), agent=data.get("agent"), label=str(label))
+            return
         label = data.get("text") or data.get("detail") or data.get("message") or ""
         emit(str(msg.get("type")), agent="ishti", label=str(label))
     except Exception:

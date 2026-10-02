@@ -58,8 +58,35 @@ def test_menu_surface_has_pause_resume_and_guards(monkeypatch):
     assert '"Pause (mic + overlay)"' in src, "C17: pause item must exist"
     assert '"Resume"' in src, "C17: resume item must exist"
     assert '"Open dashboard"' in src and '"Stop ISHTI"' in src, "existing surface kept"
+    assert '"Push-to-talk (Right Alt)"' in src, "JEV-02: the PTT entry must exist in the tray"
     # quit must stay on the graceful path: shutdown first, icon second
     assert src.index("quit_all") < src.index("menu_quit")
+
+
+def test_ptt_toggle_binds_and_unbinds_through_the_engine(monkeypatch):
+    """JEV-02 from the tray: one call binds, one unbinds - and a broken engine is an honest False."""
+    import ishti.dictation as dictation
+    calls = []
+
+    class FakeEngine:
+        def bind_ptt(self, key=dictation.PTT_KEY):
+            calls.append(("bind", key))
+            return True
+
+        def unbind_ptt(self):
+            calls.append(("unbind",))
+            return True
+
+        def state(self):
+            return {"ptt_bound": any(c[0] == "bind" for c in calls) and calls[-1][0] != "unbind"}
+
+    monkeypatch.setattr(dictation, "engine", lambda: FakeEngine())
+    assert tray.set_ptt(True) is True and calls == [("bind", dictation.PTT_KEY)]
+    assert tray.ptt_bound() is True
+    assert tray.set_ptt(False) is True and calls[-1] == ("unbind",)
+    assert tray.ptt_bound() is False
+    monkeypatch.setattr(dictation, "engine", lambda: (_ for _ in ()).throw(RuntimeError("no pynput")))
+    assert tray.set_ptt(True) is False and tray.ptt_bound() is False, "honest failure, never raises"
 
 
 def test_quit_calls_graceful_shutdown_then_stops_icon(monkeypatch):

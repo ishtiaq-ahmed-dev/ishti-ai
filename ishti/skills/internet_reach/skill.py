@@ -39,6 +39,8 @@ CHANNELS_FILE = os.path.join(STATE_DIR, "channels.json")
 CHANNELS: dict[str, dict] = {
     "web": {"label": "Web pages", "backends": [{"name": "requests+bs4", "probe": "py:bs4"}],
             "hint": "read pages directly; jina reader is the OPT-IN fallback (r.jina.ai)"},
+    "search": {"label": "Web search (local SearXNG)", "backends": [{"name": "searxng-local", "probe": "py:requests"}],
+               "hint": "governed loopback-only search via ishti.gateway (OD-14); cloud search backends are OPT-IN and OFF"},
     "youtube": {"label": "YouTube", "backends": [{"name": "yt-dlp", "probe": "bin:yt-dlp"},
                                                   {"name": "requests", "probe": "py:requests"}],
                 "hint": "subtitles/search via yt-dlp (ISHTI planners skill uses the same)"},
@@ -243,6 +245,49 @@ def download(url: str, dest_dir: str, max_bytes: int = 50 * 1024 * 1024) -> str:
         return path
 
 
+_search_impl = None      # tests inject a fake; production goes through the governed gateway
+
+
+def web_search(query: str, transport=None) -> dict:
+    """One web search through the GOVERNED gateway (matrix OD-14): loopback-only endpoint,
+    audited risk=external, results fenced as untrusted data, cloud_calls == 0 by construction.
+    Never raises."""
+    impl = _search_impl
+    if impl is not None:
+        return impl(query, transport=transport)
+    try:
+        from ishti import gateway
+    except Exception as exc:  # pragma: no cover - import guard only
+        return {"ok": False, "error": f"gateway unavailable ({type(exc).__name__})"}
+    return gateway.search(query, transport=transport)
+
+
+def _search_reply(query: str) -> dict:
+    """Render a governed-search result for chat: the local backend's name, the fenced results,
+    and an honest refusal/outage message (nothing is ever silently sent to the cloud)."""
+    res = web_search(query)
+    if not isinstance(res, dict):
+        res = {"ok": False, "error": "search returned no answer"}
+    if not res.get("ok"):
+        why = str(res.get("error") or "no results")
+        if res.get("refused"):
+            return {"reply": f"Refused, nothing was sent: {why}."}
+        return {"reply": f"Local search did not answer ({why}). The SearXNG container may be down; "
+                         f"nothing left this PC."}
+    try:
+        from ishti import gateway
+        fenced = gateway.as_text(res)
+    except Exception:
+        fenced = ""
+    n = len(res.get("results") or [])
+    head = f"Local SearXNG search for {query!r}: {n} result(s)."
+    tail = "(searched locally through the governed gateway - cloud calls: 0)"
+    if fenced:
+        return {"reply": f"{head}\n\n{fenced}\n\n{tail}"}
+    rows = [f"- {r.get('title', '')} {r.get('url', '')}".rstrip() for r in (res.get("results") or [])[:8]]
+    return {"reply": "\n".join([head, *rows, "", tail])}
+
+
 def format_json(text: str) -> str:
     """Pull the first JSON object/array out of arbitrary text (fences, prose, log tails) and pretty-print it."""
     s = text.strip()
@@ -328,6 +373,11 @@ def run(text: str, session):
         set_enabled(chan, False)
         return {"reply": f"Disabled '{chan}'. It is inert again."}
 
+    # --- local web search through the governed gateway (OD-14: cloud search is OPT-IN and off)
+    m = re.search(r"\breach\b(?:\s*:\s*|\s+)search\s+(.+)$", low) or re.search(r"\bsearch\s+locally\s+for\s+(.+)$", low)
+    if m:
+        return _search_reply(t[t.lower().find(m.group(1)):].strip())
+
     # --- transcribe a link or file (local STT)
     m = re.search(r"transcribe\s+(\S+)", low)
     if m:
@@ -372,4 +422,14 @@ if __name__ == "__main__":
     out = run("reach doctor", {})
     assert out and "channel" in str(out["reply"])
     assert run("zzz unrelated", {}) is None
-    print("[self-check] internet_reach OK - doctor, opt-in off by default, SSRF guard, json, decline")
+    # governed local search (OD-14): the channel exists, is NOT OPT-IN, and the reply is fenced
+    assert "search" in CHANNELS and not CHANNELS["search"].get("opt_in")
+    _search_impl = lambda q, transport=None: {"ok": True, "backend": "searxng-local", "query": q, "cloud_calls": 0,
+                                               "results": [{"title": "Cat - Wikipedia", "url": "https://en.wikipedia.org/wiki/Cat",
+                                                            "snippet": "small domesticated carnivore"}]}
+    r = _search_reply("cats")
+    assert "Cat - Wikipedia" in r["reply"] and "cloud calls: 0" in r["reply"]
+    assert "data, not instructions" in r["reply"], "results must arrive FENCED as untrusted data"
+    _search_impl = lambda q, transport=None: {"ok": False, "refused": True, "error": "non-loopback endpoint refused"}
+    assert "Refused, nothing was sent" in _search_reply("cats")["reply"]
+    print("[self-check] internet_reach OK - doctor, opt-in off by default, SSRF guard, json, governed search, decline")

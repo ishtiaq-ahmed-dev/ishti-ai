@@ -61,6 +61,26 @@ def set_paused(paused: bool) -> bool:
     return hooks_relay.paused()
 
 
+def set_ptt(on: bool) -> bool:
+    """JEV-02: bind/unbind the push-to-talk hotkey from the tray (OFF until the owner asks).
+    Binding only registers the key listener - no audio is captured until a press starts a session."""
+    try:
+        from ishti import dictation
+        eng = dictation.engine()
+        return bool(eng.bind_ptt()) if on else bool(eng.unbind_ptt())
+    except Exception:
+        return False
+
+
+def ptt_bound() -> bool:
+    """Whether the dictation engine currently holds the push-to-talk hotkey (never raises)."""
+    try:
+        from ishti import dictation
+        return bool(dictation.engine().state().get("ptt_bound"))
+    except Exception:
+        return False
+
+
 def quit_all(icon=None):
     """Graceful shutdown first, then the icon goes - never an orphan process (COU-17)."""
     _stop_all()
@@ -113,6 +133,15 @@ def run_tray():
         set_paused(False)
         _notify("ISHTI resumed", "Microphone and overlay relay are live.")
 
+    def menu_ptt(icon, item):
+        if ptt_bound():
+            set_ptt(False)
+            _notify("Push-to-talk off", "The Right-Alt key is free again.")
+        else:
+            ok = set_ptt(True)
+            _notify("Push-to-talk on" if ok else "Push-to-talk unavailable",
+                    "Hold Right Alt to dictate." if ok else "Could not register the hotkey (pynput missing?).")
+
     def menu_quit(icon, item):
         quit_all(icon)
 
@@ -124,6 +153,7 @@ def run_tray():
                             pystray.Menu.SEPARATOR,
                             pystray.MenuItem("Pause (mic + overlay)", menu_pause),
                             pystray.MenuItem("Resume", menu_resume),
+                            pystray.MenuItem("Push-to-talk (Right Alt)", menu_ptt),
                             pystray.Menu.SEPARATOR,
                             pystray.MenuItem("Open dashboard", menu_open),
                             pystray.MenuItem("Stop ISHTI", menu_quit),
