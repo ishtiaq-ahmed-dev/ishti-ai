@@ -18,6 +18,8 @@ _OPS = [
     ("tip", re.compile(r"^\s*(?:calculate\s+)?(?:the\s+)?tip\s+(?:on|for)\s+(?:rs\.?|pkr|\$)?\s*(?P<amt>\d[\d,.]*)(?:\s+(?:at|with)\s+(?P<pct>\d[\d.]*)\s*%)?\s*$", I)),
     ("loan", re.compile(r"^\s*(?:calculate\s+)?loan\s+payment\s+(?:of\s+)?(?:rs\.?|pkr|\$)?\s*(?P<principal>\d[\d,.]*)\s*(?:at|with|@)\s*(?P<rate>\d[\d.]*)\s*%\s*(?:for|over)\s*(?P<years>\d+)\s*years?\s*$", I)),
     ("prime", re.compile(r"^\s*(?:prime\s+factors?\s+of|factori[sz]e)\s+(?P<n>\d+)\s*$", I)),
+    # "if I spend 250 on groceries and 175 on fuel, how much did I spend": a hypothetical, so a sum, not the expense log
+    ("total", re.compile(r"^\s*(?:what\s+)?if\b(?=.*\d.*\band\b.*\d)(?P<body>.+?)(?:,|\?)\s*(?:how\s+much|what\s+(?:is|are)\s+the\s+total|total)\b.*$", I)),
     ("gcd", re.compile(r"^\s*(?:gcd|hcf|lcm)\s+of\s+(?P<a>\d+)\s*(?:,|and)\s*(?P<b>\d+)\s*$", I)),
 ]
 
@@ -98,6 +100,11 @@ def run(text, session):
             fac = sympy.factorint(n)
             parts = " × ".join(f"{p}^{e}" if e > 1 else str(p) for p, e in sorted(fac.items()))
             return {"reply": f"{n} = {parts}", "sources": []}
+        if name == "total":
+            nums = [float(n.replace(",", "")) for n in re.findall(r"(?<![\w.])\d[\d,]*(?:\.\d+)?", m.group("body"))]
+            if len(nums) < 2 or re.search(r"\b(?:at|each|per|times|x|for|of|every)\b", m.group("body"), I):
+                return None  # prices times quantities are not a plain sum: the model reasons about those
+            return {"reply": " + ".join(f"{n:,.10g}" for n in nums) + f" = {sum(nums):,.10g}", "sources": []}
         if name == "gcd":
             a, b = int(m.group("a")), int(m.group("b"))
             op = "gcd" if t.lower().startswith(("gcd", "hcf")) else "lcm"

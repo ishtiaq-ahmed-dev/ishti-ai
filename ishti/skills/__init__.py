@@ -124,6 +124,16 @@ SKILL_CATEGORIES = {
 }
 
 
+# The manifests grew two names for the same folder ("Finance" / "Finance & Commerce"): the Skills tree shows one folder for each.
+CATEGORY_CANON = {
+    "Communication & Social": "Communication", "Computer Control": "Computer & System", "System & Desktop": "Computer & System",
+    "Utilities & Daily": "Daily Life", "Health": "Health & Habits", "Development & Code": "Development",
+    "Documents & Files": "Files & Documents", "Files & Storage": "Files & Documents", "Office": "Files & Documents",
+    "Writing & Text": "Writing", "Finance & Commerce": "Finance", "Productivity & Planning": "Productivity",
+    "Security & Privacy": "Security", "Knowledge & Intelligence": "Knowledge & Reasoning", "Reasoning": "Knowledge & Reasoning",
+}
+
+
 class Skill:
     def __init__(self, folder, rel_dir=None):
         rel_dir = rel_dir or folder
@@ -134,7 +144,8 @@ class Skill:
         with open(manifest_path, encoding="utf-8") as f:
             self.manifest = json.load(f)
         self.name = self.manifest["name"]
-        self.category = self.manifest.get("category") or SKILL_CATEGORIES.get(self.name, "General")
+        raw = self.manifest.get("category") or SKILL_CATEGORIES.get(self.name, "General")
+        self.category = CATEGORY_CANON.get(raw, raw)
         self.manifest["category"] = self.category
         self.manifest["path"] = self.path
         self.manifest["folder"] = folder

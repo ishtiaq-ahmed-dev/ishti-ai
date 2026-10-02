@@ -31,6 +31,17 @@ CHATTER = re.compile(
     re.I)
 
 
+URL = re.compile(r"https?://\S+|www\.\S+", re.I)
+MARKUP = re.compile(r"[*_`#>|~]+|^\s*(?:[-+•]|\d+[.)])\s+", re.M)
+MAX_SPOKEN = 4  # sentences read aloud per reply: the rest is on the screen (a live call is a conversation, not a lecture)
+
+
+def speakable(text) -> str:
+    """What is worth hearing: no web addresses, markdown marks or list bullets read out symbol by symbol."""
+    t = MARKUP.sub(" ", URL.sub("", str(text or "")))
+    return re.sub(r"\s{2,}", " ", t).strip(" -:;,")
+
+
 def is_process_chatter(text) -> bool:
     """True when a line is a step/progress notice rather than something worth hearing."""
     t = str(text or "").strip()
@@ -82,7 +93,7 @@ class Talker:
 
     # ---- producing ----
     def say(self, text):
-        text = text.strip()
+        text = speakable(text)
         if not text or is_process_chatter(text):
             return  # never narrate the process: only the answer is spoken
         if not is_voice_allowed():
@@ -261,6 +272,16 @@ class Sentences:
     def __init__(self, talker, min_chars=12):
         self.talker, self.buf, self.min = talker, "", min_chars
         self.spoke = False
+        self.count = 0
+
+    def _say(self, part):
+        if not speakable(part) or is_process_chatter(part):
+            return
+        self.count += 1
+        if self.count <= MAX_SPOKEN:
+            self.talker.say(part)
+        elif self.count == MAX_SPOKEN + 1:
+            self.talker.say("The rest is on your screen.")
 
     def feed(self, token):
         self.buf += token
@@ -268,16 +289,16 @@ class Sentences:
             m = SENTENCE_END.search(self.buf)
             if not m or m.start() < self.min:
                 break
-            self.talker.say(self.buf[:m.start()])
+            self._say(self.buf[:m.start()])
             self.buf, self.spoke = self.buf[m.end():], True
 
     def flush(self, full_text=None):
         """End of the reply: speak what's left; if nothing streamed (a non-LLM skill), speak the whole reply
-        sentence by sentence."""
+        sentence by sentence (at most MAX_SPOKEN of them)."""
         if not self.spoke and full_text:
             self.buf = full_text
         for part in SENTENCE_END.split(self.buf):
-            self.talker.say(part)
+            self._say(part)
         self.buf = ""
 
 
@@ -318,6 +339,10 @@ if __name__ == "__main__":
     s2 = Sentences(fake)
     s2.flush("One. Two sentences here.")
     assert got[-2:] == ["One.", "Two sentences here."], got
+    assert speakable("**Top 3** - see https://example.com/a?b=1 now") == "Top 3 - see now"
+    s3 = Sentences(fake)
+    s3.flush("One. Two. Three. Four. Five. Six.")
+    assert got[-5:] == ["One.", "Two.", "Three.", "Four.", "The rest is on your screen."], got
     t0 = time.time()
     tk = talker()
     tk.say("Testing sentence streaming.")

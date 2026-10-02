@@ -11,7 +11,7 @@ import time
 from fastapi import APIRouter, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
 
-from ishti import audit, killswitch, languages, reflex
+from ishti import audit, killswitch, languages, prefs, reflex
 from ishti.scope import ScopeError, install as _install_scope
 from ishti.untrusted import clean_reply, note_for_owner
 
@@ -523,7 +523,13 @@ def _run(text, s, dec):
         dec = route(text, SKILLS, exclude=tried)
     if out is None:
         log_need("gap", "none", text, "no skill could handle this request")
-        name, out = None, {"reply": "I can't do that yet - no skill handles it. I've logged it as a skill to add."}
+        creator = SKILLS.get("skill_creator")
+        if creator and len(text.split()) >= 3:  # self-extending: offer to research and build the missing skill (nothing runs before the yes)
+            name, out = "skill_creator", ask_first(s, "skill_creator", "I have no skill for that yet. Should I research it, build one and try it "
+                                                   "(it stays switched off until you approve it)",
+                                                   lambda t=text: (creator.module.build(t, s) or {}).get("reply", "Nothing was built."))
+        else:
+            name, out = None, {"reply": "I can't do that yet - no skill handles it. I've logged it as a skill to add."}
     get_facts().log_route(mask(text, s.get("redact")), name, dec.get("confidence", 0), dec.get("source", ""), json.dumps(dec))
     return name, out, dec
 
@@ -826,6 +832,12 @@ def _handle(text, sid, conv, s, events, t0, channel):
                        why="You cleared the answer-language lock (auto-detect enabled).")
         dec = {"skill": "owner", "source": "rule", "confidence": 1.0}
         return _finish(text, sid, conv, s, events, t0, channel, "owner", out, dec)
+
+    # 4a. Standing app preference: "always use WhatsApp Web", "use Spotify for music" (ishti/prefs.py) - stored, confirmed, never researched
+    if not pending and (pref_reply := prefs.statement(text)):
+        out = {"reply": pref_reply, "sources": []}
+        s["trace"](type="route", skill="owner", source="rule", confidence=1.0, why="You stated which app to use.")
+        return _finish(text, sid, conv, s, events, t0, channel, "owner", out, {"skill": "owner", "source": "rule", "confidence": 1.0})
 
     # 4b. ARCH2 active: the two-pass brain handles the turn (router -> Qwen3-14B -> tools ->
     # validation -> Qwen3-14B). Same session, trace, gates and memory as arch1.
@@ -1224,6 +1236,42 @@ async def markets_analyze(q: str):
     return out or JSONResponse({"error": "nothing found"}, status_code=404)
 
 
+@api.get("/api/markets/history")
+async def markets_history(q: str = "", limit: int = 200):
+    """Every saved market question and analysis, newest first (H). Search matches symbol, name, question or action."""
+    import asyncio
+    from ishti.skills.markets import research as r
+    rows = await asyncio.get_running_loop().run_in_executor(None, r.history_rows, q, limit)
+    return {"items": rows}
+
+
+@api.get("/api/markets/history/{cid}")
+async def markets_history_one(cid: int):
+    from ishti.skills.markets import research as r
+    row = r.get_call(cid)
+    return row or JSONResponse({"error": "not found"}, status_code=404)
+
+
+@api.post("/api/markets/history/{cid}/rerun")
+async def markets_history_rerun(cid: int):
+    """Run the saved question again as the markets skill (lesson 1: web data only inside a skill context)."""
+    import asyncio
+    from ishti.skills.markets import research as r
+    row = await asyncio.get_running_loop().run_in_executor(None, r.get_call, cid)
+    if not row:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    from ishti.skills.markets import skill as mk
+    question = row["question"] or f"analyze {row['name'] or row['symbol']}"
+    out = await asyncio.get_running_loop().run_in_executor(None, _as_skill, "markets", mk.run, question[:120], {})
+    return {"question": question, "result": out or {"error": "nothing found"}}
+
+
+@api.delete("/api/markets/history/{cid}")
+async def markets_history_delete(cid: int):
+    from ishti.skills.markets import research as r
+    return {"deleted": r.delete_call(cid)}
+
+
 @api.get("/api/about")
 async def about_get():
     """About you: what ISHTI knows about the owner, their custom instructions, and exactly what is sent."""
@@ -1579,6 +1627,18 @@ async def manage_model(req: Request):
             manage.pull_model(name)
         else:
             raise ValueError("action must be delete or download")
+    except Exception as exc:
+        return _manage_error(exc)
+    return {"ok": True}
+
+
+@api.post("/api/manage/cancel")
+async def manage_cancel(req: Request):
+    """{key} - stop a running download (a model name, "whisper:<name>" or a voice-engine key); the unfinished files are removed."""
+    from ishti import manage
+    b = await req.json()
+    try:
+        manage.cancel_download(str(b.get("key", "")))
     except Exception as exc:
         return _manage_error(exc)
     return {"ok": True}

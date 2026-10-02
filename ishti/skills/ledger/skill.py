@@ -38,7 +38,9 @@ OPS = [
 
 
 def match(text):
-    return any(rx.search(text) for _, rx in OPS) and not re.search(r"\b(?:should|would|could|want\s+to|price\s+of)\b", text, I)
+    # "if I spend 250 on groceries and 175 on fuel, how much did I spend" is arithmetic about a hypothetical, not a log entry or a report
+    return (any(rx.search(text) for _, rx in OPS) and not re.search(r"\b(?:should|would|could|want\s+to|price\s+of)\b", text, I)
+            and not re.match(r"\s*(?:what\s+)?if\b", text, I))
 
 
 def run(text, session):

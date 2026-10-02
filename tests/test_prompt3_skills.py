@@ -33,7 +33,7 @@ def test_skill_registry_records_and_retrieval():
     assert {"skill_id", "name", "domain", "description", "input_schema", "output_schema",
             "tools_used", "risk_level", "requires_confirmation", "enabled", "version",
             "status", "test_file", "embedding", "examples"} <= set(r), sorted(r)
-    assert r["status"] == "implemented" and r["domain"] == "System & Desktop"
+    assert r["status"] == "implemented" and r["domain"] == "Computer & System"
     t2 = recs["terminal"]
     assert t2["requires_confirmation"] is True and t2["risk_level"] == "high"
     # A2: 5-20 retrieval window, ranked
@@ -48,9 +48,9 @@ def test_skill_registry_records_and_retrieval():
     REG.set_enabled("weather", True)
     assert "weather" in [x["name"] for x in REG.retrieve("weather tomorrow?", skills, k=20)]
     # domain disable
-    REG.set_enabled("Utilities & Daily", False, is_domain=True)
+    REG.set_enabled(recs["weather"]["domain"], False, is_domain=True)
     assert "weather" not in [x["name"] for x in REG.retrieve("weather tomorrow?", skills, k=20)]
-    REG.set_enabled("Utilities & Daily", True, is_domain=True)
+    REG.set_enabled(recs["weather"]["domain"], True, is_domain=True)
     try:
         REG.set_enabled("not_a_skill", False)
         raise AssertionError("unknown skill accepted")

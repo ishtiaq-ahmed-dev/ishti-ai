@@ -116,6 +116,9 @@ def _needs_confirmation(text: str) -> bool:
     return bool(CONFIRM_RE.search(text or ""))
 
 
+DETERMINISTIC = {"sudoku", "calc"}
+
+
 def _run_tool(skills, name, text, session, tool_log):
     try:
         return skills[name].run(text, session) or {"reply": f"The {name} skill had nothing to do for this."}
@@ -136,6 +139,17 @@ def run(request: str, session, skills: dict) -> dict:
     """The two-pass turn. session is the dispatcher's View (trace, history, pending...).
     Returns {"reply", "sources"} like any skill."""
     from ishti import llm  # openai import lives here; arch2 must load without it
+
+    # Exact-answer skills (a solver, sympy) answer by themselves: asking the 14B model first only risked a wrong
+    # "solution" in prose (arch_compare sudoku_row1) and cost a whole model turn.
+    if DETERMINISTIC & set(skills):
+        from ishti import router
+        dec = router.route(request, skills)
+        if dec.get("skill") in DETERMINISTIC and dec.get("source") == "rule":
+            out = _run_tool(skills, dec["skill"], request, session, [])
+            if isinstance(out, dict) and out.get("reply") and "had nothing to do" not in out["reply"]:
+                trace(session, "tool", f"{dec['skill']}: answered exactly, no model needed", status="done")
+                return {**out, "mode": "ARCH2"}
 
     context = retrieval.assemble_context(request)
     # D3: the conversation-state summary (active topic / task / constraints) is pinned
