@@ -1878,138 +1878,94 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
              MODE 3: DIRECTORY TREE ACCORDION VIEW
              ======================================================== */}
         {viewMode === "tree" && !search && (
-          <div className="space-y-4 outline-none" role="tree" tabIndex={0} ref={treeRef}
+          <div className="rounded-2xl border border-border bg-card/40 p-3 shadow-xs sm:p-4 outline-none" role="tree" tabIndex={0} ref={treeRef}
             aria-label="Skills tree - arrow keys to move, Enter to open a row" onKeyDown={onTreeKeyDown}>
-            {categories.map((cat) => {
-              const catSkills = skillsByCategory[cat] || [];
-              const isOpen = expandedFolders[cat] !== false;
-              const meta = CATEGORY_METAS[cat] || {
-                color: "text-accent",
-                bg: "bg-accent-soft",
-                border: "border-border",
-              };
-
-              return (
-                <div
-                  key={cat}
-                  className="rounded-2xl border border-border bg-card/40 overflow-hidden shadow-xs"
-                >
-                  {/* Folder Accordion Header */}
-                  <button
-                    type="button"
-                    data-tree-row={rowIndex("cat", cat)}
-                    onFocus={() => setFocusedRow(rowIndex("cat", cat))}
-                    onClick={() => toggleFolderExpand(cat)}
-                    aria-expanded={isOpen}
-                    className="w-full flex items-center justify-between p-4 text-left hover:bg-muted/20 transition-colors cursor-pointer group focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div
-                        className={cn(
-                          "grid h-8 w-8 shrink-0 place-items-center rounded-xl border group-hover:scale-105 transition-transform",
-                          meta.bg,
-                          meta.border,
-                          meta.color
-                        )}
-                      >
-                        {isOpen ? (
-                          <FolderOpen className="h-4 w-4 fill-current/20" />
-                        ) : (
-                          <Folder className="h-4 w-4 fill-current/20" />
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold text-foreground text-sm tracking-tight">
-                            {cat}
-                          </span>
-                          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground font-mono">
-                            {catSkills.length} skills
-                          </span>
-                        </div>
-                        <div className="text-[11px] font-mono text-muted-foreground truncate">
-                          ishti/skills/{cat.toLowerCase().replace(/[^a-z0-9]+/g, "_")}/
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-medium text-muted-foreground hidden sm:inline">
-                        {isOpen ? "Collapse" : "Expand"}
+            {/* root of the tree */}
+            <div className="flex flex-wrap items-center gap-2 px-1 pb-1.5 font-mono text-xs text-foreground">
+              <FolderOpen className="h-4 w-4 text-accent" />
+              <span className="font-semibold">ishti/skills</span>
+              <span className="text-muted-foreground">{skills.length} skills in {categories.length} folders</span>
+            </div>
+            <ul className="ml-2" role="group">
+              {categories.map((cat, ci) => {
+                const catSkills = skillsByCategory[cat] || [];
+                const isOpen = expandedFolders[cat] !== false;
+                const lastCat = ci === categories.length - 1;
+                const meta = CATEGORY_METAS[cat] || { color: "text-accent", bg: "bg-accent-soft", border: "border-border" };
+                return (
+                  <li key={cat} className="relative pl-6" role="treeitem" aria-expanded={isOpen}>
+                    {/* trunk + elbow of this folder */}
+                    <span aria-hidden className="absolute left-0 top-0 w-px bg-border" style={{ height: lastCat ? 20 : "100%" }} />
+                    <span aria-hidden className="absolute left-0 top-5 h-px w-5 bg-border" />
+                    <button
+                      type="button"
+                      data-tree-row={rowIndex("cat", cat)}
+                      onFocus={() => setFocusedRow(rowIndex("cat", cat))}
+                      onClick={() => toggleFolderExpand(cat)}
+                      aria-label={`${cat}, ${catSkills.length} skills, ${isOpen ? "open" : "closed"}`}
+                      className="group flex w-full items-center gap-2 rounded-lg px-1.5 py-1.5 text-left transition-colors hover:bg-muted/40 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                    >
+                      <motion.span animate={{ rotate: isOpen ? 90 : 0 }} transition={{ duration: 0.18 }} className="grid h-4 w-4 shrink-0 place-items-center text-muted-foreground">
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </motion.span>
+                      <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-md border", meta.bg, meta.border, meta.color)}>
+                        {isOpen ? <FolderOpen className="h-3.5 w-3.5" /> : <Folder className="h-3.5 w-3.5" />}
                       </span>
-                      <span
-                        className={cn(
-                          "grid h-6 w-6 place-items-center rounded-lg bg-muted text-muted-foreground transition-transform duration-200",
-                          isOpen ? "rotate-180" : ""
-                        )}
-                      >
-                        <ChevronDown className="h-3.5 w-3.5" />
-                      </span>
-                    </div>
-                  </button>
-
-                  {/* Skills Grid inside this Drawer */}
-                  <AnimatePresence initial={false}>
-                    {isOpen && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.22, ease: "easeInOut" }}
-                        className="overflow-hidden border-t border-border"
-                      >
-                        <div className="p-4 space-y-3">
-                          <div className="grid gap-2.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-                            {catSkills.map((s) => {
-                              const isSelected = activeSkill?.name === s.name;
-                              return (
+                      <span className="text-sm font-semibold tracking-tight text-foreground">{cat}</span>
+                      <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[10px] text-muted-foreground">{catSkills.length}</span>
+                    </button>
+                    <AnimatePresence initial={false}>
+                      {isOpen && (
+                        <motion.ul
+                          role="group"
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.22, ease: "easeInOut" }}
+                          className="overflow-hidden"
+                        >
+                          {catSkills.map((s, si) => {
+                            const isSelected = activeSkill?.name === s.name;
+                            const lastSkill = si === catSkills.length - 1;
+                            return (
+                              <motion.li
+                                key={s.name}
+                                role="treeitem"
+                                initial={{ opacity: 0, x: -8 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: Math.min(si, 12) * 0.018, duration: 0.18 }}
+                                className="relative ml-[7px] pl-6"
+                              >
+                                <span aria-hidden className="absolute left-0 top-0 w-px bg-border" style={{ height: lastSkill ? 18 : "100%" }} />
+                                <span aria-hidden className="absolute left-0 top-[18px] h-px w-5 bg-border" />
                                 <button
-                                  key={s.name}
                                   type="button"
                                   data-tree-row={rowIndex("skill", s.name)}
                                   onFocus={() => setFocusedRow(rowIndex("skill", s.name))}
                                   onClick={() => setActiveSkill(isSelected ? null : s)}
                                   className={cn(
-                                    "flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left transition-all cursor-pointer shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
-                                    isSelected
-                                      ? "border-accent bg-accent/15 ring-2 ring-accent/30"
-                                      : "border-border bg-background hover:border-accent/40 hover:bg-muted/30"
+                                    "my-0.5 flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
+                                    isSelected ? "border-accent/60 bg-accent/10" : "border-transparent hover:border-border hover:bg-muted/30"
                                   )}
                                 >
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <span
-                                      className={cn(
-                                        "h-2 w-2 shrink-0 rounded-full",
-                                        s.status === "broken"
-                                          ? "bg-red-500"
-                                          : s.status === "working"
-                                          ? "bg-emerald-500"
-                                          : "bg-amber-500"
-                                      )}
-                                    />
-                                    <span className="font-mono text-xs font-semibold text-foreground truncate">
-                                      {s.name}
-                                    </span>
-                                  </div>
-                                  <span className="flex shrink-0 items-center gap-1.5">
-                                    <span className={cn("rounded-full border px-1.5 py-0.5 text-[9.5px] font-semibold capitalize", statusBadge(s.status))}>
-                                      {s.status}
-                                    </span>
-                                    <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                                      v{s.version}
-                                    </span>
+                                  <span className={cn("h-2 w-2 shrink-0 rounded-full", s.status === "broken" ? "bg-red-500" : s.status === "working" ? "bg-emerald-500" : "bg-amber-500")} />
+                                  <span className="shrink-0 font-mono text-xs font-semibold text-foreground">{s.name}</span>
+                                  <span className="hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground md:block">{s.description}</span>
+                                  <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                                    <span className={cn("rounded-full border px-1.5 py-0.5 text-[9.5px] font-semibold capitalize", statusBadge(s.status))}>{s.status}</span>
+                                    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">v{s.version}</span>
                                   </span>
                                 </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              );
-            })}
+                              </motion.li>
+                            );
+                          })}
+                        </motion.ul>
+                      )}
+                    </AnimatePresence>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         )}
 
