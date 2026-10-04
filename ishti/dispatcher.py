@@ -124,20 +124,11 @@ def _restore_session(sid: str, conv=None) -> dict:
         print(f"[dispatcher] saved chat history unavailable ({type(exc).__name__}: {exc})", flush=True)
         return shared
 
-    history = []
-    for message in stored:
-        if not isinstance(message, dict):
-            continue
-        role = message.get("role")
-        role = "assistant" if role in ("ishti", "assistant") else role
-        content = message.get("content")
-        if role not in ("user", "assistant") or not isinstance(content, str) or not content.strip():
-            continue
-        if role == "assistant" and not is_safe_for_history(content):
-            continue
-        history.append({"role": role, "content": content})
+    from ishti.core.context import normalize_history, RUNTIME_MESSAGES
+    history = normalize_history(stored)
     # Preserve enough recent dialogue for context while keeping per-session memory bounded.
-    shared["history"] = history[-200:]
+    shared["history"] = history[-RUNTIME_MESSAGES:]
+    shared["history_truncated"] = len(history) > RUNTIME_MESSAGES
     return shared
 
 
@@ -1343,18 +1334,24 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
         text, kept = mask(text, hidden), mask(kept, hidden)
         events[:] = json.loads(mask(json.dumps(events, ensure_ascii=False), hidden))
         secret = True  # and nothing from this exchange goes to long-term memory
-    s["last_request"], s["last_skill"] = text, name
-    s["history"] = (s["history"] + [{"role": "user", "content": text},
-                                    {"role": "assistant", "content": kept}])[-20:]
+    from ishti.core.context import normalize_history, RUNTIME_MESSAGES
     # incognito (H3): this conversation writes NOTHING to memory — no chat persistence, no
     # semantic remember, no behavior log, no consolidation, no learning. Explicit memory
     # commands ('forget that') still ran earlier in _handle: removing is not remembering.
     from ishti.core import incognito as _incognito
     incog = _incognito.enabled(s)
-    if not incog and not out.get("persisted"):  # legacy skill writes its own session history
-        conv.add_message(sid, "user", text)
-        if is_safe_for_history(kept):
-            conv.add_message(sid, "ishti", kept, sources=out.get("sources"), metadata={"events": events[-150:]})
+    # Concurrent requests must append an intact pair, not overwrite one another's
+    # runtime history or interleave their persisted user/assistant messages.
+    with _SESSIONS_LOCK:
+        s["last_request"], s["last_skill"] = text, name
+        history = normalize_history(s.get("history", [])) + normalize_history([
+            {"role": "user", "content": text}, {"role": "assistant", "content": kept}])
+        s["history_truncated"] = bool(s.get("history_truncated") or len(history) > RUNTIME_MESSAGES)
+        s["history"] = history[-RUNTIME_MESSAGES:]
+        if not incog and not out.get("persisted"):
+            conv.add_message(sid, "user", text)
+            if is_safe_for_history(kept):
+                conv.add_message(sid, "ishti", kept, sources=out.get("sources"), metadata={"events": events[-150:]})
     if not incog and not secret and name not in ("memory",) and is_safe_for_history(reply):  # exact facts already live in SQLite
         threading.Thread(target=_remember, args=(text, reply, name), daemon=True).start()
         threading.Thread(target=_ftlog, args=(text, reply, name, dec, channel), daemon=True).start()  # Part 3 collection

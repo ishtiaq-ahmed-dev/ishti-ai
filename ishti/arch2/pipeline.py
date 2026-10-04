@@ -242,7 +242,9 @@ def run(request: str, session, skills: dict) -> dict:
         # deterministic nudge: the rules already know this one belongs to a live tool
         system1 += (f"\n\nLIVE REQUEST: this request matches the {forced} tool exactly. Your reply MUST be "
                     f'{{"tool": "{forced}", "input": "<the request, resolved>"}} and nothing else.')
-    msgs = session.get("history", [])[-8:] + [{"role": "user", "content": request}]
+    from ishti.core.context import assemble_session_context
+    dialogue = assemble_session_context(session, request, verbatim_turns=4, max_msg_chars=1400)
+    msgs = dialogue + [{"role": "user", "content": request}]
 
     tool_log, sources = [], []
     for round_no in range(MAX_TOOL_ROUNDS):
@@ -253,8 +255,9 @@ def run(request: str, session, skills: dict) -> dict:
         if not call:
             trace(session, "model", "answered directly", status="done")
             clean = _not_a_repeat(reply, session)
-            if clean is LOST and round_no == 0:  # it only repeated the last answer: ask once more without the history it copied
-                msgs = [{"role": "user", "content": request}]
+            if clean is LOST and round_no == 0:
+                msgs = dialogue + [{"role": "user", "content": request +
+                    "\nAnswer this request using the conversation evidence; do not copy your last answer."}]
                 continue
             return {"reply": clean, "sources": sources, "mode": "ARCH2"}
         name, tool_input = call["tool"], call["input"]
@@ -307,7 +310,7 @@ def run(request: str, session, skills: dict) -> dict:
     state_line = session.get("state_summary") or ""
     user_block = f"User request: {request}" + (f"\n\nConversation context (the topic is fixed - do not drift):\n{state_line}" if state_line else "")
     final_system = llm.style() + "\n\n" + FINAL_SYSTEM  # the same rules as every answer: honest about actions, names exact, brief
-    final = (llm.chat(session.get("history", [])[-6:] + [{"role": "user", "content": f"{user_block}\n\n{evidence}\n\nWrite the final answer."}],
+    final = (llm.chat(dialogue + [{"role": "user", "content": f"{user_block}\n\n{evidence}\n\nWrite the final answer."}],
                       role="main", system=final_system, temperature=0.3, max_tokens=1024,
                       on_token=session.get("on_token")).content or "").strip()
 
@@ -320,7 +323,7 @@ def run(request: str, session, skills: dict) -> dict:
         verdict = ValidationStage().validate_answer(request, final, topic=st.active_topic)
         if not verdict.get("ok"):
             trace(session, "verify", f"answer was off-topic ({verdict.get('reason')}) - re-planning", status="error")
-            final = (llm.chat([{"role": "user", "content":
+            final = (llm.chat(dialogue + [{"role": "user", "content":
                                 f"{user_block}\n\n{evidence}\n\nYour previous draft ignored the topic. "
                                 f"Write the final answer ABOUT: {st.active_topic}."}],
                               role="main", system=final_system, temperature=0.2, max_tokens=1024).content or final).strip()

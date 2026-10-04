@@ -210,11 +210,8 @@ def run(text, session):
     # Keep the live conversation state pinned and summarize older turns instead of silently
     # throwing away everything outside the last dozen messages after a long chat resumes.
     try:
-        from ishti.core.context import ContextAssembler
-        from ishti.core import state as conversation_state
-        state_obj = conversation_state.get_manager().get(session.get("id", "default"))
-        assembled = ContextAssembler(verbatim_turns=6, max_messages=40, max_msg_chars=1600).build(
-            session.get("history", []), state_obj, state_summary=session.get("state_summary") or None)
+        from ishti.core.context import assemble_session_context
+        assembled = assemble_session_context(session, text, verbatim_turns=6, max_msg_chars=1600)
         msgs = assembled + [{"role": "user", "content": text}]
     except Exception as exc:
         swallowed("ishti/skills/chat/skill.py:context_assembly", exc)
@@ -222,7 +219,7 @@ def run(text, session):
     out = (llm.chat(msgs, role=role, system=system, max_tokens=2048 if role == "coder" else 1024,
                     on_token=session.get("on_token")).content or "").strip()
     if not inspect(out)[0]:  # refusal / contamination -> one clean retry
-        out = (llm.chat(msgs[-1:], role=role, system=system, temperature=0).content or "").strip()
+        out = (llm.chat(msgs, role=role, system=system, temperature=0).content or "").strip()
     out = re.sub(r"\s*(?:KNOWN FACTS|Possibly relevant past context|LEARNED FROM THE OWNER)\b.*$", "", out, flags=re.S | re.I).strip()
     out = _honesty_guard(out)
     if not out:  # a system message, not model text: it must not go through the translator (which made up a reply for it)
