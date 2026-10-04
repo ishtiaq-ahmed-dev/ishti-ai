@@ -13,10 +13,49 @@ import time
 import re
 import threading
 import uuid
+import hashlib
+import secrets
 from typing import Dict, Any, List, Optional, Tuple
 
 CRM_STORE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "crm_clients.json")
 _STORE_LOCK = threading.RLock()
+_DELETE_APPROVALS = {}
+DELETE_APPROVAL_TTL = 120
+
+
+def _record_digest(record):
+    return hashlib.sha256(json.dumps(record, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def prepare_delete(client_id):
+    with _STORE_LOCK:
+        record = _load_crm_store().get(client_id)
+        if not record or client_id != record.get("client_id"):
+            raise ValueError("An exact contract CRM record ID is required")
+        now = time.monotonic()
+        for key, value in list(_DELETE_APPROVALS.items()):
+            if value[2] <= now:
+                _DELETE_APPROVALS.pop(key)
+        if len(_DELETE_APPROVALS) >= 128:
+            raise RuntimeError("Too many pending deletion approvals")
+        token = secrets.token_urlsafe(32)
+        _DELETE_APPROVALS[token] = (client_id, _record_digest(record), now + DELETE_APPROVAL_TTL)
+        return {"approval_token": token, "client_id": client_id,
+                "name": record["contact_name"], "expires_in": DELETE_APPROVAL_TTL}
+
+
+def delete_approved(client_id, confirm_name, approval_token):
+    with _STORE_LOCK:
+        approval = _DELETE_APPROVALS.pop(str(approval_token or ""), None)
+        if not approval or approval[0] != client_id or approval[2] <= time.monotonic():
+            raise PermissionError("Deletion approval is missing, expired or already used")
+        store = _load_crm_store()
+        record = store.get(client_id)
+        if not record or record.get("contact_name") != confirm_name or _record_digest(record) != approval[1]:
+            raise PermissionError("Client changed; review a new deletion approval")
+        store.pop(client_id)
+        _save_crm_store(store)
+        return True
 
 # Default boundary: Personal contacts and business CRM are kept isolated
 SEPARATE_PERSONAL_AND_BUSINESS = True

@@ -642,4 +642,5 @@ These additions describe current code; see docs/audit/TEST_RESULTS.md for what h
 | POST /api/inputs/wa-start | empty JSON | Starts the local linked-device bridge and returns its status. Pairing still needs the owner to scan on phone. |
 | POST /api/sessions/{session_id}/feedback | message_id, rating=positive/negative, optional reason | Exact saved assistant answer in that session only. Negative rating may append a text-only revision with revision_of; no tool or message action is replayed. |
 | GET /api/crm/clients | optional status | clients with id/name aliases for contract CRM rows plus read-only chat CRM profiles. partial_error says when chat profiles could not load. |
-| POST /api/crm/delete | exact client_id and exact confirm_name | Deletes only a contract CRM record; wrong name returns 409, ambiguous/name-only ID returns 400. Bulk purge returns 501. |
+| POST /api/crm/delete/prepare | exact client_id | Returns the current client name and a random approval token valid for 120 seconds; no deletion occurs. |
+| POST /api/crm/delete | exact client_id, confirm_name, approval_token | Consumes one approval; expired/replayed tokens or changed records return 409. Exact identity is required. Bulk purge returns 501. |

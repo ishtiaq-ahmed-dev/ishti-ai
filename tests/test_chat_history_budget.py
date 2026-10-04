@@ -77,6 +77,23 @@ def test_finish_keeps_runtime_history_after_20_messages_and_marks_overflow(monke
     assert len(writes) == 4
 
 
+def test_generated_secret_never_enters_background_learning(monkeypatch):
+    from ishti import dispatcher, calltrace
+    jobs = []
+    monkeypatch.setattr(dispatcher.threading.Thread, "start", lambda worker: jobs.append(worker._target))
+    monkeypatch.setattr(dispatcher, "RECOVER", [])
+    monkeypatch.setattr(calltrace, "end", lambda: [])
+    writes = []
+    manager = SimpleNamespace(add_message=lambda *args, **kwargs: writes.append(args))
+    session = {"history": [], "trace": lambda **kwargs: None, "no_history": True}
+    password = "synthetic-only-password-42"
+    result = dispatcher._finish("Generate a password", "scratch", manager, session, [],
+                                time.perf_counter(), "text", "utilities", {"reply": password}, {})
+    assert result["final_answer"] == password
+    assert not jobs
+    assert password not in str(writes) and password not in str(session["history"])
+
+
 def test_chat_retry_preserves_older_context(monkeypatch):
     from ishti.skills.chat import skill
     from ishti import llm

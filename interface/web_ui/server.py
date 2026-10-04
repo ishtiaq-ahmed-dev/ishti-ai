@@ -1947,6 +1947,18 @@ async def crm_export(req: Request):
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
+@app.post("/api/crm/delete/prepare")
+async def crm_delete_prepare(req: Request):
+    from ishti import crm_contract
+    try:
+        body = await req.json()
+        return crm_contract.prepare_delete(body.get("client_id"))
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=409)
+
+
 @app.post("/api/crm/delete")
 async def crm_delete(req: Request):
     """Delete a CRM client or purge CRM data."""
@@ -1960,7 +1972,10 @@ async def crm_delete(req: Request):
                 return JSONResponse({"error": "An exact contract CRM record ID is required"}, status_code=400)
             if body.get("confirm_name") != record.get("contact_name"):
                 return JSONResponse({"error": "Confirm the exact client name before deletion"}, status_code=409)
-            ok = crm_contract.delete_client(client_id)
+            try:
+                ok = crm_contract.delete_approved(client_id, body.get("confirm_name"), body.get("approval_token"))
+            except PermissionError as exc:
+                return JSONResponse({"error": str(exc)}, status_code=409)
             return {"ok": ok}
         purge_all = body.get("purge_all", False)
         if purge_all:

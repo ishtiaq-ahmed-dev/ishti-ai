@@ -35,6 +35,21 @@ def test_negative_revision_excludes_rejected_answer_from_context():
         assert len(manager.get_messages(sid)) == 3
 
 
+def test_iterative_revisions_keep_original_evidence():
+    scratch, manager, sid, mid = _chat()
+    with scratch:
+        session = manager.load_session(sid)
+        sources = [{"title": "Synthetic invoice", "url": "https://example.invalid/invoice", "verified": True}]
+        session["messages"][-1]["sources"] = sources
+        manager._save_session(sid, session)
+        first = manager.save_feedback(sid, mid, "negative", revision="The invoice says $550.")["revision"]
+        second = manager.save_feedback(sid, first["id"], "negative", revision="The invoice says $550 before tax.")["revision"]
+        assert first["sources"] == second["sources"] == sources
+        assert second["metadata"]["revision_of"] == first["id"]
+        first["sources"].clear()
+        assert manager.feedback_target(sid, second["id"])["message"]["sources"] == sources
+
+
 def test_feedback_targets_exact_chat_and_assistant_only():
     scratch, manager, sid, mid = _chat()
     with scratch, patch.object(answer_feedback, "get_conversation_manager", return_value=manager), \

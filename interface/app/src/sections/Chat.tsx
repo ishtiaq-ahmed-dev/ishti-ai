@@ -341,6 +341,10 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   useEffect(() => {
     let targetSession: string | null = null;
     if (typeof window !== "undefined") {
+      if (window.location.hash === "#chat/new" || window.location.hash.startsWith("#chat/new")) {
+        newChat();
+        return;
+      }
       const hashMatch = window.location.hash.match(/^#chat\/(sess_[^/?#]+)/i);
       if (hashMatch) {
         targetSession = hashMatch[1];
@@ -363,10 +367,14 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
         selectSession(idToLoad);
       }
     });
-  }, [selectSession]);
+  }, [selectSession, newChat]);
 
   useEffect(() => {
     const onHashChange = () => {
+      if (window.location.hash === "#chat/new" || window.location.hash.startsWith("#chat/new")) {
+        newChat();
+        return;
+      }
       const hashMatch = window.location.hash.match(/^#chat\/(sess_[^/?#]+)/i);
       if (hashMatch && hashMatch[1] && hashMatch[1] !== sessionId) {
         selectSession(hashMatch[1]);
@@ -374,7 +382,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
-  }, [sessionId, selectSession]);
+  }, [sessionId, selectSession, newChat]);
 
   const deleteSession = async (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -573,14 +581,17 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
       box.current.style.height = "40px";
     }
     if (!canStart) { setQueue((q) => [...q, text]); return; }
+    const generation = sessionLoadGeneration.current;
+    const targetSession = sessionId;
     const reply: Msg = { id: nextId++, role: "ishti", text: "", events: [], live: true, sources: [], request: text };
     setMsgs((all) => [...all, { id: nextId++, role: "user", text, events: [], live: false, sources: [] }, reply]);
     setGraphFor(reply.id);
     try {
-      const res: Result = await streamChat(text, sessionId, {
-        event: (e) => patch(reply.id, (m) => ({ ...m, events: [...m.events, e] })),
-        token: (t) => patch(reply.id, (m) => ({ ...m, text: m.text + t })),
+      const res: Result = await streamChat(text, targetSession, {
+        event: (e) => { if (generation === sessionLoadGeneration.current) patch(reply.id, (m) => ({ ...m, events: [...m.events, e] })); },
+        token: (t) => { if (generation === sessionLoadGeneration.current) patch(reply.id, (m) => ({ ...m, text: m.text + t })); },
       });
+      if (generation !== sessionLoadGeneration.current) return;
       setSessionId(res.session_id);
       try {
         localStorage.setItem("ishti-session-id", res.session_id);
@@ -593,6 +604,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
       loadSessions();
       try { window.dispatchEvent(new CustomEvent("ishti-chat-finished")); } catch {}
     } catch (err) {
+      if (generation !== sessionLoadGeneration.current) return;
       patch(reply.id, (m) => ({ ...m, text: `Couldn't reach ISHTI: ${(err as Error).message}`, live: false }));
       try { window.dispatchEvent(new CustomEvent("ishti-chat-finished")); } catch {}
     }
@@ -607,7 +619,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     try {
       const result = await postJSON<{
         rating: "positive" | "negative";
-        revision?: { id: string; content: string; metadata?: { revision_of?: string; request?: string } } | null;
+        revision?: { id: string; content: string; sources?: Source[]; metadata?: { revision_of?: string; request?: string } } | null;
         error?: string | null;
       }>(`/api/sessions/${targetSession}/feedback`, { message_id: messageId, rating, reason });
       if (generation !== sessionLoadGeneration.current || targetSession !== sessionId) return;
@@ -615,7 +627,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
         const updated = all.map((m) => m.messageId === messageId ? { ...m, rating: result.rating } : m);
         if (!result.revision || updated.some((m) => m.messageId === result.revision?.id)) return updated;
         return [...updated, { id: nextId++, role: "ishti", text: result.revision.content,
-          events: [], live: false, sources: [], messageId: result.revision.id,
+          events: [], live: false, sources: result.revision.sources ?? [], messageId: result.revision.id,
           revisionOf: result.revision.metadata?.revision_of, request: result.revision.metadata?.request }];
       });
       setFeedbackReasonFor(null);
@@ -623,9 +635,10 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
       if (result.error) setFeedbackError({ messageId, text: result.error });
       loadSessions();
     } catch (error) {
+      if (generation !== sessionLoadGeneration.current) return;
       setFeedbackError({ messageId, text: error instanceof Error ? error.message : "Feedback could not be recorded" });
     } finally {
-      setFeedbackBusy(null);
+      if (generation === sessionLoadGeneration.current) setFeedbackBusy(null);
     }
   }
 

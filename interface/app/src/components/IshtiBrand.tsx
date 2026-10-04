@@ -25,13 +25,13 @@ const ISHTI_VECTOR_PATH =
   "M182.74 35.90H167.34V80.0H155.14V35.90H139.82V26.0H182.74Z " +
   "M205.83 80.0H193.67V26.0H205.83Z";
 
-// Floating sparkle star (nudged up-right of 2nd 'I', clearly floating with daylight)
+// Sparkle star centered exactly above the 2nd 'I' like a tittle / dot
 const FLOATING_SPARKLE_PATH =
-  "M 211.00,1.00 A 1.00,1.00 0 0 1 213.00,1.00 " +
-  "Q 214.88,8.62 222.50,10.50 A 1.00,1.00 0 0 1 222.50,12.50 " +
-  "Q 214.88,14.38 213.00,22.00 A 1.00,1.00 0 0 1 211.00,22.00 " +
-  "Q 209.12,14.38 201.50,12.50 A 1.00,1.00 0 0 1 201.50,10.50 " +
-  "Q 209.12,8.62 211.00,1.00 Z";
+  "M 198.75,1.00 A 1.00,1.00 0 0 1 200.75,1.00 " +
+  "Q 202.62,8.62 210.25,10.50 A 1.00,1.00 0 0 1 210.25,12.50 " +
+  "Q 202.62,14.38 200.75,22.00 A 1.00,1.00 0 0 1 198.75,22.00 " +
+  "Q 196.88,14.38 189.25,12.50 A 1.00,1.00 0 0 1 189.25,10.50 " +
+  "Q 196.88,8.62 198.75,1.00 Z";
 
 // Centered sparkle star for app icon (R=126 in 512x512)
 const APP_ICON_SPARKLE_PATH =
@@ -195,12 +195,14 @@ export function IshtiBrand({
         <div className="flex flex-col leading-none">
           <div className="flex items-center">
             <span
-              className="font-extrabold text-[17px] tracking-[0.05em] transition-colors"
+              className="font-extrabold text-[17px] tracking-[0.05em] transition-colors relative"
               style={{ color: textFill }}
             >
               ISHTI
+              <span className="absolute -top-1.5 right-[1px] text-[11px] font-bold text-[#ce8418] pointer-events-none select-none">
+                ✦
+              </span>
             </span>
-            <span className="ml-1 -mt-1 text-sm font-bold text-[#ce8418]">✦</span>
           </div>
           <span
             className="text-[9.5px] font-semibold tracking-[0.24em] transition-colors mt-1 opacity-80"

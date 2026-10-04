@@ -10,6 +10,7 @@ from interface.web_ui import server
 @pytest.fixture(autouse=True)
 def scratch_crm(tmp_path, monkeypatch):
     monkeypatch.setattr(crm_contract, "CRM_STORE_PATH", str(tmp_path / "crm.json"))
+    monkeypatch.setattr(crm_contract, "_DELETE_APPROVALS", {})
 
 
 class Body:
@@ -39,8 +40,37 @@ def test_delete_requires_exact_id_and_confirmed_name():
     assert crm_contract.get_client(record["client_id"]) is not None
     vague = asyncio.run(server.crm_delete(Body({"client_id": "Ayesha", "confirm_name": "Ayesha"})))
     assert vague.status_code == 400
-    approved = asyncio.run(server.crm_delete(Body({"client_id": record["client_id"], "confirm_name": "Ayesha"})))
+    absent = asyncio.run(server.crm_delete(Body({"client_id": record["client_id"], "confirm_name": "Ayesha"})))
+    assert absent.status_code == 409
+    approval = asyncio.run(server.crm_delete_prepare(Body({"client_id": record["client_id"]})))
+    approved = asyncio.run(server.crm_delete(Body({"client_id": record["client_id"], "confirm_name": "Ayesha", **approval})))
     assert approved == {"ok": True}
     assert crm_contract.get_client(record["client_id"]) is None
     blocked = asyncio.run(server.crm_delete(Body({"purge_all": True})))
     assert blocked.status_code == 501
+
+
+def test_delete_approval_expires_and_cannot_be_replayed(monkeypatch):
+    record = crm_contract.create_client("Ayesha")
+    approval = crm_contract.prepare_delete(record["client_id"])
+    assert crm_contract.delete_approved(record["client_id"], "Ayesha", approval["approval_token"])
+    with pytest.raises(PermissionError):
+        crm_contract.delete_approved(record["client_id"], "Ayesha", approval["approval_token"])
+    other = crm_contract.create_client("Bilal")
+    approval = crm_contract.prepare_delete(other["client_id"])
+    monkeypatch.setattr(crm_contract.time, "monotonic", lambda: 10**20)
+    with pytest.raises(PermissionError):
+        crm_contract.delete_approved(other["client_id"], "Bilal", approval["approval_token"])
+    assert crm_contract.get_client(other["client_id"])
+
+
+def test_delete_approval_rejects_changed_record():
+    record = crm_contract.create_client("Ayesha")
+    approval = crm_contract.prepare_delete(record["client_id"])
+    with crm_contract._STORE_LOCK:
+        store = crm_contract._load_crm_store()
+        store[record["client_id"]]["notes"] = "Changed after approval"
+        crm_contract._save_crm_store(store)
+    with pytest.raises(PermissionError):
+        crm_contract.delete_approved(record["client_id"], "Ayesha", approval["approval_token"])
+    assert crm_contract.get_client(record["client_id"])

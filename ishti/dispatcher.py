@@ -1384,7 +1384,7 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
         threading.Thread(target=_ftlog, args=(text, reply, name, dec, channel), daemon=True).start()  # Part 3 collection
         if name != "memory_manager":  # ARCH2: learn from every exchange (extraction + thresholds)
             threading.Thread(target=_arch2_consolidate, args=(text, reply, name, channel), daemon=True).start()
-    if not hidden and not incog:
+    if not secret and not hidden and not incog:
         threading.Thread(target=_learn, args=(text,), daemon=True).start()  # the owner's lasting facts and preferences
         threading.Thread(target=_learn_turn, args=(text, reply, name, dec, sid, channel, message_id), daemon=True).start()
         try:

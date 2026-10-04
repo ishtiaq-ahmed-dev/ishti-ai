@@ -200,9 +200,10 @@ function CRMAndLeadsPanel() {
   };
 
   const handleDeleteClient = async (id: string, name: string) => {
-    if (!window.confirm(`Delete client record for "${name}"?`)) return;
     try {
-      await postJSON("/api/crm/delete", { client_id: id, confirm_name: name });
+      const approval = await postJSON<{ approval_token: string; name: string }>("/api/crm/delete/prepare", { client_id: id });
+      if (!window.confirm(`Permanently delete client record for "${approval.name}"?`)) return;
+      await postJSON("/api/crm/delete", { client_id: id, confirm_name: approval.name, approval_token: approval.approval_token });
       setClients((prev) => prev.filter((c) => c.id !== id));
       setMsg(`Client "${name}" removed.`);
     } catch (e) {

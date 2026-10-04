@@ -76,38 +76,19 @@ def beside(src, suffix, ext):
 
 # ---------------------------------------------------------------- reading any document
 def text_of(path, limit=60000):
-    ext = os.path.splitext(path)[1].lower()
-    if ext == ".pdf":
-        import pypdfium2 as pdfium
-        from ishti import PDFIUM_LOCK
-        with PDFIUM_LOCK:
-            doc = pdfium.PdfDocument(path)
-            body = "\n".join(doc[i].get_textpage().get_text_range() for i in range(min(len(doc), 60)))
-        if len(body.strip()) < 40 * min(len(doc), 60):  # (almost) no text layer: a scan - read the page images
-            from ishti.ocr import ocr_pdf
-            body = ocr_pdf(path).replace("\f", "\n")
-        return body[:limit]
-    if ext == ".docx":
-        import docx
-        d = docx.Document(path)
-        body = [p.text for p in d.paragraphs] + [" | ".join(c.text for c in r.cells) for t in d.tables for r in t.rows]
-        return "\n".join(body)[:limit]
-    if ext == ".pptx":
-        from pptx import Presentation
-        return "\n".join(sh.text_frame.text for s in Presentation(path).slides for sh in s.shapes if sh.has_text_frame)[:limit]
-    if ext in (".xlsx", ".xls", ".csv"):
-        df = _frame(path)
-        return df.head(200).to_csv(index=False)[:limit]
-    with open(path, encoding="utf-8", errors="replace") as f:
-        return f.read(limit)
+    from ishti.document_reader import read_document
+    return read_document(path, limit=limit)
 
 
 def op_summarize(m, text, session):
+    from ishti.document_reader import DocumentReadError
     got = paths(text)
     if not got:
         return "Give me the document's full path."
     try:
         body = text_of(got[0])
+    except DocumentReadError as exc:
+        return f"I can't read {os.path.basename(got[0])}: {exc}."
     except Exception as exc:  # truncated download, wrong extension, password-protected
         return f"I can't open {os.path.basename(got[0])} - it looks damaged or protected ({type(exc).__name__})."
     if len(body.strip()) < 40:

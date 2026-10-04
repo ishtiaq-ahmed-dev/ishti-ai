@@ -150,7 +150,8 @@ class ConversationManager:
             if rating == "negative" and revision.strip():
                 successor = {"id": f"msg_{time.strftime('%H%M%S')}_{uuid.uuid4().hex[:12]}",
                     "role": "ishti", "content": revision.strip()[:12000],
-                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"), "sources": [],
+                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "sources": json.loads(json.dumps(target.get("sources") or [])),
                     "metadata": {"revision_of": message_id, "diagnosis": diagnosis[:500], "request": original_request}}
                 messages.append(successor)
             meta = target.setdefault("metadata", {})
