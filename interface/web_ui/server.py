@@ -355,7 +355,16 @@ async def inputs_endpoint():
 @app.get("/api/inputs/wa-qr")
 async def inputs_wa_qr():
     from ishti import wa_bridge
-    return JSONResponse(wa_bridge.get_qr_data())
+    return JSONResponse(await asyncio.to_thread(wa_bridge.get_qr_data))
+
+
+@app.post("/api/inputs/wa-start")
+async def inputs_wa_start():
+    from ishti import wa_bridge
+    try:
+        return JSONResponse(await asyncio.to_thread(wa_bridge.start))
+    except wa_bridge.BridgeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=503)
 
 
 @app.get("/api/inputs/clipboard")
@@ -661,6 +670,19 @@ async def get_session_messages(session_id: str):
         "title": session.get("title", "Untitled") if session else "Not Found",
         "messages": messages,
     })
+
+
+@app.post("/api/sessions/{session_id}/feedback")
+async def rate_session_answer(session_id: str, req: Request):
+    """Rate one saved answer. A dislike creates a text-only revision, never a tool action."""
+    body = await req.json()
+    from ishti.answer_feedback import submit
+    try:
+        result = await asyncio.to_thread(submit, session_id, str(body.get("message_id") or ""),
+                                         str(body.get("rating") or ""), str(body.get("reason") or ""))
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return JSONResponse(result)
 
 
 @app.delete("/api/sessions/{session_id}")
@@ -1244,13 +1266,19 @@ KIN_GENERATIONS = {
     "grandfather": 1, "grandmother": 1, "dada": 1, "dadi": 1, "nana": 1, "nani": 1,
     # 2: Parents & Elders
     "father": 2, "mother": 2, "uncle": 2, "aunt": 2, "chacha": 2, "chachi": 2, "mamu": 2, "mami": 2,
-    "khala": 2, "khalu": 2, "phuppo": 2, "phupha": 2, "abu": 2, "ami": 2, "baba": 2,
+    "khala": 2, "khalu": 2, "phuppo": 2, "phupha": 2, "abu": 2, "ami": 2, "abbu": 2, "ammi": 2, "baba": 2,
     # 3: Self, Siblings & Peers
     "self": 3, "me": 3, "brother": 3, "sister": 3, "sibling": 3, "spouse": 3, "wife": 3, "husband": 3,
-    "cousin": 3, "bhai": 3, "behan": 3,
+    "cousin": 3, "bro": 3, "bros": 3, "bhai": 3, "bhaiya": 3, "sis": 3, "behan": 3, "baji": 3,
     # 4: Children & Youth
     "son": 4, "daughter": 4, "child": 4, "nephew": 4, "niece": 4, "beta": 4, "beti": 4,
     "bhanja": 4, "bhanji": 4, "bhatija": 4, "bhatiji": 4, "grandchild": 4,
+}
+
+REL_NORMALIZED = {
+    "bro": "brother", "bros": "brother", "bhai": "brother", "bhaiya": "brother",
+    "sis": "sister", "behan": "sister", "baji": "sister",
+    "ami": "mother", "ammi": "mother", "abu": "father", "abbu": "father", "baba": "father",
 }
 
 
@@ -1279,9 +1307,10 @@ def _get_family_members():
         for e in edges:
             rel = (e.get("rel") or "").lower().strip()
             name = (e.get("d_name") or "").strip()
-            if not name or name.lower() == "me":
+            if not name or name.lower() in ("me", "you", owner_name.lower()):
                 continue
             if rel in KIN_GENERATIONS:
+                rel = REL_NORMALIZED.get(rel, rel)
                 gen = KIN_GENERATIONS.get(rel, 3)
                 key = name.lower()
                 members[key] = {
@@ -1305,9 +1334,10 @@ def _get_family_members():
         for r in rows:
             name = (r.get("name") or "").strip()
             rel = (r.get("relationship") or "").lower().strip()
-            if not name or name.lower() == "me":
+            if not name or name.lower() in ("me", "you", owner_name.lower()):
                 continue
             if rel in KIN_GENERATIONS:
+                rel = REL_NORMALIZED.get(rel, rel)
                 key = name.lower()
                 gen = KIN_GENERATIONS.get(rel, 3)
                 if key in members:
@@ -1867,8 +1897,17 @@ async def crm_clients(status: Optional[str] = None):
     """List business CRM clients adhering to the separation contract."""
     try:
         from ishti import crm_contract
-        clients = crm_contract.list_clients(status=status)
-        return {"ok": True, "clients": clients, "count": len(clients), "separate_personal": crm_contract.SEPARATE_PERSONAL_AND_BUSINESS}
+        clients = [{**row, "id": row["client_id"], "name": row["contact_name"],
+                    "source": "contract_crm"} for row in crm_contract.list_clients(status=status)]
+        chat_store_error = None
+        try:
+            from ishti.skills.clients.skill import list_profiles
+            clients.extend(row for row in list_profiles() if not status or row["status"] == status)
+        except Exception:
+            chat_store_error = "Chat-created client profiles are temporarily unavailable"
+        return {"ok": True, "clients": clients, "count": len(clients),
+                "partial_error": chat_store_error,
+                "separate_personal": crm_contract.SEPARATE_PERSONAL_AND_BUSINESS}
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
@@ -1916,12 +1955,17 @@ async def crm_delete(req: Request):
         from ishti import crm_contract
         client_id = body.get("client_id")
         if client_id:
+            record = crm_contract.get_client(client_id)
+            if not record or str(client_id) != record.get("client_id"):
+                return JSONResponse({"error": "An exact contract CRM record ID is required"}, status_code=400)
+            if body.get("confirm_name") != record.get("contact_name"):
+                return JSONResponse({"error": "Confirm the exact client name before deletion"}, status_code=409)
             ok = crm_contract.delete_client(client_id)
             return {"ok": ok}
         purge_all = body.get("purge_all", False)
         if purge_all:
-            count = crm_contract.purge_all_crm_data()
-            return {"ok": True, "purged": count}
+            return JSONResponse({"error": "Bulk CRM purge is deferred until a bound, one-shot approval flow exists"},
+                                status_code=501)
         return JSONResponse({"error": "client_id or purge_all required"}, status_code=400)
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)

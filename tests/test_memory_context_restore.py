@@ -80,8 +80,8 @@ def test_compound_family_facts_route_and_persist_each_explicit_relationship(scra
     assert not owner_skill.match(text), "family declarations belong to the relationship graph, not owner-profile facts"
     result = skill.run(text, {})
 
-    assert "Bilal (brother)" in result["reply"]
-    assert "Ayesha (sister)" in result["reply"]
+    assert "brother is Bilal" in result["reply"]
+    assert "sister is Ayesha" in result["reply"]
     brother = scratch_relationship_graph.edges_of("me", rel="brother", direction="out")
     sister = scratch_relationship_graph.edges_of("me", rel="sister", direction="out")
     assert [row["d_name"] for row in brother] == ["bilal"]
@@ -94,8 +94,8 @@ def test_reported_irfan_and_akbar_compound_sentence_is_saved(scratch_relationshi
     from ishti.skills.relationships import skill
 
     result = skill.run("My another brother is irfan and grandfather is akbar khan", {})
-    assert "Irfan (brother)" in result["reply"]
-    assert "Akbar Khan (grandfather)" in result["reply"]
+    assert "brother is Irfan" in result["reply"]
+    assert "grandfather is Akbar Khan" in result["reply"]
     edges = scratch_relationship_graph.edges_of("me", direction="out")
     observed = {(row["rel"], row["d_name"], row["source_type"]) for row in edges}
     assert ("brother", "irfan", "explicit_user") in observed
@@ -132,9 +132,12 @@ def test_relationship_events_are_published_after_committed_writes(scratch_relati
         scratch_relationship_graph.unrelate("me", "brother", "Irfan")
     finally:
         events.unsubscribe(on_event)
-    assert len(seen) == 2
-    assert seen[0][0]["action"] == "upsert" and seen[0][1][0]["d_name"] == "irfan"
-    assert seen[1][0]["action"] == "delete" and seen[1][1] == []
+    assert [(event["type"], event["action"]) for event, _ in seen] == [
+        ("relationship", "upsert"), ("family", "upsert"),
+        ("relationship", "delete"), ("family", "delete"),
+    ]
+    assert all(edges[0]["d_name"] == "irfan" for _, edges in seen[:2])
+    assert all(edges == [] for _, edges in seen[2:])
 
 
 def test_empty_family_tree_does_not_invent_relatives(monkeypatch, scratch_relationship_graph):

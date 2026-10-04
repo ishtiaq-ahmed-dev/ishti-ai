@@ -120,8 +120,26 @@ def remove(key_or_name: str) -> bool:
     nm = (key_or_name or "").strip()
     if not nm:
         return False
-    store.write("DELETE FROM entities WHERE key=? OR lower(name)=lower(?)", (nm, nm))
-    store.write("DELETE FROM entity_mentions WHERE entity_key=?", (nm,))
+    k = _key(nm)
+    store.write("DELETE FROM entities WHERE key=? OR key=? OR lower(name)=lower(?)", (nm, k, nm))
+    store.write("DELETE FROM entity_mentions WHERE entity_key=? OR entity_key=?", (nm, k))
+    return True
+
+forget = remove
+
+
+def rename(old_name: str, new_name: str) -> bool:
+    """Rename an entity across the learning entities table and mentions."""
+    old_nm = (old_name or "").strip()
+    new_nm = (new_name or "").strip()
+    if not old_nm or not new_nm:
+        return False
+    row = store.row("SELECT * FROM entities WHERE lower(name)=lower(?) OR key=?", (old_nm, _key(old_nm)))
+    if not row:
+        return False
+    new_k = _key(new_nm, row.get("org") or "")
+    store.write("UPDATE entities SET key=?, name=?, last_seen=? WHERE id=?", (new_k, new_nm, store.now(), row["id"]))
+    store.write("UPDATE entity_mentions SET entity_key=? WHERE entity_key=?", (new_k, row["key"]))
     return True
 
 

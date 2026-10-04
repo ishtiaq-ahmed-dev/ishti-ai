@@ -121,6 +121,26 @@ def build_context(text, domain=""):
     parts = []
     if rows:
         parts.append("KNOWN FACTS (exact):\n" + "\n".join(f"- {e} {a}: {v}" for e, a, v in rows))
+    try:
+        from ishti import rgraph
+        edges = rgraph.edges_of("me", direction="out") or []
+        family_edges = [e for e in edges if e.get("rel") in (
+            "brother", "sister", "father", "mother", "son", "daughter", "cousin", "uncle", "aunt",
+            "grandfather", "grandmother", "spouse", "wife", "husband", "friend", "colleague")]
+        if family_edges:
+            f_lines = []
+            owner_name = (get_facts().get("owner").get("name") or "").lower()
+            for e in family_edges:
+                rel = e.get("rel", "").title()
+                name = e.get("d_name", "").title()
+                if name.lower() in ("me", "you", owner_name, "owner"):
+                    continue
+                detail = f" ({e['detail']})" if e.get("detail") else ""
+                f_lines.append(f"- {name}: your {rel}{detail}")
+            if f_lines:
+                parts.append("FAMILY & RELATIONSHIPS (from database):\n" + "\n".join(f_lines))
+    except Exception as _exc:
+        swallowed('ishti/skills/chat/skill.py:build_context.rgraph', _exc)
     if recalled:
         parts.append("Possibly relevant past context:\n" + "\n".join(f"- {s[:300]}" for s in recalled))
     # The apply end of the learning loop: without this line every lesson ISHTI ever learned is

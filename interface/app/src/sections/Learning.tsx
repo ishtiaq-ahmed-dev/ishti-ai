@@ -1491,6 +1491,11 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
                                                   Root / You
                                                 </span>
                                               )}
+                                              {m.note && /(?:deceased|late|died|passed away|wafat)/i.test(m.note) && (
+                                                <span className="rounded-md border border-slate-500/30 bg-slate-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                                  Late / Deceased
+                                                </span>
+                                              )}
                                             </div>
                                             <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
                                               <Pill tone={isMe ? "accent" : "muted"}>

@@ -519,6 +519,23 @@ class ComputerUseAgent:
             print(f"[ComputerUse] Key press failed: {e}")
             return False
 
+    def mouse_drag(self, x: int, y: int, button: str = "left", duration: float = 0.5) -> bool:
+        """Drags mouse to coordinate across screens."""
+        if pyautogui is None:
+            return False
+        try:
+            pyautogui.dragTo(x, y, button=button, duration=duration)
+            return True
+        except Exception as e:
+            print(f"[ComputerUse] Mouse drag failed: {e}")
+            return False
+
+    def run_multi_screen_automation(self, objective: str, max_steps: int = 15, dry_run: bool = False) -> Dict[str, Any]:
+        """Runs the continuous Perceive-Plan-Act multi-screen visual OS automation loop."""
+        from ishti.automation.multi_screen_agent import get_multi_screen_agent
+        agent = get_multi_screen_agent(dry_run=dry_run)
+        return agent.run_loop(objective, max_steps=max_steps)
+
     # -------------------------------------------------------------
     # 5. WINDOW MANAGEMENT
     # -------------------------------------------------------------

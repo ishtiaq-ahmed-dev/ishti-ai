@@ -40,6 +40,18 @@ def test_upload_saves_under_a_safe_unique_name_and_returns_the_path(api):
     assert again["path"] != j["path"]                      # never overwrites an earlier upload
 
 
+def test_upload_rejects_scanner_crash_and_removes_staged_file(api, monkeypatch):
+    from ishti.security import upload_scanner
+    c, tmp = api
+    def crash(_path):
+        raise RuntimeError("synthetic scanner outage")
+    monkeypatch.setattr(upload_scanner, "scan_upload", crash)
+    response = up(c, "invoice.pdf", b"%PDF-1.4 synthetic")
+    assert response.status_code == 503
+    assert "scan could not complete" in response.json()["error"]
+    assert not list((tmp / "uploads").iterdir())
+
+
 def test_upload_kinds_drive_the_mention(api):
     c, _ = api
     assert up(c, "pic.png", b"\x89PNG\r\n\x1a\nrest").json()["mention"].startswith("describe the image ")

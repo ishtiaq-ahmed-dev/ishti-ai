@@ -20,7 +20,7 @@ _LOCAL = threading.local()
 
 def begin(text: str, sid: str = "", channel: str = "text", dec: Optional[Dict[str, Any]] = None,
           memories: Optional[Any] = None, task_id: Optional[str] = None,
-          step_no: Optional[int] = None, domain: str = "") -> str:
+          step_no: Optional[int] = None, domain: str = "", message_id: str = "") -> str:
     """Record the start of an interaction turn; returns interaction_id."""
     iid = store.uid("it_")
     now = store.now()
@@ -34,7 +34,8 @@ def begin(text: str, sid: str = "", channel: str = "text", dec: Optional[Dict[st
                   considered=store.dump(d.get("scores") or []), result="", status="running",
                   reward=0.0, task_id=str(task_id or ""),
                   step_no=int(step_no) if step_no is not None else 0,
-                  domain=str(domain or ""), source=str(d.get("source") or "routing"))
+                  domain=str(domain or ""), source=str(d.get("source") or "routing"),
+                  message_id=str(message_id or ""))
     except Exception as _exc:
         swallowed('ishti/learning/observe.py:begin', _exc)
     _LOCAL.last_interaction_id = iid
@@ -154,8 +155,9 @@ if __name__ == "__main__":
 
 def turn(text: str, reply: str = "", skill: str = "", sid: str = "",
          channel: str = "text", dec: Optional[Dict[str, Any]] = None,
-         status: str = "ok", reward: float = 0.0, domain: str = "") -> str:
+         status: str = "ok", reward: float = 0.0, domain: str = "", message_id: str = "") -> str:
     """One-shot interaction logger convenience for dispatcher."""
-    iid = begin(text=text, sid=sid, channel=channel, dec=dec or {"skill": skill}, domain=domain)
+    iid = begin(text=text, sid=sid, channel=channel, dec=dec or {"skill": skill}, domain=domain,
+                message_id=message_id)
     end(iid, reply=reply, skill=skill, status=status, reward=reward)
     return iid

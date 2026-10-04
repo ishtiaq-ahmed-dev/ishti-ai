@@ -1,5 +1,6 @@
 """Unit tests for CRM scope, data contract, and personal vs business separation."""
 import pytest
+import ishti.crm_contract as crm_contract
 from ishti.crm_contract import (
     SEPARATE_PERSONAL_AND_BUSINESS,
     AUTO_INGEST_FROM_CHATS,
@@ -10,6 +11,11 @@ from ishti.crm_contract import (
     list_clients,
     delete_client,
 )
+
+
+@pytest.fixture(autouse=True)
+def scratch_crm(tmp_path, monkeypatch):
+    monkeypatch.setattr(crm_contract, "CRM_STORE_PATH", str(tmp_path / "crm_clients.json"))
 
 
 def test_separation_policy_defaults():
@@ -30,6 +36,8 @@ def test_inbound_chat_does_not_auto_create_crm():
     can_ingest, reason = can_ingest_from_message("Hi Ishtiaq, what is the quote?", sender_name="Zubair")
     assert not can_ingest
     assert "Personal/Business separation policy" in reason
+    with pytest.raises(PermissionError):
+        create_client("Zubair", channel_source="whatsapp")
 
 
 def test_client_crud():
@@ -53,3 +61,17 @@ def test_client_crud():
     # Clean up
     assert delete_client("test_enterprise_corp")
     assert get_client("test_enterprise_corp") is None
+
+
+def test_same_name_does_not_overwrite_and_corruption_preserves_data():
+    first = create_client("Ali", company="Company One")
+    second = create_client("Ali", company="Company Two")
+    assert first["client_id"] != second["client_id"]
+    assert len(list_clients()) == 2
+    assert get_client("Ali") is None  # ambiguous names never select an arbitrary record
+    assert get_client(first["client_id"])["company"] == "Company One"
+    with open(crm_contract.CRM_STORE_PATH, "w", encoding="utf-8") as stream:
+        stream.write("{damaged")
+    with pytest.raises(RuntimeError):
+        create_client("Third")
+    assert open(crm_contract.CRM_STORE_PATH, encoding="utf-8").read() == "{damaged"

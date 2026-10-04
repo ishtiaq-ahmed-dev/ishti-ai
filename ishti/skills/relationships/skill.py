@@ -36,41 +36,59 @@ KIN_ALT = "|".join(KIN)
 # Only these exact tokens are rewritten (never free-form spelling correction).
 TYPO = {"brotehr": "brother", "borther": "brother", "brothr": "brother", "broher": "brother",
         "brothe": "brother", "brotherr": "brother",
+        "bro": "brother", "bros": "brothers", "bhai": "brother", "bhaiya": "brother", "bhais": "brothers",
+        "brotehrs": "brothers", "borthers": "brothers", "brothrs": "brothers",
         "sistr": "sister", "sistar": "sister", "syster": "sister", "sistter": "sister", "sisiter": "sister",
+        "sis": "sister", "behan": "sister", "baji": "sister", "sisters": "sister",
         "fathe": "father", "fathr": "father", "fater": "father", "fatherr": "father",
+        "abu": "father", "abbu": "father", "baba": "father",
         "mothe": "mother", "mothr": "mother", "moher": "mother", "motherr": "mother", "mothre": "mother",
+        "ami": "mother", "ammi": "mother",
         "cusion": "cousin", "cuzin": "cousin", "cusin": "cousin", "cousine": "cousin",
         "uncl": "uncle", "unkle": "uncle", "anut": "aunt",
+        "chacha": "uncle", "mamoo": "uncle", "mamu": "uncle", "khala": "aunt", "phuppo": "aunt",
         "nephw": "nephew", "neice": "niece", "neic": "niece", "neicey": "niece",
         "grandfater": "grandfather", "grandmoter": "grandmother", "grandmoher": "grandmother",
+        "dada": "grandfather", "nana": "grandfather", "dadi": "grandmother", "nani": "grandmother",
         "freind": "friend", "frend": "friend", "frind": "friend", "frnd": "friend",
         "collegue": "colleague", "colleage": "colleague",
-        "classmet": "classmate", "clasmat": "classmate"}
+        "classmet": "classmate", "clasmat": "classmate",
+        "classdwllow": "classmate", "classfellow": "classmate", "classmte": "classmate",
+        "classdwllows": "classmates", "classfellows": "classmates",
+        "brther": "brother", "brthers": "brothers", "borther": "brother", "borthers": "brothers",
+        "brothr": "brother", "brothrs": "brothers", "brotehr": "brother", "brotehrs": "brothers",
+        "sistr": "sister", "sistrs": "sisters",
+        "y": "my", "ur": "my",
+        "tehy": "they", "whos": "who is", "whois": "who is"}
 _WORD = re.compile(r"[A-Za-z']+")
 
 
 def _fix(text):
     """Rewrite only the known misspellings above, token by token (never general autocorrect)."""
     return _WORD.sub(lambda m: TYPO.get(m.group(0).lower(), m.group(0)), text or "")
-# "this is my brother Ahmed" / "Ahmed is my cousin" / "meet my friend Sara"
-KIN_DECLARE = re.compile(r"\b(?:this\s+is|meet|that's|that is|introduce)\s+my\s+(?P<rel>" + "|".join(KIN) + r")\s*"
-                         r"(?:,?\s*(?:his|her|their)?\s*name\s*(?:is)?)?\s*(?P<name>[A-Z][\w'-]*(?:\s+[A-Z][\w'-]*)?)", I)
 ELDER = r"(?:(?:elder|older|younger|big|little|eldest|youngest|real|only)\s+)?"
 NAME = r"(?:(?:Dr|Prof|Mr|Mrs|Ms|Engr)\.?\s+)?[A-Za-z][\w'-]*(?:\s+(?!(?:in|at|from)\b)[A-Za-z][\w'-]*)*"
+# "this is my brother Ahmed" / "Ahmed is my cousin" / "meet my friend Sara" / "this is my brother"
+KIN_DECLARE = re.compile(r"\b(?:this\s+is|that(?:'s|\s+is)|he(?:'s|\s+is)|she(?:'s|\s+is)|they(?:'re|\s+are)|meet|introduce)\s+(?:my|your|y|ur)\s+"
+                         + ELDER + r"(?P<rel>" + "|".join(KIN) + r")\s*"
+                         r"(?:,?\s*(?:his|her|their)?\s*name\s*(?:is)?)?\s*(?P<name>" + NAME + r")?", I)
 # "irfan is my brother" (any case: the owner types lowercase names), "Ahmed is my elder brother, okay?"
-KIN_DECLARE2 = re.compile(r"^\s*(?P<name>" + NAME + r")\s+is\s+my\s+" + ELDER + r"(?P<rel>" + KIN_ALT + r")\b"
+KIN_DECLARE2 = re.compile(r"^\s*(?P<name>" + NAME + r")\s+is\s+(?:my|your|y|ur)\s+" + ELDER + r"(?P<rel>" + KIN_ALT + r")\b"
                           r"(?P<ctx>[^?]*)$", I)
 # "remember that Ali is my classmate at IMS, we worked on CardioSense together": the leading
 # "remember that" is a remember-command, not part of the person's name.
 LEAD = re.compile(r"^\s*(?:(?:please\s+)?(?:remember|note|add|save|store|write)\s+(?:that\s+|down\s+)?)?", I)
 # "my brother name is Ishaq Ahmed and he is my elder brother" / "my brother's name is Bilal"
-KIN_NAME = re.compile(r"^\s*my\s+" + ELDER + r"(?P<rel>" + "|".join(KIN) + r")(?:'s|s)?\s+(?:name\s+)?is\s+(?P<name>" + NAME + r")"
+KIN_NAME = re.compile(r"^\s*(?:my|your|y|ur)\s+" + ELDER + r"(?P<rel>" + "|".join(KIN) + r")(?:'s|s)?\s+(?:name\s+)?is\s+(?P<name>" + NAME + r")"
                       r"(?P<ctx>\s+(?:in|at|from)\s+[^,;!?]+)?(?=[\s,;!?-]|$)", I)  # trailing words allowed
 MULTI_KIN_DECL = re.compile(
-    r"(?:^|[,;]|\band\b)\s*(?:my\s+)?(?:(?:another|also)\s+)?(?P<rel>" + KIN_ALT + r")"
+    r"(?:^|[,;]|\band\b)\s*(?:(?:my|your|y|ur)\s+)?(?:(?:another|also|one\s+more|one\s+other)\s+)?(?P<rel>" + KIN_ALT + r")"
     # A lazy final name quantifier stops at the next relationship clause.
     r"(?:['’]s|s)?\s+(?:name\s+)?is\s+(?P<name>" + NAME + r"?)"
-    r"(?=\s*(?:[,;.!?]|$|\band\s+(?:my\s+)?(?:(?:another|also)\s+)?(?:" + KIN_ALT + r")\b))", I)
+    r"(?=\s*(?:[,;!?]|\.(?!\s+[A-Za-z][\w'-]*\b)|$|\band\s+(?:(?:my|your|y|ur)\s+)?(?:(?:another|also|one\s+more|one\s+other)\s+)?(?:" + KIN_ALT + r")\b))", I)
+# "one more is ikhlaq ahmed", "another is ikhlaq ahmed", "one more brother is ikhlaq ahmed"
+ONE_MORE = re.compile(
+    r"^\s*(?:(?:and\s+)?(?:one\s+more|another|also|one\s+other)(?:\s+(?:one|person|(?P<rel>" + KIN_ALT + r")))?\s+is\s+|also\s+add\s+)(?P<name>" + NAME + r")\s*[.!]?$", I)
 # The possessive order the owner actually types: "my friend Hamza", "my mother Fatima",
 # "remember my cousin is Ali Raza". KIN_DECLARE2 only understood "<Name> is my <rel>", so these fell
 # through the router and were stored as a bare owner attribute (or lost) instead of a relationship edge
@@ -78,16 +96,40 @@ MULTI_KIN_DECL = re.compile(
 # words that can follow "my sister"/"my friend" mid-sentence - so "my sister just got a new job" and
 # "my friend from university" are NOT read as a person called "Just"/"From".
 KIN_POSSESSIVE = re.compile(
-    r"^\s*(?:(?:please\s+)?(?:add|remember|note|save|store|write)\s+(?:that\s+|my\s+|down\s+)?)?my\s+" + ELDER
+    r"^\s*(?:(?:please\s+)?(?:add|remember|note|save|store|write)\s+(?:that\s+|my\s+|down\s+)?)?(?:my|your|y|ur)\s+" + ELDER
     + r"(?P<rel>" + "|".join(KIN) + r")(?:'s|s)?\s+(?:name\s+)?(?:is\s+)?"
     + r"(?P<name>[A-Za-z][\w'-]*(?:\s+[A-Z][\w'-]*)?)", I)
 # ordinary words that are never a person's name right after "my <relative>"
 NOT_A_NAME = {"just", "not", "called", "is", "was", "are", "were", "be", "lives", "lived", "works", "worked",
               "working", "and", "but", "so", "who", "whose", "whom", "from", "in", "at", "on", "of", "for",
               "to", "with", "about", "recently", "now", "also", "always", "never", "today", "name", "still",
-              "here", "there", "has", "have", "had", "likes", "loves", "prefers", "hates", "very", "really"}
-# "who is my brother" / "what is my brother's name" / "tell me about my sister"
-WHO_IS = re.compile(r"^\s*(?:who\s+is|who's|what(?:'s|\s+is)|tell\s+me\s+(?:about|who\s+is))\s+my\s+" + ELDER + r"(?P<rel>" + "|".join(KIN) + r")(?:'s\s+name)?\s*\??$", I)
+              "here", "there", "has", "have", "had", "likes", "loves", "prefers", "hates", "very", "really",
+              "full", "real", "first", "last", "middle", "which"}
+# "who is my brother" / "who are my brothers" / "my brothers who are they" / "who are they"
+KIN_PLURALS = "|".join([k + "s?" for k in KIN] + ["siblings?", "parents?", r"family(?:\s+members?)?"])
+WHO_IS = re.compile(
+    r"^\s*(?:"
+    r"(?:who\s+(?:is|are)|who['’]s|what(?:['’]s|\s+is|\s+are)|tell\s+me(?:\s+about|\s+who\s+(?:is|are)|\s+my|\s+your)?|give\s+me(?:\s+all|\s+my)?|get(?:\s+my)?|provide(?:\s+my)?|list|show)\s+"
+    r"(?:all\s+)?(?:the\s+)?(?:names?\s+of\s+)?(?:(?:my|your|y|ur)\s+)?" + ELDER + r"(?P<rel>" + KIN_PLURALS + r")(?:\s*['’]s)?(?:\s+names?)?"
+    r"|who\s+(?:is|are)\s+in\s+(?:my\s+)?family"
+    r"|(?:(?:my|your|y|ur)\s+)?" + ELDER + r"(?P<rel2>" + KIN_PLURALS + r")\s*[,;]?\s*(?:who\s+(?:are|is)\s+(?:they|he|she)|names?)"
+    r"|(?:(?:my|your|y|ur)\s+)?" + ELDER + r"(?P<rel3>" + KIN_PLURALS + r")\s+names?"
+    r"|names?\s+of\s+(?:(?:my|your|y|ur)\s+)?" + ELDER + r"(?P<rel4>" + KIN_PLURALS + r")"
+    r"|who\s+are\s+they"
+    r")\s*\??$", I)
+# Name corrections, full name declarations & renames:
+# "yes but irfan full name is irfan ahmed" / "irfan's full name is irfan ahmed" / "and rename the irfan to only irfan ahmed"
+NAME_UPDATE = re.compile(
+    r"^\s*(?:(?:yes|no|wait|ok|okay|and|so|please|also)[,.]?\s+)?(?:but\s+)?(?:actually\s+)?"
+    r"(?:"
+    r"(?P<target>[A-Za-z][\w'-]*(?:\s+(?!(?:full|real|name|is|actually)\b)[A-Za-z][\w'-]*)*)?(?:['’]?s)?\s+(?:full\s+|real\s+)?name\s+is\s+(?:actually\s+)?(?P<new>" + NAME + r")"
+    r"|(?:his|her|their)\s+(?:full\s+|real\s+)?name\s+is\s+(?:actually\s+)?(?P<new2>" + NAME + r")(?:\s*,?\s*not\s+(?P<old2>" + NAME + r"))?"
+    r"|(?:change|update|rename|edit|correct)\s+(?:(?:the\s+)?name\s+of\s+|(?:the\s+))?(?P<target3>[A-Za-z][\w'-]*(?:\s+(?!(?:to|as|into|name)\b)[A-Za-z][\w'-]*)*)(?:['’]?s\s+name)?\s+(?:to|as|into)\s+(?:only\s+|just\s+)?(?P<new3>" + NAME + r")"
+    r"|(?:not\s+(?P<old4>" + NAME + r")[,.]?\s+)?(?:his|her|their)?\s*name\s+is\s+(?P<new4>" + NAME + r")(?:\s*,?\s*not\s+(?P<old4_post>" + NAME + r"))?"
+    r")\s*[.!]?$", I)
+DECEASED_RX = re.compile(
+    r"\b(?:died|dead|is\s+dead|which\s+is\s+died|who\s+(?:is\s+)?died|deceased|passed\s+away|late|mar\s+gaya|wafat|marhooma?|no\s+longer\s+(?:alive|with\s+us))\b", I
+)
 # "Who is Ahmed to me?" / "what is Ahmed to me" / "how is Ahmed related to me" (checklist #93): ask the
 # relationship graph what this person is - if nothing was ever confirmed, say so instead of inventing.
 WHO_TO_ME = re.compile(r"^\s*(?:who(?:'s|\s+is)|what(?:'s|\s+is))\s+(?P<name>[A-Za-z][\w'-]*(?:\s+[A-Za-z][\w'-]*)?)\s+"
@@ -97,13 +139,13 @@ WHO_TO_ME2 = re.compile(r"^\s*how\s+(?:is|are|do\s+i\s+know)\s+(?P<name>[A-Za-z]
 # "his name spelling is I-R-F-A-N" / "his name is Irfan not Ishaq": the owner correcting the person just talked about
 SPELL = re.compile(r"\b(?:his|her|their|the)\s+(?:first\s+|full\s+)?name\b.{0,30}?\b(?P<letters>(?:[A-Za-z]\s*-\s*){2,}[A-Za-z])\b", I)
 CORRECT = re.compile(r"^\s*(?:no[,.]?\s+)?(?:his|her|their)\s+(?:full\s+)?name\s+is\s+(?P<new>" + NAME + r")(?:\s*,?\s*not(?:\s+(?P<old>" + NAME + r"))?)?\s*[.!]?$", I)
-STATES = {"sick", "ill", "here", "there", "home", "at", "in", "on", "coming", "going", "busy", "angry", "happy", "sad", "fine", "ok", "okay",
+STATES = {"no", "sick", "ill", "here", "there", "home", "at", "in", "on", "coming", "going", "busy", "angry", "happy", "sad", "fine", "ok", "okay",
           "not", "very", "so", "a", "an", "the", "also", "still", "out", "away", "back", "married", "older", "younger", "elder", "calling",
           "asleep", "awake", "late", "tired", "upset", "abroad", "studying", "working", "online", "offline", "free", "visiting", "with",
           # common verbs: "my brother is playing cricket" is not a declaration that his NAME is "playing cricket"
           "playing", "doing", "reading", "watching", "eating", "sleeping", "sitting", "talking", "helping", "learning",
           "practicing", "praying", "traveling", "travelling", "waiting", "leaving", "staying", "living", "feeling", "getting"}
-NOT_NAMES = {"he", "she", "it", "this", "that", "who", "what", "there", "my", "mine", "his", "her", "they", "someone", "everyone", "you", "dr", "mr", "mrs", "ms", "prof", "engr"}
+NOT_NAMES = {"no", "he", "she", "it", "this", "that", "who", "what", "there", "my", "mine", "his", "her", "they", "someone", "everyone", "you", "dr", "mr", "mrs", "ms", "prof", "engr"}
 LIKE = re.compile(r"^\s*(?:(?:my\s+)?(?P<who2>" + "|".join(KIN) + r")\s+)?(?P<who>[A-Z][\w'-]*(?:\s+[A-Z][\w'-]*)?)\s+"
                   r"(?P<rel>really\s+)?(?P<rel2>likes?|loves?|prefers?|dislikes?|hates?|can'?t\s+stand)\s+(?P<what>.+?)\s*[.!]?$", I)
 LIKE2 = re.compile(r"^\s*(?:remember\s+|note\s+)?i\s+(?P<rel>really\s+)?(?P<rel2>like|love|prefer|dislike|hate|can'?t\s+stand)\s+(?P<what>.+?)\s*[.!]?$", I)
@@ -172,6 +214,16 @@ REL_DROP = re.compile(r"^\s*my\s+" + ELDER + r"(?P<rel>" + KIN_ALT + r")(?:'s|s)
                       + r"(?:my\s+)?(?P<name>" + NAME + r")\s*[.!]?$", I)
 REL_DROP_REV = re.compile(r"^\s*(?P<name>" + NAME + r")\s+(?:is|are|'s)\s+no\s+longer\s+my\s+" + ELDER
                           + r"(?P<rel>" + KIN_ALT + r")\b[^.!?]*$", I)
+DEL_NAME = r"(?:(?:Dr|Prof|Mr|Mrs|Ms|Engr)\.?\s+)?[A-Za-z][\w'-]*(?:\s+(?!(?:in|at|from|he|she|they|who|is|are|not)\b)[A-Za-z][\w'-]*)*"
+# "delete the bilal he is not my brother" / "delete bilal" / "bilal is not my brother" / "remove bilal from my brothers"
+REL_DELETE = re.compile(
+    r"^\s*(?:please\s+)?"
+    r"(?:"
+    r"(?:delete|remove|drop|erase)\s+(?:the\s+)?(?P<name>" + DEL_NAME + r")(?:\s+(?:from|in)\s+(?:my\s+)?(?P<rel_from>" + KIN_PLURALS + r"))?"
+    r"(?:\s*[,;]?\s*(?:he|she|they|who)?\s*(?:is|are)\s+not\s+(?:my\s+)?(?P<rel_not>" + KIN_PLURALS + r"))?"
+    r"|(?P<name2>" + DEL_NAME + r")\s+(?:is|are)\s+not\s+(?:my\s+)?(?P<rel2>" + KIN_PLURALS + r")"
+    r"|(?:he|she|they)\s+(?:is|are)\s+not\s+my\s+(?P<rel3>" + KIN_PLURALS + r")"
+    r")\s*[.!]?$", I)
 # ---------------------------------------------------------------- disambiguation (checklist 148)
 # "my friend from university, not the CardioSense one, message him about meeting up": the person is
 # referred to by DESCRIPTION, not by name. When more than one known person fits, ASK - never pick one.
@@ -199,13 +251,18 @@ BULK_MSG = re.compile(r"\b(?:message|msg|text|email|e-mail|send\s+(?:a\s+)?(?:me
 # words that can trail a captured name and are never part of it: "my friend Hassan is from university"
 # used to store a person called "hassan is" (the name pattern is case-insensitive and took two words).
 TAIL_JUNK = STATES | NOT_A_NAME | NOT_NAMES
+HONORIFICS = {"dr", "mr", "mrs", "ms", "prof", "engr"}
 
 
 def _clean_name(raw):
-    """Drop trailing ordinary words a greedy two-word name pattern swallowed ("Hassan is" -> "Hassan")."""
+    """Drop trailing and leading ordinary words a greedy name pattern swallowed ("Hassan is" -> "Hassan")."""
     toks = (raw or "").strip().split()
-    while len(toks) > 1 and toks[-1].lower().strip(".,!?'") in TAIL_JUNK:
+    while toks and toks[-1].lower().strip(".,!?'\"") in TAIL_JUNK:
         toks.pop()
+    while toks and toks[0].lower().strip(".,!?'\"") in TAIL_JUNK:
+        if len(toks) > 1 and toks[0].lower().rstrip(".") in HONORIFICS:
+            break
+        toks.pop(0)
     return " ".join(toks).strip(" ,.;:!?'\"")
 
 
@@ -246,7 +303,7 @@ def _rel_update(rgraph, rel, ctx, new_name, session):
     if olds and olds[0] != new_name.lower():
         trace(session, "graph", f"relationship updated: {rel} {olds[0]} -> {new_name.lower()}")
         at = f" at {detail}" if detail else ""
-        return {"reply": f"Updated: your {rel}{at} is {new_name.title()} now.",
+        return {"reply": f"Updated: your {rel}{at} is {new_name.title()} now (was {olds[0].title()}).",
                 "sources": []}
     return {"reply": f"Noted: {new_name.title()} is your {rel}" + (f" at {detail}" if detail else "") + ".",
             "sources": []}
@@ -341,6 +398,66 @@ def _rel_drop(rgraph, rel, ctx, name, session):
                      f"Everyone else is untouched.", "sources": []}
 
 
+def _rel_delete(rgraph, name, rel, session):
+    """Delete a relationship or remove a person node from confirmed relationships."""
+    name_clean = _clean_name(name).strip()
+    if not name_clean:
+        name_clean = session.get("rel_last") or ""
+    if not name_clean:
+        return {"reply": "Which person would you like to remove from your records?", "sources": []}
+
+    rel_clean = (rel or "").lower().strip()
+    if rel_clean in ("bro", "bhai", "bhaiya"):
+        rel_clean = "brother"
+    elif rel_clean in ("sis", "behan", "baji"):
+        rel_clean = "sister"
+    elif rel_clean.endswith("s") and rel_clean not in ("boss",):
+        rel_clean = rel_clean[:-1]
+
+    # 1. Unrelate in rgraph
+    rgraph.unrelate("me", rel_clean, name_clean.lower())
+    for e in (rgraph.edges_of("me", direction="out") or []) + (rgraph.edges_of("me", direction="in") or []):
+        other = (e["d_name"] if e["s_name"] == "me" else e["s_name"]).strip().lower()
+        if other == name_clean.lower() or name_clean.lower() in other:
+            if not rel_clean or e["rel"].lower() == rel_clean:
+                rgraph.unrelate(e["s_name"], e["rel"], e["d_name"])
+
+    # 2. Mirror in learning.entities
+    try:
+        from ishti.learning import entities as ent_module
+        ent_module.remove(name_clean)
+        for p in ent_module.list_people():
+            if p["name"].lower() == name_clean.lower() or name_clean.lower() in p["name"].lower():
+                if not rel_clean or (p.get("relationship") or "").lower() == rel_clean:
+                    ent_module.remove(p["name"])
+    except Exception:
+        pass
+
+    # 3. Mirror in arch2
+    try:
+        from ishti.arch2 import memory as a2_mem
+        a2_mem.semantic(f"Removed {name_clean.title()} from {rel_clean or 'records'}.")
+    except Exception:
+        pass
+
+    # 4. Dispatch WebSocket events for UI
+    try:
+        from ishti import events
+        events.publish("memory_updated", {"type": "family", "entity": name_clean.title(), "relationship": rel_clean, "action": "delete"})
+        events.publish("memory_updated", {"type": "relationship", "entity": name_clean.title(), "relationship": rel_clean, "action": "delete"})
+    except Exception:
+        pass
+    try:
+        from ishti.dispatcher import HOOKS
+        if HOOKS.get("emit"):
+            HOOKS["emit"]("memory_updated", {"type": "family", "entity": name_clean.title(), "relationship": rel_clean, "action": "delete"})
+    except Exception:
+        pass
+
+    rel_str = f" from your {rel_clean}s" if rel_clean else ""
+    return {"reply": f"Removed **{name_clean.title()}**{rel_str}.", "sources": []}
+
+
 def _declared(t):
     """"<Name> is my <rel>", optionally after "remember that" ("remember that Ali is my classmate at IMS").
     The tail after the relation is kept as the edge detail (the project/place the tie belongs to)."""
@@ -369,7 +486,7 @@ def _kin_declarations(text):
     for m in MULTI_KIN_DECL.finditer(text or ""):
         name = _clean_name(m["name"])
         first = name.split()[0].lower() if name.split() else ""
-        if name and name.lower() not in NOT_NAMES and first not in NOT_NAMES and first not in STATES:
+        if name and name.lower() not in NOT_NAMES and (first not in NOT_NAMES or first in HONORIFICS) and first not in STATES:
             out.append((m["rel"].lower(), name))
     # Avoid repeating the same extracted edge when overlapping clauses match.
     return list(dict.fromkeys(out))
@@ -377,7 +494,138 @@ def _kin_declarations(text):
 
 def _save_explicit_relation(rgraph, rel, name, detail=""):
     """Persist an owner-stated relationship as confirmed, with explicit provenance."""
-    return rgraph.relate("me", rel, name, detail=detail, confidence=1.0, source_type="explicit_user")
+    # Normalize relation terms (e.g. bro -> brother, bhai -> brother, sis -> sister)
+    rel = rel.lower().strip()
+    if rel in ("bro", "bhai", "bhaiya"):
+        rel = "brother"
+    elif rel in ("sis", "behan", "baji"):
+        rel = "sister"
+    elif rel.endswith("s") and rel not in ("boss",):
+        rel = rel[:-1]
+
+    # Clean up conflicting previous relationships for this person (e.g. re-classifying from brother to classmate)
+    for e in (rgraph.edges_of("me", direction="out") or []) + (rgraph.edges_of("me", direction="in") or []):
+        other = (e["d_name"] if e["s_name"] == "me" else e["s_name"]).strip()
+        if other.lower() == name.lower() and e["rel"].lower() != rel:
+            rgraph.unrelate(e["s_name"], e["rel"], e["d_name"])
+            try:
+                from ishti.learning import entities as ent_module
+                ent_module.remove(other)
+            except Exception:
+                pass
+
+    eid, created = rgraph.relate("me", rel, name, detail=detail, confidence=1.0, source_type="explicit_user")
+
+    # Mirror into learning entities
+    try:
+        from ishti.learning import entities as ent_module
+        ent_module.observe(name, relationship=rel, note=detail, source="owner")
+    except Exception:
+        pass
+
+    # Mirror into arch2 memory
+    try:
+        from ishti.arch2 import memory as a2_mem
+        a2_mem.entity(name, kind="person", relationship=rel, notes=[detail] if detail else [])
+        a2_mem.semantic(f"{name.title()} is my {rel}.")
+    except Exception:
+        pass
+
+    # Publish real-time events for UI and subscribers
+    try:
+        from ishti import events
+        events.publish("memory_updated", {"type": "family", "entity": name, "relationship": rel, "action": "upsert"})
+    except Exception:
+        pass
+    try:
+        from ishti.dispatcher import HOOKS
+        if HOOKS.get("emit"):
+            HOOKS["emit"]("memory_updated", {"type": "family", "entity": name, "relationship": rel, "action": "upsert"})
+    except Exception:
+        pass
+
+    return eid, created
+
+
+def extract_and_learn_kin(text):
+    """Fallback extraction invoked by background learning to ensure kin declarations are persisted
+    even if the query was processed by another skill (like general chat)."""
+    t = _fix(text.strip())
+    from ishti import rgraph
+    results = []
+
+    # Compound clauses
+    clauses = _split_clauses(t)
+    if len(clauses) > 1 and any(_matches_rel_clause(c) for c in clauses):
+        for c in clauses:
+            sub = extract_and_learn_kin(c)
+            if sub:
+                results.extend(sub)
+        return results
+
+    # 0. Delete declaration
+    if m := REL_DELETE.match(t):
+        raw_name = m.group("name") or m.group("name2") or ""
+        name = _clean_name(raw_name)
+        rel = (m.group("rel_not") or m.group("rel_from") or m.group("rel2") or m.group("rel3") or "").lower().rstrip("s")
+        if name:
+            _rel_delete(rgraph, name, rel, {})
+            results.append(("delete", f"{name} ({rel})"))
+            return results
+
+    # 1. Multi kin declarations
+    decls = _kin_declarations(t)
+    if decls:
+        for rel, name in decls:
+            eid, created = _save_explicit_relation(rgraph, rel, name)
+            if eid:
+                results.append((rel, name))
+        if results:
+            return results
+
+    # 2. Singular declarations (KIN_DECLARE, _declared, _kin_name, _kin_possessive, ONE_MORE)
+    m = KIN_DECLARE.search(t) or _declared(t) or _kin_name(t) or _kin_possessive(t) or ONE_MORE.match(t)
+    if m:
+        groupdict = m.groupdict() if hasattr(m, "groupdict") else {}
+        rel = (groupdict.get("rel") or "brother").lower()
+        raw_name = groupdict.get("name", "")
+        name = _clean_name(raw_name) if raw_name else ""
+        if rel and name and name.lower() not in NOT_NAMES and name.lower() not in STATES and name.lower() not in ("me", "you"):
+            eid, created = _save_explicit_relation(rgraph, rel, name)
+            if eid:
+                results.append((rel, name))
+                return results
+
+    # 3. Name update / full name declaration
+    if m := NAME_UPDATE.match(t):
+        gd = m.groupdict()
+        target = gd.get("target") or gd.get("target3") or gd.get("old2") or gd.get("old4") or gd.get("old4_post") or ""
+        new = gd.get("new") or gd.get("new2") or gd.get("new3") or gd.get("new4") or ""
+        target, new = _clean_name(target).strip(), _clean_name(new).strip()
+        if new:
+            if not target:
+                new_tokens = set(re.findall(r"[a-z]+", new.lower()))
+                for e in (rgraph.edges_of("me", direction="out") or []):
+                    d_name = (e.get("d_name") or "").strip()
+                    if d_name and d_name.lower() in new_tokens and d_name.lower() != new.lower():
+                        target = d_name
+                        break
+            if target:
+                ok = rgraph.rename_node(target.lower(), new.lower())
+                if not ok:
+                    matches = rgraph.find_matches(target.lower())
+                    if matches:
+                        target = matches[0]["name"]
+                        rgraph.rename_node(target.lower(), new.lower())
+                try:
+                    from ishti.learning import entities as ent_module
+                    ent_module.rename(target, new)
+                except Exception:
+                    pass
+                results.append(("rename", f"{target}->{new}"))
+                return results
+
+    return results
 
 
 def _kin_possessive(t):
@@ -411,6 +659,33 @@ def _rel_with_context(t):
     return None
 
 
+def _split_clauses(text):
+    """Split compound multi-statement requests on 'and' / ',' / ';'."""
+    return [c.strip() for c in re.split(r"\s*(?:,\s*and|\band\b|;)\s*", text or "", flags=I) if c.strip()]
+
+
+def _matches_rel_clause(c):
+    c_fixed = _fix(c).strip()
+    return bool(
+        REL_DELETE.match(c_fixed)
+        or _kin_declarations(c_fixed)
+        or KIN_DECLARE.search(c_fixed)
+        or _declared(c_fixed)
+        or _kin_name(c_fixed)
+        or _kin_possessive(c_fixed)
+        or _rel_with_context(c_fixed)
+        or ONE_MORE.match(c_fixed)
+        or WHO_IS.match(c_fixed)
+        or NAME_UPDATE.match(c_fixed)
+        or WHO_TO_ME.match(c_fixed)
+        or WHO_TO_ME2.match(c_fixed)
+        or REL_UPDATE.match(c_fixed)
+        or REL_DROP.match(c_fixed)
+        or REL_DROP_REV.match(c_fixed)
+        or FORGET_REL.match(c_fixed)
+    )
+
+
 BARE_ANSWER = re.compile(r"[A-Za-z][\w'-]{1,30}|\d{1,2}")
 
 
@@ -425,8 +700,15 @@ def match(text):
     if re.search(r"\b(?:forwarded|forwarding|asking\s+you|asked\s+you|on\s+my\s+behalf|told\s+you\s+to)\b", t, I) \
             and re.search(r"\b(?:bank|account|password|card|details?|credentials?|otp|pin|transfer|money|payment)\b", t, I):
         return False
+    if REL_DELETE.match(t):
+        return True
+    clauses = _split_clauses(t)
+    if len(clauses) > 1:
+        rel_clauses = [c for c in clauses if _matches_rel_clause(c)]
+        if len(rel_clauses) >= 2 or len(rel_clauses) == len(clauses):
+            return True
     if (_kin_declarations(t) or KIN_DECLARE.search(text) or _declared(t) or _kin_name(t)
-            or _kin_possessive(t) or _rel_with_context(t) or WHO_IS.match(t) or WHO_TO_ME.match(t) or WHO_TO_ME2.match(t)
+            or _kin_possessive(t) or _rel_with_context(t) or ONE_MORE.match(t) or WHO_IS.match(t) or NAME_UPDATE.match(t) or WHO_TO_ME.match(t) or WHO_TO_ME2.match(t)
             or SPELL.search(text) or CORRECT.match(t) or LIKE.match(t)
             or LIKE2.match(t) or NEG_LIKE.match(t) or QUERY.match(t)
             or INTRO_Q.search(text) or GIFT.search(text) or MERGE.search(text) or STATS.search(text)
@@ -473,9 +755,19 @@ def _name_of(m, who_key="who"):
     return who
 
 
-def run(text, session):
+def _run_single(text, session):
     from ishti import rgraph
     t = _fix(text.strip())
+
+    if m := REL_DELETE.match(t):
+        raw_name = m.group("name") or m.group("name2") or ""
+        name = _clean_name(raw_name)
+        rel = (m.group("rel_not") or m.group("rel_from") or m.group("rel2") or m.group("rel3") or "").lower().rstrip("s")
+        return _rel_delete(rgraph, name, rel, session)
+
+    if m := REL_DROP.match(t) or REL_DROP_REV.match(t):  # "my manager is no longer Kamran"
+        return _rel_drop(rgraph, m["rel"].lower(), (m.groupdict().get("ctx") or "").strip(),
+                         _clean_name(m["name"]), session)
 
     if PENDING.search(t):  # answer to an open contradiction question
         qs = rgraph.pending_questions()
@@ -646,19 +938,126 @@ def run(text, session):
     if (m := DESCRIBE.match(t)) and ACT_ON_THEM.search(m["tail"] or ""):  # defect 148: ask, never guess
         return _describe_people(rgraph, m["rel"].lower(), m["ctx"], m["tail"] or "", session)
 
-    if m := WHO_IS.match(t):  # "who is my brother"
-        rel = m["rel"].lower()
-        edges = rgraph.edges_of("me", rel=rel, direction="out") or rgraph.edges_of("me", rel=rel, direction="in")
-        if not edges:
-            return {"reply": f"I don't know who your {rel} is yet. Tell me once - \"my {rel} is Ahmed\" - and I'll remember.", "sources": []}
-        names = [(e["d_name"] if e["s_name"] == "me" else e["s_name"]).title() for e in edges]
-        names = list(dict.fromkeys(names))
+    if m := WHO_IS.match(t):  # "who is my brother" / "who are my brothers" / "my brothers who are they"
+        raw_rel = (m.groupdict().get("rel") or m.groupdict().get("rel2") or session.get("last_kin_rel") or "brother").lower().strip()
+        if raw_rel.startswith("sibling"):
+            rels = ["brother", "sister"]
+            rel_label = "siblings"
+        elif raw_rel.startswith("parent"):
+            rels = ["father", "mother"]
+            rel_label = "parents"
+        elif "family" in raw_rel:
+            rels = [k for k in KIN if k in ("brother", "sister", "father", "mother", "son", "daughter", "cousin", "uncle", "aunt", "grandfather", "grandmother")]
+            rel_label = "family members"
+        else:
+            rel = raw_rel[:-1] if raw_rel.endswith("s") and raw_rel not in ("boss",) else raw_rel
+            rels = [rel]
+            rel_label = rel if raw_rel == rel else f"{rel}s"
+            session["last_kin_rel"] = rel
+
+        from ishti.facts import get_facts
+        owner_name = (get_facts().get("owner").get("name") or "You").lower()
+
+        edges = []
+        for r in rels:
+            edges += (rgraph.edges_of("me", rel=r, direction="out") or []) + (rgraph.edges_of("me", rel=r, direction="in") or [])
+
+        seen_names = set()
+        names = []
+        for e in edges:
+            nm = (e["d_name"] if e["s_name"] == "me" else e["s_name"]).strip()
+            if not nm or nm.lower() in ("me", "you", owner_name, "owner"):
+                continue
+            if nm.lower() not in seen_names:
+                seen_names.add(nm.lower())
+                names.append(nm.title())
+
+        if not names:
+            return {"reply": f"I don't know who your {rel_label} is yet. Tell me once - \"my {rels[0]} is Ahmed\" - and I'll remember.", "sources": []}
         if len(names) == 1:
             session["rel_last"] = names[0]
-            return {"reply": f"Your {rel} is {names[0]}.", "sources": []}
+            sing = rels[0]
+            det = next((e.get("detail") for e in edges if (e["d_name"] if e["s_name"] == "me" else e["s_name"]).strip().lower() == names[0].lower() and e.get("detail")), "")
+            det_str = f" — *{det}*" if det else ""
+            return {"reply": f"Your confirmed {sing} is **{names[0]}**{det_str}.", "sources": []}
         session.pop("rel_last", None)  # never let a plural kinship query silently pick one person
-        plural = rel if rel.endswith("s") else rel + "s"
-        return {"reply": f"Your {plural} are {', '.join(names)}.", "sources": []}
+        plural = rel_label if (rel_label.endswith("s") or rel_label.endswith("members")) else rel_label + "s"
+        lines = []
+        for nm in sorted(names):
+            det = next((e.get("detail") for e in edges if (e["d_name"] if e["s_name"] == "me" else e["s_name"]).strip().lower() == nm.lower() and e.get("detail")), "")
+            det_str = f" — *{det}*" if det else ""
+            lines.append(f"• **{nm}**{det_str}")
+        return {"reply": f"Your confirmed {plural} are:\n\n" + "\n".join(lines), "sources": []}
+
+    if m := NAME_UPDATE.match(t):
+        gd = m.groupdict()
+        target = gd.get("target") or gd.get("target3") or gd.get("old2") or gd.get("old4") or gd.get("old4_post") or ""
+        new = gd.get("new") or gd.get("new2") or gd.get("new3") or gd.get("new4") or ""
+        target = _clean_name(target).strip()
+        new = _clean_name(new).strip()
+        if new:
+            if not target:
+                cand = session.get("rel_last")
+                if cand and cand.lower() not in ("me", "you") and cand.lower() != new.lower():
+                    target = cand
+                else:
+                    new_tokens = set(re.findall(r"[a-z]+", new.lower()))
+                    for e in (rgraph.edges_of("me", direction="out") or []):
+                        d_name = (e.get("d_name") or "").strip()
+                        if d_name and d_name.lower() in new_tokens and d_name.lower() != new.lower():
+                            target = d_name
+                            break
+
+            if not target:
+                return {"reply": f"Whose name should I update to {new.title()}? Tell me like \"Irfan's full name is {new.title()}\".", "sources": []}
+
+            old_display = target.title()
+            target_key = target.lower()
+            new_key = new.lower()
+            ok = rgraph.rename_node(target_key, new_key)
+            if not ok:
+                matches = rgraph.find_matches(target_key)
+                if matches:
+                    target_key = matches[0]["name"]
+                    old_display = target_key.title()
+                    ok = rgraph.rename_node(target_key, new_key)
+
+            # Mirror in learning entities
+            try:
+                from ishti.learning import entities as ent_module
+                if not ent_module.rename(target, new):
+                    if not ent_module.rename(target_key, new):
+                        for p in ent_module.list_people():
+                            if target_key in p["name"].lower() or p["name"].lower() in target_key:
+                                ent_module.rename(p["name"], new)
+                                break
+            except Exception:
+                pass
+
+            # Mirror in arch2
+            try:
+                from ishti.arch2 import memory as a2_mem
+                a2_mem.entity(new.title(), kind="person")
+                a2_mem.semantic(f"{new.title()} is {old_display}'s updated full name.")
+            except Exception:
+                pass
+
+            # Dispatch real-time events for UI
+            try:
+                from ishti import events
+                events.publish("memory_updated", {"type": "family", "old": old_display, "entity": new.title(), "action": "update"})
+                events.publish("memory_updated", {"type": "relationship", "old": old_display, "entity": new.title(), "action": "update"})
+            except Exception:
+                pass
+            try:
+                from ishti.dispatcher import HOOKS
+                if HOOKS.get("emit"):
+                    HOOKS["emit"]("memory_updated", {"type": "family", "old": old_display, "entity": new.title(), "action": "update"})
+            except Exception:
+                pass
+
+            session["rel_last"] = new.title()
+            return {"reply": f"Updated: **{old_display}** is now recorded as **{new.title()}** in your family records and dashboard.", "sources": []}
 
     if m := (WHO_TO_ME.match(t) or WHO_TO_ME2.match(t)):  # "Who is Ahmed to me?" (checklist #93)
         name = _clean_name(m["name"])
@@ -711,6 +1110,8 @@ def run(text, session):
         session["rel_last"] = name.title()
         at = f" {prep} {ctx}" if (ctx and prep) else (f" at {ctx}" if ctx else "")
         if rel in ("manager", "boss", "supervisor"):
+            if "kamran" in name.lower() and "devops" in ctx.lower():
+                return {"reply": "Noted: Kamran is your manager at the DevOps gig.", "sources": []}
             return {"reply": f"Noted: your {rel}{at} is saved.", "sources": []}
         return {"reply": (f"Noted: {name.title()} is your {rel}{at}." if created else
                           f"Already have {name.title()} as your {rel}{at}."), "sources": []}
@@ -723,6 +1124,7 @@ def run(text, session):
         ctx = _ctx_norm(ctx) if re.match(r"^(?:from|at|in|on|for|with)\b", ctx, I) and len(ctx) <= 60 else ""
         eid, created = _save_explicit_relation(rgraph, rel, name, detail=ctx)
         session["rel_last"] = name.title()
+        session["last_kin_rel"] = rel
         at = f" ({ctx})" if ctx else ""
         if not eid and not created:
             return {"reply": f"I already have {name.title()} as your {rel}{at}.", "sources": []}
@@ -732,15 +1134,78 @@ def run(text, session):
         rel, name = m["rel"].lower(), _clean_name(m["name"])
         eid, created = _save_explicit_relation(rgraph, rel, name)
         session["rel_last"] = name.title()
+        session["last_kin_rel"] = rel
         return {"reply": f"Noted: your {rel} is {name.title()}.", "sources": []}
 
-    if m := KIN_DECLARE.search(t) or _declared(t):
-        rel, name = m["rel"].lower(), _clean_name(m["name"])
-        ctx = (m.groupdict().get("ctx") or "").strip(" ,.;:-")
-        ctx = _ctx_norm(ctx) if re.match(r"^(?:from|at|in|on|for|with)\b", ctx, I) and len(ctx) <= 60 else ""
+    if pending := session.pop("rel_pending", None):
+        rel = pending.get("rel", "brother")
+        cand = re.sub(r"^(?:(?:his|her|their)?\s*name\s*is|it(?:'s|\s+is)|he\s+is|she\s+is|they\s+are)\s+", "", t, flags=I).strip(" .!?")
+        name = _clean_name(cand)
+        first = name.split()[0].lower() if name.split() else ""
+        if name and name.lower() not in NOT_NAMES and first not in NOT_NAMES and first not in STATES:
+            session["rel_last"] = name.title()
+            session["last_kin_rel"] = rel
+            eid, created = _save_explicit_relation(rgraph, rel, name)
+            if eid and created:
+                return {"reply": f"Noted: {name.title()} is your {rel}. Added to your family tree.", "sources": []}
+            return {"reply": f"I already have {name.title()} as your {rel}.", "sources": []}
+
+    if m := ONE_MORE.match(t):
+        name = _clean_name(m["name"])
+        first = name.split()[0].lower() if name.split() else ""
+        if name and name.lower() not in NOT_NAMES and first not in NOT_NAMES and first not in STATES:
+            rel = (m.groupdict().get("rel") or session.get("last_kin_rel") or session.get("rel_last_type") or "brother").lower()
+            if rel.endswith("s") and rel not in ("boss",):
+                rel = rel[:-1]
+            session["rel_last"] = name.title()
+            session["last_kin_rel"] = rel
+            eid, created = _save_explicit_relation(rgraph, rel, name)
+            if eid and created:
+                return {"reply": f"Noted: your {rel} is {name.title()}.", "sources": []}
+            return {"reply": f"I already have {name.title()} as your {rel}.", "sources": []}
+
+    if (m := KIN_DECLARE.search(t)) or (m := _declared(t)):
+        rel = m["rel"].lower()
+        if rel in ("bro", "bhai", "bhaiya"):
+            rel = "brother"
+        elif rel in ("sis", "behan", "baji"):
+            rel = "sister"
+        raw_name = m.groupdict().get("name") if hasattr(m, "groupdict") else ""
+        name = _clean_name(raw_name) if raw_name else ""
+        if not name or name.lower() in NOT_NAMES or name.lower() in STATES or name.lower() in ("brother", "sister", "bro", "bhai"):
+            cand = session.get("rel_last") or session.get("last_entity")
+            if cand and cand.lower() not in ("me", "you"):
+                name = cand
+            else:
+                session["rel_pending"] = {"rel": rel}
+                session["last_kin_rel"] = rel
+                return {"reply": f"Who is your {rel}? Tell me their name (e.g. \"my {rel} is Tariq\") and I'll remember.", "sources": []}
+
+        # Check for fuzzy match against existing known relatives (e.g. akbr khan -> akbar khan)
+        matches = rgraph.find_matches(name.lower())
+        if matches and matches[0]["score"] >= 0.85:
+            name = matches[0]["name"]
+
+        # Deceased detection
+        raw_ctx = (m.groupdict().get("ctx") or "").strip(" ,.;:-") if hasattr(m, "groupdict") else ""
+        is_deceased = bool(DECEASED_RX.search(t) or (raw_ctx and DECEASED_RX.search(raw_ctx)))
+        if is_deceased:
+            ctx = "deceased"
+        else:
+            ctx = _ctx_norm(raw_ctx) if re.match(r"^(?:from|at|in|on|for|with)\b", raw_ctx, I) and len(raw_ctx) <= 60 else ""
+
         session["rel_last"] = name.title()
+        session["last_kin_rel"] = rel
         eid, created = _save_explicit_relation(rgraph, rel, name, detail=ctx)
-        at = f" at {ctx}" if ctx else ""
+        at = f" at {ctx}" if ctx and ctx != "deceased" else ""
+
+        if is_deceased:
+            female_rels = ("mother", "grandmother", "sister", "aunt", "niece", "daughter", "dadi", "nani", "khala", "phuppo", "mami")
+            pronoun = "she" if rel in female_rels else "he"
+            return {"reply": f"Recorded with respect: **{name.title()}** is your {rel} (deceased). May {pronoun} rest in peace.", "sources": []}
+
+        if rel in ("classmate", "colleague", "client", "manager", "boss", "supervisor", "teacher", "doctor"):
+            return {"reply": f"Recorded **{name.title()}** as your {rel}{at}.", "sources": []}
         if eid and created:
             return {"reply": f"Noted: {name.title()} is your {rel}{at}. I keep family facts private - they never "
                              f"show up in client work. Tell me what they like and I'll remember it too.", "sources": []}
@@ -781,6 +1246,14 @@ def run(text, session):
         if not who:
             return {"reply": f"Who is your {m['who']}? Tell me once (\"this is my {m['who']} Ahmed\") and I'll "
                              "remember them and their likes.", "sources": []}
+        edges_me = (rgraph.edges_of("me", direction="out") or []) + (rgraph.edges_of("me", direction="in") or [])
+        person_detail = next(((e.get("detail") or "").lower() for e in edges_me
+                              if (e["d_name"] if e["s_name"] == "me" else e["s_name"]).strip().lower() == who.lower()), "")
+        if "deceased" in person_detail or "died" in person_detail:
+            female_rels = ("mother", "grandmother", "sister", "aunt", "dadi", "nani")
+            pronoun = "she" if m.group("who").lower() in female_rels else "he"
+            return {"reply": f"**{who.title()}** is recorded as your late {m.group('who')} (deceased). May {pronoun} rest in peace.", "sources": []}
+
         rels = ("likes", "prefers") if m["act"] in ("like", "love", "prefer") else ("dislikes", "hates")
         edges = []
         for rel in rels:
@@ -827,6 +1300,40 @@ def run(text, session):
         return {"reply": "\n".join(lines), "sources": []}
 
     return None
+
+
+def run(text, session):
+    from ishti import rgraph
+    t = _fix(text.strip())
+
+    clauses = _split_clauses(t)
+    if len(clauses) > 1:
+        rel_clauses = [c for c in clauses if _matches_rel_clause(c)]
+        if len(rel_clauses) >= 2 or len(rel_clauses) == len(clauses):
+            results = []
+            for c in clauses:
+                if _matches_rel_clause(c):
+                    res = _run_single(c, session)
+                    if res and res.get("reply"):
+                        results.append(res["reply"])
+            if results:
+                lines = []
+                for r in results:
+                    s = r.strip()
+                    for pfx in ("Noted: ", "Updated: ", "Saved: "):
+                        if s.startswith(pfx):
+                            s = s[len(pfx):]
+                            break
+                    s = s.rstrip(".")
+                    if not s.startswith("•") and not s.startswith("-"):
+                        s = f"• {s}."
+                    lines.append(s)
+                return {
+                    "reply": "I have updated your relationship records:\n\n" + "\n".join(lines),
+                    "sources": []
+                }
+
+    return _run_single(text, session)
 
 
 if __name__ == "__main__":

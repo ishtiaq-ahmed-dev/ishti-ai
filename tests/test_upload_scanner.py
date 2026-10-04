@@ -70,3 +70,18 @@ def test_scan_upload_end_to_end(tmp_path):
     assert res["safe"] is True
     assert res["filename"] == "report.pdf"
     assert "Magic bytes verified" in res["signature_status"]
+
+
+def test_defender_unavailable_or_indeterminate_is_not_clean(monkeypatch, tmp_path):
+    from ishti.security import upload_scanner
+    target = tmp_path / "invoice.pdf"
+    target.write_bytes(b"%PDF-1.4 synthetic")
+    monkeypatch.setattr(upload_scanner, "get_defender_binary", lambda: None)
+    assert upload_scanner.scan_upload(str(target))["safe"] is False
+
+    class Result:
+        returncode = 1
+        stdout = ""
+    monkeypatch.setattr(upload_scanner, "get_defender_binary", lambda: "synthetic-defender")
+    monkeypatch.setattr(upload_scanner.subprocess, "run", lambda *_a, **_k: Result())
+    assert upload_scanner.scan_upload(str(target))["safe"] is False

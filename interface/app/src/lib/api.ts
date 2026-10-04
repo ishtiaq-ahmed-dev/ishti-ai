@@ -23,6 +23,7 @@ export type Result = {
   final_answer: string;
   skill: string | null;
   session_id: string;
+  message_id?: string | null;
   sources: Source[];
   latency_ms?: number;
 };

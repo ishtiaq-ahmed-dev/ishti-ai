@@ -663,6 +663,73 @@ def _deliver_current(name, path, messages, session, snap):
     return _out(f"Sent {', '.join(done)} to {name} on WhatsApp.", True)
 
 
+def _approve_bridge_send(contact, path, messages, voice, text, session, draft_ready=False):
+    """Use the connected transport only after exact resolution; no send fallback after an attempt."""
+    from ishti import wa_bridge as bridge
+    if not bridge.connected():
+        return None
+    try:
+        cid = bridge.find_chat(contact)
+        if not cid:
+            return None
+        if session.get("is_reply") and not draft_ready:
+            rows = bridge.messages(cid, 40)
+            if not rows:
+                return None  # full older history is read through the browser
+            context = json.dumps({"scope": "Messages observed since the bridge started; earlier history is not included",
+                "chat": cid, "messages": rows}, ensure_ascii=False)
+            reply = formulate_reply(contact, context, text, session)
+            if not reply:
+                return _out("I couldn't prepare a reply for review. Nothing was sent.", False)
+            if session.get("is_voice_reply"):
+                path, _whose = voice_note(reply)
+                voice, messages = reply, []
+            else:
+                messages = [reply] + list(messages[1:])
+        expected_file = _file_digest(path) if path else None
+    except bridge.BridgeError:
+        return None  # read-only discovery failure can still use Chrome
+    import uuid
+    frozen = tuple(messages)
+    audio_kind = "voice" if path and (session.get("is_voice_reply") or session.get("voice") or voice) else ""
+    ids = tuple(uuid.uuid4().hex for _ in range(len(frozen) + bool(path)))
+    recap = (f"Attachment: {os.path.basename(path)}\n" if path else "")
+    recap += "\n".join(f"{i}. {message}" for i, message in enumerate(frozen, 1))
+    if isinstance(voice, str) and voice:
+        recap += f"\nSpoken words: {voice}"
+    attempted = False
+    def approved():
+        nonlocal attempted
+        with browser.LOCK:
+            if attempted:
+                return _out("That approved send was already attempted. Check WhatsApp before creating another draft.", False)
+            attempted = True
+            session["pending"] = None
+        outcomes = []
+        items = [("media", path)] if path else []
+        items += [("text", value) for value in frozen]
+        for index, (kind, value) in enumerate(items):
+            try:
+                result = bridge.send(cid, text=value if kind == "text" else "", media=value if kind == "media" else "",
+                    media_kind=audio_kind if kind == "media" else "", expected_hash=expected_file if kind == "media" else None,
+                    action_id=ids[index])
+            except bridge.BridgeError as exc:
+                return _out(f"{exc}. I stopped the remaining items. Check WhatsApp before retrying.", False)
+            outcomes.append({"id": result.get("id"), "actionId": ids[index], "delivery": result.get("delivery")})
+            if not result.get("id") or result.get("delivery") not in {"server_ack", "delivered", "read"}:
+                session["last_whatsapp_outcomes"] = outcomes
+                return _out("The bridge attempted submission, but acknowledgement was not verified. "
+                            "I stopped the remaining items. Check WhatsApp before retrying.", False)
+        session["whatsapp_last"] = cid
+        session["last_whatsapp_outcomes"] = outcomes
+        session["last_whatsapp_send"] = {"contact": cid, "path": path, "messages": frozen, "sent_at": time.time()}
+        session["is_reply"] = session["is_voice_reply"] = False
+        session["voice"] = None
+        return {**_out(f"WhatsApp acknowledged {len(outcomes)} item(s) for {contact}. "
+                      "Acknowledgement does not confirm the recipient read them.", True), "outcomes": outcomes}
+    return ask_first(session, "whatsapp", f"Send this to {contact} ({cid}) on WhatsApp?\n\n{recap}\n\nSend it", approved)
+
+
 def send_flow(text, session, pend=None):
     exact_name = None
     voice = None
@@ -766,6 +833,17 @@ def send_flow(text, session, pend=None):
     if not contact:
         session["pending"] = {"skill": "whatsapp", "sticky": True, "ask": "contact", "file": path, "messages": messages, "voice": voice}
         return {"reply": "Who should I send it to?", "sources": []}
+    bridged = _approve_bridge_send(exact_name or contact, path, messages, voice, text, session, draft_ready)
+    if bridged is not None:
+        return bridged
+    # When a linked bridge has not observed this contact or enough reply history,
+    # load Web before using its snapshot-based search. The direct bridge path
+    # reaches send_flow without opening Chrome first.
+    from ishti import wa_bridge as bridge
+    if bridge.connected():
+        _snap, ready = open_whatsapp(session, wait_s=3)
+        if not ready:
+            return _out("I could not resolve this chat through the linked bridge or WhatsApp Web. Nothing was sent.", False)
     snap = browser._call("browser_snapshot", {})
     actual, _ = current_chat_identity(snap)
     found = [(actual, None)] if actual and norm(actual) == norm(exact_name or contact) else search(contact, session)
@@ -874,6 +952,8 @@ def _copy_file_clipboard(path):
 
 def send_desktop(contact, messages, path, session):
     """Sends via Windows WhatsApp Desktop app using desktop automation."""
+    return _out("I did not send through WhatsApp Desktop because I cannot verify the selected recipient there. "
+                "Use the linked bridge or WhatsApp Web for an exact-recipient send.", False)
     from ishti import test_mode
     if test_mode.enabled():
         return test_mode.blocked("whatsapp", f"desktop send to {contact}")
@@ -957,12 +1037,59 @@ def _bridge_path(text, session):
     if not bridge.connected():
         return None
 
+    if re.search(r"\b(?:read|check|show|understand|summari[sz]e|what(?:'s| is| does)?)\b.*\b(?:photo|image|picture|pdf|document|attachment)\b", t, re.I):
+        target = re.search(r"\b(?:from|with|in\s+(?:the\s+)?chat\s+with)\s+([\w+@ .'-]{1,50})", t, re.I)
+        who = (target.group(1).strip(" ?.!") if target else session.get("whatsapp_last") or "")
+        if not who:
+            return _out("Which WhatsApp chat contains that image or PDF?", False)
+        who = resolve_contact(who, session)
+        if not who or session.get("whatsapp_ambiguous"):
+            return _out("That contact is not uniquely identified. Name the exact chat to read its media.", False)
+        try:
+            cid = bridge.find_chat(who)
+            rows = bridge.messages(cid, 200) if cid else []
+        except bridge.BridgeError:
+            return None
+        want_pdf = bool(re.search(r"\b(?:pdf|document)\b", t, re.I))
+        wanted = "document" if want_pdf else "image"
+        row = next((item for item in reversed(rows)
+                    if item.get("kind") == wanted and not item.get("restricted")
+                    and (wanted != "document" or
+                         (item.get("media") or {}).get("mimetype", "").split(";")[0].lower() == "application/pdf")), None)
+        if not row:
+            return _out(f"I have no {wanted} message retained from {who} since this bridge started. "
+                        "That does not rule out earlier attachments in WhatsApp.", False)
+        try:
+            evidence = bridge.read_media(cid, row["id"])
+        except bridge.BridgeError as exc:
+            return _out(f"I found the attachment but could not safely read it: {exc}", False)
+        reading = evidence.get("text", "").strip()
+        if not reading:
+            return _out(f"I retrieved the {wanted} in {who}'s chat, but local text extraction found no readable text. "
+                        f"Message ID: {row['id']}. I cannot describe visual objects from OCR alone.", False)
+        alternate = (evidence.get("alternatives") or {}).get("rapidocr", "")
+        uncertainty = evidence.get("uncertainty") or []
+        excerpt = reading[:3000]
+        answer = f"**{who} · {wanted}** (message `{row['id']}`)\n\n{excerpt}"
+        if alternate and alternate.strip() != reading:
+            answer += "\n\n**Second OCR reading:**\n" + alternate[:1800]
+        if uncertainty:
+            answer += "\n\n**Check before relying on:** " + "; ".join(map(str, uncertainty[:3]))
+        if evidence.get("truncated"):
+            answer += "\n\nOnly the first part of this attachment was read."
+        session["whatsapp_last"] = cid
+        return _out(answer, True)
+
     # "any new messages" - straight from the live socket, no page load
     if UNREAD.search(t) and not (SEND.search(t) or SEND_TO.search(t)):
-        rows = [c for c in bridge.chats() if c.get("unread")]
+        try:
+            rows = [c for c in bridge.chats() if c.get("unread")]
+        except bridge.BridgeError:
+            return None
         if not rows:
-            return {"reply": "No unread WhatsApp messages.", "sources": [], "verified": True}
-        lines = [f"{len(rows)} chat(s) with new messages:"]
+            return {"reply": "No unread messages have been observed since this bridge started. Older chats are not included.",
+                    "sources": [], "verified": True}
+        lines = [f"{len(rows)} chat(s) with new messages observed since this bridge started:"]
         for c in rows[:15]:
             last = c.get("last") or {}
             lines.append(f"- **{c.get('name') or c['id']}**: {(last.get('text') or '')[:70]}")
@@ -972,17 +1099,21 @@ def _bridge_path(text, session):
     # "what did X say" / "check the chat with X"
     if re.search(r"\b(?:what|read|check|show|see)\b.*\b(?:say|said|last|chat|message)", t, re.I) \
             and not (SEND.search(t) or SEND_TO.search(t)):
-        m = re.search(r"\b(?:from|with|in|chat with|message from)\s+([A-Za-z0-9_ ]{1,30})", t, re.I)
-        who = (m.group(1) if m else session.get("whatsapp_last") or "").strip(" ?.!")
+        who = (read_target(t) or session.get("whatsapp_last") or "").strip(" ?.!")
         if who:
-            cid = bridge.find_chat(who)
+            try:
+                cid = bridge.find_chat(who)
+            except bridge.BridgeError:
+                return None
             if cid:
-                rows = bridge.messages(cid, 12)
+                try:
+                    rows = bridge.messages(cid, 40)
+                except bridge.BridgeError:
+                    return None
                 if not rows:
-                    return {"reply": f"No messages visible in {who}'s chat right now.", "sources": [],
-                            "verified": True}
+                    return None  # use the Web/desktop read path for older history
                 name = next((c["name"] for c in bridge.chats() if c["id"] == cid), cid)
-                lines = [f"**{name}** (last {len(rows)} messages):"]
+                lines = [f"**{name}** ({len(rows)} messages observed since this bridge started):"]
                 for r in rows:
                     who_ = "You" if r.get("fromMe") else (name or "Them")
                     lines.append(f"- {who_}: {(r.get('text') or '').strip()[:160]}")
@@ -993,11 +1124,13 @@ def _bridge_path(text, session):
 
 
 def run(text, session):
+    if not match(text) and not (session.get("pending") or {}).get("skill") == "whatsapp":
+        return None
     with browser.LOCK:
-        out = _bridge_path(text, session)   # QR-paired Baileys transport, when it is running
+        out = op_message_edit(text, session)
         if out is not None:
             return out
-        out = op_message_edit(text, session)
+        out = _bridge_path(text, session)
         if out is not None:
             return out
         return _run(text, session)
@@ -1065,7 +1198,9 @@ def resolve_contact(name, session):
 def open_preferred(session, kind=None):
     """Open WhatsApp ONCE, the way the owner prefers (Settings: Learning > About you): Web in Chrome Profile 9 by default, or the desktop
     app - never both (the owner's complaint: 'it was opening WhatsApp Web and the Desktop app both, which was a mess')."""
-    from ishti import prefs
+    from ishti import prefs, wa_bridge
+    if wa_bridge.connected() and not kind:
+        return {"reply": "WhatsApp is already linked through the local bridge. New messages arrive there directly; older chat history may still need WhatsApp Web.", "sources": []}
     mode = "desktop" if (kind or "").lower() in ("desktop", "app", "application") else "web" if kind else prefs.whatsapp_mode()
     if mode == "desktop":
         from desktop.computer_use import get_computer_use_agent
@@ -1086,6 +1221,8 @@ def _desktop_gate(session, contact, messages, path, voice=None):
     """The WhatsApp DESKTOP app is driven blind (keyboard automation), so ISHTI cannot prove afterwards
     that the right chat received it. That is exactly the case that needs the owner's yes FIRST, with the
     recipient spelled out - a voice note once reached "Ishtiaq Ahmed" when "Ahmed" was asked for."""
+    return _out("I did not send through WhatsApp Desktop because its selected chat cannot be verified. "
+                "Link the local bridge or open WhatsApp Web and try the exact-recipient approval there.", False)
     if voice:
         what = f'voice note: "{voice}"'
     elif path:
@@ -1161,6 +1298,11 @@ def _run(text, session):
     if p and p.get("skill") == "browser":  # yes/no to a send the browser engine asked about
         return browser.run(text, session)
     if p and p.get("skill") == "whatsapp":
+        from ishti import wa_bridge as bridge
+        if bridge.connected() and p.get("ask") != "relative_read":
+            prepared = send_flow(text, session, p)
+            if prepared is not None:
+                return prepared
         try:
             snap, ok = open_whatsapp(session, wait_s=3)
         except Exception:
@@ -1180,6 +1322,12 @@ def _run(text, session):
         return open_preferred(session, m_open.group("kind"))
 
     is_send = bool(SEND.search(text) or SEND_TO.search(text) or re.search(r"\b(?:send|message|text|write)\b", text, re.I))
+    if is_send:
+        from ishti import wa_bridge as bridge
+        if bridge.connected():
+            prepared = send_flow(text, session)
+            if prepared is not None:
+                return prepared
 
     # Fast check if WhatsApp Web is open & logged in
     snap, ok = None, False

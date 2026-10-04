@@ -30,6 +30,8 @@ def normalize_history(history) -> list[dict]:
     for message in history or []:
         if not isinstance(message, dict):
             continue
+        if (message.get("metadata") or {}).get("feedback", {}).get("rating") == "negative":
+            continue
         role = message.get("role")
         role = "assistant" if role == "ishti" else role
         content = message.get("content")

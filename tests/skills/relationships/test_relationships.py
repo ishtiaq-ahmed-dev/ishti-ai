@@ -99,3 +99,17 @@ def test_real_dispatcher_scratch_sandbox(monkeypatch, tmp_path):
     # handle() returns final_answer (dispatcher shape); run() returns reply (skill shape)
     text_out = str(out.get("final_answer") or out.get("reply") or "")
     assert text_out.strip(), f"dispatcher produced no answer: {str(out)[:200]}"
+
+
+def test_compound_relationship_actions():
+    """Verify compound relationship statements with deletions, reclassifications, and renames."""
+    prompt = "delete the bilal he is not my brother and ahmed is my classdwllow and irfan ahmed full name is irfan malik"
+    assert skill_mod.match(prompt)
+    sess = {}
+    r = skill_mod.run(prompt, sess)
+    assert r and "reply" in r
+    reply = r["reply"]
+    assert "Bilal" in reply
+    assert "Ahmed" in reply
+    assert "Irfan Malik" in reply
+

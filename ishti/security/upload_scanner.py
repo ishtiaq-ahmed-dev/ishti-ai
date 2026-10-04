@@ -159,7 +159,7 @@ def scan_with_windows_defender(file_path: str, timeout_sec: int = 15) -> Tuple[b
     """Scans file with Windows Defender MpCmdRun.exe if present."""
     defender_bin = get_defender_binary()
     if not defender_bin:
-        return True, "Windows Defender not installed or path unavailable (skipped)"
+        return False, "Windows Defender is unavailable; upload scan could not be verified"
 
     cmd = [
         defender_bin,
@@ -183,12 +183,11 @@ def scan_with_windows_defender(file_path: str, timeout_sec: int = 15) -> Tuple[b
         elif res.returncode == 2:
             return False, f"Windows Defender detected potential malware threat (code {res.returncode}): {res.stdout.strip()}"
         else:
-            # Code 1 or other usually means file skipped or engine warning
-            return True, f"Defender completed with code {res.returncode}"
+            return False, f"Windows Defender did not confirm a clean scan (code {res.returncode})"
     except subprocess.TimeoutExpired:
         return False, f"Windows Defender scan timed out after {timeout_sec}s"
     except Exception as exc:
-        return True, f"Defender invocation exception (fallback to heuristic): {exc}"
+        return False, f"Windows Defender invocation failed: {type(exc).__name__}"
 
 
 def scan_upload(file_path: str) -> Dict[str, Any]:

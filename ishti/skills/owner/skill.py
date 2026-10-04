@@ -42,8 +42,9 @@ ABOUT_ME = re.compile(rf"\bmy\s+(?:{ATTRS}|name|city|country)\b", I)
 PERSON = re.compile(
     r"\bmy\s+(?:elder\s+|older\s+|younger\s+|big\s+|little\s+|eldest\s+|youngest\s+|only\s+|new\s+|good\s+|best\s+)?"
     r"(?:brother|sister|father|mother|son|daughter|cousin|uncle|aunt|nephew|niece|grandfather|grandmother|"
-    r"friend|colleague|classmate|client|manager|boss|partner|teammate|roommate|co-?founder|supervisor)\b|"
-    r"\b(?:brother|sister|father|mother|cousin|uncle|aunt|friend|colleague|classmate|client|manager|boss)"
+    r"friend|colleague|classmate|client|manager|boss|partner|teammate|roommate|co-?founder|supervisor|"
+    r"bro|bros|bhai|bhaiya|brotehr|brotehrs|sis|behan|baji)\b|"
+    r"\b(?:brother|sister|father|mother|cousin|uncle|aunt|friend|colleague|classmate|client|manager|boss|bro|bhai)"
     r"(?:'s)?\s+(?:name\s+)?is\b", I)
 VERBS = ("study", "work", "live", "born", "teach", "graduated")
 SELF = re.compile(r"\bwhy\s+(?:are|is|do|did|does|can'?t|cant|won'?t|don'?t|dont|odnt|didn'?t|didnot)\s+(?:you|your|ishti)\b|"
@@ -63,6 +64,8 @@ def asks_about_me(t):
     """A question about the owner themselves: "where do I study?", "where i stid ?" (typo), "what's my major"."""
     if re.search(r"\bwhat\s+(?:do|does)\s+(?:i|my\s+\w+)\s+(?:like|love|prefer|hate|dislike)\b", t, re.I):
         return False  # likes live in the relationship graph (the relationships skill answers them)
+    if re.search(r"\b(?:brother|sister|father|mother|cousin|family|relative|sibling|bro|bhai)s?\b", t, re.I):
+        return False  # questions about family/relatives belong to relationships skill
     words = re.findall(r"[a-z']+", t.lower())
     if not words or not (t.rstrip().endswith("?") or words[0] in ("where", "what", "which", "when", "whats", "what's")):
         return False

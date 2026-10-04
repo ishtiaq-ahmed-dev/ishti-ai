@@ -11,9 +11,12 @@ import csv
 import json
 import time
 import re
+import threading
+import uuid
 from typing import Dict, Any, List, Optional, Tuple
 
 CRM_STORE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "crm_clients.json")
+_STORE_LOCK = threading.RLock()
 
 # Default boundary: Personal contacts and business CRM are kept isolated
 SEPARATE_PERSONAL_AND_BUSINESS = True
@@ -40,16 +43,22 @@ def _load_crm_store() -> Dict[str, Any]:
     try:
         with open(CRM_STORE_PATH, "r", encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
-        return {}
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("CRM store could not be read; existing records were preserved") from exc
 
 
 def _save_crm_store(data: Dict[str, Any]) -> None:
     os.makedirs(os.path.dirname(CRM_STORE_PATH), exist_ok=True)
-    temp_path = CRM_STORE_PATH + ".tmp"
-    with open(temp_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-    os.replace(temp_path, CRM_STORE_PATH)
+    temp_path = CRM_STORE_PATH + "." + uuid.uuid4().hex + ".tmp"
+    try:
+        with open(temp_path, "x", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, CRM_STORE_PATH)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 def create_client(
@@ -68,15 +77,14 @@ def create_client(
 
     Rejects automatic creation unless allow_auto is explicitly True or explicit command is given.
     """
-    if not allow_auto and AUTO_INGEST_FROM_CHATS is False and channel_source in ("whatsapp", "telegram"):
-        # Auto-ingestion forbidden without explicit owner action
-        pass
+    if not allow_auto and not AUTO_INGEST_FROM_CHATS and channel_source.strip().lower() in ("whatsapp", "telegram"):
+        raise PermissionError("Inbound chat contacts cannot be added to business CRM without an explicit owner action")
 
     clean_name = str(name).strip()
     if not clean_name:
         raise ValueError("Client name is required")
 
-    client_id = clean_name.lower().replace(" ", "_")
+    client_id = "crm_" + uuid.uuid4().hex
     now = time.time()
 
     record = {
@@ -95,9 +103,10 @@ def create_client(
         "updated_at": now,
     }
 
-    store = _load_crm_store()
-    store[client_id] = record
-    _save_crm_store(store)
+    with _STORE_LOCK:
+        store = _load_crm_store()
+        store[client_id] = record
+        _save_crm_store(store)
     return record
 
 
@@ -107,10 +116,10 @@ def get_client(client_id_or_name: str) -> Optional[Dict[str, Any]]:
     cid = client_id_or_name.lower().replace(" ", "_")
     if cid in store:
         return store[cid]
-    for rec in store.values():
-        if rec.get("contact_name", "").lower() == client_id_or_name.lower().strip():
-            return rec
-    return None
+    asked_name = client_id_or_name.lower().strip().replace("_", " ")
+    matches = [rec for rec in store.values()
+               if rec.get("contact_name", "").lower() == asked_name]
+    return matches[0] if len(matches) == 1 else None
 
 
 def list_clients(status: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -125,13 +134,18 @@ def list_clients(status: Optional[str] = None) -> List[Dict[str, Any]]:
 
 def delete_client(client_id: str) -> bool:
     """Removes a CRM client record."""
-    store = _load_crm_store()
-    cid = client_id.lower().replace(" ", "_")
-    if cid in store:
-        store.pop(cid)
-        _save_crm_store(store)
-        return True
-    return False
+    with _STORE_LOCK:
+        store = _load_crm_store()
+        cid = client_id.lower().replace(" ", "_")
+        if cid not in store:
+            matches = [key for key, rec in store.items()
+                       if rec.get("contact_name", "").lower().replace(" ", "_") == cid]
+            cid = matches[0] if len(matches) == 1 else ""
+        if cid in store:
+            store.pop(cid)
+            _save_crm_store(store)
+            return True
+        return False
 
 
 def can_ingest_from_message(text: str, sender_name: str) -> Tuple[bool, str]:
@@ -146,10 +160,11 @@ def can_ingest_from_message(text: str, sender_name: str) -> Tuple[bool, str]:
 
 def purge_all_crm_data() -> int:
     """Removes all CRM client records permanently."""
-    store = _load_crm_store()
-    count = len(store)
-    _save_crm_store({})
-    return count
+    with _STORE_LOCK:
+        store = _load_crm_store()
+        count = len(store)
+        _save_crm_store({})
+        return count
 
 
 def export_crm(fmt: str = "json") -> str:
@@ -175,4 +190,3 @@ def export_crm(fmt: str = "json") -> str:
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(clients, f, indent=2)
     return out_path
-

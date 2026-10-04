@@ -125,6 +125,8 @@ function dueLabel(ts: number): string {
 type ClientRow = {
   id: string;
   name: string;
+  source?: string;
+  read_only?: boolean;
   company?: string;
   channel_source?: string;
   phone?: string;
@@ -200,7 +202,7 @@ function CRMAndLeadsPanel() {
   const handleDeleteClient = async (id: string, name: string) => {
     if (!window.confirm(`Delete client record for "${name}"?`)) return;
     try {
-      await postJSON("/api/crm/delete", { client_id: id });
+      await postJSON("/api/crm/delete", { client_id: id, confirm_name: name });
       setClients((prev) => prev.filter((c) => c.id !== id));
       setMsg(`Client "${name}" removed.`);
     } catch (e) {
@@ -335,14 +337,14 @@ function CRMAndLeadsPanel() {
                       {c.financial_terms ? `[${c.financial_terms}] ` : ""}{c.notes || "—"}
                     </td>
                     <td className="py-2 px-3 text-right">
-                      <button
+                      {!c.read_only ? <button
                         type="button"
                         onClick={() => handleDeleteClient(c.id, c.name)}
                         className="rounded-md p-1 text-muted-foreground hover:bg-danger/10 hover:text-danger cursor-pointer"
                         title="Delete client"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      </button> : <span className="text-[10px] text-muted-foreground" title="Managed through chat client commands">Chat profile</span>}
                     </td>
                   </tr>
                 ))}
@@ -1436,12 +1438,15 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
   const [micLoading, setMicLoading] = useState(false);
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [qrLoading, setQrLoading] = useState(false);
+  const [qrError, setQrError] = useState("");
   const [qrData, setQrData] = useState<{
     connected: boolean;
     ascii_qr: string;
     raw_qr: string | null;
     me: string;
     running: boolean;
+    qr_image?: string | null;
+    lastError?: string | null;
   } | null>(null);
   const [clipboardPreview, setClipboardPreview] = useState<string | null>(null);
   const [screenNotice, setScreenNotice] = useState<string | null>(null);
@@ -1462,27 +1467,18 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
   // WhatsApp QR Code Modal Handler
   const openQrModal = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    setQrData(null);
+    setQrError("");
     setQrModalOpen(true);
-    setQrLoading(true);
-    try {
-      const res = await getJSON<{
-        connected: boolean;
-        ascii_qr: string;
-        raw_qr: string | null;
-        me: string;
-        running: boolean;
-      }>("/api/inputs/wa-qr");
-      setQrData(res);
-    } catch {
-      // ignore
-    } finally {
-      setQrLoading(false);
-    }
   };
 
   useEffect(() => {
     if (!qrModalOpen) return;
-    const interval = setInterval(async () => {
+    let active = true;
+    let busy = false;
+    const poll = async () => {
+      if (busy) return;
+      busy = true;
       try {
         const res = await getJSON<{
           connected: boolean;
@@ -1491,18 +1487,27 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
           me: string;
           running: boolean;
         }>("/api/inputs/wa-qr");
-        setQrData(res);
-        if (res.connected) {
-          setTimeout(() => {
-            setQrModalOpen(false);
-            setTick((n) => n + 1);
-          }, 1800);
+        if (active) {
+          setQrData(res);
+          setQrError("");
+          if (res.connected) setTick((n) => n + 1);
         }
-      } catch {
-        // ignore
+      } catch (error) {
+        if (active) setQrError(error instanceof Error ? error.message : "Could not read WhatsApp connection state");
+      } finally {
+        busy = false;
+        if (active) setQrLoading(false);
       }
-    }, 3000);
-    return () => clearInterval(interval);
+    };
+    setQrLoading(true);
+    void postJSON("/api/inputs/wa-start", {}).then(poll).catch((error: unknown) => {
+      if (active) {
+        setQrError(error instanceof Error ? error.message : "Could not start the WhatsApp bridge");
+        setQrLoading(false);
+      }
+    });
+    const interval = setInterval(poll, 3000);
+    return () => { active = false; clearInterval(interval); };
   }, [qrModalOpen]);
 
   // Live Mic Toggle
@@ -1794,10 +1799,11 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-foreground">Link WhatsApp Web</h3>
-                  <p className="text-xs text-muted-foreground">Pair once with Baileys socket bridge</p>
+                  <p className="text-xs text-muted-foreground">Scan with WhatsApp Linked devices on your phone</p>
                 </div>
               </div>
 
+              {qrError && <p role="alert" className="mb-3 text-xs text-destructive">{qrError}</p>}
               {qrLoading ? (
                 <div className="py-12 text-center text-sm text-muted-foreground">Loading QR authentication state…</div>
               ) : qrData?.connected ? (
@@ -1811,16 +1817,14 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="rounded-2xl border border-border bg-black/90 p-4 text-center font-mono text-[9.5px] leading-none text-emerald-400 overflow-x-auto shadow-inner">
-                    {qrData?.ascii_qr ? (
-                      <pre className="whitespace-pre tracking-tighter inline-block text-left select-all">
-                        {qrData.ascii_qr}
-                      </pre>
+                  <div className="rounded-2xl border border-border bg-white p-4 text-center shadow-inner">
+                    {qrData?.qr_image ? (
+                      <img src={qrData.qr_image} alt="WhatsApp linking QR code" className="mx-auto w-full max-w-[280px]" />
                     ) : (
                       <div className="py-6 text-xs text-muted-foreground">
                         {qrData?.running
                           ? "Waiting for QR generation from WhatsApp bridge…"
-                          : "Bridge offline. Run: node tools/wa_bridge/index.js"}
+                          : "Bridge offline. Close and reopen Link to retry."}
                       </div>
                     )}
                   </div>
@@ -1848,6 +1852,8 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
                             running: boolean;
                           }>("/api/inputs/wa-qr");
                           setQrData(res);
+                        } catch (error) {
+                          setQrError(error instanceof Error ? error.message : "Could not refresh WhatsApp connection state");
                         } finally {
                           setQrLoading(false);
                         }

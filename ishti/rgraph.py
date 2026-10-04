@@ -153,6 +153,8 @@ def _notify_change(src_name, rel, dst_name, action="upsert"):
     from ishti import events
     events.publish("memory_updated", {"type": "relationship", "entity": dst_name,
                                       "src": src_name, "rel": rel, "action": action})
+    events.publish("memory_updated", {"type": "family", "entity": dst_name,
+                                      "relationship": rel, "action": action})
 
 
 def relate(src_name, rel, dst_name, detail="", private=None, kind_src="person", kind_dst="person",
@@ -166,6 +168,10 @@ def relate(src_name, rel, dst_name, detail="", private=None, kind_src="person", 
     if not sid or not did or sid == did:
         return None, False
     rel = rel.strip().lower().replace("-", "_").replace(" ", "_")
+    if rel in ("bro", "bhai", "bhaiya"):
+        rel = "brother"
+    elif rel in ("sis", "behan", "baji"):
+        rel = "sister"
     conf = max(0.0, min(1.0, float(confidence))) if confidence is not None else \
         (1.0 if source_type == "explicit_user" else 0.8)
     stype = (source_type or ("explicit_user" if confidence == 1.0 else "observed")).lower()
@@ -270,10 +276,14 @@ def unrelate(src_name, rel, dst_name):
         return False
     c = conn()
     with LOCK, c:
-        n = c.execute("DELETE FROM edges WHERE src=? AND dst=? AND rel=?",
-                      (sid["id"], did["id"], rel.strip().lower())).rowcount
+        if rel:
+            n = c.execute("DELETE FROM edges WHERE ((src=? AND dst=?) OR (src=? AND dst=?)) AND rel=?",
+                          (sid["id"], did["id"], did["id"], sid["id"], rel.strip().lower())).rowcount
+        else:
+            n = c.execute("DELETE FROM edges WHERE (src=? AND dst=?) OR (src=? AND dst=?)",
+                          (sid["id"], did["id"], did["id"], sid["id"])).rowcount
     if n:
-        _notify_change(src_name, rel, dst_name, "delete")
+        _notify_change(src_name, rel or "relationship", dst_name, "delete")
     return bool(n)
 
 
@@ -493,19 +503,20 @@ def suggest_gift(person, occasion=""):
 def find_matches(name):
     """Possible duplicate people: fuzzy name equality or a shared unique kin edge."""
     import difflib
-    target = get_node(name)
-    if not target:
+    name_clean = re.sub(r"\s+", " ", (name or "").strip()).lower()
+    if not name_clean:
         return []
     c = conn()
     with LOCK:
-        people = [dict(r) for r in c.execute("SELECT id, name FROM nodes WHERE kind='person' AND id != ?",
-                                             (target["id"],)).fetchall()]
+        people = [dict(r) for r in c.execute("SELECT id, name FROM nodes WHERE kind='person'").fetchall()]
     out = []
     for p in people:
-        ratio = difflib.SequenceMatcher(None, target["name"], p["name"]).ratio()
-        # "ahmed" vs "ahmed ali": one contains the other as a whole word
-        contained = bool(re.search(rf"\b{re.escape(target['name'])}\b", p["name"]) or
-                         re.search(rf"\b{re.escape(p['name'])}\b", target["name"]))
+        if p["name"].lower() == name_clean:
+            continue
+        ratio = difflib.SequenceMatcher(None, name_clean, p["name"]).ratio()
+        # "irfan" vs "irfan ahmed", "akbr" vs "akbar": token containment or fuzzy ratio
+        contained = bool(re.search(rf"\b{re.escape(name_clean)}\b", p["name"]) or
+                         re.search(rf"\b{re.escape(p['name'])}\b", name_clean))
         if ratio >= 0.72 or contained:
             out.append({"id": p["id"], "name": p["name"], "score": round(ratio, 2)})
     return sorted(out, key=lambda x: -x["score"])[:5]
@@ -656,15 +667,18 @@ if __name__ == "__main__":
 
 
 def rename_node(old_name, new_name):
-    """Correct a person's name (a spelling the owner just fixed). Merges into an existing node of the new name. -> True when done."""
+    """Correct a person's name (a spelling or full name the owner just fixed). Merges into an existing node of the new name. -> True when done."""
     old = get_node(old_name)
     key = re.sub(r"\s+", " ", (new_name or "").strip()).lower()
     if not old or not key:
         return False
     existing = get_node(key)
     if existing and existing["id"] != old["id"]:
-        return merge_nodes(key, old_name)
+        res = merge_nodes(key, old_name)
+        _notify_change("me", "rename", new_name, action="update")
+        return res
     c = conn()
     with LOCK, c:
         c.execute("UPDATE nodes SET name=?, last_confirmed=? WHERE id=?", (key, _now(), old["id"]))
+    _notify_change("me", "rename", new_name, action="update")
     return True

@@ -81,10 +81,10 @@ def channels() -> list:
         from ishti import wa_bridge
         st = wa_bridge.status() or {}
         me = st.get("me") or ""
-        qr_avail = bool(st.get("qr")) or os.path.exists(os.path.join(wa_bridge.DATA, "pair.txt"))
+        qr_avail = bool(st.get("qrAvailable"))
         detail = ("Linked - messages arrive live." if st.get("connected")
                   else "QR ready - scan it in WhatsApp > Linked devices." if qr_avail
-                  else "Not running - start it with: node tools/wa_bridge/index.js")
+                  else "Open Link to start the local bridge and scan its QR.")
     except Exception:  # noqa: BLE001
         pass
     out.append({"id": "whatsapp", "name": "WhatsApp (QR paired)", "icon": "chat", "kind": "status",

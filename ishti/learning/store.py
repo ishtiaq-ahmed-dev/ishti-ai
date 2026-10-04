@@ -38,7 +38,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS interactions(
   id TEXT PRIMARY KEY, ts REAL, session_id TEXT, channel TEXT, request TEXT, skill TEXT,
   decision TEXT, memories TEXT, considered TEXT, result TEXT, status TEXT, reward REAL,
-  task_id TEXT, step_no INTEGER, domain TEXT, source TEXT);
+  task_id TEXT, step_no INTEGER, domain TEXT, source TEXT, message_id TEXT);
 CREATE INDEX IF NOT EXISTS ix_interactions_ts ON interactions(ts);
 CREATE TABLE IF NOT EXISTS tasks(
   task_id TEXT PRIMARY KEY, ts REAL, goal TEXT, steps TEXT, final_status TEXT,
@@ -165,6 +165,10 @@ def conn():
             cols = {r[1] for r in _conn.execute("PRAGMA table_info(lessons)")}
             if "decayed" not in cols:  # older databases: the decay watermark is not `updated`
                 _conn.execute("ALTER TABLE lessons ADD COLUMN decayed REAL")
+            interaction_cols = {r[1] for r in _conn.execute("PRAGMA table_info(interactions)")}
+            if "message_id" not in interaction_cols:
+                _conn.execute("ALTER TABLE interactions ADD COLUMN message_id TEXT")
+            _conn.execute("CREATE INDEX IF NOT EXISTS ix_interactions_message ON interactions(message_id)")
             try:  # Prompt-2: the learning store's schema is version-tracked (future deltas)
                 from ishti.core.migrations import ensure_current
                 ensure_current(_conn, "learning")

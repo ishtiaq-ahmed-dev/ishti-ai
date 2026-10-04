@@ -11,6 +11,7 @@ import json
 import uuid
 import re
 import shutil
+import threading
 from typing import Dict, Any, List, Optional
 
 try:  # best-effort failure log (never breaks the module if logging is unavailable)
@@ -28,6 +29,7 @@ os.makedirs(SESSIONS_DIR, exist_ok=True)
 class ConversationManager:
     def __init__(self, sessions_dir: str = SESSIONS_DIR):
         self.sessions_dir = sessions_dir
+        self._write_lock = threading.RLock()
         os.makedirs(self.sessions_dir, exist_ok=True)
         self.active_session_id: Optional[str] = None
         try:
@@ -85,28 +87,78 @@ class ConversationManager:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Appends a message to the specified session and auto-titles if first user message."""
-        session = self.load_session(session_id)
-        if not session:
-            session = self.get_or_create_session(session_id)
+        with self._write_lock:
+            session = self.load_session(session_id)
+            if not session:
+                session = self.get_or_create_session(session_id)
 
-        msg = {
-            "id": f"msg_{time.strftime('%H%M%S')}_{uuid.uuid4().hex[:4]}",
+            msg = {
+            "id": f"msg_{time.strftime('%H%M%S')}_{uuid.uuid4().hex[:12]}",
             "role": role,  # 'user' or 'ishti'
             "content": content,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "sources": sources or [],
             "metadata": metadata or {},
-        }
-        session["messages"].append(msg)
-        session["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+            }
+            session["messages"].append(msg)
+            session["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 
         # Auto-update session title if it's the first user message
-        if role == "user" and session.get("title") in ["New Conversation", "New Session", "Untitled"]:
-            clean_title = re.sub(r"[^a-zA-Z0-9\s]+", "", content).strip()
-            session["title"] = (clean_title[:38] + "...") if len(clean_title) > 38 else (clean_title or "Conversation")
+            if role == "user" and session.get("title") in ["New Conversation", "New Session", "Untitled"]:
+                clean_title = re.sub(r"[^a-zA-Z0-9\s]+", "", content).strip()
+                session["title"] = (clean_title[:38] + "...") if len(clean_title) > 38 else (clean_title or "Conversation")
 
-        self._save_session(session_id, session)
-        return msg
+            self._save_session(session_id, session)
+            return msg
+
+    def feedback_target(self, session_id: str, message_id: str) -> Optional[Dict[str, Any]]:
+        """Return only an assistant message and its preceding owner request in this session."""
+        if not re.fullmatch(r"sess_[A-Za-z0-9_]+", str(session_id)):
+            return None
+        with self._write_lock:
+            messages = self.get_messages(session_id)
+            for index, item in enumerate(messages):
+                if item.get("id") == message_id and item.get("role") == "ishti":
+                    request = (item.get("metadata") or {}).get("request") or next((
+                        row.get("content", "") for row in reversed(messages[:index])
+                        if row.get("role") == "user"), "")
+                    if request:
+                        return {"message": item, "request": request}
+        return None
+
+    def save_feedback(self, session_id: str, message_id: str, rating: str, *, reason: str = "",
+                      diagnosis: str = "", revision: str = "") -> Dict[str, Any]:
+        """One atomic session update keeps the rating and optional answer revision together."""
+        if rating not in {"positive", "negative"} or not re.fullmatch(r"sess_[A-Za-z0-9_]+", str(session_id)):
+            raise ValueError("Invalid feedback target")
+        with self._write_lock:
+            session = self.load_session(session_id)
+            if not session:
+                raise ValueError("Chat not found")
+            messages = session.get("messages", [])
+            index = next((i for i, row in enumerate(messages) if row.get("id") == message_id and row.get("role") == "ishti"), None)
+            if index is None or not any(row.get("role") == "user" for row in messages[:index]):
+                raise ValueError("Answer not found in this chat")
+            target = messages[index]
+            original_request = (target.get("metadata") or {}).get("request") or next((
+                row.get("content", "") for row in reversed(messages[:index]) if row.get("role") == "user"), "")
+            current = (target.get("metadata") or {}).get("feedback") or {}
+            if current.get("rating") == rating and (rating == "positive" or current.get("revision_id")):
+                existing = next((row for row in messages if row.get("id") == current.get("revision_id")), None)
+                return {"target": target, "revision": existing, "duplicate": True}
+            successor = None
+            if rating == "negative" and revision.strip():
+                successor = {"id": f"msg_{time.strftime('%H%M%S')}_{uuid.uuid4().hex[:12]}",
+                    "role": "ishti", "content": revision.strip()[:12000],
+                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"), "sources": [],
+                    "metadata": {"revision_of": message_id, "diagnosis": diagnosis[:500], "request": original_request}}
+                messages.append(successor)
+            meta = target.setdefault("metadata", {})
+            meta["feedback"] = {"rating": rating, "reason": reason[:1000], "diagnosis": diagnosis[:500],
+                                "revision_id": successor["id"] if successor else None}
+            session["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+            self._save_session(session_id, session)
+            return {"target": target, "revision": successor, "duplicate": False}
 
     def get_history_text(self, session_id: str, max_turns: int = 6) -> str:
         """
@@ -143,14 +195,20 @@ class ConversationManager:
         if not os.path.exists(self.sessions_dir):
             return []
 
+        seen_ids = set()
         for fname in os.listdir(self.sessions_dir):
-            if fname.endswith(".json") and fname.startswith("sess_"):
+            if fname.endswith(".json") and fname.startswith("sess_") and not fname.startswith("sess_test"):
+                file_sid = fname[:-5]
                 fpath = os.path.join(self.sessions_dir, fname)
                 try:
                     with open(fpath, "r", encoding="utf-8") as f:
                         data = json.load(f)
+                        sid = file_sid or data.get("session_id")
+                        if sid in seen_ids:
+                            continue
+                        seen_ids.add(sid)
                         sessions.append({
-                            "session_id": data.get("session_id", fname.replace(".json", "")),
+                            "session_id": sid,
                             "title": data.get("title", "Untitled Session"),
                             "created_at": data.get("created_at", ""),
                             "updated_at": data.get("updated_at", ""),
@@ -271,11 +329,18 @@ class ConversationManager:
 
     def _save_session(self, session_id: str, data: Dict[str, Any]) -> None:
         fpath = os.path.join(self.sessions_dir, f"{session_id}.json")
+        tmp = fpath + "." + uuid.uuid4().hex + ".tmp"
         try:
-            with open(fpath, "w", encoding="utf-8") as f:
+            with open(tmp, "x", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            print(f"[ConversationManager] Error saving session {session_id}: {e}")
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, fpath)
+        finally:
+            try:
+                os.remove(tmp)
+            except FileNotFoundError:
+                pass
 
 
 _conversation_manager_instance: Optional[ConversationManager] = None

@@ -21,7 +21,7 @@ MINE = re.compile(r"\b(?:my|this)\s+(?:pc|computer|laptop|system|machine)\b", re
 
 
 # "search for the physics teacher": a web search unless it's about the owner's own files/PC ("search on pc for x.md")
-SEARCH = re.compile(r"^\s*(?:please\s+)?(?:search|look\s+up|google|find\s+out)\b", re.I)
+SEARCH = re.compile(r"^\s*(?:please\s+)?(?:(?:now|then|next|and)\s+)?(?:search|look\s+up|google|find\s+out)\b", re.I)
 LOCAL = re.compile(r"\b(?:on\s+(?:my\s+)?(?:pc|computer|laptop|drive)|files?|folders?|pdfs?|documents?|downloads|desktop|"
                    r"\.[a-z0-9]{2,4}\b)", re.I)
 # Sending a person a message is not a search, whatever the intent classifier says. "Message all my IMS

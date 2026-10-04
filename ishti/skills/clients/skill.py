@@ -222,6 +222,19 @@ def known_clients():
         return [r[0] for r in f.db.execute("SELECT name FROM clients ORDER BY name").fetchall()]
 
 
+def list_profiles():
+    """Read-only business profiles for the dashboard; no events or private facts."""
+    f = _db()
+    with f.lock:
+        rows = f.db.execute(
+            "SELECT id, name, channel, contact, status, created FROM clients ORDER BY name"
+        ).fetchall()
+    return [{"id": f"sqlite:{row[0]}", "name": str(row[1]).title(),
+             "channel_source": row[2] or "", "phone": row[3] or "",
+             "status": row[4] or "active", "created_at": row[5],
+             "source": "chat_crm", "read_only": True} for row in rows]
+
+
 def op_draft(text, session):
     m = re.search(r"\b(?:draft|write|prepare)\s+(?:a\s+)?reply\s+(?:to|for)\s+[\"']?(?P<name>[\w .'-]{2,40})", text, I)
     if not m:

@@ -143,6 +143,32 @@ def apply(fb: Dict[str, Any], interaction: Optional[Dict[str, Any]] = None,
             
     return {"effects": effects, "lesson": lesson_out, "ask": None}
 
+
+def apply_answer_rating(session_id: str, message_id: str, rating: str) -> bool:
+    """Attribute one owner's exact answer rating to its original interaction.
+
+    A background turn observation may finish before or after the owner clicks a
+    button. Both paths call this method; the reward transition is idempotent.
+    """
+    if rating not in {"positive", "negative"} or not message_id:
+        return False
+    from ishti.learning import observe
+    target_reward = 1.0 if rating == "positive" else -1.0
+    with store.LOCK:
+        row = store.row("SELECT id, request, skill, reward FROM interactions WHERE session_id=? AND message_id=? "
+                        "ORDER BY ts DESC LIMIT 1", (session_id, message_id))
+        if not row:
+            return False
+        if float(row["reward"] or 0) == target_reward:
+            return True
+        iid = row["id"]
+        observe.end(iid, reward=target_reward)
+        if row["skill"] in lessons.CONTEXT_INJECTING_SKILLS:
+            applied = [item["lesson_id"] for item in lessons.guidance_for(row["request"], limit=6)]
+            if applied:
+                lessons.apply_turn_outcome(iid, target_reward, applied, reason="owner-rated exact answer")
+        return True
+
 if __name__ == "__main__":
     import tempfile
     tmp = tempfile.mkdtemp()

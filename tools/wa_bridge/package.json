@@ -7,14 +7,14 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "qr": "node index.js --qr-only"
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "~6.7.24",
+    "@whiskeysockets/baileys": "6.7.24",
     "express": "^4.19.2",
     "qrcode-terminal": "^0.12.0"
   },
-  "comment": "Pinned to the patched 6.7.22 line on purpose: 6.17.x is covered by GHSA-qvv5-jq5g-4cgg (zero-day, message spoofing) and 7.x is still a release candidate. Check npm for a newer patched 6.x before bumping.",
+  "comment": "Tested SDK pinned exactly. GHSA-qvv5-jq5g-4cgg affects legacy releases below 6.7.22; 6.7.24 includes that fix. Review the official security policy before upgrading.",
   "engines": {
     "node": ">=18"
   },

@@ -19,6 +19,13 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 
+def test_followup_search_verb_keeps_web_search_route():
+    from ishti.skills.web_search import skill
+    assert skill.match("now search Samsung S25")
+    assert skill.match("then look up Sony WH-1000XM5")
+    assert not skill.match("now search my PC for the invoice.pdf")
+
+
 def test_harness_decodes_child_output_as_utf8():
     """FIX-3: the harness must launch its pytest child with an explicit UTF-8 decode, so
     non-ASCII suite output can never crash the harness itself (both call sites)."""

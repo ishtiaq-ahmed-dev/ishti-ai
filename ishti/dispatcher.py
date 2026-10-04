@@ -185,19 +185,32 @@ def _learn(text):
             print(f"[dispatcher] learned about the owner: {found}")
     except Exception as exc:
         print(f"[dispatcher] owner learning skipped: {exc}")
+    try:
+        from ishti.skills.relationships.skill import extract_and_learn_kin
+        if kin_found := extract_and_learn_kin(text):
+            print(f"[dispatcher] learned kin relation: {kin_found}")
+    except Exception as exc:
+        print(f"[dispatcher] kin learning skipped: {exc}")
 
 
-def _learn_turn(text, reply, name, dec, sid, channel):
+def _learn_turn(text, reply, name, dec, sid, channel, message_id=None):
     """Background learning hook: turn observation, feedback harvesting, reward attribution."""
     try:
         from ishti.learning import observe, feedback, policy, reflect, lessons
         # 1. Check for feedback/corrections on this turn
         fb = feedback.detect(text, last_skill=name)
-        reward = feedback.reward_of("ok", fb=fb)
+        # A completed turn has unknown correctness until the owner confirms it.
+        reward = feedback.reward_of("unreviewed", fb=fb)
 
         # 2. Log interaction
         iid = observe.turn(text=text, reply=reply, skill=name or "", sid=sid,
-                           channel=channel, dec=dec, status="ok", reward=reward)
+                           channel=channel, dec=dec, status="ok", reward=reward,
+                           message_id=message_id or "")
+        if message_id:
+            rated = get_conversation_manager().feedback_target(sid, message_id)
+            rating = (((rated or {}).get("message") or {}).get("metadata") or {}).get("feedback", {}).get("rating")
+            if rating:
+                feedback.apply_answer_rating(sid, message_id, rating)
 
         # 3. If explicit feedback, apply it
         if fb:
@@ -292,8 +305,14 @@ def contextualize(text, s) -> str:
     Part D2: the Conversation State Manager resolves first (topic-anchored, deterministic, instant);
     the LLM rewriter is only asked when the state cannot resolve. Every resolved request is stored in
     the session (s["resolved_request"]) so validation and skills see WHAT we're acting on."""
-    if _rule_owned(text):  # a skill's own trigger already understands it exactly: never rewrite the owner's words
-        resolve_request(text, s)  # still updates the conversation state (topic, entities)
+    if _rule_owned(text):  # keep exact skill commands unless a research follow-up omits its topic
+        resolved = resolve_request(text, s)  # still updates the conversation state (topic, entities)
+        if resolved and resolved.changed and route(text, SKILLS).get("skill") in {
+            "web_search", "deep_research", "shopping"
+        }:
+            # "go deep research ... cheapest price" names the task but omits the
+            # product. The rule route is correct, yet the search needs its topic.
+            return resolved.request
         return text
     resolved = resolve_request(text, s)
     if resolved is None:
@@ -684,6 +703,10 @@ def _rule_owned(text):
         # A GENERAL skill matched by rule for a specific request: treat it as rule-owned too.
         # "Is Ollama still maintained?" -> web_search (QUICK_SEARCH), not an open-ended debate.
         if dec.get("source") in ("rule", "learned") and skill in GENERAL:
+            if skill == "web_search":
+                from ishti.skills.web_search.skill import SEARCH
+                if SEARCH.match(text):
+                    return True
             from orchestrator.intent_detector import IntentDetector
             mode = IntentDetector.classify(text)["mode"]
             # Specific, well-defined intents are rule-owned; open-ended ones go to arch2.
@@ -1342,6 +1365,7 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
     incog = _incognito.enabled(s)
     # Concurrent requests must append an intact pair, not overwrite one another's
     # runtime history or interleave their persisted user/assistant messages.
+    message_id = None
     with _SESSIONS_LOCK:
         s["last_request"], s["last_skill"] = text, name
         history = normalize_history(s.get("history", [])) + normalize_history([
@@ -1351,7 +1375,10 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
         if not incog and not out.get("persisted"):
             conv.add_message(sid, "user", text)
             if is_safe_for_history(kept):
-                conv.add_message(sid, "ishti", kept, sources=out.get("sources"), metadata={"events": events[-150:]})
+                    saved_answer = conv.add_message(sid, "ishti", kept, sources=out.get("sources"),
+                                                    metadata={"events": events[-150:], "skill": name,
+                                                              "request": text})
+                    message_id = saved_answer.get("id") if isinstance(saved_answer, dict) else None
     if not incog and not secret and name not in ("memory",) and is_safe_for_history(reply):  # exact facts already live in SQLite
         threading.Thread(target=_remember, args=(text, reply, name), daemon=True).start()
         threading.Thread(target=_ftlog, args=(text, reply, name, dec, channel), daemon=True).start()  # Part 3 collection
@@ -1359,7 +1386,7 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
             threading.Thread(target=_arch2_consolidate, args=(text, reply, name, channel), daemon=True).start()
     if not hidden and not incog:
         threading.Thread(target=_learn, args=(text,), daemon=True).start()  # the owner's lasting facts and preferences
-        threading.Thread(target=_learn_turn, args=(text, reply, name, dec, sid, channel), daemon=True).start()
+        threading.Thread(target=_learn_turn, args=(text, reply, name, dec, sid, channel, message_id), daemon=True).start()
         try:
             from ishti.monitor import inspect_turn
             threading.Thread(target=inspect_turn, args=(text, reply, name, dec, dict(s), channel), daemon=True).start()
@@ -1368,7 +1395,7 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
     from ishti import calltrace
     return {**{k: v for k, v in out.items() if k not in ("reply", "persisted")},
             "request": text, "final_answer": reply, "mode": out.get("mode") or (name or "none").upper(), "skill": name,
-            "sources": out.get("sources", []), "session_id": sid, "channel": channel, "route": dec,
+            "sources": out.get("sources", []), "session_id": sid, "message_id": message_id, "channel": channel, "route": dec,
             "latency_ms": round((time.perf_counter() - t0) * 1000), "calls": calltrace.end()}
 
 
