@@ -128,10 +128,36 @@ def _pane(session, contact):
 
 
 def _exact_node(snap, body):
-    nodes = [node for node in message_nodes(snap) if node["body"] == body and node["from_me"]]
+    nodes = [node for node in message_nodes(snap) if node["body"] == body]
     if len(nodes) != 1 or not nodes[0]["body_ref"]:
         raise ValueError("The original message is no longer a unique, identifiable message from you. Nothing was changed.")
     return nodes[0]
+
+
+def message_identity(node):
+    """Read only identity/status metadata from the exact observed message element.
+
+    Consecutive outgoing bubbles omit the accessibility sender. Plain message text
+    cannot supply these DOM attributes, so a quoted 'You:' is not ownership proof.
+    """
+    output = browser._call("browser_evaluate", {
+        "element": "the exact message identity and delivery status", "target": node["body_ref"],
+        "function": "element => { const row = element.closest('[data-id]'); "
+                    "if (!row) return null; "
+                    "const labels = Array.from(row.querySelectorAll('[aria-label]'))"
+                    ".map(e => (e.getAttribute('aria-label') || '').trim()); "
+                    "return {messageId: row.getAttribute('data-id'), "
+                    "fromMe: labels.some(label => /^(Read|Delivered|Sent|Sending|Pending)$/.test(label))}; }"})
+    try:
+        raw = output.split("### Result", 1)[-1].lstrip()
+        identity, _ = json.JSONDecoder().raw_decode(raw)
+        if (not isinstance(identity, dict) or not isinstance(identity.get("messageId"), str)
+                or not re.fullmatch(r"[A-Za-z0-9_-]{6,200}", identity["messageId"])
+                or not isinstance(identity.get("fromMe"), bool)):
+            raise ValueError
+        return identity
+    except (TypeError, ValueError):
+        raise ValueError("The message identity and ownership could not be verified. Nothing was changed.") from None
 
 
 def _open_options(node):
@@ -155,13 +181,22 @@ def prepare(operation, session):
     with browser.LOCK:
         try:
             snap = _pane(session, contact)
-            owned = [node for node in message_nodes(snap) if node["from_me"]]
-            if not owned:
+            candidates = [node for node in message_nodes(snap) if node["body_ref"]]
+            if session.get("live_self_test"):
+                candidates = [node for node in candidates if node["body"].startswith("ISHTI SELF TEST ")]
+                if not candidates:
+                    return _result("Live testing may only change the synthetic messages created for this test.")
+            node = identity = None
+            for candidate in reversed(candidates[-20:]):
+                evidence = message_identity(candidate)
+                if evidence["fromMe"]:
+                    node, identity = candidate, evidence
+                    break
+            if not node:
                 return _result("No identifiable message from you is visible in that chat. Nothing was changed.")
-            original = owned[-1]["body"]
+            original = node["body"]
             node = _exact_node(snap, original)
-            if session.get("live_self_test") and not original.startswith("ISHTI SELF TEST "):
-                return _result("Live testing may only change the synthetic messages created for this test.")
+            approved_id = identity["messageId"]
             if original == replacement:
                 return _result("That message already contains the requested text.", True)
             menu = _open_options(node)
@@ -179,6 +214,9 @@ def prepare(operation, session):
             try:
                 snap = _pane(session, contact)
                 node = _exact_node(snap, original)
+                identity = message_identity(node)
+                if not identity["fromMe"] or identity["messageId"] != approved_id:
+                    return _result("The message no longer matches the approved outgoing message. Nothing was changed.")
                 menu = _open_options(node)
                 edit = _enabled_ref(menu, "menuitem", "Edit")
                 if not edit:
@@ -200,8 +238,10 @@ def prepare(operation, session):
                 for _ in range(4):
                     after = browser._call("browser_snapshot", {})
                     nodes = message_nodes(after)
-                    matches = [n for n in nodes if n["from_me"] and n["body"] == replacement]
-                    if len(matches) == 1 and matches[0]["edited"] and not any(n["body"] == original for n in nodes):
+                    matches = [n for n in nodes if n["body"] == replacement and n["edited"] and n["body_ref"]]
+                    verified = any((identity := message_identity(n))["fromMe"]
+                                   and identity["messageId"] == approved_id for n in matches)
+                    if verified:
                         session["pending"] = None
                         last_send = session.get("last_whatsapp_send")
                         if isinstance(last_send, dict):

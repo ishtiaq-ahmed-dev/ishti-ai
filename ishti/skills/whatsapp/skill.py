@@ -1106,15 +1106,12 @@ def locate_message(snap, target):
 
 
 def op_message_edit(text, session):
-    """Handle high risk message changes only when ownership and postconditions can be verified."""
-    from ishti.skills.whatsapp import actions
-    operation = actions.parse_operation(text)
-    if operation:
-        return actions.prepare(operation, session)
+    """Message mutations are deferred by the owner while delivery/reading is verified."""
     if REACT.match(text.strip()) or MESSAGE_OP.match(text.strip()):
-        return {"reply": "I did not change anything. Specify the chat and exact change, for example: "
-                         "edit the last message in Ahmed chat saying hello. Deletion and reaction support "
-                         "still require verified controls on this WhatsApp Web version.", "sources": []}
+        if (session.get("pending") or {}).get("skill") == "whatsapp":
+            session["pending"] = None
+        return {"reply": "I did not change anything. Message editing, deletion and reactions "
+                         "are deferred in NEEDS.", "sources": [], "verified": False}
     return None
 
 

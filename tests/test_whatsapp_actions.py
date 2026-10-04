@@ -58,6 +58,8 @@ def test_edit_waits_for_confirmation_and_verifies_draft_and_result(monkeypatch, 
     state = {"menu": False, "editor": False, "typed": False, "saved": False}
     def call(name, args):
         calls.append((name, args))
+        if name == "browser_evaluate":
+            return '### Result\n{"messageId":"SYNTHETIC001","fromMe":true}'
         if name == "browser_click":
             if args.get("button") == "right":
                 state["menu"] = True
@@ -97,3 +99,27 @@ def test_live_test_cannot_edit_existing_owner_data(monkeypatch):
     monkeypatch.setattr(actions, "_open_options", lambda *a: pytest.fail("selected real owner data"))
     result = actions.prepare({"kind": "edit", "replacement": REPLACEMENT}, {"whatsapp_last": "Test Self", "live_self_test": True})
     assert not result["verified"] and "only change the synthetic" in result["reply"]
+
+
+@pytest.mark.parametrize("raw", ['null', '{}', '{"messageId":"SYNTHETIC001","fromMe":"true"}',
+                                    '{"messageId":"","fromMe":true}', 'not-json'])
+def test_identity_refuses_missing_or_fabricated_metadata(monkeypatch, raw):
+    monkeypatch.setattr(browser, "_call", lambda *a: '### Result\n' + raw)
+    with pytest.raises(ValueError, match="ownership"):
+        actions.message_identity({"body_ref": "body"})
+
+
+def test_consecutive_bubble_does_not_need_accessibility_sender(monkeypatch):
+    monkeypatch.setattr(browser, "_call", lambda *a: '### Result\n{"messageId":"SYNTHETIC002","fromMe":true}')
+    snap = page().replace('You: ' + ORIGINAL, ORIGINAL).replace('    - generic "You:"\n', '')
+    node = actions.message_nodes(snap)[0]
+    assert node["from_me"] is False
+    assert actions.message_identity(node)["fromMe"] is True
+
+
+@pytest.mark.parametrize("prompt", ["edit the last message saying hello", "delete the last message"])
+def test_public_message_changes_are_deferred_without_browser_calls(monkeypatch, prompt):
+    monkeypatch.setattr(browser, "_call", lambda *a: pytest.fail("deferred mutation opened browser"))
+    session = {"pending": {"skill": "whatsapp", "action": lambda: pytest.fail("old approval reused")}}
+    assert "deferred in NEEDS" in wa.op_message_edit(prompt, session)["reply"]
+    assert session["pending"] is None
