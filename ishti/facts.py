@@ -48,10 +48,8 @@ class Facts:
                    value=excluded.value, entity=excluded.entity, previous=?, updated_at=excluded.updated_at""",
                 (k, attr, entity.strip(), value, None, time.time(), prev))
         try:
-            from ishti.dispatcher import HOOKS
-            fn = HOOKS.get("emit")
-            if fn:
-                fn("memory_updated", {"type": "fact", "entity": entity, "attr": attr, "value": value})
+            from ishti import events
+            events.publish("memory_updated", {"type": "fact", "entity": entity, "attr": attr, "value": value})
         except Exception:
             pass
         return prev
@@ -90,10 +88,8 @@ class Facts:
             else:
                 rc = self.db.execute("DELETE FROM facts WHERE key=?", (k,)).rowcount
         try:
-            from ishti.dispatcher import HOOKS
-            fn = HOOKS.get("emit")
-            if fn:
-                fn("memory_updated", {"type": "forget", "entity": name, "attr": attr})
+            from ishti import events
+            events.publish("memory_updated", {"type": "forget", "entity": name, "attr": attr})
         except Exception:
             pass
         return rc

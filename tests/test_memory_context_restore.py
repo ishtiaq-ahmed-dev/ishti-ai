@@ -108,6 +108,61 @@ def test_compound_family_fact_parser_does_not_invent_a_relationship_from_ordinar
     assert skill._kin_declarations("My brother is sick and my sister is working") == []
 
 
+@pytest.mark.parametrize("text, expected", [
+    ("My brother is Bilal and my dentist is Dr. Tariq Mahmood", [("brother", "Bilal"), ("dentist", "Dr. Tariq Mahmood")]),
+    ("My dentist is Dr. Tariq Mahmood and brother is Irfan", [("dentist", "Dr. Tariq Mahmood"), ("brother", "Irfan")]),
+    ("My brother is Bilal; my grandfather is Akbar Khan.", [("brother", "Bilal"), ("grandfather", "Akbar Khan")]),
+])
+def test_compound_name_boundaries_and_honorifics(text, expected):
+    from ishti.skills.relationships import skill
+    assert skill._kin_declarations(text) == expected
+
+
+def test_relationship_events_are_published_after_committed_writes(scratch_relationship_graph):
+    from ishti import events
+    seen = []
+
+    def on_event(message):
+        if message["type"] == "memory_updated":
+            seen.append((message["data"], scratch_relationship_graph.edges_of("me", direction="out")))
+
+    events.subscribe(on_event)
+    try:
+        scratch_relationship_graph.relate("me", "brother", "Irfan", source_type="explicit_user")
+        scratch_relationship_graph.unrelate("me", "brother", "Irfan")
+    finally:
+        events.unsubscribe(on_event)
+    assert len(seen) == 2
+    assert seen[0][0]["action"] == "upsert" and seen[0][1][0]["d_name"] == "irfan"
+    assert seen[1][0]["action"] == "delete" and seen[1][1] == []
+
+
+def test_empty_family_tree_does_not_invent_relatives(monkeypatch, scratch_relationship_graph):
+    from interface.web_ui import server
+    from ishti.learning import entities
+    from ishti.facts import get_facts
+    monkeypatch.setattr(entities, "list_people", lambda: [])
+    get_facts().set("owner", "name", "Test Owner")
+    family = server._get_family_members()
+    assert [(row["name"], row["relationship"]) for row in family] == [("Test Owner", "self")]
+
+
+def test_family_api_persists_ui_supported_relationship(monkeypatch, scratch_relationship_graph):
+    import asyncio
+    from interface.web_ui import server
+    from ishti.learning import entities
+    monkeypatch.setattr(entities, "observe", lambda *_args, **_kwargs: None)
+
+    class Body:
+        async def json(self):
+            return {"name": "Test Spouse", "relationship": "spouse"}
+
+    result = asyncio.run(server.learning_family_add(Body()))
+    assert result["ok"]
+    edges = scratch_relationship_graph.edges_of("me", rel="spouse", direction="out")
+    assert edges[0]["d_name"] == "test spouse" and edges[0]["private"]
+
+
 def test_chat_skill_sends_bounded_older_context_and_pinned_state(monkeypatch):
     from types import SimpleNamespace
     from ishti.skills.chat import skill as chat_skill

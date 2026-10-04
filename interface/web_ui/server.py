@@ -1261,7 +1261,8 @@ KIN_GENERATIONS = {
 def _get_family_members():
     from ishti import rgraph
     from ishti.learning import entities as ent_module
-    owner_name = "Ishtiaq Ahmed"
+    from ishti.facts import get_facts
+    owner_name = get_facts().get("owner").get("name") or "You"
     members = {
         "me": {
             "id": "me",
@@ -1339,34 +1340,6 @@ def _get_family_members():
     except Exception:
         pass
 
-    if len(members) == 1:
-        members["bilal"] = {
-            "id": "bilal",
-            "name": "Bilal",
-            "relationship": "brother",
-            "generation": 3,
-            "phone": "+92 300 0000000",
-            "email": "",
-            "note": "Brother (IMS study group)",
-            "first_seen": 1727800000,
-            "last_confirmed": time.time(),
-            "confidence": 1.0,
-            "source": "explicit_user"
-        }
-        members["ayesha"] = {
-            "id": "ayesha",
-            "name": "Ayesha",
-            "relationship": "sister",
-            "generation": 3,
-            "phone": "",
-            "email": "",
-            "note": "Sister",
-            "first_seen": 1727850000,
-            "last_confirmed": time.time(),
-            "confidence": 1.0,
-            "source": "explicit_user"
-        }
-
     return sorted(members.values(), key=lambda m: (m["generation"], -m["last_confirmed"]))
 
 
@@ -1388,6 +1361,8 @@ async def learning_family_add(req: Request):
         rel = str(body.get("relationship", "")).strip().lower()
         if not name or not rel:
             raise ValueError("name and relationship are required")
+        if rel not in KIN_GENERATIONS or rel in ("self", "me"):
+            raise ValueError("Select a supported family relationship")
         from ishti import rgraph
         from ishti.learning import entities as ent_module
         phone = str(body.get("phone", "")).strip()
@@ -1395,11 +1370,15 @@ async def learning_family_add(req: Request):
         note = str(body.get("note", "")).strip()
         gen = int(body.get("generation", 0)) or KIN_GENERATIONS.get(rel, 3)
 
-        rgraph.kin_edge("me", rel, name, source_type="explicit_user")
+        eid, _ = rgraph.relate("me", rel, name, private=True, confidence=1.0, source_type="explicit_user")
+        if not eid:
+            raise ValueError("Could not store that family relationship")
         if note:
             rgraph.set_detail("me", rel, name, note)
 
         ent_module.observe(name, relationship=rel, phone=phone, email=email, note=note, source="owner")
+        from ishti import events
+        events.publish("memory_updated", {"type": "family", "entity": name, "action": "upsert"})
 
         return {"ok": True, "member": {
             "id": name.lower(),
@@ -1430,6 +1409,8 @@ async def learning_family_delete(name: str):
             if (e.get("d_name") or "").lower() == nm.lower():
                 rgraph.unrelate("me", e.get("rel"), e.get("d_name"))
         ent_module.remove(nm)
+        from ishti import events
+        events.publish("memory_updated", {"type": "family", "entity": nm, "action": "delete"})
         return {"deleted": True, "name": nm}
     except Exception as exc:
         return _learning_fail(exc)

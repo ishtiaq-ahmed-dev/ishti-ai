@@ -148,6 +148,13 @@ def get_node(name):
     return dict(row) if row else None
 
 
+def _notify_change(src_name, rel, dst_name, action="upsert"):
+    # Publish only after the transaction commits so UI readers see the new state.
+    from ishti import events
+    events.publish("memory_updated", {"type": "relationship", "entity": dst_name,
+                                      "src": src_name, "rel": rel, "action": action})
+
+
 def relate(src_name, rel, dst_name, detail="", private=None, kind_src="person", kind_dst="person",
            confidence: float | None = None, source_type: str | None = None):
     """Create (or re-confirm) an edge src -[rel]-> dst. Returns (edge_id, created_bool).
@@ -174,15 +181,18 @@ def relate(src_name, rel, dst_name, detail="", private=None, kind_src="person", 
             else:
                 c.execute("UPDATE edges SET last_confirmed=? WHERE id=?", (_now(), row["id"]))
             _resolve_pending(row["id"], "confirm")
-            return row["id"], False
-        cur = c.execute("INSERT INTO edges(src, dst, rel, detail, private, first_seen, last_confirmed, "
+            result = row["id"], False
+        else:
+            cur = c.execute("INSERT INTO edges(src, dst, rel, detail, private, first_seen, last_confirmed, "
                         "confidence, source_type) VALUES(?,?,?,?,?,?,?,?,?)",
                         (sid, did, rel, _enc(detail), int(bool(private)) if private is not None
                          else (1 if rel in ("brother", "sister", "father", "mother", "son", "daughter",
                                             "cousin", "uncle", "aunt", "nephew", "niece",
                                             "grandfather", "grandmother") else 0),
                          _now(), _now(), conf, stype))
-        return cur.lastrowid, True
+            result = cur.lastrowid, True
+    _notify_change(src_name, rel, dst_name)
+    return result
 
 
 def kin_edge(src_name: str, rel: str, dst_name: str, source_type: str = "explicit_user",
@@ -262,6 +272,8 @@ def unrelate(src_name, rel, dst_name):
     with LOCK, c:
         n = c.execute("DELETE FROM edges WHERE src=? AND dst=? AND rel=?",
                       (sid["id"], did["id"], rel.strip().lower())).rowcount
+    if n:
+        _notify_change(src_name, rel, dst_name, "delete")
     return bool(n)
 
 
@@ -317,6 +329,7 @@ def set_detail(src_name, rel, dst_name, detail, private=None, kind_dst="person")
         c = conn()
         with LOCK, c:
             c.execute("UPDATE edges SET detail=?, last_confirmed=? WHERE id=?", (_enc(detail), _now(), eid))
+        _notify_change(src_name, rel, dst_name)
     return eid, None
 
 

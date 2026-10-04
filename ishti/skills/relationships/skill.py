@@ -68,7 +68,8 @@ KIN_NAME = re.compile(r"^\s*my\s+" + ELDER + r"(?P<rel>" + "|".join(KIN) + r")(?
                       r"(?P<ctx>\s+(?:in|at|from)\s+[^,;!?]+)?(?=[\s,;!?-]|$)", I)  # trailing words allowed
 MULTI_KIN_DECL = re.compile(
     r"(?:^|[,;]|\band\b)\s*(?:my\s+)?(?:(?:another|also)\s+)?(?P<rel>" + KIN_ALT + r")"
-    r"(?:['’]s|s)?\s+(?:name\s+)?is\s+(?P<name>" + NAME + r")"
+    # A lazy final name quantifier stops at the next relationship clause.
+    r"(?:['’]s|s)?\s+(?:name\s+)?is\s+(?P<name>" + NAME + r"?)"
     r"(?=\s*(?:[,;.!?]|$|\band\s+(?:my\s+)?(?:(?:another|also)\s+)?(?:" + KIN_ALT + r")\b))", I)
 # The possessive order the owner actually types: "my friend Hamza", "my mother Fatima",
 # "remember my cousin is Ali Raza". KIN_DECLARE2 only understood "<Name> is my <rel>", so these fell
