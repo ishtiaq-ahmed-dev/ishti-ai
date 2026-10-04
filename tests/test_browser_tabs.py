@@ -110,11 +110,11 @@ out = skill.open_url("https://web.whatsapp.com/")
 assert nav_calls(fake) == [("browser_navigate", {"url": "https://web.whatsapp.com/"})], fake.calls
 assert out == NAV
 
-# new_tab=True: the caller wants a fresh tab, so navigate even though a matching tab is open
+# new_tab=True creates a separate tab even though a matching site is already open.
 fake = FakeMCP(LIST)
-use(fake)
+use(fake, patch_call=False)
 skill.open_url("https://web.whatsapp.com/", new_tab=True)
-assert nav_calls(fake) == [("browser_navigate", {"url": "https://web.whatsapp.com/"})], fake.calls
+assert fake.calls == [("browser_tabs", {"action": "new", "url": "https://web.whatsapp.com/"})], fake.calls
 
 # the tab call dies: fall back to navigate, return its output
 fake = FakeMCP(LIST, fail_tools=("browser_tabs",))
@@ -141,7 +141,7 @@ assert ("browser_tabs", {"action": "select", "index": 1}) in fake.calls, fake.ca
 fake = FakeMCP(LIST)
 use(fake, patch_call=False)
 skill._call("browser_navigate", {"url": "https://web.whatsapp.com", "new_tab": True})
-assert fake.calls[-1] == ("browser_navigate", {"url": "https://web.whatsapp.com"}), fake.calls
+assert fake.calls[-1] == ("browser_tabs", {"action": "new", "url": "https://web.whatsapp.com"}), fake.calls
 
 # a different query is a different page: a search must load, not "reuse" a tab with stale results
 fake = FakeMCP("- 0: (current) [cats](https://www.google.com/search?q=cats)\n")

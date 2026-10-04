@@ -11,6 +11,7 @@ Guarantees:
 import os
 import re
 import time
+import math
 from typing import Dict, Any, Tuple, Optional
 
 # Dedicated test destination (self-chat)
@@ -69,10 +70,12 @@ def check_send_safety(target: str, is_test_run: bool = True) -> Tuple[bool, str]
 
 def check_edit_eligibility(message_timestamp: float) -> Tuple[bool, str]:
     """Enforces WhatsApp's 15-minute edit window restriction."""
+    if not isinstance(message_timestamp, (float, int)) or isinstance(message_timestamp, bool) or not math.isfinite(message_timestamp):
+        return False, "Cannot edit: the message timestamp is unavailable or invalid."
     now = time.time()
     elapsed = now - message_timestamp
     if elapsed < 0:
-        return True, "Valid timestamp"
+        return False, "Cannot edit: the message timestamp is in the future."
     if elapsed > EDIT_WINDOW_SECONDS:
         mins = int(elapsed // 60)
         return (
@@ -83,16 +86,27 @@ def check_edit_eligibility(message_timestamp: float) -> Tuple[bool, str]:
     return True, f"Eligible for edit ({remaining_mins} minutes remaining in edit window)"
 
 
-def check_delete_eligibility(message_timestamp: float, is_group_admin: bool = False) -> Tuple[bool, str]:
-    """Enforces WhatsApp deletion window limits (2 days for group admin)."""
+def check_delete_eligibility(message_timestamp: float, is_group_admin: bool = False,
+                             from_me: bool = True, for_everyone: bool = True) -> Tuple[bool, str]:
+    """Conservative precheck; actual Delete for everyone availability must also be read.
+
+    Deleting only the local copy has no age limit. Deleting for everyone requires
+    ownership or group admin privileges and the approximate two-day window.
+    """
+    if not for_everyone:
+        return True, "Local-copy deletion; final destructive confirmation is still required."
+    if not from_me and not is_group_admin:
+        return False, "Cannot delete for everyone: this is not your message and you are not a group admin."
+    if not isinstance(message_timestamp, (float, int)) or isinstance(message_timestamp, bool) or not math.isfinite(message_timestamp):
+        return False, "Cannot delete for everyone: the message timestamp is unavailable or invalid."
     now = time.time()
     elapsed = now - message_timestamp
     if elapsed < 0:
-        return True, "Valid timestamp"
-    if is_group_admin and elapsed > ADMIN_DELETE_WINDOW_SECONDS:
+        return False, "Cannot delete for everyone: the message timestamp is in the future."
+    if elapsed > ADMIN_DELETE_WINDOW_SECONDS:
         return (
             False,
-            f"Cannot delete group message: exceeds WhatsApp's 2-day limit for group admin deletion."
+            "Cannot delete for everyone: exceeds the conservative 2-day limit; check the action's availability in WhatsApp."
         )
     return True, "Eligible for deletion"
 

@@ -301,7 +301,7 @@ def open_url(url, session=None, new_tab=False):
             except Exception as exc:  # select/snapshot failed: open it the old way after all
                 trace(session, "browser_tabs", f"couldn't reuse the open {host} tab ({type(exc).__name__})"
                                                " - opening it", status="error")
-    return _call("browser_navigate", {"url": url})
+    return _call("browser_navigate", {"url": url, **({"new_tab": True} if new_tab else {})})
 
 
 def _same_page(a, b):
@@ -334,6 +334,8 @@ def _call(name, args):
     killswitch.check()  # the kill switch ends a browser task between steps
     if name == "browser_navigate" and isinstance(args, dict):
         args, wanted_new = _navigate_args(args)
+        if wanted_new:
+            return _plain_call("browser_tabs", {"action": "new", "url": args["url"]})
         if not wanted_new and args.get("url"):
             try:
                 i, tab = _best_tab(args["url"], tabs())
@@ -349,13 +351,29 @@ def _call(name, args):
     return _plain_call(name, args)
 
 
+class BrowserToolError(RuntimeError):
+    """Keep private diagnostic details available without echoing a page into logs."""
+    def __init__(self, name, details):
+        super().__init__(f"Browser tool {name} reported an error; the action outcome is unverified")
+        self.tool = name
+        self.details = details
+
+
 def _plain_call(name, args):
     """The MCP call itself: C4 retry, the linked page snapshot inlined, a login page moved to the login profile."""
     try:
         out = get_hub().call(SERVER, name, args)
-    except Exception:  # C4: one retry per step - a transient MCP/page error shouldn't sink a long flow
+    except Exception:
+        # A timed-out click/type/Enter/upload may already have succeeded. Replaying
+        # it can send twice, delete twice or submit an order twice. Only reads retry.
+        safe_read = name in {"browser_snapshot", "browser_wait_for"} or (
+            name == "browser_tabs" and args.get("action") == "list")
+        if not safe_read:
+            raise
         time.sleep(1.0)
         out = get_hub().call(SERVER, name, args)
+    if out.lstrip().startswith("ERROR:"):
+        raise BrowserToolError(name, out)
     m = re.search(r"\[Snapshot\]\(([^)]+\.yml)\)", out)
     if m and os.path.isfile(m.group(1)):
         with open(m.group(1), encoding="utf-8") as f:

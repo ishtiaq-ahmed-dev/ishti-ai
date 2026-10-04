@@ -13,7 +13,8 @@ def test_unsupported_group_actions_do_not_claim_success():
     assert "sent" not in result["reply"].lower()
 
 
-def test_message_mutations_are_paused_until_they_can_be_verified():
+def test_message_mutations_do_not_execute_in_dry_run_mode(monkeypatch):
+    monkeypatch.setenv("ISHTI_TEST_MODE", "1")
     result = skill.op_message_edit("edit the last message in Ahmed chat saying hello", {})
     assert "did not change anything" in result["reply"]
 

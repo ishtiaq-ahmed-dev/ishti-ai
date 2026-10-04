@@ -54,7 +54,7 @@ def test_delete_eligibility_window():
     # Exceeds 2 days for admin -> rejected
     expired, reason = check_delete_eligibility(now - (3600 * 49), is_group_admin=True)
     assert not expired
-    assert "exceeds WhatsApp's 2-day limit" in reason
+    assert "2-day limit" in reason
 
 
 def test_snapshot_verification_against_fixture():
