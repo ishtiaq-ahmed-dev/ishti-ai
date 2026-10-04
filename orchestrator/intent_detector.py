@@ -22,6 +22,8 @@ TEMPORAL_TRIGGERS = [
     "recently released", "what happened", "what changed", "who is currently",
     "breaking news", "stock price", "crypto price", "weather", "score", "standings",
     "price of", "version of", "news about", "status of",
+    # software/project health changes over time: "is X still maintained" is a live question
+    "maintained",
     # "live" on its own is not a live-data cue - "I live in Peshawar" is a statement about
     # the owner, not a request for real-time data. Only the unambiguous phrases qualify.
     "live score", "live price", "live status", "live updates", "going live",
@@ -32,6 +34,8 @@ RESEARCH_TRIGGERS = [
     "research", "investigate", "deep dive", "in-depth", "comprehensive analysis",
     "write a report", "full report", "detailed report", "state of the art",
     "market analysis", "literature review", "compare in detail",
+    # "X for Y and recommend one" is research/evaluation, not a quick lookup
+    "recommend", "recommendation",
 ]
 
 WEATHER_TRIGGERS = ["weather", "temperature", "forecast", "how hot", "how cold", "will it rain"]

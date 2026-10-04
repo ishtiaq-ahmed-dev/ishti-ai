@@ -1,0 +1,26 @@
+{
+ "id": 123,
+ "prompt_text": "Any new Instagram DMs?",
+ "category": "Instagram & Facebook — reading & replying (123-127)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [
+  "browser",
+  "whatsapp"
+ ],
+ "expected_outcome": "States sender + rough content for unread ones",
+ "expected_reply_success": "States sender + rough content for unread ones",
+ "expected_reply_failure": "\"No new DMs\" if genuinely none",
+ "pass_criteria": {
+  "expected_skill": [
+   "browser",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

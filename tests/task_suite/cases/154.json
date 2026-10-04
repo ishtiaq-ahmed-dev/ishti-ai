@@ -1,0 +1,32 @@
+{
+ "id": 154,
+ "prompt_text": "Move my call with Sana to Friday",
+ "category": "Meetings & calendar coordination (151-156)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Confirms old and new time, updates the one event",
+ "expected_reply_success": "Confirms old and new time, updates the one event",
+ "expected_reply_failure": "Wrong: creates a second event instead of moving the original",
+ "pass_criteria": {
+  "expected_skill": [
+   "calendar",
+   "reminders"
+  ],
+  "ok_any": [
+   "sana",
+   "friday",
+   "move",
+   "moved",
+   "confirm",
+   "sure",
+   "which",
+   "no event"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

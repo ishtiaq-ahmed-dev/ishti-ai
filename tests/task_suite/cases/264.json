@@ -1,0 +1,20 @@
+{
+ "id": 264,
+ "prompt_text": "Create an invoice draft for the JQ AI Solutions work this month",
+ "category": "Freelance & client work management (263-268)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Shows draft with real project details pulled from memory, flags if hours/amount need his input",
+ "expected_reply_success": "Shows draft with real project details pulled from memory, flags if hours/amount need his input",
+ "expected_reply_failure": "Wrong: invents hours or amounts not actually provided",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

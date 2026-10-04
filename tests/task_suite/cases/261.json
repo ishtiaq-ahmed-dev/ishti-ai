@@ -1,0 +1,29 @@
+{
+ "id": 261,
+ "prompt_text": "Check my report for any obvious statistical errors",
+ "category": "Academic & student assistant tasks (257-262)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [
+  "files",
+  "folders",
+  "fileops"
+ ],
+ "expected_outcome": "Real, specific feedback tied to the actual content",
+ "expected_reply_success": "Real, specific feedback tied to the actual content",
+ "expected_reply_failure": "If it can't actually evaluate the stats rigorously: says that plainly instead of giving false confidence",
+ "pass_criteria": {
+  "expected_skill": [
+   "writing",
+   "files",
+   "folders",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

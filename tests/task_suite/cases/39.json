@@ -1,0 +1,36 @@
+{
+ "id": 39,
+ "prompt_text": "Go to https://example.com and tell me the price",
+ "category": "Browser & web tasks (37-44)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "web_search",
+  "web_fetch",
+  "browser",
+  "deep_research",
+  "chat"
+ ],
+ "expected_outcome": "States price found, direct source",
+ "expected_reply_success": "States price found, direct source",
+ "expected_reply_failure": "If page blocks scraping or price not found: says that specifically, doesn't invent a number",
+ "pass_criteria": {
+  "expected_skill": [
+   "web_fetch",
+   "browser"
+  ],
+  "ok_any": [
+   "price",
+   "no price",
+   "couldn't find",
+   "could not find",
+   "not found",
+   "example"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

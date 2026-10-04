@@ -1,0 +1,35 @@
+{
+  "name": "connectors",
+  "version": "1.0.0",
+  "description": "Sign in through Connectors using ISHTI's configured app registration; show real connection state and disconnect. Supported API reads use the connector first, with Chrome fallback for unsupported or unavailable actions.",
+  "route": "connect or disconnect a service with a client id and secret, authorise an account, list which accounts are connected",
+  "priority": 6,
+  "laya": false,
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "status": "working",
+  "tier": "T1",
+  "scope": {
+    "write": [
+      "data"
+    ],
+    "net": [
+      "google.com",
+      "googleapis.com",
+      "github.com",
+      "facebook.com",
+      "linkedin.com",
+      "microsoftonline.com",
+      "graph.microsoft.com",
+      "127.0.0.1"
+    ],
+    "apps": true
+  },
+  "category": "Settings & Connections",
+  "path": "ishti/skills/connectors",
+  "test_file": "tests/skills/connectors/test_connectors.py"
+}

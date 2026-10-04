@@ -1,0 +1,43 @@
+{
+ "id": 176,
+ "prompt_text": "Compress this video for YouTube upload without losing much quality",
+ "category": "Media & video tasks (171-176)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "video",
+  "media",
+  "files",
+  "folders",
+  "system",
+  "meta",
+  "chat"
+ ],
+ "expected_outcome": "Confirms settings used and resulting file size/quality tradeoff",
+ "expected_reply_success": "Confirms settings used and resulting file size/quality tradeoff",
+ "expected_reply_failure": "If compression fails or source file is corrupted: states the real error",
+ "pass_criteria": {
+  "expected_skill": [
+   "video",
+   "media"
+  ],
+  "ok_any": [
+   "compress",
+   "youtube",
+   "size",
+   "quality",
+   "bitrate",
+   "crf",
+   "no video",
+   "which",
+   "couldn't"
+  ],
+  "bad_any": [],
+  "forbid": [
+   "fileops"
+  ]
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

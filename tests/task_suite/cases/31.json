@@ -1,0 +1,33 @@
+{
+ "id": 31,
+ "prompt_text": "Switch to my second monitor and move this window there",
+ "category": "App & PC control (27-36)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "reminders",
+  "automation",
+  "system",
+  "chat"
+ ],
+ "expected_outcome": "Confirms window moved, which monitor",
+ "expected_reply_success": "Confirms window moved, which monitor",
+ "expected_reply_failure": "If only one display detected: says so",
+ "pass_criteria": {
+  "expected_skill": [
+   "desktop"
+  ],
+  "ok_any": [
+   "monitor",
+   "display",
+   "second",
+   "only one",
+   "moved"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

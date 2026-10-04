@@ -1,0 +1,20 @@
+{
+ "id": 295,
+ "prompt_text": "Don't use any paid APIs for this",
+ "category": "Cost & budget awareness (293-296)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Confirms the plan only uses free/local resources, flags explicitly if something it'd normally use is paid",
+ "expected_reply_success": "Confirms the plan only uses free/local resources, flags explicitly if something it'd normally use is paid",
+ "expected_reply_failure": "Wrong: silently uses a paid service anyway",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

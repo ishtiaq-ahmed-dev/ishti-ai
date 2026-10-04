@@ -1,0 +1,33 @@
+{
+ "id": 152,
+ "prompt_text": "Schedule a call with Sana tomorrow at 4pm",
+ "category": "Meetings & calendar coordination (151-156)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Confirms exact person, time, date back before saving",
+ "expected_reply_success": "Confirms exact person, time, date back before saving",
+ "expected_reply_failure": "If \"Sana\" is ambiguous or has no contact method on file: asks before scheduling",
+ "pass_criteria": {
+  "expected_skill": [
+   "calendar",
+   "reminders"
+  ],
+  "ok_any": [
+   "sana",
+   "tomorrow",
+   "4",
+   "4pm",
+   "16:00",
+   "confirm",
+   "sure",
+   "call",
+   "who"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

@@ -20,7 +20,7 @@
       "data",
       "~/Downloads"
     ],
-    "net": [],
+    "net": ["googleapis.com"],
     "apps": false
   },
   "category": "Communication & Social",

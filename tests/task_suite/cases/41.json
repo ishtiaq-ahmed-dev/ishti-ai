@@ -1,0 +1,36 @@
+{
+ "id": 41,
+ "prompt_text": "Summarize this article: https://example.com",
+ "category": "Browser & web tasks (37-44)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "web_search",
+  "web_fetch",
+  "browser",
+  "deep_research",
+  "chat"
+ ],
+ "expected_outcome": "Concise summary, not a copy-paste of the page",
+ "expected_reply_success": "Concise summary, not a copy-paste of the page",
+ "expected_reply_failure": "If page fails to load: states the fetch error",
+ "pass_criteria": {
+  "expected_skill": [
+   "web_fetch",
+   "browser"
+  ],
+  "ok_any": [
+   "example",
+   "domain",
+   "summary",
+   "page",
+   "couldn't",
+   "could not"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

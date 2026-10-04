@@ -1,0 +1,34 @@
+{
+ "id": 240,
+ "prompt_text": "Back up my whole project right now",
+ "category": "Data export, backup & portability (240-243)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "files",
+  "folders",
+  "fileops",
+  "system",
+  "meta",
+  "chat",
+  "memory",
+  "owner",
+  "prefs"
+ ],
+ "expected_outcome": "Confirms what was backed up, where, size",
+ "expected_reply_success": "Confirms what was backed up, where, size",
+ "expected_reply_failure": "If disk space insufficient: says so before attempting, not after a partial failure",
+ "pass_criteria": {
+  "expected_skill": [
+   "fileops",
+   "files",
+   "folders"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

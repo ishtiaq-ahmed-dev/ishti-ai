@@ -1,0 +1,23 @@
+{
+ "id": 225,
+ "prompt_text": "After answering an unrelated question, Ishtiaq says \"okay, back to what I asked before\"",
+ "category": "Interruptions & conversational context switching (224-228)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Correctly resumes the actual earlier thread, not a guess at what he meant",
+ "expected_reply_success": "Correctly resumes the actual earlier thread, not a guess at what he meant",
+ "expected_reply_failure": "If genuinely unclear which earlier thread: asks briefly rather than guessing",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat",
+   "memory"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

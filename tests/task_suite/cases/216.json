@@ -1,0 +1,27 @@
+{
+ "id": 216,
+ "prompt_text": "Check Instagram and LinkedIn for messages, summarize both, and draft replies to anything urgent",
+ "category": "Cross-app orchestration (212-217)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "apps",
+  "browser",
+  "desktop"
+ ],
+ "expected_outcome": "Clear per-app summary, reasoned urgency calls, drafts only the flagged ones",
+ "expected_reply_success": "Clear per-app summary, reasoned urgency calls, drafts only the flagged ones",
+ "expected_reply_failure": "Wrong: drafts replies to everything regardless of urgency, ignoring the actual instruction",
+ "pass_criteria": {
+  "expected_skill": [
+   "browser",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

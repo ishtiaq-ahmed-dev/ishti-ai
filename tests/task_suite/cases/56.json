@@ -1,0 +1,40 @@
+{
+ "id": 56,
+ "prompt_text": "Track the price of this product and tell me if it drops",
+ "category": "Shopping & price lookups (53-57)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "reminders",
+  "web_search",
+  "web_fetch",
+  "browser",
+  "deep_research",
+  "chat",
+  "automation",
+  "system"
+ ],
+ "expected_outcome": "Confirms what it set up and how it'll notify",
+ "expected_reply_success": "Confirms what it set up and how it'll notify",
+ "expected_reply_failure": "If price tracking isn't actually implemented: says so clearly instead of pretending to track it",
+ "pass_criteria": {
+  "expected_skill": [
+   "webtools",
+   "reminders",
+   "shopping"
+  ],
+  "ok_any": [
+   "track",
+   "watch",
+   "not",
+   "can't",
+   "cannot",
+   "price"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

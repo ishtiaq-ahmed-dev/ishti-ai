@@ -1,0 +1,36 @@
+{
+ "id": 23,
+ "prompt_text": "What's in my Projects folder?",
+ "category": "Files & folders (19-26)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "files",
+  "folders",
+  "fileops"
+ ],
+ "expected_outcome": "Lists contents, organized (folders vs files)",
+ "expected_reply_success": "Lists contents, organized (folders vs files)",
+ "expected_reply_failure": "\"That folder is empty\" or \"doesn't exist at that path\"",
+ "pass_criteria": {
+  "expected_skill": [
+   "folders",
+   "files",
+   "desktop"
+  ],
+  "ok_any": [
+   "projects",
+   "folder",
+   "empty",
+   "no folder",
+   "doesn't exist",
+   "does not exist",
+   "-"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

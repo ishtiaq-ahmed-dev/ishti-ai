@@ -1,0 +1,20 @@
+{
+ "id": 273,
+ "prompt_text": "Write a YouTube description for this video with timestamps",
+ "category": "YouTube & content workflow (269-274)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Draft matching actual video content/structure given",
+ "expected_reply_success": "Draft matching actual video content/structure given",
+ "expected_reply_failure": "Flags if timestamps can't be determined without the actual video file",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

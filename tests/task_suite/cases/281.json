@@ -1,0 +1,30 @@
+{
+ "id": 281,
+ "prompt_text": "Create a WhatsApp group with my IMS classmates",
+ "category": "Group & multi-person coordination (281-286)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [
+  "whatsapp",
+  "apps",
+  "browser",
+  "desktop"
+ ],
+ "expected_outcome": "Confirms exactly who's being added before creating, T2-level recap since it's a visible group action",
+ "expected_reply_success": "Confirms exactly who's being added before creating, T2-level recap since it's a visible group action",
+ "expected_reply_failure": "If any classmate contact is ambiguous or missing: asks before proceeding, doesn't create a partial group silently",
+ "pass_criteria": {
+  "expected_skill": [
+   "whatsapp",
+   "apps",
+   "browser",
+   "desktop"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

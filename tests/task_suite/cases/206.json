@@ -1,0 +1,28 @@
+{
+ "id": 206,
+ "prompt_text": "Give me 5 title ideas for my next Obscura video",
+ "category": "Creative & content generation tasks (206-211)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "chat",
+  "writing",
+  "video"
+ ],
+ "expected_outcome": "5 genuinely distinct, on-brand ideas",
+ "expected_reply_success": "5 genuinely distinct, on-brand ideas",
+ "expected_reply_failure": "Wrong: generic titles with no connection to the channel's actual dark-history/mystery niche",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat",
+   "video",
+   "writing"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

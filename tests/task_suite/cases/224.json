@@ -1,0 +1,22 @@
+{
+ "id": 224,
+ "prompt_text": "Ishtiaq interrupts mid-answer with \"wait, different question\"",
+ "category": "Interruptions & conversational context switching (224-228)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Drops the current answer cleanly, handles the new question fully",
+ "expected_reply_success": "Drops the current answer cleanly, handles the new question fully",
+ "expected_reply_failure": "Wrong: tries to finish the old answer before addressing the new one",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

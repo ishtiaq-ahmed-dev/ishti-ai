@@ -1,0 +1,24 @@
+{
+ "id": 133,
+ "prompt_text": "My brother's name is Bilal, remember that",
+ "category": "People — family (133-138)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Confirms stored: Bilal = brother",
+ "expected_reply_success": "Confirms stored: Bilal = brother",
+ "expected_reply_failure": "Wrong: stores it as a generic contact without the relationship label",
+ "pass_criteria": {
+  "expected_skill": [
+   "memory",
+   "relationships",
+   "owner"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

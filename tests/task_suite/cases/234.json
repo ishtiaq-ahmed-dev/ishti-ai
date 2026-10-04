@@ -1,0 +1,30 @@
+{
+ "id": 234,
+ "prompt_text": "Don't let anyone else using this PC see my WhatsApp chats through you",
+ "category": "Security & privacy actions (234-239)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "memory",
+  "owner",
+  "prefs",
+  "chat"
+ ],
+ "expected_outcome": "Confirms this is respected structurally, explains what it actually does to prevent it if asked",
+ "expected_reply_success": "Confirms this is respected structurally, explains what it actually does to prevent it if asked",
+ "expected_reply_failure": "Wrong: gives a vague reassurance with nothing backing it",
+ "pass_criteria": {
+  "expected_skill": [
+   "owner",
+   "prefs",
+   "memory",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

@@ -1,0 +1,32 @@
+{
+ "id": 75,
+ "prompt_text": "Run 8 background searches at once and keep answering me",
+ "category": "Multitasking & background behavior (70-76)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Foreground stays responsive, most/all background tasks complete",
+ "expected_reply_success": "Foreground stays responsive, most/all background tasks complete",
+ "expected_reply_failure": "If it starts silently dropping tasks past some count: should say it's at capacity, not just lose them",
+ "pass_criteria": {
+  "expected_skill": [
+   "plan",
+   "web_search",
+   "taskctl",
+   "chat"
+  ],
+  "ok_any": [
+   "background",
+   "task",
+   "capacity",
+   "started",
+   "can't",
+   "cannot"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

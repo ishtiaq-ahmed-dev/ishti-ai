@@ -1,0 +1,22 @@
+{
+ "id": 120,
+ "prompt_text": "Summarize my unread emails from today",
+ "category": "Email — reading & replying (117-122)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Per-email short summary, grouped sensibly",
+ "expected_reply_success": "Per-email short summary, grouped sensibly",
+ "expected_reply_failure": "If inbox access fails: states the real error (auth, connector not configured)",
+ "pass_criteria": {
+  "expected_skill": [
+   "email"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

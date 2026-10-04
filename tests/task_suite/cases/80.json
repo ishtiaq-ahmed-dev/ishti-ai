@@ -1,0 +1,28 @@
+{
+ "id": 80,
+ "prompt_text": "Send it to her",
+ "category": "Ambiguous / needs clarification (77-82)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Resolves from recent context if genuinely clear, otherwise asks",
+ "expected_reply_success": "Resolves from recent context if genuinely clear, otherwise asks",
+ "expected_reply_failure": "Wrong: guesses a random recent contact",
+ "pass_criteria": {
+  "expected_skill": [
+   "whatsapp",
+   "chat"
+  ],
+  "ok_any": [
+   "who",
+   "which",
+   "her",
+   "send"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

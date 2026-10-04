@@ -25,8 +25,24 @@ FILLER = re.compile(r"\b(?:please|can|could|you|search|find|look|check|try|here|
                     r"for|me|and|give|get|show|official|from|it|there|now|go|to|a|of)\b", re.I)
 
 
+SOCIAL = re.compile(r"(?:linkedin|instagram|facebook|twitter|x\.com|whatsapp|mail\.google|gmail)", re.I)
+ACT_ON_SITE = re.compile(r"\b(?:send|reply|message|connect|comment|post|write|forward|accept|invite)\b", re.I)
+
+
 def match(text):
-    # "open/go to <url>" and "in the browser" mean interact -> browser skill; a bare URL means read it
+    # "open/go to <url>" and "in the browser" mean interact -> browser skill; a bare URL means read it.
+    # A social/mail site plus an ACTION is a logged-in task, not a page to read: "send a connection request
+    # to https://www.linkedin.com/in/someone" was being fetched as a plain web page (checklist 131).
+    if SOCIAL.search(text) and ACT_ON_SITE.search(text):
+        return False
+    # "bookmark this page for me: <url>" is a browser task - the browser owns bookmarking (checklist #44),
+    # which reads/edits the Chrome bookmark file. web_fetch owns reading the content of a URL.
+    if re.search(r"\bbookmark\b", text, re.I) and URL.search(text):
+        return False
+    # "Buy this GPU for me: <url>" (checklist #55) is a purchase request: research + a T2 recap, never a
+    # page fetch. Reading the page is not the task - trading/shopping/chat own it.
+    if re.search(r"\b(?:buy|purchase|order|checkout|pay\s+for)\b", text, re.I) and URL.search(text):
+        return False
     return bool(URL.search(text)) and not BROWSER_TRIGGER.search(text)
 
 

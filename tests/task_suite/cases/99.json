@@ -1,0 +1,32 @@
+{
+ "id": 99,
+ "prompt_text": "Open the app called definitely_not_installed_xyz",
+ "category": "Errors, not-found & recovery (99-100)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Honest failure report, offers to retry, no hallucinated success",
+ "expected_reply_success": "Honest failure report, offers to retry, no hallucinated success",
+ "expected_reply_failure": "Wrong: reports success anyway, or hangs silently with no explanation",
+ "pass_criteria": {
+  "expected_skill": [
+   "apps",
+   "chat"
+  ],
+  "ok_any": [
+   "couldn't",
+   "could not",
+   "can't",
+   "cannot",
+   "not installed",
+   "isn't installed",
+   "no app",
+   "find"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

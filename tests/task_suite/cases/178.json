@@ -1,0 +1,35 @@
+{
+ "id": 178,
+ "prompt_text": "Respond to me in Pashto from now on",
+ "category": "Translation & language switching (177-181)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "utilities",
+  "languages",
+  "chat"
+ ],
+ "expected_outcome": "Confirms the switch, actually starts responding in Pashto",
+ "expected_reply_success": "Confirms the switch, actually starts responding in Pashto",
+ "expected_reply_failure": "If Pashto TTS/voice isn't available even though text is: says that specifically rather than silently staying in English",
+ "pass_criteria": {
+  "expected_skill": [
+   "owner",
+   "chat",
+   "languages"
+  ],
+  "ok_any": [
+   "pashto",
+   "پښتو",
+   "switched",
+   "got it",
+   "will answer",
+   "language"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

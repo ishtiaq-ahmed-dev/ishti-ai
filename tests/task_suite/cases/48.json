@@ -1,0 +1,32 @@
+{
+ "id": 48,
+ "prompt_text": "Email my client the invoice, but let me see it first",
+ "category": "Communication (45-52)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Shows draft + attachment confirmation, waits for yes",
+ "expected_reply_success": "Shows draft + attachment confirmation, waits for yes",
+ "expected_reply_failure": "If attachment file not found: says exactly what's missing",
+ "pass_criteria": {
+  "expected_skill": [
+   "email",
+   "writing"
+  ],
+  "ok_any": [
+   "invoice",
+   "draft",
+   "attach",
+   "email",
+   "client",
+   "not found",
+   "couldn't",
+   "could not"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": true,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

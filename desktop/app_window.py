@@ -34,6 +34,15 @@ def _get_pythonw():
 def apply_ishti_icons_daemon():
     """Background daemon ensuring all ISHTI windows (splash + dashboard) have the official icon attached via Win32."""
     try:
+        # Ensure Start Menu shortcut exists so Taskbar pinning links to ISHTI instead of python.exe
+        sm_path = os.path.join(os.environ.get("APPDATA", ""), "Microsoft", "Windows", "Start Menu", "Programs", "ISHTI.lnk")
+        if not os.path.exists(sm_path):
+            try:
+                from desktop.create_shortcut import create_desktop_shortcuts
+                create_desktop_shortcuts()
+            except Exception:
+                pass
+
         import win32gui
         import win32con
         if not os.path.exists(ICON_PATH):
@@ -49,6 +58,12 @@ def apply_ishti_icons_daemon():
         if not hicon_big and not hicon_small:
             return
 
+        try:
+            from win32com.propsys import propsys, pscon
+            prop = propsys.PROPVARIANTType(APP_ID)
+        except Exception:
+            propsys = None
+
         def apply_to_matching():
             def enum_cb(hwnd, _):
                 if win32gui.IsWindowVisible(hwnd):
@@ -58,6 +73,13 @@ def apply_ishti_icons_daemon():
                             win32gui.SendMessage(hwnd, win32con.WM_SETICON, win32con.ICON_BIG, hicon_big)
                         if hicon_small:
                             win32gui.SendMessage(hwnd, win32con.WM_SETICON, win32con.ICON_SMALL, hicon_small)
+                        if propsys:
+                            try:
+                                store = propsys.SHGetPropertyStoreForWindow(hwnd, propsys.IID_IPropertyStore)
+                                store.SetValue(pscon.PKEY_AppUserModel_ID, prop)
+                                store.Commit()
+                            except Exception:
+                                pass
             win32gui.EnumWindows(enum_cb, None)
 
         # Run periodically across the startup & transition window

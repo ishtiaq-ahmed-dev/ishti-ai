@@ -70,8 +70,15 @@ def test_wiring() -> None:
     assert "chat" in lessons.CONTEXT_INJECTING_SKILLS, lessons.CONTEXT_INJECTING_SKILLS
     dispatcher._learn_turn("open the work site", "done again", "chat", {}, "sid4", "text")
     after_chat = counters()
-    assert after_chat["positive"] > before["positive"], \
-        f"chat turn should credit the guidance it actually showed: {before} -> {after_chat}"
+    assert after_chat == before, "Unreviewed success must not be treated as positive owner feedback"
+    from ishti.learning import observe, feedback
+    observe.turn("open the work site", "done again", "chat", "sid4", reward=0.0,
+                 message_id="msg_exact_owner_rating")
+    assert feedback.apply_answer_rating("sid4", "msg_exact_owner_rating", "positive")
+    assert feedback.apply_answer_rating("sid4", "msg_exact_owner_rating", "positive")
+    after_chat = counters()
+    assert after_chat["positive"] == before["positive"] + 1, \
+        f"exact positive rating should credit relevant shown guidance once: {before} -> {after_chat}"
     print(f"[3] attribution gated on CONTEXT_INJECTING_SKILLS: "
           f"{before} -> {after_browser} -> {after_chat}")
 
@@ -92,7 +99,7 @@ def test_wiring() -> None:
     assert any(r["status"] == "active" for r in store.rows(
         "SELECT status FROM lessons WHERE source='explicit_user_correction'")), "correction not active"
     got = lessons.guidance_for("open the work site", limit=6)
-    assert any("worked" in l["statement"].lower() for l in got), [l["statement"] for l in got]
+    assert any("work browser" in l["statement"].lower() for l in got), [l["statement"] for l in got]
     print(f"[5] supersede + reflection recall OK ({len(got)} lesson(s) in context)")
 
     # 6. Below the confidence floor a lesson cannot steer - this is what decay and blame buy us.

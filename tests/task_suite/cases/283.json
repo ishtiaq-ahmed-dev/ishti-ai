@@ -1,0 +1,20 @@
+{
+ "id": 283,
+ "prompt_text": "Message the group that I'll be 10 minutes late",
+ "category": "Group & multi-person coordination (281-286)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Exact recap (which group, exact message) + explicit yes required",
+ "expected_reply_success": "Exact recap (which group, exact message) + explicit yes required",
+ "expected_reply_failure": "If \"the group\" is ambiguous among several: asks which one",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": true,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

@@ -1,0 +1,23 @@
+{
+ "id": 119,
+ "prompt_text": "Reply saying I'll have the deployment done by Friday",
+ "category": "Email — reading & replying (117-122)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Shows exact draft tied to the actual email thread it's replying to",
+ "expected_reply_success": "Shows exact draft tied to the actual email thread it's replying to",
+ "expected_reply_failure": "If it's unclear which email this reply is for: asks instead of guessing the thread",
+ "pass_criteria": {
+  "expected_skill": [
+   "email",
+   "whatsapp"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": true,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

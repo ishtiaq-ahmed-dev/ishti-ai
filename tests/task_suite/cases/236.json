@@ -1,0 +1,29 @@
+{
+ "id": 236,
+ "prompt_text": "Export my memory data so I can back it up",
+ "category": "Security & privacy actions (234-239)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "memory",
+  "owner",
+  "prefs",
+  "chat"
+ ],
+ "expected_outcome": "Confirms format and location, asks before including anything sensitive if relevant",
+ "expected_reply_success": "Confirms format and location, asks before including anything sensitive if relevant",
+ "expected_reply_failure": "If export isn't implemented: says so clearly",
+ "pass_criteria": {
+  "expected_skill": [
+   "memory",
+   "owner",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": true,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

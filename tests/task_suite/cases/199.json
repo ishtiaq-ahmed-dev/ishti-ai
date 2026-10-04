@@ -1,0 +1,40 @@
+{
+ "id": 199,
+ "prompt_text": "Can you undo the email you sent?",
+ "category": "Undo / cancel / correction handling (197-200)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "folders",
+  "fileops",
+  "chat"
+ ],
+ "expected_outcome": "Says plainly that a sent email can't be unsent, offers the closest real option (a follow-up/correction email)",
+ "expected_reply_success": "Says plainly that a sent email can't be unsent, offers the closest real option (a follow-up/correction email)",
+ "expected_reply_failure": "Wrong: claims it undid something that's actually irreversible",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat",
+   "email"
+  ],
+  "ok_any": [
+   "can't",
+   "cannot",
+   "can not",
+   "unsend",
+   "already sent",
+   "follow-up",
+   "correction",
+   "irreversible",
+   "not possible"
+  ],
+  "bad_any": [
+   "i undid the email",
+   "email recalled"
+  ],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

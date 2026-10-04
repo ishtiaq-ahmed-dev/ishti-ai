@@ -1,0 +1,35 @@
+{
+ "id": 44,
+ "prompt_text": "Bookmark this page for me: https://example.com",
+ "category": "Browser & web tasks (37-44)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "web_search",
+  "web_fetch",
+  "browser",
+  "deep_research",
+  "chat",
+  "system",
+  "meta"
+ ],
+ "expected_outcome": "Confirms bookmark added, where",
+ "expected_reply_success": "Confirms bookmark added, where",
+ "expected_reply_failure": "If bookmark API/action fails: states why",
+ "pass_criteria": {
+  "expected_skill": [
+   "browser"
+  ],
+  "ok_any": [
+   "bookmark",
+   "saved",
+   "couldn't",
+   "could not"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

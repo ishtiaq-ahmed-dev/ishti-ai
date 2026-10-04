@@ -1,0 +1,25 @@
+{
+ "id": 134,
+ "prompt_text": "Who's my brother?",
+ "category": "People — family (133-138)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "States Bilal, correctly labeled",
+ "expected_reply_success": "States Bilal, correctly labeled",
+ "expected_reply_failure": "Wrong: states someone else or invents a name if nothing was ever actually stored",
+ "pass_criteria": {
+  "expected_skill": [
+   "memory",
+   "relationships",
+   "contacts",
+   "owner"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

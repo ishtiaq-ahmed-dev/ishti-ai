@@ -1,0 +1,28 @@
+{
+ "id": 106,
+ "prompt_text": "Open Outlook and show my inbox",
+ "category": "Opening apps — social & communication (101-110)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [
+  "apps",
+  "browser",
+  "desktop"
+ ],
+ "expected_outcome": "Confirms opened, gives a quick inbox summary",
+ "expected_reply_success": "Confirms opened, gives a quick inbox summary",
+ "expected_reply_failure": "If Outlook isn't installed/configured: says that, doesn't pretend it opened",
+ "pass_criteria": {
+  "expected_skill": [
+   "email",
+   "browser",
+   "apps"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

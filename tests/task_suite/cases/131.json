@@ -1,0 +1,23 @@
+{
+ "id": 131,
+ "prompt_text": "\"Send a connection request to this person with a short note\" (profile given)",
+ "category": "LinkedIn — reading & professional messaging (128-132)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Shows the exact note before sending, confirms recipient",
+ "expected_reply_success": "Shows the exact note before sending, confirms recipient",
+ "expected_reply_failure": "If the profile page can't be parsed/found: says so",
+ "pass_criteria": {
+  "expected_skill": [
+   "browser",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": true,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

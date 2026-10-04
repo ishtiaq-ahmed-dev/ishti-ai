@@ -52,6 +52,8 @@ def candidate(text, skills=None, session=None):
         several = False  # one browser task that also reads the page
     if several and kinds <= {"apps", "whatsapp"}:
         several = False  # opening whatsapp and sending a message is one unified whatsapp task
+    if several and kinds <= {"apps", "whatsapp", "browser", "email", "chat"} and re.search(r"\b(?:together|all\s+three|all\s+two|both|check\s+all)\b", text, re.I):
+        several = False  # opening multiple communication/social tabs together is one browser task
     if several and "whatsapp" in kinds and kinds <= {"apps", "whatsapp", "chat"}:
         # "open whatsapp and send message to bhai hi how are you in two different messages" is ONE messenger
         # task ("chat" here is the clause router's fallback, not a second task) - splitting it made each step

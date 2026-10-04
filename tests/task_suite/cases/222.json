@@ -1,0 +1,32 @@
+{
+ "id": 222,
+ "prompt_text": "Cancel the repo-monitoring task from earlier",
+ "category": "Long-horizon autonomy & background monitoring (218-223)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "reminders",
+  "automation",
+  "system",
+  "chat",
+  "folders",
+  "fileops"
+ ],
+ "expected_outcome": "Confirms specifically which one was cancelled",
+ "expected_reply_success": "Confirms specifically which one was cancelled",
+ "expected_reply_failure": "If it can't find a matching task: says so, lists what's actually running instead",
+ "pass_criteria": {
+  "expected_skill": [
+   "taskctl",
+   "reminders",
+   "automation",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

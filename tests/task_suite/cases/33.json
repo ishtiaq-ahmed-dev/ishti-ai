@@ -1,0 +1,36 @@
+{
+ "id": 33,
+ "prompt_text": "Open the terminal and run 'git status' in my ISHTI folder",
+ "category": "App & PC control (27-36)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "dev",
+  "terminal",
+  "devops",
+  "gitops",
+  "chat"
+ ],
+ "expected_outcome": "Shows the actual command output",
+ "expected_reply_success": "Shows the actual command output",
+ "expected_reply_failure": "If folder isn't a git repo or path wrong: states the real error from git",
+ "pass_criteria": {
+  "expected_skill": [
+   "terminal",
+   "dev"
+  ],
+  "ok_any": [
+   "git",
+   "branch",
+   "clean",
+   "modified",
+   "fatal",
+   "not a git"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

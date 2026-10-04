@@ -1,0 +1,25 @@
+- main [ref=app]
+  - navigation [ref=side]
+    - search [ref=search_panel]
+      - textbox "Search or start new chat" [ref=search_input]
+    - grid "Chat list" [ref=pane_side]
+      - row "Message yourself (You) 11:15 AM Read" [ref=chat_row_0]
+        - gridcell "Message yourself (You)" [ref=cell_title_0]
+        - statictext "Message yourself (You)"
+        - statictext "Test reminder note"
+      - row "Bilal 10:45 AM" [ref=chat_row_1]
+        - gridcell "Bilal" [ref=cell_title_1]
+        - statictext "Bilal"
+        - statictext "Kal milte hain"
+      - row "Ayesha Yesterday" [ref=chat_row_2]
+        - gridcell "Ayesha" [ref=cell_title_2]
+  - region "Conversation" [ref=main_chat]
+    - header [ref=chat_header]
+      - button "Profile details"
+        - span "Message yourself" [ref=active_title]
+    - grid "Message list" [ref=message_list]
+      - row "You: Test note 1 11:10 AM Sent" [ref=msg_0]
+      - row "You: Meeting agenda item 11:15 AM Read" [ref=msg_1]
+    - footer [ref=composer_area]
+      - textbox "Type a message" [ref=composer_input]
+      - button "Send" [ref=send_button]

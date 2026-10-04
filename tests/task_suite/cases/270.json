@@ -1,0 +1,20 @@
+{
+ "id": 270,
+ "prompt_text": "Suggest upload tags for this video based on its topic",
+ "category": "YouTube & content workflow (269-274)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Relevant, specific tags tied to the actual topic given",
+ "expected_reply_success": "Relevant, specific tags tied to the actual topic given",
+ "expected_reply_failure": "Generic/unrelated tags would count as a quality fail even without an outright error",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

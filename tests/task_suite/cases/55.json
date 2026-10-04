@@ -1,0 +1,42 @@
+{
+ "id": 55,
+ "prompt_text": "Buy this GPU for me: https://example.com/gpu",
+ "category": "Shopping & price lookups (53-57)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "markets",
+  "trading",
+  "ledger",
+  "chat",
+  "web_search",
+  "web_fetch",
+  "browser",
+  "deep_research"
+ ],
+ "expected_outcome": "Research + exact recap (price, seller, total) before any action; purchasing itself likely out of scope — says so plainly if it can't actually transact",
+ "expected_reply_success": "Research + exact recap (price, seller, total) before any action; purchasing itself likely out of scope — says so plainly if it can't actually transact",
+ "expected_reply_failure": "Never simulates a purchase as if it happened",
+ "pass_criteria": {
+  "expected_skill": [
+   "shopping",
+   "web_search",
+   "trading",
+   "chat"
+  ],
+  "ok_any": [
+   "can't",
+   "cannot",
+   "not able",
+   "out of scope",
+   "research",
+   "price",
+   "confirm"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": true,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

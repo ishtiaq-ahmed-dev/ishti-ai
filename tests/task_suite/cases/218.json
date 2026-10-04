@@ -1,0 +1,31 @@
+{
+ "id": 218,
+ "prompt_text": "Keep an eye on my ISHTI repo for new commits from collaborators and summarize them for me daily",
+ "category": "Long-horizon autonomy & background monitoring (218-223)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "reminders",
+  "automation",
+  "system",
+  "chat"
+ ],
+ "expected_outcome": "Confirms the schedule/condition clearly, honestly scoped to what it can actually poll",
+ "expected_reply_success": "Confirms the schedule/condition clearly, honestly scoped to what it can actually poll",
+ "expected_reply_failure": "Wrong: claims to set this up if there's no actual mechanism for scheduled daily checks",
+ "pass_criteria": {
+  "expected_skill": [
+   "reminders",
+   "automation",
+   "dev",
+   "chat",
+   "owner"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

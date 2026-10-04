@@ -1,0 +1,29 @@
+{
+ "id": 32,
+ "prompt_text": "What apps are currently open?",
+ "category": "App & PC control (27-36)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Lists real open apps",
+ "expected_reply_success": "Lists real open apps",
+ "expected_reply_failure": "N/A",
+ "pass_criteria": {
+  "expected_skill": [
+   "desktop",
+   "system"
+  ],
+  "ok_any": [
+   "window",
+   "open",
+   "- ",
+   "can't see",
+   "cannot see"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

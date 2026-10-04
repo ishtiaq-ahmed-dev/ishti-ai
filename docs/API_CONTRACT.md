@@ -632,3 +632,14 @@ per row). All local-only; none weakens an existing gate.
   chain and per-call latency; performs no load.
 - `orchestrator/plan_view.py` serves the plan review page on loopback only (`serve()` refuses any
   other host); decisions append to `data/plan_decisions.json` via `POST /decision`.
+# Targeted contract additions verified 2026-10-04
+
+These additions describe current code; see docs/audit/TEST_RESULTS.md for what has actually run.
+
+| Route | Request | Response and conditions |
+|---|---|---|
+| GET /api/inputs/wa-qr | none | running, connected, QR PNG data URL when pairing, linked account ID and history scope. QR bytes are never raw text in the response. |
+| POST /api/inputs/wa-start | empty JSON | Starts the local linked-device bridge and returns its status. Pairing still needs the owner to scan on phone. |
+| POST /api/sessions/{session_id}/feedback | message_id, rating=positive/negative, optional reason | Exact saved assistant answer in that session only. Negative rating may append a text-only revision with revision_of; no tool or message action is replayed. |
+| GET /api/crm/clients | optional status | clients with id/name aliases for contract CRM rows plus read-only chat CRM profiles. partial_error says when chat profiles could not load. |
+| POST /api/crm/delete | exact client_id and exact confirm_name | Deletes only a contract CRM record; wrong name returns 409, ambiguous/name-only ID returns 400. Bulk purge returns 501. |

@@ -1,0 +1,24 @@
+{
+ "id": 148,
+ "prompt_text": "My friend from university, not the CardioSense one, message him about meeting up this weekend",
+ "category": "People — friends, colleagues & university (145-150)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Asks for the specific name if genuinely ambiguous, rather than guessing which \"university friend\"",
+ "expected_reply_success": "Asks for the specific name if genuinely ambiguous, rather than guessing which \"university friend\"",
+ "expected_reply_failure": "Wrong: picks one of the two at random",
+ "pass_criteria": {
+  "expected_skill": [
+   "whatsapp",
+   "memory",
+   "relationships"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

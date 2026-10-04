@@ -13,6 +13,9 @@ _engine = None
 
 
 def match(text):
+    import re
+    if re.match(r"^\s*(?:no|yes|cancel|stop|never\s*mind|don'?t|n)\b", str(text).strip(), re.I):
+        return False
     from ishti.skills.markets.skill import INVEST  # "research nvidia, how much should I buy" is a markets decision
     return IntentDetector.classify(text)["mode"] == "DEEP_RESEARCH" and not INVEST.search(text)
 
@@ -28,7 +31,7 @@ def run(text, session):
     # the engine's own status events become Thinking-panel steps for this request
     _engine.event_callback = lambda kind, data: trace(session, kind, (data or {}).get("detail") or kind.replace("_", " "),
                                                     **{k: v for k, v in (data or {}).items() if k in ("queries", "state")})
-    fallback = session.get("route", {}).get("source") == "escalation"
+    fallback = (session.get("route") or {}).get("source") == "escalation"
     # as a fallback for a plain question: 2 focused queries, not a 4-angle investigation
     res = _engine.run_deep_research(ground_dates(text), max_queries=2 if fallback else 4)
     # F1/F2: fact-check the report's checkable claims against independent sources and append
@@ -56,7 +59,7 @@ def run(text, session):
     if not (report or "").strip():  # a skill must never answer with blank text
         report = ("I could not put together a usable answer from the web for that. Please try rephrasing it, "
                   "or ask again in a moment.")
-    if session.get("route", {}).get("source") == "escalation":
+    if (session.get("route") or {}).get("source") == "escalation":
         # used as a fallback for a plain question: the owner asked for an answer, not a report
         from ishti import llm
         trace(session, "answer", "condense the research into a direct answer", status="start")

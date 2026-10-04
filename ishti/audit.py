@@ -88,8 +88,8 @@ def record(action, detail="", *, skill=None, initiator=None, tier=None, confirme
     ctx = current()
     secrets = ctx.get("redact") or (ctx.get("view") or {}).get("redact")  # the request may add secrets mid-run
     row = (time.time(), session or ctx.get("session", ""), ctx.get("channel", ""), initiator or ctx.get("initiator", "judgment"),
-           skill or ctx.get("skill", ""), _mask(str(action)[:200], secrets), _mask(str(detail)[:500], secrets),
-           tier or ctx.get("tier", ""), confirmed, _mask(str(request or ctx.get("request", ""))[:300], secrets))
+           skill or ctx.get("skill", ""), _mask(str(action), secrets)[:200], _mask(str(detail), secrets)[:500],
+           tier or ctx.get("tier", ""), confirmed, _mask(str(request or ctx.get("request", "")), secrets)[:300])
     try:
         with _lock:
             c = _db()

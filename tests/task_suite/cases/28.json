@@ -1,0 +1,33 @@
+{
+ "id": 28,
+ "prompt_text": "Close VS Code",
+ "category": "App & PC control (27-36)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "apps",
+  "browser",
+  "desktop"
+ ],
+ "expected_outcome": "Closes it, confirms",
+ "expected_reply_success": "Closes it, confirms",
+ "expected_reply_failure": "If no matching window open: says so",
+ "pass_criteria": {
+  "expected_skill": [
+   "desktop"
+  ],
+  "ok_any": [
+   "closed",
+   "vs code",
+   "code",
+   "no open window",
+   "no matching",
+   "nothing"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

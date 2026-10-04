@@ -1,0 +1,25 @@
+{
+ "id": 127,
+ "prompt_text": "Who messaged me on Instagram today?",
+ "category": "Instagram & Facebook — reading & replying (123-127)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [
+  "browser",
+  "whatsapp"
+ ],
+ "expected_outcome": "Lists actual senders from today only",
+ "expected_reply_success": "Lists actual senders from today only",
+ "expected_reply_failure": "\"No one messaged you today\" if genuinely none",
+ "pass_criteria": {
+  "expected_skill": [
+   "browser"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

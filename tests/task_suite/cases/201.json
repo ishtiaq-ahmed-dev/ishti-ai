@@ -1,0 +1,29 @@
+{
+ "id": 201,
+ "prompt_text": "Why did you choose Chrome just now instead of Obscura?",
+ "category": "Explaining its own actions & reasoning (201-205)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "system",
+  "meta",
+  "chat"
+ ],
+ "expected_outcome": "States the actual reason (e.g. the task needed a logged-in session)",
+ "expected_reply_success": "States the actual reason (e.g. the task needed a logged-in session)",
+ "expected_reply_failure": "Wrong: gives a generic non-answer or a made-up reason",
+ "pass_criteria": {
+  "expected_skill": [
+   "meta",
+   "system",
+   "chat",
+   "owner"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

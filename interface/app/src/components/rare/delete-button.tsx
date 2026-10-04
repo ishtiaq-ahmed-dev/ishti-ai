@@ -93,7 +93,7 @@ function Circle({
           e.stopPropagation();
           onClick(e);
         }}
-        whileHover={reduced ? undefined : { scale: 1.05 }}
+        whileHover={reduced || isSm ? undefined : { scale: 1.05 }}
         whileTap={reduced ? undefined : { scale: 0.88 }}
         transition={PRESS}
         className={cn(

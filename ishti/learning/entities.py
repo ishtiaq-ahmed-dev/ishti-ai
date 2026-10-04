@@ -116,12 +116,32 @@ def list_people() -> List[Dict[str, Any]]:
         out.append(d)
     return out
 
-def merge(keep_key: str, drop_key: str, confirm: bool = True) -> Dict[str, Any]:
-    if not confirm or not keep_key or not drop_key or keep_key == drop_key:
-        return {"merged": False}
-    store.write("UPDATE entity_mentions SET entity_key=? WHERE entity_key=?", (keep_key, drop_key))
-    store.write("DELETE FROM entities WHERE key=?", (drop_key,))
-    return {"merged": True, "kept": keep_key, "dropped": drop_key}
+def remove(key_or_name: str) -> bool:
+    nm = (key_or_name or "").strip()
+    if not nm:
+        return False
+    k = _key(nm)
+    store.write("DELETE FROM entities WHERE key=? OR key=? OR lower(name)=lower(?)", (nm, k, nm))
+    store.write("DELETE FROM entity_mentions WHERE entity_key=? OR entity_key=?", (nm, k))
+    return True
+
+forget = remove
+
+
+def rename(old_name: str, new_name: str) -> bool:
+    """Rename an entity across the learning entities table and mentions."""
+    old_nm = (old_name or "").strip()
+    new_nm = (new_name or "").strip()
+    if not old_nm or not new_nm:
+        return False
+    row = store.row("SELECT * FROM entities WHERE lower(name)=lower(?) OR key=?", (old_nm, _key(old_nm)))
+    if not row:
+        return False
+    new_k = _key(new_nm, row.get("org") or "")
+    store.write("UPDATE entities SET key=?, name=?, last_seen=? WHERE id=?", (new_k, new_nm, store.now(), row["id"]))
+    store.write("UPDATE entity_mentions SET entity_key=? WHERE entity_key=?", (new_k, row["key"]))
+    return True
+
 
 if __name__ == "__main__":
     import tempfile

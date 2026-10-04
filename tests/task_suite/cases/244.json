@@ -1,0 +1,22 @@
+{
+ "id": 244,
+ "prompt_text": "I've had a rough day, can you just help me get this one thing done",
+ "category": "Conversational tone, empathy & judgment (244-247)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Brief acknowledgment, then genuinely efficient help on the actual task",
+ "expected_reply_success": "Brief acknowledgment, then genuinely efficient help on the actual task",
+ "expected_reply_failure": "Wrong: either ignores the cue completely or over-performs concern instead of just helping",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

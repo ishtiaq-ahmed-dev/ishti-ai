@@ -1,0 +1,38 @@
+{
+ "id": 191,
+ "prompt_text": "Why did that last answer take so long?",
+ "category": "Self-diagnostics & status reporting (188-192)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "system",
+  "meta",
+  "chat"
+ ],
+ "expected_outcome": "Honest breakdown if it can introspect (which stage was slow), or an honest \"not sure\" if it can't",
+ "expected_reply_success": "Honest breakdown if it can introspect (which stage was slow), or an honest \"not sure\" if it can't",
+ "expected_reply_failure": "Wrong: fabricates a plausible-sounding but untrue explanation",
+ "pass_criteria": {
+  "expected_skill": [
+   "system",
+   "chat"
+  ],
+  "ok_any": [
+   "slow",
+   "not sure",
+   "model",
+   "gpu",
+   "vram",
+   "search",
+   "stage",
+   "took"
+  ],
+  "bad_any": [],
+  "forbid": [
+   "whatsapp"
+  ]
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

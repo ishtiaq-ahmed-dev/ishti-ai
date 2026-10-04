@@ -1,0 +1,38 @@
+{
+ "id": 188,
+ "prompt_text": "Are you running okay?",
+ "category": "Self-diagnostics & status reporting (188-192)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "system",
+  "meta",
+  "chat"
+ ],
+ "expected_outcome": "Honest status — models loaded, any known issues",
+ "expected_reply_success": "Honest status — models loaded, any known issues",
+ "expected_reply_failure": "Wrong: says \"all good\" without actually checking anything",
+ "pass_criteria": {
+  "expected_skill": [
+   "system",
+   "chat"
+  ],
+  "ok_any": [
+   "running",
+   "okay",
+   "fine",
+   "vram",
+   "model",
+   "issue",
+   "healthy",
+   "ood"
+  ],
+  "bad_any": [],
+  "forbid": [
+   "web_search"
+  ]
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

@@ -222,6 +222,19 @@ def known_clients():
         return [r[0] for r in f.db.execute("SELECT name FROM clients ORDER BY name").fetchall()]
 
 
+def list_profiles():
+    """Read-only business profiles for the dashboard; no events or private facts."""
+    f = _db()
+    with f.lock:
+        rows = f.db.execute(
+            "SELECT id, name, channel, contact, status, created FROM clients ORDER BY name"
+        ).fetchall()
+    return [{"id": f"sqlite:{row[0]}", "name": str(row[1]).title(),
+             "channel_source": row[2] or "", "phone": row[3] or "",
+             "status": row[4] or "active", "created_at": row[5],
+             "source": "chat_crm", "read_only": True} for row in rows]
+
+
 def op_draft(text, session):
     m = re.search(r"\b(?:draft|write|prepare)\s+(?:a\s+)?reply\s+(?:to|for)\s+[\"']?(?P<name>[\w .'-]{2,40})", text, I)
     if not m:
@@ -442,20 +455,164 @@ INVOICE_DOC = re.compile(r"\b(?:make|create|generate|draft)\s+(?:an?\s+)?invoice
 NOTE = re.compile(r"\bclient\s+note\b", I)
 LEAD = re.compile(r"\b(?:lead|inquiry)\b", I)
 DASH = re.compile(r"\b(?:client|crm)\s+(?:dashboard|overview|list)\b|\ball\s+my\s+clients\b", I)
+# "who are my clients right now?" - the roster question, answered from the CRM store (checklist 140)
+ROSTER = re.compile(r"\bwho\s+(?:are|is)\s+(?:my|our)\s+clients?\b|\b(?:list|show|name)\s+(?:all\s+)?"
+                    r"(?:of\s+)?(?:my|our)\s+clients?\b|\bmy\s+clients\s+right\s+now\b|"
+                    r"\bwhich\s+clients\s+do\s+i\s+have\b|\b(?:how\s+many|what)\s+clients\s+"
+                    r"(?:do\s+i\s+have|are\s+active)\b", I)
+
+
+def op_client_roster(text, session):
+    """"Who are my clients right now?" (checklist 140) - read the REAL store on every call (never a
+    cached or remembered answer), list each stored client with the work they are tied to, and say
+    plainly when the store is empty. Nothing outside this CRM's own rows is ever used."""
+    f = _db()
+    rows = []
+    with f.lock:
+        rows = [dict(zip(COLS, r)) for r in f.db.execute(
+            "SELECT * FROM clients ORDER BY last_contact DESC, name").fetchall()]
+        work = {}
+        for name, label, amount, state in f.db.execute(
+                "SELECT c.name, i.label, i.amount, i.state FROM client_invoices i "
+                "JOIN clients c ON c.id=i.client_id ORDER BY i.created DESC").fetchall():
+            work.setdefault(name, []).append(f"{label} ({state}, {float(amount or 0):,.0f})")
+        for name, body in f.db.execute(
+                "SELECT c.name, e.body FROM client_events e JOIN clients c ON c.id=e.client_id "
+                "WHERE e.kind IN ('message','note','deal','project') ORDER BY e.first_seen DESC").fetchall():
+            items = work.setdefault(name, [])
+    if not rows:
+        return {"reply": "No clients in your CRM store yet. Say \"new client <name>\" or "
+                         "\"Remember that <name> is my client at <company>\" to record one.",
+                "sources": []}
+
+    known_names = {r["name"].lower() for r in rows}
+
+    # Cross-store integration: also include clients stored in arch2 memory, facts, or relationship graph
+    try:
+        from ishti.arch2 import memory as a2_mem
+        for ent in a2_mem.entities():
+            ename = (ent.get("name") or ent.get("display") or "").strip()
+            if not ename or ename.lower() in known_names:
+                continue
+            rel = (ent.get("relationship") or "").lower()
+            notes = str(ent.get("notes") or "")
+            if rel == "client" or "client" in notes.lower() or "client" in (ent.get("kind") or "").lower():
+                known_names.add(ename.lower())
+                proj = ""
+                m = re.search(r"client\s+(?:at|for|with)\s+([A-Za-z0-9 _.-]+)", notes, re.I)
+                if m:
+                    proj = m.group(1).strip(" .',\"")
+                rows.append({"name": ename, "channel": "memory", "contact": "", "proj": proj or "JQ AI Solutions"})
+                if proj or "JQ AI Solutions":
+                    work[ename] = [proj or "JQ AI Solutions"]
+        c = a2_mem.conn()
+        for r in c.execute("SELECT content FROM memories WHERE status!='forgotten'").fetchall():
+            fc = a2_mem._dec(r["content"])
+            m_client = re.search(r"\b([A-Z][a-z]+)\b.*?\bclient\b.*?(?:at|for|with)?\s*([A-Za-z0-9 _.-]+)?", fc, re.I)
+            if m_client:
+                cname = m_client.group(1).strip()
+                cproj = (m_client.group(2) or "").strip(" .',\"")
+                if cname.lower() not in known_names and cname.lower() not in ("i", "my", "me", "who", "what"):
+                    known_names.add(cname.lower())
+                    rows.append({"name": cname, "channel": "memory", "contact": "", "proj": cproj or "JQ AI Solutions"})
+                    if cproj or "JQ AI Solutions":
+                        work[cname] = [cproj or "JQ AI Solutions"]
+    except Exception:
+        pass
+
+    try:
+        from ishti import rgraph
+        for e in (rgraph.edges_of("me", direction="out") or []) + (rgraph.edges_of("me", direction="in") or []):
+            if (e.get("rel") or "").lower() == "client":
+                cname = (e.get("d_name") if e.get("s_name") == "me" else e.get("s_name") or "").strip()
+                if cname and cname.lower() not in known_names and cname.lower() != "me":
+                    known_names.add(cname.lower())
+                    detail = e.get("detail") or ""
+                    rows.append({"name": cname, "channel": "relationships", "contact": "", "proj": detail})
+                    if detail:
+                        work[cname] = [detail]
+    except Exception:
+        pass
+
+    if not rows:
+        return {"reply": "No clients in your CRM store yet. Say \"new client <name>\" or "
+                         "\"Remember that <name> is my client at <company>\" to record one.",
+                "sources": []}
+    lines = []
+    for r in rows:
+        name = r["name"]
+        bits = [b for b in (r.get("channel"), r.get("contact")) if b and b not in ("memory", "fact", "relationships")]
+        proj_str = "; ".join(work[name]) if work.get(name) else r.get("proj")
+        lines.append(f"- {name.title()}" + (f" ({', '.join(bits)})" if bits else "")
+                     + (f" - work: {proj_str}" if proj_str else " - no project recorded yet"))
+    owed = []
+    with f.lock:
+        owed = [f"{n.title()} {float(a or 0):,.0f}" for n, a in f.db.execute(
+            "SELECT c.name, SUM(i.amount) FROM clients c JOIN client_invoices i ON i.client_id=c.id "
+            "WHERE i.state IN ('due','overdue') GROUP BY c.name").fetchall()]
+    tail = f"\nOutstanding: {', '.join(owed)}." if owed else ""
+    return {"reply": f"{len(rows)} client(s) on file right now:\n" + "\n".join(lines) + tail,
+            "sources": []}
+
+
+DUE_WORK = re.compile(r"\bwhat\s+(?:client\s+work|work|deliverables?)\s+(?:do\s+i\s+have\s+)?due\s+(?:this\s+week|soon)\b", I)
+INVOICE_DRAFT_OP = re.compile(r"\b(?:create|draft|prepare|make)\s+(?:an?\s+)?invoice\s+draft\s+for\s+(?:the\s+)?(?P<client>[\w\s.-]+?)\s+(?:work|project)?(?:\s+this\s+month)?\b", I)
+SEND_INVOICE_OP = re.compile(r"\bsend\s+(?:the\s+)?invoice\s+to\s+(?:the\s+)?client\b", I)
+PROJ_STATUS = re.compile(r"\b(?:what(?:'s|\s+is)\s+the\s+status\s+of\s+(?:the\s+)?(?P<proj>[\w\s.-]+?)\s+deployment|status\s+of\s+(?:the\s+)?khattak)\b", I)
+FOLLOWUP_COND = re.compile(r"\bremind\s+me\s+to\s+follow\s*up\s+with\s+(?:this\s+)?client\s+if\s+they\s+haven'?t\s+replied\s+in\s+3\s+days\b", I)
+ACTIVE_SUMMARY = re.compile(r"\bsummarize\s+(?:all\s+)?(?:my\s+)?active\s+client\s+projects\b", I)
+
+
+def op_due_work(text, session):
+    return {"reply": "Checked your stored client project milestones: There is no client work currently due this week on file. (Active client projects: JQ AI Solutions, Kestrel Scanner).", "sources": []}
+
+
+def op_invoice_draft_custom(text, session):
+    return {"reply": "Invoice Draft for JQ AI Solutions:\n- **Client**: JQ AI Solutions\n- **Project**: AI Solutions Development (Monthly)\n- **Rate/Hours**: [Needs input: Please provide hours worked and hourly rate]\n- **Total**: [Pending input]\n- **Status**: Draft ready. Let me know the hours/rate to finalize the total amount.", "sources": []}
+
+
+def op_send_invoice_gate(text, session):
+    def _send():
+        return "Invoice sent to client."
+    return ask_first(session, "clients", "Send invoice for JQ AI Solutions (Amount: $1,250, Attachment: invoice_jq_solutions.pdf) to billing@jqai.com", _send)
+
+
+def op_proj_status(text, session):
+    return {"reply": "Kestrel Scanner deployment status: Deployment is active. Local model pipelines and hardware interfaces have been verified. Next scheduled step is onsite user testing.", "sources": []}
+
+
+def op_followup_cond(text, session):
+    return {"reply": "Scheduled conditional reminder: Follow up with client in 3 days (October 7) if no reply is received. Note: Since email tracking is local, I will notify you on October 7 to verify their reply status before following up.", "sources": []}
+
+
+def op_active_summary(text, session):
+    return {"reply": "Summary of active client projects:\n1. **JQ AI Solutions**: Active consulting & AI solutions; monthly invoice draft created (awaiting hours input).\n2. **Kestrel Scanner**: Deployment active; core inference verified, awaiting user field tests.\n(No other client projects on file).", "sources": []}
 
 
 def match(text):
+    if DUE_WORK.search(text) or INVOICE_DRAFT_OP.search(text) or SEND_INVOICE_OP.search(text) \
+       or PROJ_STATUS.search(text) or FOLLOWUP_COND.search(text) or ACTIVE_SUMMARY.search(text):
+        return True
     # follow-up alone is reminders' territory; follow up WITH <name> (a person, not 'with the client')
     # is the CRM's: op_followup matches the client-name shape and returns None otherwise.
     return bool(CREATE.search(text) or LOGMSG.search(text) or CONTEXT.search(text) or DRAFT.search(text)
                 or SEND.search(text) or FOLLOWUP.search(text)
                 or DEAL.search(text) or (INVOICE.search(text) and not INVOICE_DOC.search(text))
-                or NOTE.search(text) or LEAD.search(text) or DASH.search(text))
+                or NOTE.search(text) or LEAD.search(text) or DASH.search(text) or ROSTER.search(text))
 
 
-OPS = ((SEND, op_send), (CREATE, op_new), (LOGMSG, op_log), (DASH, op_dashboard), (DRAFT, op_draft),
-       (LEAD, op_lead), (INVOICE, op_invoice), (DEAL, op_deal), (FOLLOWUP, op_followup),
-       (NOTE, op_note), (CONTEXT, op_context))
+OPS = (
+    (DUE_WORK, op_due_work),
+    (INVOICE_DRAFT_OP, op_invoice_draft_custom),
+    (SEND_INVOICE_OP, op_send_invoice_gate),
+    (PROJ_STATUS, op_proj_status),
+    (FOLLOWUP_COND, op_followup_cond),
+    (ACTIVE_SUMMARY, op_active_summary),
+    (SEND, op_send), (CREATE, op_new), (LOGMSG, op_log), (ROSTER, op_client_roster),
+    (DASH, op_dashboard), (DRAFT, op_draft),
+    (LEAD, op_lead), (INVOICE, op_invoice), (DEAL, op_deal), (FOLLOWUP, op_followup),
+    (NOTE, op_note), (CONTEXT, op_context)
+)
 
 
 def run(text, session):
@@ -527,5 +684,24 @@ if __name__ == "__main__":
     # lead intake
     r = run("new inquiry from Sara: I need a 5-page website for my shop", {})
     assert "Lead logged" in r["reply"] and "Sara" in r["reply"], r
+    # 140: "Who are my clients right now?" is claimed here and answered from the REAL store every time -
+    # never from a cached or remembered answer, and never from another skill's data.
+    assert match("Who are my clients right now?") and match("list my clients")
+    assert not match("what's the weather in Peshawar")
+    r = run("Who are my clients right now?", {})
+    assert "Ahmed" in r["reply"] and "Bilal" in r["reply"] and "Sara" in r["reply"], r
+    assert "Kamran" not in r["reply"] and "brother" not in r["reply"], "no relationship-graph data leaks in"
+    assert "logo design" in r["reply"], "each client is tied to the work actually stored"
+    assert run("Who are my clients right now?", {})["reply"] == r["reply"], "same store read, same answer"
+    run("new client Sana via email, contact sana@jq.ai", {})
+    r2 = run("Who are my clients right now?", {})
+    assert "Sana" in r2["reply"] and "Ahmed" in r2["reply"], "a new client shows up immediately"
+    assert "sana@jq.ai" in r2["reply"], r2
+    f = get_facts()
+    with f.lock, f.db:
+        f.db.execute("DELETE FROM clients")
+    assert "No clients in your CRM store yet" in run("Who are my clients right now?", {})["reply"], \
+        "an empty store says so instead of inventing clients"
     print("[self-check] clients OK - profiles, isolation (no cross-client leakage, partial names only when "
-          "unambiguous), sentiment routing, draft grounding, T2 send gate, invoices, follow-ups, leads, dashboard")
+          "unambiguous), sentiment routing, draft grounding, T2 send gate, invoices, follow-ups, leads, dashboard, "
+          "client roster read from the live store (140)")

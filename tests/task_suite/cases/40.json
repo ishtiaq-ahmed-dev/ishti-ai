@@ -1,0 +1,30 @@
+{
+ "id": 40,
+ "prompt_text": "Log into my account on this site and check my order status",
+ "category": "Browser & web tasks (37-44)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Uses visible Chrome correctly per BRW-2, confirms status found",
+ "expected_reply_success": "Uses visible Chrome correctly per BRW-2, confirms status found",
+ "expected_reply_failure": "If login required and no session: asks Ishtiaq to log in manually first, doesn't attempt credential handling itself unless that's explicitly in scope",
+ "pass_criteria": {
+  "expected_skill": [
+   "browser",
+   "email"
+  ],
+  "ok_any": [
+   "log in",
+   "login",
+   "order",
+   "session",
+   "which site",
+   "sign in"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

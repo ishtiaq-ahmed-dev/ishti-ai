@@ -1,0 +1,24 @@
+{
+ "id": 135,
+ "prompt_text": "My sister just got a new job, she's a teacher now",
+ "category": "People — family (133-138)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Confirms the update, keeps the rest of her existing record intact",
+ "expected_reply_success": "Confirms the update, keeps the rest of her existing record intact",
+ "expected_reply_failure": "Wrong: creates a duplicate person entity instead of updating the existing one",
+ "pass_criteria": {
+  "expected_skill": [
+   "memory",
+   "relationships",
+   "owner"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

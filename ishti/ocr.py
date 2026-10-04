@@ -50,6 +50,29 @@ def windows_ocr(img):
     return "\n".join(line.text for line in result.lines)
 
 
+def windows_ocr_boxes(img):
+    """Read-only OCR word boxes in image-local pixels for grounded desktop clicks."""
+    from winrt.windows.graphics.imaging import BitmapPixelFormat, SoftwareBitmap
+    from winrt.windows.media.ocr import OcrEngine
+    from winrt.windows.storage.streams import DataWriter
+
+    engine = OcrEngine.try_create_from_user_profile_languages()
+    if engine is None:
+        return []
+    image = img.convert("RGBA")
+    if max(image.size) > OcrEngine.max_image_dimension:
+        raise ValueError("Screen is too large to locate text without changing coordinates")
+    writer = DataWriter()
+    writer.write_bytes(image.tobytes())
+    bitmap = SoftwareBitmap.create_copy_from_buffer(writer.detach_buffer(), BitmapPixelFormat.RGBA8, *image.size)
+    async def recognize():
+        return await engine.recognize_async(bitmap)
+    result = asyncio.run(recognize()) if not _loop_running() else _in_thread(recognize)
+    return [[(word.text, int(word.bounding_rect.x), int(word.bounding_rect.y),
+              int(word.bounding_rect.width), int(word.bounding_rect.height)) for word in line.words]
+            for line in result.lines]
+
+
 def _loop_running():
     try:
         asyncio.get_running_loop()
@@ -115,13 +138,24 @@ def ocr_screen():
     from PIL import Image
     from ishti.skills.desktop.skill import _shot
     texts = []
-    with getattr(mss, "MSS", mss.mss)() as s:
-        for i, mon in enumerate(s.monitors[1:], 1):
-            g = s.grab(mon)
-            text = ocr(Image.frombytes("RGB", g.size, g.rgb))
-            if text.strip():
-                texts.append((f"[Screen {i}]\n" if len(s.monitors) > 2 else "") + text)
-    return "\n\n".join(texts), _shot()
+    try:
+        with getattr(mss, "MSS", mss.mss)() as s:
+            for i, mon in enumerate(s.monitors[1:], 1):
+                try:
+                    g = s.grab(mon)
+                    text = ocr(Image.frombytes("RGB", g.size, g.rgb))
+                    if text.strip():
+                        texts.append((f"[Screen {i}]\n" if len(s.monitors) > 2 else "") + text)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    try:
+        path = _shot()
+    except Exception:
+        from ishti.automation.multi_screen_agent import get_multi_screen_agent
+        _, _, path = get_multi_screen_agent().capture_engine.capture_stitched()
+    return "\n\n".join(texts), path
 
 
 if __name__ == "__main__":

@@ -1,0 +1,40 @@
+{
+ "id": 64,
+ "prompt_text": "Check my ISHTI project's test status, and if anything's failing tell me what",
+ "category": "Multi-step chained tasks (62-69)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "dev",
+  "terminal",
+  "devops",
+  "gitops",
+  "chat",
+  "files",
+  "folders",
+  "fileops"
+ ],
+ "expected_outcome": "Runs the actual check, reports real results",
+ "expected_reply_success": "Runs the actual check, reports real results",
+ "expected_reply_failure": "If no test results exist yet: says that, doesn't invent a status",
+ "pass_criteria": {
+  "expected_skill": [
+   "dev",
+   "terminal",
+   "meta",
+   "plan"
+  ],
+  "ok_any": [
+   "test",
+   "pass",
+   "fail",
+   "ishti",
+   "pytest"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

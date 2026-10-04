@@ -1,0 +1,41 @@
+{
+ "id": 171,
+ "prompt_text": "Play my latest Obscura video",
+ "category": "Media & video tasks (171-176)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "video",
+  "media",
+  "files",
+  "folders",
+  "system",
+  "meta",
+  "chat"
+ ],
+ "expected_outcome": "Confirms it's playing, which file/video",
+ "expected_reply_success": "Confirms it's playing, which file/video",
+ "expected_reply_failure": "If no matching video found: says so",
+ "pass_criteria": {
+  "expected_skill": [
+   "video",
+   "media",
+   "files",
+   "folders"
+  ],
+  "ok_any": [
+   "obscura",
+   "play",
+   "opening",
+   "no video",
+   "couldn't find",
+   "could not find",
+   "video"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

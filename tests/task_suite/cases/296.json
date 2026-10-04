@@ -1,0 +1,20 @@
+{
+ "id": 296,
+ "prompt_text": "\"What's this going to cost me?\" (before an action with real cost implications)",
+ "category": "Cost & budget awareness (293-296)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "States actual known cost upfront, before executing anything with that cost",
+ "expected_reply_success": "States actual known cost upfront, before executing anything with that cost",
+ "expected_reply_failure": "Wrong: proceeds first and mentions cost after, or guesses a number",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

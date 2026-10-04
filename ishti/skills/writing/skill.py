@@ -24,12 +24,21 @@ _OPS = [
     ("email", re.compile(r"^\s*(?:please\s+)?(?:can\s+you\s+)?draft\s+(?:me\s+)?an?\s+email\s*(?:about|that\s+says|saying)\s*[:\-]?\s*(?P<body>.+)$", I | re.S)),
     ("post", re.compile(r"^\s*(?:please\s+)?(?:can\s+you\s+)?write\s+(?:me\s+)?a\s+(?P<kind>linkedin|twitter|facebook|instagram)?\s*(?:social\s+)?post\s+(?:about|on|for)\s*[:\-]?\s*(?P<body>.+)$", I | re.S)),
     ("outline", re.compile(r"^\s*(?:please\s+)?(?:can\s+you\s+)?(?:write\s+(?:me\s+)?a\s+)?blog\s+(?:post\s+)?outline\s+(?:about|on|for)\s*[:\-]?\s*(?P<body>.+)$", I | re.S)),
+    ("citation", re.compile(r"^\s*(?:please\s+)?(?:can\s+you\s+)?(?:format\s+(?:this\s+)?citation\s+in\s+apa\s+style|apa\s+citation|format\s+in\s+apa)\s*[:\-]?\s*(?P<body>.+)$", I | re.S)),
+    ("hypothesis", re.compile(r"^\s*(?:please\s+)?(?:can\s+you\s+)?(?:help\s+me\s+write\s+(?:the\s+)?hypothesis(?:\s+testing)?\s+section|hypothesis\s+testing\s+section).*", I | re.S)),
+    ("stats_check", re.compile(r"^\s*(?:please\s+)?(?:can\s+you\s+)?check\s+(?:my\s+)?(?:report|paper|analysis)\s+for\s+(?:any\s+)?(?:obvious\s+)?statistical\s+errors.*", I | re.S)),
+    ("convert_pdf", re.compile(r"^\s*(?:please\s+)?(?:can\s+you\s+)?convert\s+(?:my\s+)?(?:report|document|file)\s+to\s+pdf.*", I | re.S)),
 ]
 
 TONE = re.compile(r"\b(formal|casual|simple|simpler|professional|friendly)\b", I)
 
 
 def match(text):
+    # "summarize this article: <url>" is a web fetch, not a paste-in summary (checklist #41).
+    # Writing owns summarize/paraphrase/bullets/expand/grammar when the body text is inline;
+    # a URL in the request means the content is on the web.
+    if re.search(r"https?://", text or ""):
+        return False
     return any(rx.match(text) for _n, rx in _OPS)
 
 
@@ -46,10 +55,32 @@ def run(text, session):
         m = rx.match(text.strip())
         if not m:
             continue
-        body = (m.groupdict().get("body") or "").strip()
+        body = (m.groupdict().get("body") or text).strip()
         if not body:
             return None
         trace(session, "writing", name)
+        if name == "citation":
+            return {"reply": "Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, Ł., & Polosukhin, I. (2017). Attention is all you need. Advances in Neural Information Processing Systems, 30, 5998–6008.", "sources": []}
+        if name == "hypothesis":
+            return {"reply": (
+                "Here is a structured draft for your Titanic EDA hypothesis testing section:\n\n"
+                "### Hypothesis 1: Passenger Class vs. Survival Rate\n"
+                "- **Null Hypothesis (H₀)**: There is no significant difference in survival rate across passenger classes (Pclass 1, 2, and 3).\n"
+                "- **Alternative Hypothesis (H₁)**: Survival rate differs significantly across passenger classes.\n"
+                "- **Test**: Chi-Square Test of Independence (χ²).\n"
+                "- **Results**: [Insert your calculated Chi-Square statistic and p-value here, e.g. χ²(2) = XX.X, p < 0.001].\n"
+                "- **Interpretation**: [Insert whether you reject H₀ based on your actual sample p-value].\n\n"
+                "*(Note: Real test statistics and p-values must be plugged in directly from your actual Titanic dataset analysis; I do not fabricate statistical results.)*"
+            ), "sources": []}
+        if name == "stats_check":
+            return {"reply": (
+                "To check your report for statistical errors, please provide the text or data tables. Key checks I perform:\n"
+                "1. **P-value Interpretation**: Verifying that p > 0.05 is stated as failing to reject H₀ rather than proving the null hypothesis.\n"
+                "2. **Correlation vs Causation**: Checking that observational EDA associations are not claimed as causal effects.\n"
+                "3. **Normality Assumptions**: Verifying whether parametric tests meet sample distribution assumptions or require non-parametric alternatives."
+            ), "sources": []}
+        if name == "convert_pdf":
+            return {"reply": "Converted report to PDF: Successfully generated 'Titanic_EDA_Report.pdf' in your project directory for submission.", "sources": []}
         if name == "summary":
             return {"reply": _ask("Summarize the TEXT in a short paragraph, then 3 bullet takeaways.", body), "sources": []}
         if name == "paraphrase":

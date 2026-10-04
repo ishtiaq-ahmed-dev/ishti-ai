@@ -1,0 +1,39 @@
+{
+ "id": 65,
+ "prompt_text": "Open my WhatsApp, check for anything from clients, and summarize",
+ "category": "Multi-step chained tasks (62-69)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "whatsapp",
+  "apps",
+  "browser",
+  "desktop",
+  "web_search",
+  "web_fetch",
+  "deep_research",
+  "chat"
+ ],
+ "expected_outcome": "Real summary of real messages found",
+ "expected_reply_success": "Real summary of real messages found",
+ "expected_reply_failure": "\"No client messages found in recent WhatsApp activity\"",
+ "pass_criteria": {
+  "expected_skill": [
+   "whatsapp",
+   "plan"
+  ],
+  "ok_any": [
+   "whatsapp",
+   "client",
+   "no ",
+   "message",
+   "couldn't",
+   "could not"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

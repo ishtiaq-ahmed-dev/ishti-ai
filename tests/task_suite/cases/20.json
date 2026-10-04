@@ -1,0 +1,36 @@
+{
+ "id": 20,
+ "prompt_text": "Rename report_final_v2.docx to Q3_Report.docx",
+ "category": "Files & folders (19-26)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "files",
+  "folders",
+  "fileops",
+  "system",
+  "meta",
+  "chat"
+ ],
+ "expected_outcome": "Confirms rename done, old→new name shown",
+ "expected_reply_success": "Confirms rename done, old→new name shown",
+ "expected_reply_failure": "If file not found: says exactly where it looked",
+ "pass_criteria": {
+  "expected_skill": [
+   "fileops",
+   "files"
+  ],
+  "ok_any": [
+   "q3_report",
+   "renam",
+   "not found",
+   "couldn't find",
+   "could not find"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

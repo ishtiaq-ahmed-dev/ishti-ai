@@ -1,0 +1,25 @@
+{
+ "id": 125,
+ "prompt_text": "Check my Facebook notifications",
+ "category": "Instagram & Facebook — reading & replying (123-127)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [
+  "browser",
+  "whatsapp"
+ ],
+ "expected_outcome": "Real summary of actual notifications",
+ "expected_reply_success": "Real summary of actual notifications",
+ "expected_reply_failure": "\"No new notifications\" if genuinely none",
+ "pass_criteria": {
+  "expected_skill": [
+   "browser"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

@@ -1,0 +1,37 @@
+{
+ "id": 9,
+ "prompt_text": "What's trending in AI news this week?",
+ "category": "Information lookup & search (1-10)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "web_search",
+  "web_fetch",
+  "browser",
+  "deep_research",
+  "chat",
+  "system",
+  "meta"
+ ],
+ "expected_outcome": "A few real headlines with sources, not a stale list",
+ "expected_reply_success": "A few real headlines with sources, not a stale list",
+ "expected_reply_failure": "\"Couldn't pull live news right now\" + why (network/tool issue)",
+ "pass_criteria": {
+  "expected_skill": [
+   "web_search",
+   "deep_research"
+  ],
+  "ok_any": [
+   "ai",
+   "news",
+   "couldn't",
+   "could not",
+   "headline"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

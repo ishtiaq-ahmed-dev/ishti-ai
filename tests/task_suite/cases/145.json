@@ -1,0 +1,23 @@
+{
+ "id": 145,
+ "prompt_text": "Remember that Ali is my classmate at IMS, we worked on CardioSense together",
+ "category": "People — friends, colleagues & university (145-150)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Confirms stored: Ali = classmate/IMS, linked to CardioSense AI",
+ "expected_reply_success": "Confirms stored: Ali = classmate/IMS, linked to CardioSense AI",
+ "expected_reply_failure": "Wrong: stores him with no project link, losing useful context",
+ "pass_criteria": {
+  "expected_skill": [
+   "memory",
+   "relationships"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

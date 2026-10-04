@@ -15,7 +15,8 @@ router = APIRouter()
 ALWAYS = frozenset(("/api/health", "/api/ready", "/api/vram", "/api/shutdown", "/api/focus", "/ws/events", "/api/status"))  # exact paths
 GUARDED = ("/api/shutdown", "/api/ollama", "/api/vram", "/api/focus", "/ws/events", "/api/settings", "/api/manage", "/api/privacy", "/api/sessions", "/api/reminders", "/api/notifications", "/api/markets", "/api/skills", "/api/downloads")  # state-changing / sensitive: no foreign websites
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
-PROXY_HEADERS = (b"cf-connecting-ip", b"x-forwarded-for", b"forwarded", b"x-real-ip")
+from ishti.web_security import PROXY_HEADERS as _PROXY_HEADERS
+PROXY_HEADERS = tuple(h.encode() for h in _PROXY_HEADERS)
 
 
 async def _off(fn, *a):
@@ -176,10 +177,14 @@ def foreign_web_page(scope):
     headers = dict(scope.get("headers") or [])
     if client not in LOOPBACK or any(h in headers for h in PROXY_HEADERS):
         return False
-    from urllib.parse import urlsplit
-    origin = headers.get(b"origin", b"").decode("latin-1")
-    host = headers.get(b"host", b"").decode("latin-1").rsplit(":", 1)[0].strip("[]")
-    return bool(origin and urlsplit(origin).hostname not in LOOPBACK) or bool(host and host not in LOOPBACK)
+    from starlette.requests import HTTPConnection
+    from ishti.api_sessions import host_authority
+    from ishti.web_security import request_origin_ok
+    conn = HTTPConnection(scope)
+    host = conn.headers.get("host")
+    authority = host_authority(host)
+    return (not request_origin_ok(conn)
+            or bool(host and (not authority or authority[0] not in LOOPBACK)))
 
 
 class Gate:

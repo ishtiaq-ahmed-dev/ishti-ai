@@ -1,0 +1,39 @@
+{
+ "id": 187,
+ "prompt_text": "What have you learned about how I like things done?",
+ "category": "Proactive suggestions & learned routines (182-187)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "memory",
+  "learning",
+  "chat",
+  "owner"
+ ],
+ "expected_outcome": "Honest list of actually-learned, reasonably-confident patterns",
+ "expected_reply_success": "Honest list of actually-learned, reasonably-confident patterns",
+ "expected_reply_failure": "Wrong: pads the list with low-confidence guesses presented as settled facts",
+ "pass_criteria": {
+  "expected_skill": [
+   "learning",
+   "memory",
+   "chat",
+   "memory_manager"
+  ],
+  "ok_any": [
+   "learned",
+   "preference",
+   "nothing",
+   "not enough",
+   "pattern",
+   "haven't",
+   "have not",
+   "no confident"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

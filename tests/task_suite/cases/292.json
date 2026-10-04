@@ -1,0 +1,20 @@
+{
+ "id": 292,
+ "prompt_text": "You know what I mean",
+ "category": "Vague or incomplete requests (287-292)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Honestly says it's not sure and asks, rather than performing false confidence",
+ "expected_reply_success": "Honestly says it's not sure and asks, rather than performing false confidence",
+ "expected_reply_failure": "Wrong: pretends to understand and produces something unrelated",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

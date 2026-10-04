@@ -1,0 +1,32 @@
+{
+ "id": 105,
+ "prompt_text": "Open my Gmail",
+ "category": "Opening apps — social & communication (101-110)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [
+  "apps",
+  "browser",
+  "desktop",
+  "web_search",
+  "web_fetch",
+  "deep_research",
+  "chat"
+ ],
+ "expected_outcome": "Confirms opened, which account if it can tell",
+ "expected_reply_success": "Confirms opened, which account if it can tell",
+ "expected_reply_failure": "If multiple Google sessions exist and it's unclear which: asks instead of guessing",
+ "pass_criteria": {
+  "expected_skill": [
+   "email",
+   "browser",
+   "apps"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

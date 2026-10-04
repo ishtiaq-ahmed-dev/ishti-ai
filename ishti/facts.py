@@ -47,6 +47,11 @@ class Facts:
                 """INSERT INTO facts VALUES(?,?,?,?,?,?) ON CONFLICT(key, attr) DO UPDATE SET
                    value=excluded.value, entity=excluded.entity, previous=?, updated_at=excluded.updated_at""",
                 (k, attr, entity.strip(), value, None, time.time(), prev))
+        try:
+            from ishti import events
+            events.publish("memory_updated", {"type": "fact", "entity": entity, "attr": attr, "value": value})
+        except Exception:
+            pass
         return prev
 
     def keys(self):
@@ -79,8 +84,15 @@ class Facts:
             return 0
         with self.lock, self.db:
             if attr:
-                return self.db.execute("DELETE FROM facts WHERE key=? AND attr=?", (k, attr)).rowcount
-            return self.db.execute("DELETE FROM facts WHERE key=?", (k,)).rowcount
+                rc = self.db.execute("DELETE FROM facts WHERE key=? AND attr=?", (k, attr)).rowcount
+            else:
+                rc = self.db.execute("DELETE FROM facts WHERE key=?", (k,)).rowcount
+        try:
+            from ishti import events
+            events.publish("memory_updated", {"type": "forget", "entity": name, "attr": attr})
+        except Exception:
+            pass
+        return rc
 
     def mentioned_in(self, text: str) -> list:
         """Facts whose entity appears (whole words) in text: [(entity, attr, value)]."""

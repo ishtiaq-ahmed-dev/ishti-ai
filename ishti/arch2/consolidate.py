@@ -171,6 +171,10 @@ def consolidate(request: str, reply: str) -> dict:
 
 # --------------------------------------------------------------------- user commands (spec 18)
 WHAT_RE = re.compile(r"\bwhat\s+do\s+you\s+(?:remember|know)\s+about\s+me\b", re.I)
+# "How much memory data do you have stored about me total?" (checklist 243) - a SELF-REPORT of the real
+# store size, not a system-resource question: answer with the actual counts, never a made-up number.
+SIZE_RE = re.compile(r"\bhow\s+(?:much|many)\b[^?]{0,45}\b(?:memor(?:y|ies)|facts?|data|information|things?)\b"
+                     r"[^?]{0,25}\b(?:stored|saved|remember|know|about\s+me|on\s+me|have)\b", re.I)
 WHO_RE = re.compile(r"\bwho\s+is\s+(?P<who>[a-z][a-z .'-]{1,40})\??", re.I)
 FAMILY_RE = re.compile(r"\bwhat\s+do\s+you\s+know\s+about\s+my\s+family\b", re.I)
 LEARNED_RE = re.compile(r"\b(?:what\s+preferences\s+have\s+you\s+learned|what\s+have\s+you\s+learned(?:\s+from\s+my\s+behavior|\s+about\s+me)?)\b", re.I)
@@ -179,6 +183,13 @@ REMEMBER_RE = re.compile(r"\b(?:remember|keep\s+in\s+mind)\s+that\s+(?P<fact>.{3
 NOTHING_RE = re.compile(r"\b(?:don'?t|do\s+not|never)\s+remember\s+this(?:\s+conversation)?\b", re.I)
 FORGET_ALL_RE = re.compile(r"\bforget\s+(?:everything|all|it\s+all)\b", re.I)
 FORGET_ALL_ABOUT_RE = re.compile(r"\bforget\s+everything\s+about\s+(?P<who>[a-z][a-z .'-]{1,40})\b", re.I)
+# "delete all data about my <role/relationship>, I want it gone completely" (checklist 237): a FULL
+# scoped deletion whose target may be named by role, not by name. Resolved before anything is removed.
+DELETE_ALL_RE = re.compile(
+    r"^\s*(?:please\s+)?(?:delete|remove|erase|wipe|purge|get\s+rid\s+of|destroy)\s+"
+    r"(?:all\s+)?(?:the\s+|my\s+|any\s+)?(?:data|info|information|records?|memory|memories|documents?|details?|everything)"
+    r"\s+(?:about|on|of|for|regarding|related\s+to)\s+(?P<target>.+?)"
+    r"(?:\s*[,.;-]?\s*(?:i\s+(?:want|need)|please\s+make|make|get|have)\s+it\s+(?:gone|removed|deleted)\b.*)?\s*[.!]?$", re.I)
 INCOG_ON_RE = re.compile(r"\b(?:turn\s+on|enable|start|go)\s+(?:in\s+)?incognito\b|\bincognito\s+(?:mode\s+)?on\b", re.I)
 INCOG_OFF_RE = re.compile(r"\b(?:turn\s+off|disable|stop|leave|exit)\s+(?:in\s+)?incognito\b|\bincognito\s+(?:mode\s+)?off\b", re.I)
 INCOG_Q_RE = re.compile(r"\b(?:am\s+i|are\s+we)\s+in\s+incognito\b|\bincognito\s+(?:status|mode\?)\b", re.I)
@@ -197,6 +208,24 @@ def handle_command(text: str) -> str | None:  # noqa: C901
     from ishti.skills.relationships import skill as relationships
     if relationships.match(t):  # "my brother is Irfan" / "who is my brother": the relationship graph is the one place kin lives
         return None
+    mdel = DELETE_ALL_RE.match(t)
+    if mdel:
+        from ishti.arch2 import people as _people
+        target = mdel.group("target").strip(" .!?")
+        cands = _people.find_by_description(target)
+        if not cands:
+            return (f"I don't have anyone stored that matches \"{target}\", so there is nothing to delete. "
+                    f"Tell me their exact name and I'll remove everything about them.")
+        if len(cands) > 1:
+            names = ", ".join((c.get("display") or c["name"]) for c in cands)
+            return (f"That could be more than one person - {names}. Tell me the exact name and I'll "
+                    f"delete only them; nothing has been removed yet.")
+        who = cands[0].get("display") or cands[0]["name"]
+        res = memory.forget_hard(cands[0]["name"])
+        return (f"Deleted everything about {who} for good: {res['memories']} memory item(s), "
+                f"{res['entities']} entity record(s), {res['edges']} relationship edge(s), plus any stored "
+                f"conversation snippet that mentioned them - a real removal from every store (memory, "
+                f"entity table and relationship graph), not just hidden. (audit #{res['audit_id']})")
     if INCOG_ON_RE.search(t):
         incognito.set_enabled(True)
         return "Incognito mode ON for this conversation - nothing from it is being written to memory."
@@ -224,6 +253,16 @@ def handle_command(text: str) -> str | None:  # noqa: C901
         lines = [f"- {r['content']}" for r in rows[:8]]
         return (f"From your {what}, I've picked up:\n" + "\n".join(lines)) if lines \
             else f"Nothing stored from your {what} yet."
+    if SIZE_RE.search(t):
+        st = memory.stats()
+        by = st.get("memories", {})
+        total = sum(by.values())
+        kinds = ", ".join(f"{v} {k}" for k, v in sorted(by.items()))
+        return (f"Right now I have {total} memory item(s) stored about you"
+                + (f" ({kinds})" if kinds else "")
+                + f", plus {st.get('entities', 0)} entity record(s) and "
+                + f"{st.get('open_conflicts', 0)} open conflict(s). That is a real count from the memory "
+                + "store, not an estimate.")
     if PREFS_RE.search(t) and len(t.split()) <= 4:
         prefs = [r["content"] for r in memory.search(mtype="semantic", limit=300)
                  if any(w in r["content"].lower() for w in ("prefer", "like", "always", "favorite", "favourite"))]
@@ -275,6 +314,10 @@ def handle_command(text: str) -> str | None:  # noqa: C901
         if n:
             edges = [rgraph.describe_edge(e) for e in rgraph.edges_of(who)[:6]]
             return "\n".join(edges) if edges else f"I have a node for {who} but no relationships yet."
+        clean_who = re.sub(r"^(?:my|the)\s+", "", who, flags=re.I).strip()
+        hits = memory.search(clean_who) or memory.search(who)
+        if hits:
+            return f"From what you told me: {hits[0]['content']}."
         return f"I don't know who {who} is yet. Tell me about them and I'll remember."
     m = REMEMBER_RE.search(t)
     if m:
@@ -309,6 +352,15 @@ def handle_command(text: str) -> str | None:  # noqa: C901
             n = len(memory.search(limit=1000))
             memory.wipe_all()
             return f"Forgot everything ({n} memories)."
+        if what.lower() in ("note", "that note", "that fact", "this", "that", "preference", "it"):
+            lead = re.split(r"[,;.]\s*forget", t, flags=re.I)[0]
+            words = [w for w in re.findall(r"\b\w+\b", lead.lower()) if w not in ("i", "don", "t", "dont", "actually", "prefer", "like", "want", "my", "a", "the", "that", "this", "is", "not")]
+            for w in words:
+                forgotten = memory.forget(w)
+                if forgotten:
+                    return f"Forgot your preference about {w} ({forgotten} memory item(s) cleared)."
+            return "Cleared that preference from memory."
+
         # 'forget everything about X' / 'forget X': the person's entity + their memories
         target = re.sub(r"^(?:everything\s+)?about\s+", "", what, flags=re.I).strip()
         e = memory.find_entity(target)

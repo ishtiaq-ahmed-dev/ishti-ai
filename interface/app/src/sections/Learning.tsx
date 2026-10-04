@@ -4,9 +4,14 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Clock,
   Database,
   Download,
+  GitFork,
+  Mail,
   Pencil,
+  Phone,
+  Plus,
   RefreshCw,
   Search,
   Sliders,
@@ -124,6 +129,55 @@ type Person = {
   aliases?: string[];
 };
 
+export type FamilyMember = {
+  id: string;
+  name: string;
+  relationship: string;
+  generation: number;
+  phone?: string;
+  email?: string;
+  note?: string;
+  first_seen?: number;
+  last_confirmed?: number;
+  confidence?: number;
+  source?: string;
+};
+
+const KIN_PRESETS = [
+  { rel: "brother", label: "Brother", gen: 3 },
+  { rel: "sister", label: "Sister", gen: 3 },
+  { rel: "father", label: "Father", gen: 2 },
+  { rel: "mother", label: "Mother", gen: 2 },
+  { rel: "spouse", label: "Spouse", gen: 3 },
+  { rel: "wife", label: "Wife", gen: 3 },
+  { rel: "husband", label: "Husband", gen: 3 },
+  { rel: "son", label: "Son", gen: 4 },
+  { rel: "daughter", label: "Daughter", gen: 4 },
+  { rel: "grandfather", label: "Grandfather", gen: 1 },
+  { rel: "grandmother", label: "Grandmother", gen: 1 },
+  { rel: "uncle", label: "Uncle", gen: 2 },
+  { rel: "aunt", label: "Aunt", gen: 2 },
+  { rel: "cousin", label: "Cousin", gen: 3 },
+  { rel: "nephew", label: "Nephew", gen: 4 },
+  { rel: "niece", label: "Niece", gen: 4 },
+];
+
+const GENERATIONS = [
+  { id: 1, label: "Generation 1 · Grandparents & Elders", desc: "Elder roots, grandparents, and ancestors", badgeColor: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30" },
+  { id: 2, label: "Generation 2 · Parents & Aunts/Uncles", desc: "Parents, aunts, uncles, and senior mentors", badgeColor: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30" },
+  { id: 3, label: "Generation 3 · Self, Siblings & Peers", desc: "Self (Ishtiaq Ahmed), spouse, brothers, sisters, and cousins", badgeColor: "bg-accent/10 text-accent border-accent/30" },
+  { id: 4, label: "Generation 4 · Children & Next Generation", desc: "Children, nephews, nieces, and future descendants", badgeColor: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30" },
+];
+
+const getGenForRel = (rel: string): number => {
+  const r = rel.toLowerCase().trim();
+  if (["grandfather", "grandmother", "dada", "dadi", "nana", "nani", "ancestor"].includes(r)) return 1;
+  if (["father", "mother", "uncle", "aunt", "chacha", "chachi", "mamoo", "mami", "khala", "phuppo", "taya"].includes(r)) return 2;
+  if (["brother", "sister", "sibling", "cousin", "spouse", "wife", "husband", "me", "self"].includes(r)) return 3;
+  if (["son", "daughter", "child", "nephew", "niece", "grandchild"].includes(r)) return 4;
+  return 3;
+};
+
 type DatasetRow = {
   id: number;
   ts?: number;
@@ -222,6 +276,17 @@ function fmtTs(ts: unknown): string {
   const n = typeof ts === "number" ? ts : Number(ts);
   if (!Number.isFinite(n) || n <= 0) return "—";
   return new Date(n * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function timeAgo(ts: unknown): string {
+  const n = typeof ts === "number" ? ts : Number(ts);
+  if (!Number.isFinite(n) || n <= 0) return "—";
+  const diffSec = Math.floor(Date.now() / 1000 - n);
+  if (diffSec < 60) return "just now";
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+  if (diffSec < 604800) return `${Math.floor(diffSec / 86400)}d ago`;
+  return new Date(n * 1000).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
 }
 
 function loopValue(v: unknown): string {
@@ -340,7 +405,7 @@ const TABS: { key: TabKey; label: string; icon: LucideIcon }[] = [
   { key: "candidates", label: "Candidates", icon: ThumbsUp },
   { key: "feedback", label: "Feedback", icon: ThumbsDown },
   { key: "mistakes", label: "Mistakes", icon: X },
-  { key: "people", label: "People", icon: Users },
+  { key: "people", label: "People & Family", icon: Users },
   { key: "workflows", label: "Workflows", icon: Workflow },
   { key: "training", label: "Training data", icon: Database },
   { key: "about", label: "About you", icon: UserRound },
@@ -381,6 +446,20 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
   const [feedback, setFeedback] = useState<Feedback[]>([]);
   const [mistakes, setMistakes] = useState<Mistake[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
+  const [family, setFamily] = useState<FamilyMember[]>([]);
+  const [familyView, setFamilyView] = useState<"tree" | "table">("tree");
+  const [familySearch, setFamilySearch] = useState("");
+  const [familyModal, setFamilyModal] = useState<{
+    isOpen: boolean;
+    mode: "add" | "edit";
+    name: string;
+    relationship: string;
+    generation: number;
+    phone: string;
+    email: string;
+    note: string;
+  } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [workflows, setWorkflows] = useState<WorkflowRow[]>([]);
   const [dataset, setDataset] = useState<DatasetRow[]>([]);
   const [dstats, setDstats] = useState<DatasetStats>({});
@@ -400,7 +479,7 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
 
   const load = useCallback(async (spinner = false) => {
     if (spinner) setLoading(true);
-    const [ov, ls, cd, fb, mk, pp, wf, ds, st, ac, aq, rf] = await Promise.all([
+    const [ov, ls, cd, fb, mk, pp, wf, ds, st, ac, aq, rf, fm] = await Promise.all([
       safeGet<Overview>("/api/learning/overview"),
       safeGet<{ lessons?: Lesson[] }>("/api/learning/lessons"),
       safeGet<{ candidates?: Candidate[] }>("/api/learning/candidates"),
@@ -413,6 +492,7 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
       safeGet<{ interactions?: Interaction[] }>("/api/learning/interactions"),
       safeGet<AskSlot>("/api/learning/ask"),
       safeGet<ReflectionsPayload>("/api/learning/reflections"),
+      safeGet<{ family?: FamilyMember[] }>("/api/learning/family"),
     ]);
     if (ov) setOverview(ov);
     if (ls) setLessons(ls.lessons ?? []);
@@ -420,6 +500,7 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
     if (fb) setFeedback(fb.feedback ?? []);
     if (mk) setMistakes(mk.mistakes ?? []);
     if (pp) setPeople(pp.people ?? []);
+    if (fm) setFamily(fm.family ?? []);
     if (wf) setWorkflows(wf.workflows ?? []);
     if (ds) {
       setDataset(ds.dataset ?? []);
@@ -438,6 +519,9 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
 
   useEffect(() => {
     void load(true);
+    const handleMemoryEvent = () => void load(false);
+    window.addEventListener("ishti-memory-updated", handleMemoryEvent);
+    return () => window.removeEventListener("ishti-memory-updated", handleMemoryEvent);
   }, [load]);
 
   useEffect(() => {   // #about / #memory (and the back/forward buttons) switch tabs without leaving this page
@@ -469,6 +553,33 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
       setBusy("");
     }
   }, [load]);
+
+  const saveFamilyMember = async (data: {
+    name: string;
+    relationship: string;
+    generation: number;
+    phone?: string;
+    email?: string;
+    note?: string;
+  }) => {
+    const ok = await run(
+      `family:save:${data.name}`,
+      () => postJSON("/api/learning/family", data),
+      `Family member ${data.name} saved.`,
+    );
+    if (ok) {
+      setFamilyModal(null);
+    }
+  };
+
+  const deleteFamilyMember = async (name: string) => {
+    setDeleteConfirm(null);
+    await run(
+      `family:delete:${name}`,
+      () => del(`/api/learning/family/${encodeURIComponent(name)}`),
+      `Family member ${name} removed from family tree.`,
+    );
+  };
 
   const lessonAction = (id: string, action: "confirm" | "reject" | "pause" | "resume") => {
     const base = `/api/learning/lessons/${encodeURIComponent(id)}`;
@@ -1176,41 +1287,379 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
             )}
             {tab === "people" && (
               <Panel
-                title="People & Entities"
-                hint="Disambiguated people and contacts. Entities with matching names remain distinct rows."
-                action={<span className="text-[11px] text-muted-foreground">{people.length} entities</span>}
+                title="People & Family Tree"
+                hint="Interactive generational kinship tree and disambiguated entities grounded in relation graph & working memory."
+                action={
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center rounded-lg border border-border bg-muted/30 p-0.5 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setFamilyView("tree")}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors cursor-pointer",
+                          familyView === "tree" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        <GitFork className="h-3 w-3" />
+                        Family Tree ({family.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFamilyView("table")}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors cursor-pointer",
+                          familyView === "table" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        <Users className="h-3 w-3" />
+                        All Entities ({people.length})
+                      </button>
+                    </div>
+                    {familyView === "tree" && (
+                      <button
+                        type="button"
+                        className={btnPrimary}
+                        onClick={() =>
+                          setFamilyModal({
+                            isOpen: true,
+                            mode: "add",
+                            name: "",
+                            relationship: "brother",
+                            generation: 3,
+                            phone: "",
+                            email: "",
+                            note: "",
+                          })
+                        }
+                      >
+                        <Plus className="h-3 w-3" />
+                        Add Member
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className={btnQuiet}
+                      title="Refresh"
+                      onClick={() => void load(true)}
+                    >
+                      <RefreshCw className={cn("h-3 w-3", loading && "animate-spin")} />
+                    </button>
+                  </div>
+                }
               >
-                {people.length === 0 ? (
-                  <Empty>No entities tracked yet.</Empty>
+                {familyView === "tree" ? (
+                  <div className="space-y-6">
+                    {/* Search & Overview Stats */}
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="relative min-w-[200px] flex-1 max-w-sm">
+                        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                        <input
+                          className={cn(inputCls, "pl-8 text-xs")}
+                          placeholder="Filter family by name, relation..."
+                          value={familySearch}
+                          onChange={(e) => setFamilySearch(e.target.value)}
+                        />
+                        {familySearch && (
+                          <button
+                            type="button"
+                            onClick={() => setFamilySearch("")}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                        <span className="flex items-center gap-1 font-medium text-foreground">
+                          <Users className="h-3.5 w-3.5 text-accent" />
+                          {family.length} members
+                        </span>
+                        <span>·</span>
+                        <span>4 generational tiers</span>
+                        <span>·</span>
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          Live synchronized
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Generational Tree Tiers */}
+                    {GENERATIONS.map((gen, genIdx) => {
+                      const query = familySearch.toLowerCase().trim();
+                      const tierMembers = family.filter(
+                        (m) =>
+                          m.generation === gen.id &&
+                          (!query ||
+                            m.name.toLowerCase().includes(query) ||
+                            m.relationship.toLowerCase().includes(query) ||
+                            (m.note && m.note.toLowerCase().includes(query)))
+                      );
+
+                      return (
+                        <div key={gen.id} className="space-y-3">
+                          {/* Generational Header */}
+                          <div className="flex items-center justify-between border-b border-border/60 pb-2">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={cn(
+                                  "rounded-md border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider",
+                                  gen.badgeColor
+                                )}
+                              >
+                                {gen.label}
+                              </span>
+                              <span className="text-[11px] text-muted-foreground hidden sm:inline">
+                                {gen.desc}
+                              </span>
+                            </div>
+                            <span className="text-[11px] font-medium text-muted-foreground">
+                              {tierMembers.length} {tierMembers.length === 1 ? "person" : "people"}
+                            </span>
+                          </div>
+
+                          {/* Members in this generation */}
+                          {tierMembers.length === 0 ? (
+                            <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 p-4 text-center">
+                              <p className="text-xs text-muted-foreground">
+                                No records in {gen.label.split("·")[1]?.trim() || "this tier"}
+                                {familySearch ? " matching search" : ""}.
+                              </p>
+                              {!familySearch && (
+                                <button
+                                  type="button"
+                                  className={cn(btnQuiet, "mt-2")}
+                                  onClick={() =>
+                                    setFamilyModal({
+                                      isOpen: true,
+                                      mode: "add",
+                                      name: "",
+                                      relationship: gen.id === 1 ? "grandfather" : gen.id === 2 ? "father" : gen.id === 3 ? "brother" : "son",
+                                      generation: gen.id,
+                                      phone: "",
+                                      email: "",
+                                      note: "",
+                                    })
+                                  }
+                                >
+                                  <Plus className="h-3 w-3" />
+                                  Add to this generation
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                              {tierMembers.map((m) => {
+                                const isMe = m.id === "me" || m.name.toLowerCase() === "ishtiaq ahmed";
+                                const isDeleting = deleteConfirm === m.name;
+                                const initials = m.name
+                                  .split(" ")
+                                  .map((n) => n[0])
+                                  .join("")
+                                  .toUpperCase()
+                                  .slice(0, 2);
+
+                                return (
+                                  <Card
+                                    key={m.id || m.name}
+                                    className={cn(
+                                      "relative flex flex-col justify-between space-y-3 p-4 transition-all duration-200 hover:shadow-md",
+                                      isMe ? "border-accent/50 bg-accent-soft/30 shadow-xs" : "hover:border-border"
+                                    )}
+                                  >
+                                    <div>
+                                      {/* Header Row */}
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                          <div
+                                            className={cn(
+                                              "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold",
+                                              isMe
+                                                ? "bg-accent text-white shadow-xs"
+                                                : "bg-muted text-foreground border border-border"
+                                            )}
+                                          >
+                                            {initials || "FM"}
+                                          </div>
+                                          <div className="min-w-0">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                              <p className="truncate text-sm font-semibold text-foreground">
+                                                {m.name}
+                                              </p>
+                                              {isMe && (
+                                                <span className="rounded-md border border-accent/30 bg-accent/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-accent">
+                                                  Root / You
+                                                </span>
+                                              )}
+                                              {m.note && /(?:deceased|late|died|passed away|wafat)/i.test(m.note) && (
+                                                <span className="rounded-md border border-slate-500/30 bg-slate-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                                  Late / Deceased
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
+                                              <Pill tone={isMe ? "accent" : "muted"}>
+                                                {m.relationship}
+                                              </Pill>
+                                              {m.confidence !== undefined && (
+                                                <span className="text-[10px] text-muted-foreground">
+                                                  {(m.confidence * 100).toFixed(0)}% confirmed
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        {/* Actions */}
+                                        <div className="flex items-center gap-1 shrink-0">
+                                          <button
+                                            type="button"
+                                            title="Edit member"
+                                            className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+                                            onClick={() =>
+                                              setFamilyModal({
+                                                isOpen: true,
+                                                mode: "edit",
+                                                name: m.name,
+                                                relationship: m.relationship,
+                                                generation: m.generation,
+                                                phone: m.phone || "",
+                                                email: m.email || "",
+                                                note: m.note || "",
+                                              })
+                                            }
+                                          >
+                                            <Pencil className="h-3.5 w-3.5" />
+                                          </button>
+                                          {!isMe && (
+                                            <button
+                                              type="button"
+                                              title="Delete member"
+                                              className="rounded-lg p-1.5 text-muted-foreground hover:bg-red-500/10 hover:text-red-500 transition-colors cursor-pointer"
+                                              onClick={() => setDeleteConfirm(isDeleting ? null : m.name)}
+                                            >
+                                              <Trash2 className="h-3.5 w-3.5" />
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      {/* Note / Context */}
+                                      {m.note && (
+                                        <p className="mt-2.5 rounded-lg bg-muted/40 p-2 text-xs text-foreground/80 leading-relaxed border border-border/40">
+                                          {m.note}
+                                        </p>
+                                      )}
+
+                                      {/* Contact Information */}
+                                      {(m.phone || m.email) && (
+                                        <div className="mt-2.5 space-y-1 text-xs text-muted-foreground">
+                                          {m.phone && (
+                                            <div className="flex items-center gap-1.5">
+                                              <Phone className="h-3 w-3 text-muted-foreground/70" />
+                                              <a href={`tel:${m.phone}`} className="hover:text-accent transition-colors">
+                                                {m.phone}
+                                              </a>
+                                            </div>
+                                          )}
+                                          {m.email && (
+                                            <div className="flex items-center gap-1.5">
+                                              <Mail className="h-3 w-3 text-muted-foreground/70" />
+                                              <a href={`mailto:${m.email}`} className="truncate hover:text-accent transition-colors">
+                                                {m.email}
+                                              </a>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Chronology & Time Footer */}
+                                    <div className="border-t border-border/50 pt-2 text-[10px] text-muted-foreground space-y-1">
+                                      <div className="flex items-center justify-between">
+                                        <span className="flex items-center gap-1">
+                                          <Clock className="h-3 w-3 text-muted-foreground/70" />
+                                          Known since: {fmtTs(m.first_seen)}
+                                        </span>
+                                        <span>Confirmed {timeAgo(m.last_confirmed)}</span>
+                                      </div>
+
+                                      {/* Inline Delete Confirmation */}
+                                      {isDeleting && (
+                                        <div className="mt-2 rounded-lg border border-red-500/30 bg-red-500/10 p-2 text-center space-y-1.5">
+                                          <p className="text-[11px] font-medium text-red-500">
+                                            Delete {m.name} from family tree?
+                                          </p>
+                                          <div className="flex items-center justify-center gap-2">
+                                            <button
+                                              type="button"
+                                              className={btnDanger}
+                                              disabled={busy !== ""}
+                                              onClick={() => void deleteFamilyMember(m.name)}
+                                            >
+                                              Confirm Delete
+                                            </button>
+                                            <button
+                                              type="button"
+                                              className={btnQuiet}
+                                              onClick={() => setDeleteConfirm(null)}
+                                            >
+                                              Cancel
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </Card>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* Connecting stem between generations */}
+                          {genIdx < GENERATIONS.length - 1 && (
+                            <div className="flex items-center justify-center py-1">
+                              <div className="h-4 w-px bg-border/80" />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 ) : (
-                  <Card className="overflow-hidden p-0">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-background">
-                        <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                          <th className="px-3 py-2 font-medium">Name</th>
-                          <th className="px-3 py-2 font-medium">Org / Rel</th>
-                          <th className="px-3 py-2 font-medium">Contact</th>
-                          <th className="px-3 py-2 font-medium">Mentions</th>
-                          <th className="px-3 py-2 font-medium">Last seen</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {people.map((p, i) => (
-                          <tr key={p.entity ?? i} className="border-t border-border/60">
-                            <td className="px-3 py-2 font-medium text-foreground">{p.entity}</td>
-                            <td className="px-3 py-2 text-muted-foreground">
-                              {[p.org, p.relationship].filter(Boolean).join(" Â· ") || "â€”"}
-                            </td>
-                            <td className="px-3 py-2 text-muted-foreground">
-                              {[p.email, p.phone].filter(Boolean).join(" / ") || "â€”"}
-                            </td>
-                            <td className="px-3 py-2 tabular-nums text-foreground">{num(p.mentions, 1)}</td>
-                            <td className="px-3 py-2 tabular-nums text-muted-foreground">{fmtTs(p.last_seen)}</td>
+                  /* Raw Disambiguated Entities Table */
+                  people.length === 0 ? (
+                    <Empty>No entities tracked yet.</Empty>
+                  ) : (
+                    <Card className="overflow-hidden p-0">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-background">
+                          <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                            <th className="px-3 py-2 font-medium">Name</th>
+                            <th className="px-3 py-2 font-medium">Org / Rel</th>
+                            <th className="px-3 py-2 font-medium">Contact</th>
+                            <th className="px-3 py-2 font-medium">Mentions</th>
+                            <th className="px-3 py-2 font-medium">Last seen</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </Card>
+                        </thead>
+                        <tbody>
+                          {people.map((p, i) => (
+                            <tr key={p.entity ?? i} className="border-t border-border/60">
+                              <td className="px-3 py-2 font-medium text-foreground">{p.entity}</td>
+                              <td className="px-3 py-2 text-muted-foreground">
+                                {[p.org, p.relationship].filter(Boolean).join(" · ") || "—"}
+                              </td>
+                              <td className="px-3 py-2 text-muted-foreground">
+                                {[p.email, p.phone].filter(Boolean).join(" / ") || "—"}
+                              </td>
+                              <td className="px-3 py-2 tabular-nums text-foreground">{num(p.mentions, 1)}</td>
+                              <td className="px-3 py-2 tabular-nums text-muted-foreground">{fmtTs(p.last_seen)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </Card>
+                  )
                 )}
               </Panel>
             )}
@@ -1405,6 +1854,143 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
             )}
           </motion.div>
         </AnimatePresence>
+        {/* Family Member Add / Edit Modal */}
+        {familyModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+            <div className="w-full max-w-md rounded-2xl border border-border bg-background p-6 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-border pb-3.5">
+                <div>
+                  <h3 className="text-base font-semibold text-foreground">
+                    {familyModal.mode === "add" ? "Add Family Member" : `Edit ${familyModal.name}`}
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground">
+                    Synchronized with relationship graph & entity memory
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFamilyModal(null)}
+                  className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="mt-4 space-y-3.5">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">Full Name *</label>
+                  <input
+                    className={cn(inputCls, "mt-1")}
+                    placeholder="e.g. Tariq Ahmed"
+                    value={familyModal.name}
+                    disabled={familyModal.mode === "edit"}
+                    onChange={(e) => setFamilyModal({ ...familyModal, name: e.target.value })}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Relationship *</label>
+                    <input
+                      className={cn(inputCls, "mt-1")}
+                      placeholder="e.g. Brother, Mother"
+                      list="kin-suggestions"
+                      value={familyModal.relationship}
+                      onChange={(e) => {
+                        const rel = e.target.value;
+                        const autoGen = getGenForRel(rel);
+                        setFamilyModal({
+                          ...familyModal,
+                          relationship: rel,
+                          generation: autoGen,
+                        });
+                      }}
+                    />
+                    <datalist id="kin-suggestions">
+                      {KIN_PRESETS.map((k) => (
+                        <option key={k.rel} value={k.label} />
+                      ))}
+                    </datalist>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Generation</label>
+                    <select
+                      className={cn(inputCls, "mt-1")}
+                      value={familyModal.generation}
+                      onChange={(e) => setFamilyModal({ ...familyModal, generation: Number(e.target.value) })}
+                    >
+                      <option value={1}>Gen 1: Grandparents</option>
+                      <option value={2}>Gen 2: Parents / Elders</option>
+                      <option value={3}>Gen 3: Self / Siblings</option>
+                      <option value={4}>Gen 4: Children / Youth</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Phone Number</label>
+                    <input
+                      className={cn(inputCls, "mt-1")}
+                      placeholder="+92 300 1234567"
+                      value={familyModal.phone}
+                      onChange={(e) => setFamilyModal({ ...familyModal, phone: e.target.value })}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Email</label>
+                    <input
+                      className={cn(inputCls, "mt-1")}
+                      placeholder="email@example.com"
+                      value={familyModal.email}
+                      onChange={(e) => setFamilyModal({ ...familyModal, email: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">Notes / Context</label>
+                  <input
+                    className={cn(inputCls, "mt-1")}
+                    placeholder="e.g. Younger brother, student at IMS"
+                    value={familyModal.note}
+                    onChange={(e) => setFamilyModal({ ...familyModal, note: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-6 flex items-center justify-end gap-2 border-t border-border pt-4">
+                <button
+                  type="button"
+                  className={btnQuiet}
+                  onClick={() => setFamilyModal(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className={btnPrimary}
+                  disabled={!familyModal.name.trim() || !familyModal.relationship.trim() || busy !== ""}
+                  onClick={() => {
+                    void saveFamilyMember({
+                      name: familyModal.name.trim(),
+                      relationship: familyModal.relationship.trim().toLowerCase(),
+                      generation: familyModal.generation,
+                      phone: familyModal.phone.trim(),
+                      email: familyModal.email.trim(),
+                      note: familyModal.note.trim(),
+                    });
+                  }}
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  Save Member
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </Page>
   );

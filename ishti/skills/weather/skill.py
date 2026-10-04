@@ -7,7 +7,11 @@ from tools.web.weather import extract_city, get_weather, which_day
 
 # "rain"/"snow" alone are left to Laya: they also show up in poems and stories.
 TRIGGER = re.compile(r"\b(weather|forecast|temperature|how\s+(?:hot|cold|warm))\b|"
-                     r"\b(?:will|is|going\s+to|chance\s+of)\b.*\b(?:rain|snow|storm)", re.I)
+                     r"\b(?:will|is|going\s+to|chance\s+of)\b.*\b(?:rain|snow|storm)|"
+                     # decision questions that need the forecast: "should I bring a jacket tonight?",
+                     # "do I need an umbrella today", "should I wear a coat tomorrow"
+                     r"\bshould\s+i\s+(?:bring|take|wear|carry|need)\b.*\b(?:jacket|coat|umbrella|sweater|hoodie|raincoat|cap|scarf|gloves)\b|"
+                     r"\b(?:do\s+i|will\s+i)\s+need\s+(?:an?\s+)?(?:umbrella|jacket|coat|sweater)", re.I)
 CREATIVE = re.compile(r"^\s*(?:please\s+)?(?:write|compose|draft|create|make|generate)\b", re.I)
 
 

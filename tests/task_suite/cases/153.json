@@ -1,0 +1,36 @@
+{
+ "id": 153,
+ "prompt_text": "Find a time this week that works for me and the JQ AI client",
+ "category": "Meetings & calendar coordination (151-156)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "calendar",
+  "reminders"
+ ],
+ "expected_outcome": "Says plainly it can only see Ishtiaq's own schedule, offers to propose a few open slots to send instead",
+ "expected_reply_success": "Says plainly it can only see Ishtiaq's own schedule, offers to propose a few open slots to send instead",
+ "expected_reply_failure": "Wrong: invents the client's availability",
+ "pass_criteria": {
+  "expected_skill": [
+   "calendar",
+   "chat",
+   "deep_research"
+  ],
+  "ok_any": [
+   "your",
+   "your own",
+   "i can only see",
+   "your schedule",
+   "propose",
+   "slots",
+   "client",
+   "availability"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

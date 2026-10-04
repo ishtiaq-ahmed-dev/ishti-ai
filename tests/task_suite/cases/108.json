@@ -1,0 +1,24 @@
+{
+ "id": 108,
+ "prompt_text": "Open Ahmed's LinkedIn profile",
+ "category": "Opening apps — social & communication (101-110)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Confirms whose profile, opens it",
+ "expected_reply_success": "Confirms whose profile, opens it",
+ "expected_reply_failure": "If no saved LinkedIn link for that person: says so, offers to search by name instead",
+ "pass_criteria": {
+  "expected_skill": [
+   "browser",
+   "contacts",
+   "whatsapp"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

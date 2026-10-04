@@ -1,0 +1,25 @@
+{
+ "id": 229,
+ "prompt_text": "In one sentence, what is a transformer in machine learning?",
+ "category": "Personalization & adaptation over time (229-233)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Responses get noticeably more concise by default without being re-asked every time",
+ "expected_reply_success": "Responses get noticeably more concise by default without being re-asked every time",
+ "expected_reply_failure": "Wrong: reverts to verbose by default each session",
+ "pass_criteria": {
+  "expected_skill": [
+   "learning",
+   "memory",
+   "owner",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

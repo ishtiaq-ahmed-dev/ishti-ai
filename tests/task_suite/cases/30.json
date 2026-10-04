@@ -1,0 +1,29 @@
+{
+ "id": 30,
+ "prompt_text": "Lower my system volume to 30%",
+ "category": "App & PC control (27-36)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "system",
+  "meta",
+  "chat"
+ ],
+ "expected_outcome": "Confirms new level",
+ "expected_reply_success": "Confirms new level",
+ "expected_reply_failure": "If no permission/driver access: explains, doesn't silently no-op",
+ "pass_criteria": {
+  "expected_skill": [
+   "desktop"
+  ],
+  "ok_any": [
+   "volume",
+   "30"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

@@ -1,0 +1,20 @@
+{
+ "id": 291,
+ "prompt_text": "A request with contradictory requirements baked in (\"make it short but cover everything in detail\")",
+ "category": "Vague or incomplete requests (287-292)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Flags the tension plainly, asks which matters more or proposes a reasonable middle ground and says so",
+ "expected_reply_success": "Flags the tension plainly, asks which matters more or proposes a reasonable middle ground and says so",
+ "expected_reply_failure": "Wrong: silently picks one and ignores the other half of the instruction",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

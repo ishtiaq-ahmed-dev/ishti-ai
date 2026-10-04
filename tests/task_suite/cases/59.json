@@ -1,0 +1,30 @@
+{
+ "id": 59,
+ "prompt_text": "How far is Islamabad from here?",
+ "category": "Weather & location (58-61)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Distance + rough travel time if available",
+ "expected_reply_success": "Distance + rough travel time if available",
+ "expected_reply_failure": "If it can't determine \"here\": asks for current location context",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat",
+   "utilities",
+   "web_search"
+  ],
+  "ok_any": [
+   "km",
+   "islamabad",
+   "distance",
+   "where",
+   "which city"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

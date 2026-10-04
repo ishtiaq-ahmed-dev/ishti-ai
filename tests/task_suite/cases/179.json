@@ -1,0 +1,38 @@
+{
+ "id": 179,
+ "prompt_text": "kal mausam kaisa hai, زما نوم احمد دی",
+ "category": "Translation & language switching (177-181)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "utilities",
+  "languages",
+  "chat"
+ ],
+ "expected_outcome": "Correctly parses the mixed input and responds sensibly",
+ "expected_reply_success": "Correctly parses the mixed input and responds sensibly",
+ "expected_reply_failure": "If it mis-parses part of it: should still attempt a sensible reply rather than failing the whole request",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat",
+   "weather",
+   "languages"
+  ],
+  "ok_any": [
+   "weather",
+   "موسم",
+   "احمد",
+   "ahmed",
+   "mausam",
+   "understand",
+   "mixed",
+   "can't",
+   "which"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

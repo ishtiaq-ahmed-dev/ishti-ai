@@ -1,0 +1,39 @@
+{
+ "id": 158,
+ "prompt_text": "Fix the bug in router.py where it crashes on empty input",
+ "category": "Coding / developer assistant tasks (157-164)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "dev",
+  "terminal",
+  "devops",
+  "gitops",
+  "chat"
+ ],
+ "expected_outcome": "Shows the diff before/after, explains the fix in plain terms",
+ "expected_reply_success": "Shows the diff before/after, explains the fix in plain terms",
+ "expected_reply_failure": "If it can't reproduce the bug or the file doesn't exist: says so, doesn't guess a fix blind",
+ "pass_criteria": {
+  "expected_skill": [
+   "dev",
+   "chat"
+  ],
+  "ok_any": [
+   "router.py",
+   "empty",
+   "fix",
+   "diff",
+   "couldn't",
+   "could not",
+   "not sure",
+   "which",
+   "file"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

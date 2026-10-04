@@ -1,0 +1,20 @@
+{
+ "id": 253,
+ "prompt_text": "Clean up temp files and free some space",
+ "category": "System & device administration (251-256)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Confirms what was cleared and how much space freed",
+ "expected_reply_success": "Confirms what was cleared and how much space freed",
+ "expected_reply_failure": "If nothing meaningful to clean: says so rather than claiming a fake cleanup",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

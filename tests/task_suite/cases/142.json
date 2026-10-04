@@ -1,0 +1,24 @@
+{
+ "id": 142,
+ "prompt_text": "I have two colleagues named Usman, one from the Azure project and one from Zyntiqo",
+ "category": "People — work & professional (139-144)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Stores both distinctly with their project context, confirms both",
+ "expected_reply_success": "Stores both distinctly with their project context, confirms both",
+ "expected_reply_failure": "Wrong: merges them into one entity because the names match",
+ "pass_criteria": {
+  "expected_skill": [
+   "memory",
+   "relationships",
+   "contacts"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

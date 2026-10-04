@@ -1,0 +1,22 @@
+{
+ "id": 112,
+ "prompt_text": "What did Sara say in our last chat?",
+ "category": "WhatsApp — reading & replying (111-116)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "States actual last message content, with rough time",
+ "expected_reply_success": "States actual last message content, with rough time",
+ "expected_reply_failure": "If no \"Sara\" thread found: says so, asks which Sara if multiple exist",
+ "pass_criteria": {
+  "expected_skill": [
+   "whatsapp"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

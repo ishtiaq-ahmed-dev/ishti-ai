@@ -1,0 +1,39 @@
+{
+ "id": 183,
+ "prompt_text": "Would you have suggested anything for me today?",
+ "category": "Proactive suggestions & learned routines (182-187)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "memory",
+  "learning",
+  "chat",
+  "owner",
+  "system",
+  "meta"
+ ],
+ "expected_outcome": "Gives a genuine, specific suggestion if one exists, or says nothing stood out",
+ "expected_reply_success": "Gives a genuine, specific suggestion if one exists, or says nothing stood out",
+ "expected_reply_failure": "Wrong: invents a generic suggestion not actually tied to anything observed",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat",
+   "learning",
+   "automation"
+  ],
+  "ok_any": [
+   "nothing stood out",
+   "nothing",
+   "no suggestion",
+   "based on",
+   "would have",
+   "pattern",
+   "noticed"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

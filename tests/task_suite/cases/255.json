@@ -1,0 +1,20 @@
+{
+ "id": 255,
+ "prompt_text": "Check if my printer is working and print this file",
+ "category": "System & device administration (251-256)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Confirms print job sent, or honestly reports no printer detected",
+ "expected_reply_success": "Confirms print job sent, or honestly reports no printer detected",
+ "expected_reply_failure": "If printer detected but job fails: real error, not a vague \"couldn't print\"",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

@@ -36,14 +36,26 @@ def test_upload_saves_under_a_safe_unique_name_and_returns_the_path(api):
     assert os.path.dirname(j["path"]) == str(tmp / "uploads") and ".." not in j["name"]
     assert open(j["path"], "rb").read() == b"%PDF-1.4 x"
     assert j["mention"] == f"summarize {j['path']}"
-    again = up(c, "Quarterly report (final).PDF", b"second").json()
+    again = up(c, "Quarterly report (final).PDF", b"%PDF-1.7 second").json()
     assert again["path"] != j["path"]                      # never overwrites an earlier upload
+
+
+def test_upload_rejects_scanner_crash_and_removes_staged_file(api, monkeypatch):
+    from ishti.security import upload_scanner
+    c, tmp = api
+    def crash(_path):
+        raise RuntimeError("synthetic scanner outage")
+    monkeypatch.setattr(upload_scanner, "scan_upload", crash)
+    response = up(c, "invoice.pdf", b"%PDF-1.4 synthetic")
+    assert response.status_code == 503
+    assert "scan could not complete" in response.json()["error"]
+    assert not list((tmp / "uploads").iterdir())
 
 
 def test_upload_kinds_drive_the_mention(api):
     c, _ = api
-    assert up(c, "pic.png").json()["mention"].startswith("describe the image ")
-    assert up(c, "voice.m4a").json()["mention"].startswith("transcribe ")
+    assert up(c, "pic.png", b"\x89PNG\r\n\x1a\nrest").json()["mention"].startswith("describe the image ")
+    assert up(c, "voice.m4a", b"\x00\x00\x00\x18ftypM4A \x00\x00\x00\x00").json()["mention"].startswith("transcribe ")
 
 
 def test_upload_refuses_executables_empty_and_oversized(api, monkeypatch):
@@ -57,6 +69,33 @@ def test_upload_refuses_executables_empty_and_oversized(api, monkeypatch):
     assert r.status_code == 413 and "bigger than" in r.json()["error"]
     left = os.listdir(tmp / "uploads") if (tmp / "uploads").exists() else []
     assert not any(n.endswith("big.pdf") for n in left), left      # a partial file never stays
+
+
+def test_upload_rejects_mismatched_and_unsafe_image_formats(api):
+    c, tmp = api
+    for name, content in (("fake.pdf", b"not a pdf"), ("fake.png", b"hello"), ("active.svg", b"<svg onload='alert(1)'>")):
+        r = up(c, name, content)
+        assert r.status_code == 400, (name, r.status_code, r.text)
+    assert not (tmp / "uploads").exists() or not os.listdir(tmp / "uploads")
+
+
+def test_iso_bmff_uploads_check_ftyp_brand_instead_of_accepting_zero_prefix(api):
+    c, tmp = api
+    # Realistic ftyp headers, with a size, box type, major brand and minor version.
+    valid = {
+        "photo.heic": b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00mif1",
+        "audio.m4a": b"\x00\x00\x00\x18ftypM4A \x00\x00\x00\x00",
+        "video.mp4": b"\x00\x00\x00\x18ftypisom\x00\x00\x00\x00",
+        "video.mov": b"\x00\x00\x00\x18ftypqt  \x00\x00\x00\x00",
+    }
+    for name, content in valid.items():
+        response = up(c, name, content)
+        assert response.status_code == 200, (name, response.status_code, response.text)
+
+    for name in ("fake.heic", "fake.m4a", "fake.mp4", "fake.mov"):
+        response = up(c, name, b"\x00\x00\x00\x18arbitrary-data")
+        assert response.status_code == 400, (name, response.status_code, response.text)
+    assert len(os.listdir(tmp / "uploads")) == len(valid)
 
 
 def test_old_uploads_are_pruned(api):

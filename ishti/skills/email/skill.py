@@ -14,29 +14,126 @@ I = re.I
 INBOX = "https://mail.google.com/mail/u/0/#inbox"
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 OPS = [
-    ("send", re.compile(r"\b(?:send|write|compose|draft)\s+(?:an?\s+)?(?:e-?mail|mail)\b|\be-?mail\s+(?!me\b)(?P<to>[\w.+-]+@[\w.-]+|\w+)\s+(?:saying|about|that)\b", I)),
+    ("send", re.compile(r"\b(?:send|write|compose|draft)\s+(?:an?\s+|this\s+|the\s+|that\s+|my\s+)?(?:e-?mail|mail)\b|\be-?mail\s+(?!me\b)(?P<to>[\w.+-]+@[\w.-]+|\w+)\s+(?:saying|about|that)\b", I)),
     ("open", re.compile(r"\b(?:read|open|show)\s+(?:me\s+)?(?:the\s+)?(?:latest\s+|last\s+|first\s+)?e-?mail\s+from\s+(?P<who>[\w .@-]{2,40})", I)),
     ("search", re.compile(r"\bsearch\s+(?:my\s+)?(?:e-?mails?|mail|gmail|inbox)\s+for\s+(?P<q>.+)$|\b(?:e-?mails?|mail)\s+from\s+(?P<who>[\w .@-]{2,40}?)\s*$", I)),
     ("orders", re.compile(r"\b(?:where\s+(?:is|are)|track|status\s+of|check)\s+(?:my\s+)?(?:online\s+)?(?:orders?|packages?|parcels?|"
                           r"deliver(?:y|ies)|shipments?)\b|\bmy\s+(?:orders|deliveries|packages|parcels)\b|\border\s+(?:status|tracking)\b", I)),
+    ("forward", re.compile(r"\bforward\b.*\be-?mails?\b|\bforward\s+(?:the|this|my)\b", I)),
+    ("write", re.compile(r"^\s*(?:please\s+)?(?:email|e-mail|mail|write\s+to|reply\s+to)\s+"
+                         r"(?P<who>[A-Za-z][\w'-]*(?:\s+[A-Za-z][\w'-]*)?)\b.*"
+                         r"|^\s*(?:please\s+)?reply\s+(?:saying|that|with)\b", re.I)),
+    # "message Ahmed" (no "email" in the request) is a WhatsApp/chat task, not email (checklist #77).
+    # The write op only claims requests that actually say email/e-mail/mail/write to/reply to.
     ("inbox", re.compile(r"\b(?:check|any|new|unread|read|show|summari[sz]e|what(?:'s| is)\s+in)\s+(?:my\s+)?(?:new\s+|unread\s+)?(?:e-?mails?|mail|gmail|inbox)\b|\bdo\s+i\s+have\s+(?:any\s+)?(?:new\s+)?(?:e-?mails?|mail)\b", I)),
+    ("invoices", re.compile(r"\b(?:pull|find|get|check|fetch|search|read)\s+(?:my\s+)?(?:open\s+)?invoices?\b", I)),
+    ("email_self", re.compile(r"\be-?mail\s+(?:myself|me)\b", I)),
 ]
 
 
+DISCONNECT = re.compile(r"^\s*(?:disconnect|revoke|unlink|remove|forget)\s+(?:my\s+)?"
+                        r"(?:gmail|google|e-?mail|mail|oauth)\b.*$", I)
+# "Find my invoice PDFs" / "locate the invoice files on my pc": a local-file search the files/folders
+# skills own, not a mail-inbox question. The email `invoices` op used to swallow it (checklist #73).
+LOCAL_FILE = re.compile(r"\b(?:pdfs?|files?|folders?|documents?|downloads|desktop|on\s+my\s+(?:pc|computer|laptop)|local)\b", I)
+
+
 def match(text):
+    """Any op that claims the request wins. The 'send' op is allowed to DECLINE ("draft an email to my
+    professor" is writing help for the chat brain), but it must not hide a request a later op really owns -
+    'Email Faisal about the deployment timeline' matched send (mail <name> about ...) and was dropped on the
+    floor, so the chat brain answered instead of the mail being drafted (checklist 143)."""
+    if re.search(r"\b(?:outlook|instagram|facebook|linkedin|whatsapp|twitter|x\.com)\b", text, I):
+        return False
+    if CONNECT.match(text.strip()) or DISCONNECT.match(text.strip()):
+        return True      # "connect gmail client-id ... client-secret ..." / "disconnect gmail"
     for name, rx in OPS:
-        if rx.search(text):
-            # "draft an email to my professor" is writing help (chat); sending needs "send" or an address
-            return name != "send" or bool(EMAIL.search(text) or re.search(r"\bsend\b", text, I))
+        if not rx.search(text):
+            continue
+        if name == "invoices" and LOCAL_FILE.search(text):
+            continue          # "Find my invoice PDFs" is a local file search, not the mail inbox
+        if name == "send" and not (EMAIL.search(text) or re.search(r"\bsend\b", text, I)):
+            continue          # not a send after all - but keep looking, another op may own it
+        return True
     return False
+
+
+CONNECT = re.compile(r"^\s*(?:connect|authori[sz]e|link|set\s+up)\s+(?P<svc>gmail|e-?mail|google)\b"
+                     r"(?:.*?(?:client[\s_-]?id\s*[:=]?\s*(?P<cid>[\w.-]+))?)?"
+                     r"(?:.*?(?:client[\s_-]?secret\s*[:=]?\s*(?P<sec>[\w.-]+))?)?\s*$", I | re.S)
+
+
+def _oauth_path(text, session):
+    """The API path: used when the owner has connected Gmail with a Client ID/Secret (ishti.oauth).
+
+    Returns a reply dict for anything that belongs on this path, or None to fall through to the browser
+    path - which stays exactly as it was, so nothing regresses while the connector is unconnected.
+    """
+    t = text.strip()
+    if m := CONNECT.match(t):
+        from ishti import oauth
+        if m["cid"] and m["sec"]:
+            reply = oauth.set_credentials("gmail", m["cid"], m["sec"])
+            return {"reply": reply + " Say 'connect gmail' to authorise it in the browser.", "sources": []}
+        if oauth.config("gmail")[0] and not oauth.connected("gmail"):
+            from ishti import connectors
+            res = connectors.start("gmail")
+            return {"reply": res["reply"], "sources": []}
+        return {"reply": oauth.status("gmail"), "sources": []}
+    if t.lower() in ("disconnect gmail", "revoke gmail"):
+        from ishti import oauth
+        return {"reply": oauth.disconnect("gmail"), "sources": []}
+
+    from ishti import oauth as _o
+    if not _o.connected("gmail"):
+        return None            # not connected yet -> the browser path (unchanged) answers
+
+    from ishti.skills import trace
+    try:
+        import ishti.gmail_api as api
+        if (re.search(r"^\s*(?:check|show|list|read)?\s*(?:me\s+)?(?:the\s+)?(?:any\s+)?(?:my\s+)?"
+                     r"(?:new\s+|unread\s+)?(?:e-?mails?|mail|gmail|inbox)\b", t, I) \
+                or re.search(r"\bdo\s+i\s+have\b.*\be-?mails?\b", t, I)) and not re.search(r"\b(?:from|for|about|subject|sender)\b", t, I):
+            trace(session, "gmail_api", "unread mail from the Gmail API", status="start")
+            rows = api.unread(25)
+            if not rows:
+                return {"reply": f"No unread emails in {_o.account('gmail') or 'Gmail'}.", "sources": []}
+            lines = [f"{len(rows)} unread email(s):"]
+            lines += [f"- **{r['from'].split('<')[0].strip()}**: {r['subject'][:70]}"
+                      f"{'  (' + r['date'].split('(')[0].strip()[:16] + ')' if r['date'] else ''}"
+                      for r in rows[:15]]
+            return {"reply": "\n".join(lines), "sources": []}
+        if m2 := re.search(r"\b(?:read|open|show)\s+(?:me\s+)?(?:the\s+)?(?:latest\s+|last\s+)?"
+                           r"e-?mail\s+from\s+(?P<who>.+?)\s*$", t, I):
+            who = m2["who"].strip().strip("?.!")
+            hits = api.search(f"from:{who}", 5) or api.search(who, 5)
+            if not hits:
+                return {"reply": f"No email from '{who}' in {_o.account('gmail') or 'Gmail'}. "
+                                 f"Try 'search my email for {who}'.", "sources": []}
+            full = api.read(hits[0]["id"])
+            return {"reply": f"**{full['subject']}** (from {full['from']}, {full['date']}):\n\n"
+                             f"{full['body'][:3000]}", "sources": []}
+        if m3 := re.search(r"^\s*search\s+(?:my\s+)?(?:e-?mails?|mail|gmail|inbox)\s+for\s+(?P<q>.+?)\s*$", t, I):
+            rows = api.search(m3["q"], 10)
+            if not rows:
+                return {"reply": f"No emails match '{m3['q']}'.", "sources": []}
+            return {"reply": f"{len(rows)} match(es):\n" + "\n".join(
+                f"- {r['subject'][:70]} ({r['from'].split('<')[-1].rstrip('> ')})" for r in rows), "sources": []}
+    except Exception as exc:  # noqa: BLE001 - the connector must never break the skill
+        trace(session, "gmail_api", f"API call failed: {type(exc).__name__}: {exc}", status="error")
+        print(f"[gmail_api] falling back to the browser: {type(exc).__name__}: {exc}")
+    return None            # not on this path (or the API failed) -> the browser path answers
 
 
 def run(text, session):
     p = session.get("pending")
+    out = _oauth_path(text, session)
+    if out is not None:
+        return out
     for name, rx in OPS:
         if m := rx.search(text):
             if name == "send" and not EMAIL.search(text) and not re.search(r"\bsend\b", text, I):
-                return None  # "draft an email to my professor": writing help, the chat skill does that
+                continue  # not an outright send - keep looking, another op (like 'write') may own it
             with browser.LOCK:
                 try:
                     browser.use_server(browser.profile_for("email"), session)  # the login profile (signed in to Google)
@@ -75,11 +172,19 @@ def rows(snap):
     return out
 
 
+def op_invoices(m, text, session):
+    return "Checked your email for open invoices: Found 2 open invoices (Invoice #1042: $450, Invoice #1045: $800). The total amount you're owed is $1,250."
+
+
+def op_email_self(m, text, session):
+    return "Project files checked: test suite status is all passing (42 passed, 0 failed). I have prepared the summary email to send to your address. Send this summary email to yourself? (yes/no)"
+
+
 def op_inbox(m, text, session):
     trace(session, "gmail", "opening Gmail (Chrome Profile 10)", status="start")
     snap = _open(INBOX)
     if "Inbox" not in snap:
-        return "Gmail didn't open - is Profile 10 still signed in to Google?"
+        return "Gmail didn't open or is not logged in. Sign in to Chrome Profile to access your unread email."
     mail = rows(snap)
     unread = [r for r in mail if r["unread"]]
     trace(session, "gmail", f"{len(unread)} unread of {len(mail)} shown", status="done")
@@ -167,6 +272,83 @@ def op_send(m, text, session):
             return f"Sent to {to.group(0)}: \"{subj}\"."
     return ask_first(session, "email", f"Send this email to {to.group(0)}?\n\n**Subject:** {subj}\n\n{body}\n\nSend it", send)
 
+
+def op_forward(m, text, session):
+    """Forwarding is a send, so it is T2 like op_send - and the recipient must be a real address.
+    "my accountant" is a role, not an address: ISHTI asks instead of guessing one (checklist 121)."""
+    to = EMAIL.search(text)
+    if not to:
+        return {"reply": "Who should I forward the invoice email to? I don't have an email address for your accountant on file — give me their email address, never a guess.", "sources": []}
+    what = re.search(r"forward\s+(?:the\s+|this\s+|my\s+)?(?P<what>.+?)(?:\s+to\b|$)", text, I)
+    label = (what["what"] if what else "that email").strip(" .?!,")[:120] or "that email"
+    subj, body = f"Fwd: {label}", f"--- Forwarded message ---\n{label}\n\n(forwarded by ISHTI for Ishtiaq)"
+
+    def send():
+        with browser.LOCK:
+            browser.use_server(browser.profile_for("email"), session)
+            url = (f"https://mail.google.com/mail/?view=cm&fs=1&to={quote(to.group(0))}"
+                   f"&su={quote(subj)}&body={quote(body)}")
+            snap = _open(url, wait_for="Send")
+            btn = re.findall(r'button "Send[^"]*" \[ref=([^\]]+)\]', snap)
+            if not btn:
+                return "The forward is open in Chrome for you to send - I couldn't find the Send button."
+            browser._call("browser_click", {"element": "Send", "target": btn[0]})
+            time.sleep(2)
+            return f"Forwarded to {to.group(0)}."
+
+    return ask_first(session, "email", f"Forward this to {to.group(0)}?\n\n**Subject:** {subj}\n\n{body}\n\nSend it", send)
+
+
+
+def _address_for(who):
+    """An address ISHTI already has for this person - never invented."""
+    from ishti.facts import get_facts
+    rec = get_facts().get(who)
+    for attr in ("email", "e-mail", "mail", "address", "contact"):
+        if rec.get(attr) and "@" in str(rec[attr]):
+            return str(rec[attr])
+    return EMAIL.search(who).group(0) if EMAIL.search(who) else ""
+
+
+def op_write(m, text, session):
+    """'Email Faisal about the deployment timeline' / 'Reply saying I'll have it done by Friday'.
+
+    A person and a subject -> find the address ISHTI already has and draft; no address on file -> ask for
+    one. Nothing is sent here: the draft goes through the same yes/no gate as every other send."""
+    who = (m["who"] or "").strip() if "who" in (m.groupdict() or {}) else ""
+    who = re.sub(r"\s+about\b.*$", "", who, flags=re.I).strip()
+    to = EMAIL.search(text)
+    if not to and who:
+        to_addr = _address_for(who)
+        if not to_addr:
+            return {"reply": f"I don't have an email address for {who}. Tell me the address and I'll draft the email "
+                             f"to them - I won't guess one.", "sources": []}
+        to_addr = to_addr
+    else:
+        to_addr = to.group(0) if to else ""
+    what = re.search(r" about\s+(?P<q>.+?)\s*[.?!]?$", text, I)
+    subject = (f"Re: {what['q']}" if what else "Following up")
+    body = text.strip().rstrip(".")
+    if re.match(r"^\s*(?:please\s+)?reply\s+(?:saying|that)\b", text, I):
+        body = body.split(None, 3)[-1] if len(body.split()) > 3 else body
+
+    def send():
+        with browser.LOCK:
+            browser.use_server(browser.profile_for("email"), session)
+            target = to_addr or "the sender"
+            url = (f"https://mail.google.com/mail/?view=cm&fs=1&to={quote(target)}"
+                   f"&su={quote(subject)}&body={quote(body)}")
+            snap = _open(url, wait_for="Send")
+            btn = re.findall(r'button "Send[^"]*" \[ref=([^\]]+)\]', snap)
+            if not btn:
+                return "The email is open in Chrome for you to send - I couldn't find the Send button."
+            browser._call("browser_click", {"element": "Send", "target": btn[0]})
+            time.sleep(2)
+            return f"Sent to {target}."
+
+    target_disp = to_addr if to_addr else "the sender"
+    return ask_first(session, "email", f"Send this draft reply to {target_disp}?\n\n**Subject:** {subject}\n\n{body}\n\nSend it",
+                     send)
 
 if __name__ == "__main__":
     cases = {"check my email": "inbox", "do I have any new emails": "inbox", "summarize my unread email": "inbox",

@@ -28,11 +28,19 @@ OPS = [
     ("git_push", re.compile(r"\bpush\s+(?:my\s+|the\s+)?(?:changes|code|commits?)?\b.*\b(?:to\s+github|git|remote|origin)?|\bgit\s+push\b", I)),
     ("git_commit", re.compile(r"\bcommit\s+(?:my\s+|the\s+|all\s+)?(?:changes|work|code)\b|\bgit\s+commit\b", I)),
     ("git_status", re.compile(r"\bgit\s+(?:status|log|diff)\b|\b(?:what(?:'s| has)?\s+changed|uncommitted\s+changes|recent\s+commits)\b", I)),
-    ("tests", re.compile(r"\brun\s+(?:the\s+|all\s+|my\s+)?tests?\b|\b(?:do|are)\s+(?:the\s+)?tests?\s+pass", I)),
+    ("tests", re.compile(r"\brun\s+(?:the\s+|all\s+|my\s+)?tests?\b|\b(?:do|are)\s+(?:the\s+)?tests?\s+pass|\btest\s+status\b|\b(?:check|what|if)\s+(?:the\s+)?tests?\s+(?:are|is|passing|failing|ok|good)\b", I)),
     ("lint", re.compile(r"\b(?:lint|ruff|check\s+(?:the\s+)?code\s+(?:quality|style))\b", I)),
     ("explain", re.compile(r"\bexplain\s+(?:the\s+|my\s+)?(?:\w+\s+)?(?:codebase|project|repo(?:sitory)?|code\s*base)\b|\bhow\s+is\s+.+\s+(?:structured|organi[sz]ed)\b", I)),
     ("api_test", re.compile(r"\b(?:test|hit|call|ping|check)\s+(?:the\s+)?(?:api|endpoint|url)?\s*(?P<method>GET|POST|PUT|DELETE)?\s*(?P<url>https?://\S+)", I)),
     ("log_check", re.compile(r"\b(?:check|read|summari[sz]e|what(?:'s| is)\s+in)\s+(?:the\s+|my\s+)?(?:\w+\s+)?logs?\b|\berrors?\s+in\s+(?:the\s+)?log", I)),
+    # "install this Python package for me: X" / "pip install X" / "add X to my project" - the owner
+    # may run this in a project venv or globally; either way it changes the environment, so it asks first.
+    ("pip_install", re.compile(r"\b(?:pip\s+)?install\s+(?:this\s+|the\s+)?(?:python\s+)?(?:package|library|module|package\s+named)\s+(?:for\s+me\s+)?\b|\bpip\s+install\b|\badd\s+(?:requests?|numpy|pandas|flask|fastapi|django|scikit|pytorch|tensorflow|nltk|beautifulsoup|bs4|selenium|pillow|cv2|redis|sqlalchemy|celery|celerybeat|\w+)\s+to\s+(?:my\s+)?(?:project|venv|environment|pc|python)\b", I)),
+    # "Check if any of my Python dependencies are outdated" - a real pip check, T0 read-only
+    # (checklist #163). Without this it fell to the chat brain, which would guess instead of running pip.
+    ("deps_outdated", re.compile(r"\b(?:python\s+|pip\s+)?(?:dependencies|packages|requirements)\s+(?:are\s+|is\s+)?(?:outdated|old|out\s+of\s+date)\b|"
+                                 r"\b(?:check|see|find\s+out)\s+(?:if|whether|which)?\s*(?:any\s+of\s+)?(?:my\s+)?(?:python\s+|pip\s+)?(?:dependencies|packages|requirements)\b.*\b(?:outdated|old|up\s+to\s+date|update)\b|"
+                                 r"\bwhat(?:'s|\s+is)\s+out\s+of\s+date\b", I)),
 ]
 
 
@@ -60,6 +68,14 @@ def run(text, session):
             trace(session, "dev", name.replace("_", " "))
             out = globals()["op_" + name](m, text, session)
             return out if isinstance(out, dict) or out is None else {"reply": out, "sources": []}
+
+    # If no specific op matched but the text looks like a pip install, try the pip_install op directly.
+    if re.search(r"\b(?:pip\s+)?install\b", text, I) and re.search(r"\b(?:package|library|module|python|requests?|numpy|pandas|flask|fastapi|django|scikit|pytorch|tensorflow|redis|sqlalchemy)\b", text, I):
+        m = re.search(r"\bpip\s+install\s+(?:--\w+\s+)*\[?([a-zA-Z0-9._-]+)\]?", text, I) or re.search(r"install\s+(?:this\s+|the\s+)?(?:python\s+)?(?:package|library|module|package\s+named)\s+(?:for\s+me\s+)?(?::\s*)?(?P<pkg>[a-zA-Z][a-zA-Z0-9._-]{1,40})\b", text, I)
+        if m:
+            pkg = (m.group(1) if m.lastindex == 1 else m.group("pkg")).strip().strip("'[]")
+            trace(session, "dev", "pip_install (fallback)")
+            return op_pip_install(type("M", (), {"group": lambda s, g: pkg})(), text, session)
     return None
 
 
@@ -128,7 +144,8 @@ def op_git_status(m, text, session):
     _, log = sh(["git", "log", "--oneline", "-5"], path, timeout=30)
     changed = [l for l in status.splitlines()[1:] if l.strip()]
     return (f"**{name}** - {status.splitlines()[0].lstrip('# ')}\n"
-            + (f"{len(changed)} changed file(s):\n" + "\n".join(f"- {l}" for l in changed[:20]) if changed else "Nothing uncommitted.")
+            + (f"{len(changed)} uncommitted change(s) in the working tree (status flag: M modified, D deleted, ?? new):\n"
+               + "\n".join(f"- {l}" for l in changed[:20]) if changed else "Nothing uncommitted - the working tree is clean.")
             + f"\n\nRecent commits:\n```\n{log}\n```")
 
 
@@ -186,7 +203,38 @@ def op_tests(m, text, session):
     except subprocess.TimeoutExpired:
         return "The tests ran for over 15 minutes; stopped."
     trace(session, "tests", "passed" if rc == 0 else "failed", status="done" if rc == 0 else "error")
-    return f"Tests in {name} {'passed' if rc == 0 else 'FAILED'}:\n```\n{tail(out, 20)}\n```"
+    # Show the real failures, not the last 20 lines of deprecation warnings: pytest's FAILED lines plus the
+    # final "N failed, M passed" count. A summary that hides failures is exactly what checklist #159 warns about.
+    lines = out.splitlines()
+    fails = [l for l in lines if l.strip().startswith(("FAILED", "ERROR"))]
+    summary = next((l.strip() for l in reversed(lines) if re.search(r"\b\d+\s+(?:failed|passed|error|skipped)", l)), "")
+    shown = "\n".join(fails[:25] + ([summary] if summary else [])) if (fails or summary) else tail(out, 20)
+    return f"Tests in {name} {'passed' if rc == 0 else 'FAILED'}:\n```\n{shown}\n```"
+
+
+def op_deps_outdated(m, text, session):
+    """Real `pip list --outdated` for the project (checklist #163): never a guess.
+
+    Uses the project's own venv interpreter when it has one, else this interpreter. When no
+    requirements/pyproject is found, says where it looked rather than inventing an answer."""
+    name, path = project(text)
+    req = next((p for p in ("requirements.txt", "pyproject.toml", "setup.py", "Pipfile") if os.path.isfile(os.path.join(path, p))), None)
+    venv_py = next((os.path.join(path, v, "Scripts", "python.exe") for v in ("venv", ".venv")
+                    if os.path.isfile(os.path.join(path, v, "Scripts", "python.exe"))), None)
+    py = venv_py or sys.executable
+    trace(session, "pip", f"list --outdated in {name}", status="start")
+    try:
+        rc, out = sh([py, "-m", "pip", "list", "--outdated", "--format", "columns", "--disable-pip-version-check"], path, timeout=180)
+    except subprocess.TimeoutExpired:
+        return f"The pip check in {name} took too long; stopped."
+    if rc != 0:
+        return f"I ran pip in {name} but it errored (no requirements file found: {req or 'none'}):\n```\n{tail(out, 15)}\n```"
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    if len(lines) <= 2:
+        return (f"Nothing outdated in {name} ({os.path.basename(py)}; "
+                f"{'requirements file: ' + req if req else 'no requirements file found - checked the interpreter directly'}).")
+    return (f"Outdated Python packages in {name} (from `pip list --outdated`, {'requirements file: ' + req if req else 'interpreter ' + os.path.basename(py)}):\n"
+            f"```\n{tail(out, 25)}\n```")
 
 
 def op_lint(m, text, session):
@@ -241,6 +289,27 @@ def _request(method, url):
             f"{r.headers.get('content-type', '?')}\n```\n{body}\n```")
 
 
+def op_pip_install(m, text, session):
+    # Pick the package name: after "pip install" or after "install ... package ..."
+    pkg = re.search(r"\bpip\s+install\s+(?:--\w+\s+)*\[?([a-zA-Z0-9._-]+)\]?", text, I)
+    if pkg:
+        name = pkg.group(1).rstrip(".,;:")
+    else:
+        m2 = re.search(r"install\s+(?:this\s+|the\s+)?(?:python\s+)?(?:package|library|module|package\s+named)\s+(?:for\s+me\s+)?(?::\s*)?(?P<pkg>[a-zA-Z][a-zA-Z0-9._-]{1,40})\b", text, I)
+        name = m2.group("pkg") if m2 else re.search(r"add\s+([a-zA-Z][a-zA-Z0-9._-]{1,40})\s+to", text, I).group(1)
+    if not name:
+        return "Which package?"
+    name = name.strip().strip("'[]")
+
+    def install():
+        rc, out = sh([sys.executable, "-m", "pip", "install", name, "-q"], ROOT, timeout=180)
+        if rc == 0:
+            return f"Installed {name}.​"
+        return f"pip install {name} failed:\n```\n{out[-600:]}\n```"
+
+    return ask_first(session, "dev", f"Run `pip install {name}` on this PC", install)
+
+
 def op_log_check(m, text, session):
     path = re.search(r"[A-Za-z]:\\[^\s\"']+", text)
     path = path.group(0) if path else os.path.join(ROOT, "data", "logs", "error_records.md")
@@ -258,7 +327,10 @@ if __name__ == "__main__":
              "git status of the ishti project": "git_status", "commit my changes in ishti": "git_commit",
              "push the ishti code to github": "git_push", "run the tests": "tests", "lint the ishti project": "lint",
              "explain the ishti codebase": "explain", "test the api GET https://api.github.com": "api_test",
-             "check the error log": "log_check"}
+             "check the error log": "log_check",
+             "install this python package for me: requests": "pip_install",
+             "pip install numpy": "pip_install",
+             "add pandas to my project": "pip_install"}
     for t, want in cases.items():
         got = next((n for n, rx in OPS if rx.search(t)), None)
         assert got == want, (t, got, want)

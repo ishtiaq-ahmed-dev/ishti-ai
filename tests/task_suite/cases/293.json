@@ -1,0 +1,32 @@
+{
+ "id": 293,
+ "prompt_text": "Find a tool for X, but keep it free or open-source",
+ "category": "Cost & budget awareness (293-296)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [
+  "web_search",
+  "web_fetch",
+  "browser",
+  "deep_research",
+  "chat"
+ ],
+ "expected_outcome": "Only surfaces options actually meeting that constraint",
+ "expected_reply_success": "Only surfaces options actually meeting that constraint",
+ "expected_reply_failure": "Wrong: recommends a paid tool without flagging that it breaks the stated constraint",
+ "pass_criteria": {
+  "expected_skill": [
+   "web_search",
+   "web_fetch",
+   "browser",
+   "deep_research",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

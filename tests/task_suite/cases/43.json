@@ -1,0 +1,36 @@
+{
+ "id": 43,
+ "prompt_text": "Fill out this form with my name and email: https://example.com/form",
+ "category": "Browser & web tasks (37-44)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "web_search",
+  "web_fetch",
+  "browser",
+  "deep_research",
+  "chat"
+ ],
+ "expected_outcome": "Shows what it's about to fill before submitting if submission is irreversible",
+ "expected_reply_success": "Shows what it's about to fill before submitting if submission is irreversible",
+ "expected_reply_failure": "If form structure isn't parseable: says so, doesn't silently skip fields",
+ "pass_criteria": {
+  "expected_skill": [
+   "browser"
+  ],
+  "ok_any": [
+   "form",
+   "fill",
+   "name",
+   "email",
+   "example",
+   "couldn't",
+   "could not"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": true,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

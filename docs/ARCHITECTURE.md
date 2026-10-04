@@ -1,6 +1,6 @@
 # ARCHITECTURE: how ISHTI works today
 
-Last verified against the code: 2026-10-02 (branch `feat/repo-integration`). This document describes what the
+Last targeted verification against the code: 2026-10-04 (branch `feat/repo-integration`). This document describes what the
 repository contains now. Where a number appears it is labelled **MEASURED** (with the file that holds the
 measurement), **SOURCED** (taken from an existing doc or config that I did not re-measure), or **ASSUMED**.
 Anything I could not confirm in code is said so.
@@ -86,8 +86,8 @@ implemented but off by default). Voice is only another input; the transcript goe
    `skill.run(text, session)` inside `audit.context(...)` and `scope` enforcement. A skill that returns `None` means
    "not mine" and the next-best skill is tried. If a web skill's reply admits it fell short, one escalation hop
    runs (browser -> web_search -> deep_research, `ESCALATE` map, at most two hops).
-6. `_finish`: sources filtered to the cited ones, secrets masked everywhere they could be stored, history trimmed to
-   the last 20 messages, chat persisted; then only background threads run (semantic remember, fine-tune log,
+6. `_finish`: sources filtered to the cited ones, secrets masked everywhere they could be stored, runtime history trimmed to
+   the last 200 messages while older persisted turns remain searchable, chat persisted; then only background threads run (semantic remember, fine-tune log,
    arch2 consolidation, owner-fact learning, learning-turn scoring, monitor). Nothing in step 6 sits on the reply path.
 
 Latency numbers (MEASURED, `docs/build-history/optimization/OPTIMIZATION_BASELINE.md`, `PERF_LOG.md`): the rule
@@ -299,8 +299,8 @@ relying on it for new files). Per-skill detail: `ishti/skills/<name>/manifest.js
 ## 14. What this document does not cover or could not verify
 
 - It does not re-measure latency or VRAM; numbers are cited from the files named beside them.
-- I did not start the backend, load a model, or query Ollama while writing it, so the installed model set, live
-  boot timings and microphone behavior are unconfirmed here.
+- A targeted 2026-10-04 probe found the planner 4B and Gemma 4B models fully resident according to Ollama /api/ps,
+  and ran nine synthetic local answer-quality prompts. Live boot timing and microphone behavior remain unconfirmed.
 - `docs/SETTINGS.md` documents `/api/settings*` REST routes and a `/settings` page. `ishti/core/settings.py` (the schema
   and service) is real and used by several modules, but I found no `/api/settings` route in any Python file and no
   `/settings` page route; `interface/web_ui/static/settings.html` calls routes that are not mounted. See the status
@@ -309,3 +309,21 @@ relying on it for new files). Per-skill detail: `ishti/skills/<name>/manifest.js
   `ARCHITECTURE_root_2026-10-01.md`, `ARCHITECTURE_prompt1_2026-09-29.md`, `PROJECT_MAP_2026-09-28.md`. Their
   unique content is merged above, with corrections (the project map's port 8000, "40/47 skills" and 14B-planner
   statements are out of date).
+
+## 15. New local paths under verification (2026-10-04)
+
+- WhatsApp input: the Inputs page starts ishti.wa_bridge, which launches the local Node bridge in tools/wa_bridge.
+  The Python side stores the bootstrap credential with DPAPI; the Node side encrypts linked-device state and
+  attachments. The bridge retains only events observed since its start. The WhatsApp skill tries an exact bridge
+  recipient and T2 send approval first, with the existing Web path for unresolved contacts and older history.
+  The currently linked account does not match the owner-authorized self-test number, so live bridge media checks
+  have not run.
+- Incoming media: the bridge downloads only an exact observed message. ishti.wa_media_reader runs in a child process
+  with a deadline, memory cap and no external network. Synthetic PDF and PNG fixtures pass field extraction;
+  image OCR reported a disagreement which is surfaced to the user.
+- Answer feedback: the Chat UI sends a saved message ID and positive/negative rating to the session feedback route.
+  A dislike runs a text-only local-model revision; rejected answers are removed from the next prompt history.
+  Local feedback rows and revisions are durable, but they do not update model weights.
+- Visual fallback: screen_control uses screenshot OCR coordinates and one-action T2 approvals. The multi-screen
+  planner proposes one structured action from a screenshot, and the executor checks approval, foreground window,
+  fresh capture and monitor coordinates before applying it. Live desktop controls remain unverified.

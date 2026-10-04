@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import time
 import urllib.parse
 
@@ -40,7 +41,26 @@ def session_cookie_flags() -> dict:
     return dict(COOKIE_POSTURE)
 
 
-def origin_ok(origin, host, sec_fetch_site) -> bool:
+def host_authority(host, scheme="http"):
+    """Parse a single HTTP Host authority, refusing URL/userinfo/port tricks."""
+    try:
+        raw = str(host or "")
+        if not raw or any(c.isspace() for c in raw) or any(c in raw for c in "/\\?#@,%"):
+            return None
+        if not re.fullmatch(r"(?:\[[0-9a-fA-F:.]+\]|[^:\[\]]+)(?::[0-9]+)?", raw):
+            return None
+        parts = urllib.parse.urlsplit("//" + raw)
+        if not parts.hostname or parts.path or parts.query or parts.fragment or raw.endswith(":"):
+            return None
+        port = parts.port
+        if port == 0:
+            return None
+        return parts.hostname.lower().rstrip("."), port or (443 if scheme == "https" else 80)
+    except (TypeError, ValueError):
+        return None
+
+
+def origin_ok(origin, host, sec_fetch_site, expected_scheme=None) -> bool:
     """True when a state-changing request may proceed. Rules (in order):
       1. Sec-Fetch-Site cross-site/same-site -> False (browser tells on itself)
       2. no Origin header -> True (curl/tests/non-browser; the bearer token still applies)
@@ -55,29 +75,17 @@ def origin_ok(origin, host, sec_fetch_site) -> bool:
         if not raw:
             return True
         parts = urllib.parse.urlsplit(raw)
-        if parts.scheme not in ("http", "https") or not parts.hostname:
+        if (parts.scheme not in ("http", "https") or not parts.hostname
+                or parts.username is not None or parts.password is not None
+                or parts.path or parts.query or parts.fragment
+                or any(c.isspace() for c in raw)):
+            return False
+        if expected_scheme is not None and parts.scheme != expected_scheme:
             return False
         o_host = parts.hostname.lower().rstrip(".")
         o_port = parts.port or (443 if parts.scheme == "https" else 80)
-        h_raw = str(host or "").strip()
-        if not h_raw:
-            return False
-        h_host, h_port = h_raw, None
-        if h_raw.startswith("["):                          # IPv6 literal
-            end = h_raw.find("]")
-            h_host, rest = h_raw[:end + 1], h_raw[end + 1:]
-            if rest.startswith(":") and rest[1:].isdigit():
-                h_port = int(rest[1:])
-        elif ":" in h_raw:
-            h_host, _, p = h_raw.rpartition(":")
-            if p.isdigit():
-                h_port = int(p)
-        h_host = h_host.lower().rstrip(".")
-        if h_host.startswith("[") and h_host.endswith("]"):
-            h_host = h_host[1:-1]
-        if h_port is None:
-            h_port = 443 if parts.scheme == "https" else 80
-        return o_host == h_host and o_port == h_port
+        authority = host_authority(parts.netloc, parts.scheme)
+        return bool(authority and authority == (o_host, o_port) == host_authority(host, parts.scheme))
     except Exception:
         return False
 

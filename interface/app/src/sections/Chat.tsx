@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUp, AudioLines, Check, Copy, FolderOpen, Maximize2, MessageSquare, Mic, Minimize2, Network, PanelLeft, PanelLeftClose, Pencil, Plus, Square, Trash2, X } from "lucide-react";
+import { ArrowUp, AudioLines, Check, Copy, FolderOpen, Maximize2, MessageSquare, Mic, Minimize2, Network, PanelLeft, PanelLeftClose, Paperclip, Pencil, Plus, Square, ThumbsDown, ThumbsUp, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { del, getJSON, postJSON, streamChat, type Result, type Source, type TraceEvent } from "@/lib/api";
 import { ActivityGraph, ConversationGraph, type Turn } from "@/components/ActivityGraph";
@@ -9,7 +9,6 @@ import { AgentOrb } from "@/components/AgentOrb";
 import { resolveAgentState } from "@/lib/agent-state";
 import BorderBeam from "border-beam";
 import VoiceBeam from "voice-glow";
-import DeleteButton from "@/components/rare/delete-button";
 import { IshtiBrand } from "@/components/IshtiBrand";
 import { Markdown } from "@/components/Markdown";
 import { MediaPreview } from "@/components/MediaPreview";
@@ -25,6 +24,9 @@ type Msg = {
   live: boolean;
   sources: Source[];
   request?: string;
+  messageId?: string;
+  rating?: "positive" | "negative";
+  revisionOf?: string;
 };
 
 type Session = {
@@ -70,6 +72,13 @@ type Props = {
 export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   const boot = useBootState();
   const [msgs, setMsgs] = useState<Msg[]>([]);
+  const [showFeedback, setShowFeedback] = useState(() => {
+    try { return localStorage.getItem("ishti-show-answer-feedback") !== "false"; } catch { return true; }
+  });
+  const [feedbackBusy, setFeedbackBusy] = useState<string | null>(null);
+  const [feedbackError, setFeedbackError] = useState<{ messageId: string; text: string } | null>(null);
+  const [feedbackReasonFor, setFeedbackReasonFor] = useState<string | null>(null);
+  const [feedbackReason, setFeedbackReason] = useState("");
   const [input, setInput] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(() => {
     if (typeof window !== "undefined") {
@@ -157,12 +166,20 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   const [graphView, setGraphView] = useState<"answer" | "chat">("answer");
   const [fullGraph, setFullGraph] = useState(false);
   const recorder = useRef<MediaRecorder | null>(null);
+  const sessionLoadGeneration = useRef(0);
+  const msgsRef = useRef(msgs);
+  const uploadInput = useRef<HTMLInputElement>(null);
+  const [uploads, setUploads] = useState<{ name: string; mention: string; size: number }[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
   const box = useRef<HTMLTextAreaElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const scrollContainer = useRef<HTMLDivElement>(null);
   const isInitialLoad = useRef(true);
   const running = msgs.filter((m) => m.live).length;
   const busy = running > 0;
+
+  useEffect(() => { msgsRef.current = msgs; }, [msgs]);
 
   useEffect(() => {
     onBusy?.(busy);
@@ -226,23 +243,27 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   }, [msgs]);
 
   const selectSession = useCallback(async (id: string) => {
+    const generation = ++sessionLoadGeneration.current;
     setGraphFor(null);
     isInitialLoad.current = true;
+    try {
+    await postJSON(`/api/sessions/${id}/activate`);
+    const { messages } = await getJSON<{ messages: { id?: string; role: string; content: string; sources?: Source[]; metadata?: { events?: TraceEvent[]; feedback?: { rating?: "positive" | "negative" }; revision_of?: string; request?: string } }[] }>(`/api/sessions/${id}/messages`);
+    if (generation !== sessionLoadGeneration.current) return;
     try {
       localStorage.setItem("ishti-session-id", id);
       if (window.location.hash.startsWith("#chat") || !window.location.hash) {
         window.history.replaceState(null, "", `#chat/${id}`);
       }
     } catch {}
-    await postJSON(`/api/sessions/${id}/activate`);
-    const { messages } = await getJSON<{ messages: { role: string; content: string; sources?: Source[]; metadata?: { events?: TraceEvent[] } }[] }>(`/api/sessions/${id}/messages`);
     let last = "";
     setMsgs(messages.map((m) => {
       if (m.role === "user") last = m.content;
       return m.role === "user"
-        ? { id: nextId++, role: "user", text: m.content, events: [], live: false, sources: [] }
+        ? { id: nextId++, role: "user", text: m.content, events: [], live: false, sources: [], messageId: m.id }
         : { id: nextId++, role: "ishti", text: m.content, events: m.metadata?.events ?? [], live: false,
-            sources: m.sources ?? [], request: last };
+            sources: m.sources ?? [], request: m.metadata?.request ?? last, messageId: m.id,
+            rating: m.metadata?.feedback?.rating, revisionOf: m.metadata?.revision_of };
     }));
     setSessionId(id);
     requestAnimationFrame(() => {
@@ -252,10 +273,15 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
         bottom.current?.scrollIntoView({ behavior: "instant" });
       }
     });
+    } catch (err) {
+      if (generation === sessionLoadGeneration.current) console.warn("[chat] session load failed:", err);
+    }
   }, []);
 
   const newChat = useCallback(async () => {
+    const generation = ++sessionLoadGeneration.current;
     const d = await postJSON<{ session_id: string }>("/api/sessions/new", { title: "New Conversation" });
+    if (generation !== sessionLoadGeneration.current) return;
     try {
       localStorage.setItem("ishti-session-id", d.session_id);
       if (window.location.hash.startsWith("#chat") || !window.location.hash) {
@@ -264,9 +290,43 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     } catch {}
     setSessionId(d.session_id);
     setMsgs([]);
+    setUploads([]);
     setGraphFor(null);
     loadSessions();
   }, [loadSessions]);
+
+  useEffect(() => {
+    const refresh = (event?: Event) => {
+      const detail = (event as CustomEvent<{ session_id?: string }> | undefined)?.detail;
+      const target = sessionId;
+      if (!target || (detail?.session_id && detail.session_id !== target)) return;
+      loadSessions();
+      if (msgsRef.current.some((m) => m.live)) return;
+      const generation = sessionLoadGeneration.current;
+      getJSON<{ messages: { id?: string; role: string; content: string; sources?: Source[]; metadata?: { events?: TraceEvent[]; feedback?: { rating?: "positive" | "negative" }; revision_of?: string; request?: string } }[] }>(`/api/sessions/${target}/messages`)
+        .then(({ messages }) => {
+          if (generation !== sessionLoadGeneration.current || target !== sessionId || msgsRef.current.some((m) => m.live)) return;
+          let last = "";
+          setMsgs(messages.map((m) => {
+            if (m.role === "user") last = m.content;
+            return m.role === "user"
+              ? { id: nextId++, role: "user", text: m.content, events: [], live: false, sources: [], messageId: m.id }
+              : { id: nextId++, role: "ishti", text: m.content, events: m.metadata?.events ?? [], live: false, sources: m.sources ?? [],
+                  messageId: m.id, rating: m.metadata?.feedback?.rating, revisionOf: m.metadata?.revision_of,
+                  request: m.metadata?.request ?? last };
+          }));
+        })
+        .catch((err) => console.warn("[chat] live refresh failed:", err));
+    };
+    const onFinished = () => refresh();
+    const onTask = (event: Event) => refresh(event);
+    window.addEventListener("ishti-task-completed", onTask);
+    window.addEventListener("ishti-chat-finished", onFinished);
+    return () => {
+      window.removeEventListener("ishti-task-completed", onTask);
+      window.removeEventListener("ishti-chat-finished", onFinished);
+    };
+  }, [sessionId, msgs, loadSessions]);
 
   useEffect(() => {
     const handleStartNewChat = () => {
@@ -318,7 +378,12 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
 
   const deleteSession = async (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    await del(`/api/sessions/${id}`);
+    try {
+      const d = await postJSON<{ undo_token: string; deleted: string[] }>("/api/sessions/delete", { ids: [id] });
+      setUndo({ token: d.undo_token, ids: d.deleted });
+    } catch {
+      await del(`/api/sessions/${id}`);
+    }
     loadSessions();
     if (sessionId === id) {
       try { localStorage.removeItem("ishti-session-id"); } catch {}
@@ -446,13 +511,52 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     }
   }, []);
 
+  const addUploads = useCallback(async (files: FileList | null) => {
+    if (!files?.length) return;
+    setUploading(true);
+    setUploadError("");
+    try {
+      let totalBytes = uploads.reduce((sum, item) => sum + item.size, 0);
+      let totalCount = uploads.length;
+      for (const file of Array.from(files)) {
+        if (totalCount >= 5) throw new Error("A message can include at most 5 files.");
+        if (totalBytes + file.size > 50 * 1024 * 1024) throw new Error("Attachments in one message are limited to 50 MB total.");
+        const form = new FormData();
+        form.append("file", file);
+        const response = await fetch("/api/upload", { method: "POST", body: form });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data?.error || `Upload failed (${response.status})`);
+        setUploads((current) => [...current, { name: data.name || file.name, mention: data.mention, size: data.size || file.size }]);
+        totalBytes += file.size;
+        totalCount += 1;
+      }
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUploading(false);
+      if (uploadInput.current) uploadInput.current.value = "";
+    }
+  }, [uploads]);
+
+  const onComposerPaste = useCallback((event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = event.clipboardData.files;
+    if (files?.length) {
+      event.preventDefault();
+      void addUploads(files);
+    }
+  }, [addUploads]);
+
   useEffect(() => {
     adjustTextareaHeight();
   }, [input, adjustTextareaHeight]);
 
   async function send(text: string) {
-    text = text.trim();
+    // Enter can submit a form even while the disabled send button is visible.
+    // Keep an in-flight attachment upload from being silently omitted.
+    if (uploading) return;
+    text = [text.trim(), ...uploads.map((f) => f.mention)].filter(Boolean).join("\n");
     if (!text) return;
+    setUploads([]);
     isInitialLoad.current = false;
     setInput("");
     if (box.current) {
@@ -474,12 +578,44 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
           window.history.replaceState(null, "", `#chat/${res.session_id}`);
         }
       } catch {}
-      patch(reply.id, (m) => ({ ...m, text: res.final_answer, sources: res.sources ?? [], live: false }));
+      patch(reply.id, (m) => ({ ...m, text: res.final_answer, sources: res.sources ?? [], live: false,
+        messageId: res.message_id ?? undefined }));
       loadSessions();
       try { window.dispatchEvent(new CustomEvent("ishti-chat-finished")); } catch {}
     } catch (err) {
       patch(reply.id, (m) => ({ ...m, text: `Couldn't reach ISHTI: ${(err as Error).message}`, live: false }));
       try { window.dispatchEvent(new CustomEvent("ishti-chat-finished")); } catch {}
+    }
+  }
+
+  async function rateAnswer(messageId: string, rating: "positive" | "negative", reason = "") {
+    if (!sessionId || feedbackBusy) return;
+    const targetSession = sessionId;
+    const generation = sessionLoadGeneration.current;
+    setFeedbackBusy(messageId);
+    setFeedbackError(null);
+    try {
+      const result = await postJSON<{
+        rating: "positive" | "negative";
+        revision?: { id: string; content: string; metadata?: { revision_of?: string; request?: string } } | null;
+        error?: string | null;
+      }>(`/api/sessions/${targetSession}/feedback`, { message_id: messageId, rating, reason });
+      if (generation !== sessionLoadGeneration.current || targetSession !== sessionId) return;
+      setMsgs((all) => {
+        const updated = all.map((m) => m.messageId === messageId ? { ...m, rating: result.rating } : m);
+        if (!result.revision || updated.some((m) => m.messageId === result.revision?.id)) return updated;
+        return [...updated, { id: nextId++, role: "ishti", text: result.revision.content,
+          events: [], live: false, sources: [], messageId: result.revision.id,
+          revisionOf: result.revision.metadata?.revision_of, request: result.revision.metadata?.request }];
+      });
+      setFeedbackReasonFor(null);
+      setFeedbackReason("");
+      if (result.error) setFeedbackError({ messageId, text: result.error });
+      loadSessions();
+    } catch (error) {
+      setFeedbackError({ messageId, text: error instanceof Error ? error.message : "Feedback could not be recorded" });
+    } finally {
+      setFeedbackBusy(null);
     }
   }
 
@@ -618,10 +754,10 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                         onClick={() => (selecting ? toggleSelected(x.session_id) : selectSession(x.session_id))}
                         onDoubleClick={(e) => { if (!selecting) { e.stopPropagation(); setRenaming(x.session_id); setRenameDraft(x.title); } }}
                         className={cn(
-                          "group relative flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm transition-all duration-200",
+                          "group relative flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm transition-colors duration-150",
                           isSelected
                             ? "border-accent/70 bg-gradient-to-r from-accent/15 via-accent/8 to-transparent text-foreground font-semibold shadow-[0_2px_12px_rgba(110,86,207,0.12)] dark:shadow-[0_2px_12px_rgba(139,117,255,0.18)]"
-                            : "border-border/60 dark:border-white/10 bg-card/40 dark:bg-card/20 text-muted-foreground hover:border-accent/40 hover:bg-card/80 dark:hover:bg-card/45 hover:text-foreground hover:shadow-xs",
+                            : "border-border/60 dark:border-white/10 bg-card/40 dark:bg-card/20 text-muted-foreground hover:border-accent/40 hover:bg-card/80 dark:hover:bg-card/45 hover:text-foreground",
                         )}
                       >
                         {/* Active vertical indicator bar on the left */}
@@ -678,12 +814,12 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                           </span>
                         )}
 
-                        {/* Trailing Timestamp & Action */}
-                        <div className="shrink-0 flex items-center ml-1">
+                        {/* Trailing Timestamp & Action (fixed width & absolute overlay so chat items never shift or move) */}
+                        <div className="shrink-0 relative flex items-center justify-end h-5 min-w-[50px] ml-1">
                           <span
                             className={cn(
-                              "text-[10.5px] tabular-nums transition-opacity",
-                              "group-hover:hidden group-has-[[data-state=open]]:hidden",
+                              "text-[10.5px] tabular-nums transition-opacity duration-150",
+                              "group-hover:opacity-0 group-has-[[data-state=open]]:opacity-0",
                               isSelected
                                 ? "rounded-md bg-accent/20 px-1.5 py-0.5 text-accent font-semibold text-[10px]"
                                 : "text-muted-foreground/60"
@@ -691,7 +827,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                           >
                             {ago(x.updated_at)}
                           </span>
-                          <div className="hidden group-hover:flex group-has-[[data-state=open]]:flex items-center">
+                          <div className="absolute right-0 flex items-center gap-0.5 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150">
                             <button
                               type="button"
                               title="Rename chat"
@@ -700,10 +836,14 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                             >
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
-                            <DeleteButton
-                              size="sm"
-                              onConfirm={() => deleteSession(x.session_id)}
-                            />
+                            <button
+                              type="button"
+                              title="Delete chat"
+                              onClick={(e) => { e.stopPropagation(); void deleteSession(x.session_id, e); }}
+                              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger cursor-pointer"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -943,6 +1083,15 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
             </div>
           </div>
           <div className="flex items-center gap-1">
+            <button type="button" onClick={() => setShowFeedback((visible) => {
+              const next = !visible;
+              try { localStorage.setItem("ishti-show-answer-feedback", String(next)); } catch {}
+              return next;
+            })}
+              className="rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
+              aria-pressed={showFeedback} title="Show or hide answer feedback controls">
+              Feedback {showFeedback ? "On" : "Off"}
+            </button>
             <button onClick={() => setGraphFor(graphFor ? null : msgs.filter((m) => m.role === "ishti").at(-1)?.id ?? null)}
               className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer">
               <Network className="h-4 w-4" /> Activity
@@ -969,7 +1118,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                 <IshtiBrand
                   variant="squircle"
                   size={76}
-                  className="mb-3.5 drop-shadow-md group-hover:scale-105 group-active:scale-95 transition-all duration-200"
+                  className="mb-3.5 drop-shadow-md group-hover:opacity-90 transition-opacity"
                 />
                 <IshtiBrand
                   variant="wordmark"
@@ -981,34 +1130,13 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                 </span>
               </motion.div>
               <div className="text-center flex flex-col items-center">
-                <h1 className="text-2xl font-semibold tracking-tight">{greeting}, {owner}</h1>
-                <p className="mt-1 text-sm text-muted-foreground">Ask anything, or tell me what to do on this PC.</p>
+                <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">{greeting}, {owner}</h1>
+                <p className="mt-1.5 text-sm text-muted-foreground max-w-md">
+                  Your private executive AI workstation. What would you like to accomplish today?
+                </p>
               </div>
 
-              {/* Actionable Prompt Chips */}
-              <div className="flex flex-wrap items-center justify-center gap-2 max-w-xl">
-                {[
-                  { label: "Hardware specs & memory usage", icon: "⚡" },
-                  { label: "What's the weather tomorrow?", icon: "🌤️" },
-                  { label: "Search for latest AI news & models", icon: "🌐" },
-                  { label: "Find large files in Downloads", icon: "📁" },
-                  { label: "Remind me in 30 minutes to take a break", icon: "⏰" },
-                  { label: "Analyze NVIDIA stock performance", icon: "📈" },
-                ].map((chip) => (
-                  <button
-                    key={chip.label}
-                    type="button"
-                    onClick={() => {
-                      send(chip.label);
-                    }}
-                    className="flex items-center gap-2 rounded-xl border border-border/80 bg-card/60 px-3.5 py-2 text-xs font-medium text-foreground hover:border-accent hover:bg-accent-soft/30 hover:text-accent transition-all cursor-pointer shadow-xs active:scale-[0.98]"
-                  >
-                    <span>{chip.icon}</span>
-                    <span>{chip.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+                            </div>
           ) : (
             <div className="mx-auto w-full max-w-4xl xl:max-w-5xl space-y-5 px-4 sm:px-6 py-6 min-w-0">
               <AnimatePresence initial={false}>
@@ -1040,6 +1168,34 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                                   : m.live && <span className="inline-block h-4 w-2 animate-pulse rounded-sm bg-accent/60" />}
                           {!m.live && <MediaPreview text={m.text} onSend={(p) => { setInput(`send "${p}" on whatsapp to `); box.current?.focus(); }} />}
                           <Sources sources={m.sources} />
+                          {m.revisionOf && <p className="mt-1 text-[11px] text-muted-foreground">Revised answer after your feedback · no action was repeated</p>}
+                          {showFeedback && !m.live && m.messageId && !/\(yes\/no\)\s*$/i.test(m.text) && (
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                              <button type="button" onClick={() => void rateAnswer(m.messageId!, "positive")}
+                                disabled={!!feedbackBusy} aria-label="This answer was helpful" aria-pressed={m.rating === "positive"}
+                                className={cn("inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 hover:text-foreground disabled:opacity-50", m.rating === "positive" && "text-emerald-500 border-emerald-500/40")}>
+                                <ThumbsUp className="h-3.5 w-3.5" /> Helpful
+                              </button>
+                              <button type="button" onClick={() => void rateAnswer(m.messageId!, "negative")}
+                                disabled={!!feedbackBusy} aria-label="This answer was wrong; try another answer" aria-pressed={m.rating === "negative"}
+                                className={cn("inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 hover:text-foreground disabled:opacity-50", m.rating === "negative" && "text-amber-500 border-amber-500/40")}>
+                                <ThumbsDown className="h-3.5 w-3.5" /> Try again
+                              </button>
+                              <button type="button" onClick={() => { setFeedbackReasonFor(m.messageId!); setFeedbackReason(""); }}
+                                className="hover:text-foreground">Explain what was wrong</button>
+                              {feedbackBusy === m.messageId && <span role="status">Reviewing this answer…</span>}
+                              {feedbackReasonFor === m.messageId && (
+                                <div className="flex w-full gap-2">
+                                  <input value={feedbackReason} onChange={(event) => setFeedbackReason(event.target.value.slice(0, 1000))}
+                                    placeholder="Optional detail for a better revision" aria-label="What was wrong with this answer"
+                                    className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-1.5 text-foreground" />
+                                  <button type="button" onClick={() => void rateAnswer(m.messageId!, "negative", feedbackReason)}
+                                    disabled={!!feedbackBusy} className="rounded-lg bg-accent px-2 py-1.5 text-white disabled:opacity-50">Revise</button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {feedbackError && feedbackError.messageId === m.messageId && <p role="alert" className="mt-1 text-xs text-destructive">{feedbackError.text}</p>}
                           {!m.live && m.id === msgs.at(-1)?.id && /\(yes\/no\)\s*$/i.test(m.text) && (
                             <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
                               className="mt-2.5 flex flex-wrap gap-2">
@@ -1065,7 +1221,21 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
           )}
         </div>
 
-        <form onSubmit={(e) => { e.preventDefault(); if (!recording && !transcribing) send(input); }} className="px-4 sm:px-6 pb-5 pt-1 shrink-0">
+        <form onSubmit={(e) => { e.preventDefault(); if (!recording && !transcribing && !uploading) send(input); }}
+          onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }}
+          onDrop={(e) => { if (e.dataTransfer.files.length) { e.preventDefault(); void addUploads(e.dataTransfer.files); } }}
+          className="px-4 sm:px-6 pb-5 pt-1 shrink-0">
+          <input ref={uploadInput} type="file" multiple hidden onChange={(e) => addUploads(e.currentTarget.files)} />
+          {(uploads.length > 0 || uploading || uploadError) && (
+            <div className="mx-auto mb-2 flex w-full max-w-4xl xl:max-w-5xl flex-wrap items-center gap-2 text-xs">
+              {uploads.map((file, index) => <span key={`${file.name}-${index}`} className="inline-flex max-w-[240px] items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-1">
+                <span className="truncate">{file.name}</span>
+                <button type="button" aria-label={`Remove ${file.name}`} onClick={() => setUploads((all) => all.filter((_, i) => i !== index))} className="text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>
+              </span>)}
+              {uploading && <span className="text-muted-foreground">Uploading…</span>}
+              {uploadError && <span role="alert" className="text-danger">{uploadError}</span>}
+            </div>
+          )}
           <AnimatePresence initial={false}>
             {queue.length > 0 && (
               <motion.ul initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
@@ -1095,10 +1265,13 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
             >
               <div className="flex w-full items-end gap-2 rounded-2xl border border-border bg-background p-2 shadow-[0_2px_12px_rgba(29,27,46,0.06)] transition-shadow focus-within:shadow-[0_2px_18px_rgba(110,86,207,0.18)]">
                 <textarea ref={box} value={input} onChange={(e) => setInput(e.target.value)} rows={1}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!recording && !transcribing) send(input); } }}
+                  onPaste={onComposerPaste}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!recording && !transcribing && !uploading) send(input); } }}
                   placeholder="Ask or tell ISHTI to do anything…"
                   style={{ fontSize: "var(--chat-input-size)" }}
                   className="scroll-thin max-h-[220px] min-h-[40px] flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 leading-relaxed outline-none placeholder:text-muted-foreground" />
+                <button type="button" onClick={() => uploadInput.current?.click()} disabled={uploading} title="Attach files for ISHTI to inspect" aria-label="Attach files"
+                  className="grid h-9 w-9 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40 cursor-pointer"><Paperclip className="h-4 w-4" /></button>
                 <button type="button" onClick={toggleMic} title="Record a voice message (reply comes as text)"
                   className={`grid h-9 w-9 place-items-center rounded-xl transition-colors cursor-pointer ${recording ? "bg-danger text-white" : "text-muted-foreground hover:bg-muted"}`}>
                   {recording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
@@ -1107,7 +1280,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                   className="flex h-9 items-center gap-1.5 rounded-xl border border-accent/40 px-2.5 text-xs font-semibold text-accent transition-colors hover:bg-accent-soft/40 cursor-pointer">
                   <AudioLines className="h-4 w-4" /> Live
                 </button>
-                <button type="submit" disabled={!input.trim() || recording || transcribing} title={recording ? "Stop the recording first" : transcribing ? "Writing down what you said…" : canStart ? "Send" : "Queue: runs when a slot is free"}
+                <button type="submit" disabled={(!input.trim() && !uploads.length) || uploading || recording || transcribing} title={recording ? "Stop the recording first" : transcribing ? "Writing down what you said…" : canStart ? "Send" : "Queue: runs when a slot is free"}
                   className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-white transition-opacity disabled:opacity-40 cursor-pointer">
                   <ArrowUp className="h-4 w-4" />
                 </button>
@@ -1123,10 +1296,13 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
             >
               <div className="flex w-full items-end gap-2 rounded-2xl border border-border bg-background p-2 shadow-[0_2px_12px_rgba(29,27,46,0.06)] transition-shadow focus-within:shadow-[0_2px_18px_rgba(110,86,207,0.18)]">
                 <textarea ref={box} value={input} onChange={(e) => setInput(e.target.value)} rows={1}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!recording && !transcribing) send(input); } }}
+                  onPaste={onComposerPaste}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!recording && !transcribing && !uploading) send(input); } }}
                   placeholder="Ask or tell ISHTI to do anything…"
                   style={{ fontSize: "var(--chat-input-size)" }}
                   className="scroll-thin max-h-[220px] min-h-[40px] flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 leading-relaxed outline-none placeholder:text-muted-foreground" />
+                <button type="button" onClick={() => uploadInput.current?.click()} disabled={uploading} title="Attach files for ISHTI to inspect" aria-label="Attach files"
+                  className="grid h-9 w-9 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40 cursor-pointer"><Paperclip className="h-4 w-4" /></button>
                 <button type="button" onClick={toggleMic} title="Record a voice message (reply comes as text)"
                   className={`grid h-9 w-9 place-items-center rounded-xl transition-colors cursor-pointer ${recording ? "bg-danger text-white" : "text-muted-foreground hover:bg-muted"}`}>
                   {recording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
@@ -1135,7 +1311,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                   className="flex h-9 items-center gap-1.5 rounded-xl border border-accent/40 px-2.5 text-xs font-semibold text-accent transition-colors hover:bg-accent-soft/40 cursor-pointer">
                   <AudioLines className="h-4 w-4" /> Live
                 </button>
-                <button type="submit" disabled={!input.trim() || recording || transcribing} title={recording ? "Stop the recording first" : transcribing ? "Writing down what you said…" : canStart ? "Send" : "Queue: runs when a slot is free"}
+                <button type="submit" disabled={(!input.trim() && !uploads.length) || uploading || recording || transcribing} title={recording ? "Stop the recording first" : transcribing ? "Writing down what you said…" : canStart ? "Send" : "Queue: runs when a slot is free"}
                   className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-white transition-opacity disabled:opacity-40 cursor-pointer">
                   <ArrowUp className="h-4 w-4" />
                 </button>

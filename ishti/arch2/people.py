@@ -312,6 +312,47 @@ def _create_variant(name: str, ctx: dict) -> dict:
     return {"entity": memory.find_entity(qual), "ambiguous": False, "question": "", "created": True}
 
 
+# words in a role description that never help identify a person
+_DESC_STOP = {"data", "info", "information", "record", "records", "about", "person", "people", "them",
+              "that", "this", "the", "and", "with", "from", "want", "gone", "completely", "all",
+              "everything", "memory", "memories", "please", "make", "deleted", "removed", "thing"}
+
+
+def find_by_description(desc: str) -> list[dict]:
+    """Resolve a person named by role/relationship ("my cardiologist collaborator") to candidate
+    entity rows: searches entity name/relationship/notes/facts/aliases AND the relationship graph
+    (node names + edge labels), so a role that only lives on a graph edge is still found. Returns
+    every candidate (the caller asks when there is more than one - never a guess)."""
+    words = [w for w in re.findall(r"[a-z]{4,}", (desc or "").lower()) if w not in _DESC_STOP]
+    if not words:
+        return []
+    hits: dict = {}
+    for e in memory.entities(limit=500):
+        blob = " ".join(str(e.get(k) or "") for k in
+                        ("name", "display", "relationship", "aliases", "notes",
+                         "important_facts", "preferences")).lower()
+        if any(w in blob for w in words):
+            hits[e["id"]] = e
+    try:
+        from ishti import rgraph
+        rc = rgraph.conn()
+        nodes = {r["id"]: (r["name"], r["kind"]) for r in
+                 rc.execute("SELECT id, name, kind FROM nodes").fetchall()}
+        for r in rc.execute("SELECT src, dst, rel FROM edges").fetchall():
+            blob = f"{r['rel']} {nodes.get(r['src'], ('', ''))[0]} {nodes.get(r['dst'], ('', ''))[0]}".lower()
+            if any(w in blob for w in words):
+                for nid in (r["src"], r["dst"]):
+                    nm, kind = nodes.get(nid, ("", ""))
+                    if (not nm) or nm.lower() == "me" or kind not in ("person", ""):
+                        continue
+                    row = memory.find_entity(nm)
+                    if row:
+                        hits[row["id"]] = row
+    except Exception as _exc:
+        swallowed('ishti/arch2/people.py:find_by_description', _exc)
+    return list(hits.values())
+
+
 def list_people(limit=200) -> list[dict]:
     """All person records (the dashboard's People/Relationship tabs)."""
     from ishti import rgraph

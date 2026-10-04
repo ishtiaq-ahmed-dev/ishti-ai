@@ -1,0 +1,32 @@
+{
+ "id": 297,
+ "prompt_text": "I just installed a new tool, can you help me figure out how it works?",
+ "category": "Learning a new tool / onboarding help (297-300)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [
+  "web_search",
+  "web_fetch",
+  "browser",
+  "deep_research",
+  "chat"
+ ],
+ "expected_outcome": "Accurate explanation grounded in the actual tool's real documentation",
+ "expected_reply_success": "Accurate explanation grounded in the actual tool's real documentation",
+ "expected_reply_failure": "Wrong: explains a different tool with a similar name, or invents features",
+ "pass_criteria": {
+  "expected_skill": [
+   "web_search",
+   "web_fetch",
+   "browser",
+   "deep_research",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

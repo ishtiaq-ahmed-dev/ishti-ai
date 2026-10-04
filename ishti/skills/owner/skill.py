@@ -32,6 +32,20 @@ SAVE_MEMORY = re.compile(
     r"\b(?:add|save|store|update|put|write|keep|remember)\s+(?:this|that|it|everything)?\s*(?:in|to|into)?\s*(?:the\s+|your\s+|my\s+)?memory\b"
     r"|\b(?:remember|note\s+down|make\s+a\s+note)\s+(?:that\s+)?\b", I)
 ABOUT_ME = re.compile(rf"\bmy\s+(?:{ATTRS}|name|city|country)\b", I)
+# A PERSON is never an owner fact, however loosely TELL/SAVE_MEMORY read the sentence. Both are deliberately
+# wide ("remember that ...", "add my ...") and this skill has the LOWEST priority number, so the router checks
+# it first: "my brother's name is Bilal, remember that", "Remember that Sana is my client at JQ AI Solutions"
+# and "Add my friend Hamza" were all claimed here and stored as a bare owner attribute - the relationship
+# edge / client profile / project link was never created (checklist 133, 139, 145, 149). The relationships and
+# clients skills own these, so defer to them. Only relationship WORDS defer, so "remember my email is ..."
+# stays an owner fact.
+PERSON = re.compile(
+    r"\bmy\s+(?:elder\s+|older\s+|younger\s+|big\s+|little\s+|eldest\s+|youngest\s+|only\s+|new\s+|good\s+|best\s+)?"
+    r"(?:brother|sister|father|mother|son|daughter|cousin|uncle|aunt|nephew|niece|grandfather|grandmother|"
+    r"friend|colleague|classmate|client|manager|boss|partner|teammate|roommate|co-?founder|supervisor|"
+    r"bro|bros|bhai|bhaiya|brotehr|brotehrs|sis|behan|baji)\b|"
+    r"\b(?:brother|sister|father|mother|cousin|uncle|aunt|friend|colleague|classmate|client|manager|boss|bro|bhai)"
+    r"(?:'s)?\s+(?:name\s+)?is\b", I)
 VERBS = ("study", "work", "live", "born", "teach", "graduated")
 SELF = re.compile(r"\bwhy\s+(?:are|is|do|did|does|can'?t|cant|won'?t|don'?t|dont|odnt|didn'?t|didnot)\s+(?:you|your|ishti)\b|"
                   r"\bfix\s+yourself\b|\b(?:can|do|could)\s+you\s+(?:do|perform|handle|run)\s+(?:multiple|parallel|many|several)\b|"
@@ -50,12 +64,20 @@ def asks_about_me(t):
     """A question about the owner themselves: "where do I study?", "where i stid ?" (typo), "what's my major"."""
     if re.search(r"\bwhat\s+(?:do|does)\s+(?:i|my\s+\w+)\s+(?:like|love|prefer|hate|dislike)\b", t, re.I):
         return False  # likes live in the relationship graph (the relationships skill answers them)
+    if re.search(r"\b(?:brother|sister|father|mother|cousin|family|relative|sibling|bro|bhai)s?\b", t, re.I):
+        return False  # questions about family/relatives belong to relationships skill
     words = re.findall(r"[a-z']+", t.lower())
     if not words or not (t.rstrip().endswith("?") or words[0] in ("where", "what", "which", "when", "whats", "what's")):
         return False
     # a request mentioning a file path / branch / repo is about that thing, not about the owner
     # ("which branch am I on in D:/proj" is gitops'; "on" fuzzy-matching "born" must not win it)
     if re.search(r"[A-Za-z]:[\\/]|\bbranch\b|\brepo\b|\bcommit\b|\bgit\b", t, re.I):
+        return False
+    # A forecast/outdoor decision is weather's question, not a fact about the owner:
+    # "should I bring a jacket tonight" fuzzy-matched the personal verbs ("bring" ~ "born") and was
+    # answered from memory instead of the forecast (checklist #60).
+    if re.search(r"\b(?:jacket|coat|umbrella|sweater|hoodie|raincoat|scarf|gloves)\b", t, re.I) \
+            or re.search(r"\b(?:weather|forecast|rain|snow|temperature)\b", t, re.I):
         return False
     if ABOUT_ME.search(t) or ("i" in words and re.search(rf"\b(?:{ATTRS})\b", t, I)):  # "what semester am i in?"
         # "what should I get X for his birthday" is about X, not about the owner:
@@ -71,7 +93,7 @@ def asks_about_me(t):
 def match(text):
     t = text.strip()
     return (any(rx.match(t) for rx in (AUDIO_OFF, AUDIO_ON, WHO, KNOW, CAN, DOCTOR, VOICE_SET)) or bool(VOICE_LIST.search(t))
-            or bool((TELL.match(t) or SAVE_MEMORY.search(t)) and not SCHEDULING.search(t))
+            or bool((TELL.match(t) or SAVE_MEMORY.search(t)) and not SCHEDULING.search(t) and not PERSON.search(t))
             or bool(SELF.search(t)) or asks_about_me(t))
 
 
@@ -204,7 +226,7 @@ def about_ishti(t):
 
 def run(text, session):
     t = text.strip()
-    if TELL.match(t):
+    if TELL.match(t) or SAVE_MEMORY.search(t):
         return tell(t, session)
     if SELF.search(t):
         return about_ishti(t)

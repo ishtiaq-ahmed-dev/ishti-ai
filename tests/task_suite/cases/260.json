@@ -1,0 +1,32 @@
+{
+ "id": 260,
+ "prompt_text": "When is my assignment due?",
+ "category": "Academic & student assistant tasks (257-262)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [
+  "reminders",
+  "memory",
+  "learning",
+  "chat",
+  "owner"
+ ],
+ "expected_outcome": "States the actual stored deadline",
+ "expected_reply_success": "States the actual stored deadline",
+ "expected_reply_failure": "\"No deadline on file for that\" if genuinely not stored",
+ "pass_criteria": {
+  "expected_skill": [
+   "reminders",
+   "memory",
+   "learning",
+   "chat",
+   "owner"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

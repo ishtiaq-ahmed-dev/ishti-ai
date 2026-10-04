@@ -1,0 +1,34 @@
+{
+ "id": 81,
+ "prompt_text": "Do the usual thing",
+ "category": "Ambiguous / needs clarification (77-82)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "memory",
+  "learning",
+  "chat",
+  "owner"
+ ],
+ "expected_outcome": "Asks what \"the usual thing\" refers to, offers to learn it going forward",
+ "expected_reply_success": "Asks what \"the usual thing\" refers to, offers to learn it going forward",
+ "expected_reply_failure": "Wrong: fabricates a routine it was never taught",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat"
+  ],
+  "ok_any": [
+   "don't know",
+   "not sure",
+   "what",
+   "which",
+   "usual",
+   "tell me"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

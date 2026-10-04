@@ -1,0 +1,41 @@
+{
+ "id": 182,
+ "prompt_text": "I open VS Code and the terminal every morning around 9",
+ "category": "Proactive suggestions & learned routines (182-187)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "memory",
+  "learning",
+  "chat",
+  "owner"
+ ],
+ "expected_outcome": "After enough repetition, it may offer: \"Want me to start your usual dev setup?\" — only if proactive suggestions are enabled",
+ "expected_reply_success": "After enough repetition, it may offer: \"Want me to start your usual dev setup?\" — only if proactive suggestions are enabled",
+ "expected_reply_failure": "Wrong: starts doing it automatically without asking first, or offers it after just one occurrence",
+ "pass_criteria": {
+  "expected_skill": [
+   "learning",
+   "terminal",
+   "chat",
+   "automation"
+  ],
+  "ok_any": [
+   "noted",
+   "i'll",
+   "pattern",
+   "every morning",
+   "suggest",
+   "remember",
+   "vscode",
+   "vs code",
+   "terminal",
+   "got it"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

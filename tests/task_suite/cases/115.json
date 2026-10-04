@@ -1,0 +1,27 @@
+{
+ "id": 115,
+ "prompt_text": "Mark my WhatsApp messages from work as read",
+ "category": "WhatsApp — reading & replying (111-116)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [
+  "whatsapp",
+  "apps",
+  "browser",
+  "desktop"
+ ],
+ "expected_outcome": "Confirms what it marked, count",
+ "expected_reply_success": "Confirms what it marked, count",
+ "expected_reply_failure": "If WhatsApp doesn't expose that control: says it can't do that specific action rather than faking it",
+ "pass_criteria": {
+  "expected_skill": [
+   "whatsapp"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

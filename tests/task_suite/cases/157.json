@@ -1,0 +1,38 @@
+{
+ "id": 157,
+ "prompt_text": "Check if my ISHTI repo has uncommitted changes",
+ "category": "Coding / developer assistant tasks (157-164)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "dev",
+  "terminal",
+  "devops",
+  "gitops",
+  "chat"
+ ],
+ "expected_outcome": "Shows actual `git status` output",
+ "expected_reply_success": "Shows actual `git status` output",
+ "expected_reply_failure": "If not a git repo or path wrong: states the real error",
+ "pass_criteria": {
+  "expected_skill": [
+   "dev",
+   "gitops",
+   "terminal"
+  ],
+  "ok_any": [
+   "uncommitted",
+   "modified",
+   "clean",
+   "nothing to commit",
+   "git status",
+   "working tree",
+   "branch"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

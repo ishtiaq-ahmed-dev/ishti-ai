@@ -23,6 +23,7 @@ export type Result = {
   final_answer: string;
   skill: string | null;
   session_id: string;
+  message_id?: string | null;
   sources: Source[];
   latency_ms?: number;
 };
@@ -70,7 +71,9 @@ async function checkResponse(r: Response) {
     let errorDetail = `Server error (${r.status} ${r.statusText})`;
     try {
       const data = await r.json();
-      if (data && data.error) errorDetail = String(data.error);
+      if (data?.error || data?.reply || typeof data?.detail === "string") {
+        errorDetail = String(data.error || data.reply || data.detail);
+      }
     } catch {}
     throw new Error(errorDetail);
   }

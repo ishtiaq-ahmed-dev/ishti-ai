@@ -1,0 +1,26 @@
+{
+ "id": 223,
+ "prompt_text": "If you restart while a background task is running, what happens to it - do you resume it or lose it?",
+ "category": "Long-horizon autonomy & background monitoring (218-223)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Either resumes the monitor and says so, or honestly reports it didn't survive the restart",
+ "expected_reply_success": "Either resumes the monitor and says so, or honestly reports it didn't survive the restart",
+ "expected_reply_failure": "Wrong: silently loses it and never mentions it stopped",
+ "pass_criteria": {
+  "expected_skill": [
+   "reminders",
+   "automation",
+   "system",
+   "chat",
+   "taskctl"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

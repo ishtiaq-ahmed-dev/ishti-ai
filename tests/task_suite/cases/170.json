@@ -1,0 +1,42 @@
+{
+ "id": 170,
+ "prompt_text": "How has my portfolio done this month?",
+ "category": "Markets & finance tracking (165-170)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "markets",
+  "trading",
+  "ledger",
+  "chat",
+  "memory",
+  "learning",
+  "owner"
+ ],
+ "expected_outcome": "Real numbers from actually-stored data",
+ "expected_reply_success": "Real numbers from actually-stored data",
+ "expected_reply_failure": "If no portfolio data is on file: says that, doesn't estimate",
+ "pass_criteria": {
+  "expected_skill": [
+   "markets",
+   "ledger",
+   "networth",
+   "trading",
+   "chat"
+  ],
+  "ok_any": [
+   "portfolio",
+   "no portfolio",
+   "nothing on file",
+   "don't have",
+   "value",
+   "this month",
+   "track"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

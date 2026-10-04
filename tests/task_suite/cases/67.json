@@ -1,0 +1,32 @@
+{
+ "id": 67,
+ "prompt_text": "Check disk space, and if it's low, tell me what's taking up the most room",
+ "category": "Multi-step chained tasks (62-69)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Only runs the second part if the condition is actually true, says so either way",
+ "expected_reply_success": "Only runs the second part if the condition is actually true, says so either way",
+ "expected_reply_failure": "If it can't determine what's using space: says so, gives what it could determine",
+ "pass_criteria": {
+  "expected_skill": [
+   "system",
+   "desktop",
+   "plan"
+  ],
+  "ok_any": [
+   "disk",
+   "gb",
+   "free",
+   "space",
+   "used",
+   "not low",
+   "fine"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

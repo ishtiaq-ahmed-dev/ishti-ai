@@ -1,0 +1,43 @@
+{
+ "id": 4,
+ "prompt_text": "Find my thesis proposal file",
+ "category": "Information lookup & search (1-10)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "files",
+  "folders",
+  "fileops",
+  "web_search",
+  "web_fetch",
+  "browser",
+  "deep_research",
+  "chat",
+  "system",
+  "meta"
+ ],
+ "expected_outcome": "Gives exact path, asks to confirm before storing it in memory",
+ "expected_reply_success": "Gives exact path, asks to confirm before storing it in memory",
+ "expected_reply_failure": "\"No file matching that name found in D:, Desktop, or Downloads — can you narrow it down?\"",
+ "pass_criteria": {
+  "expected_skill": [
+   "files",
+   "folders",
+   "desktop"
+  ],
+  "ok_any": [
+   "path",
+   ":",
+   "found",
+   "thesis",
+   "no file",
+   "couldn't find",
+   "could not find"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

@@ -1,0 +1,32 @@
+{
+ "id": 276,
+ "prompt_text": "Create a new branch for the leads-skill feature",
+ "category": "GitHub & version control (275-280)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [
+  "dev",
+  "terminal",
+  "devops",
+  "gitops",
+  "chat"
+ ],
+ "expected_outcome": "Confirms branch created and checked out",
+ "expected_reply_success": "Confirms branch created and checked out",
+ "expected_reply_failure": "If branch name already exists: says so instead of silently overwriting",
+ "pass_criteria": {
+  "expected_skill": [
+   "dev",
+   "terminal",
+   "devops",
+   "gitops",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

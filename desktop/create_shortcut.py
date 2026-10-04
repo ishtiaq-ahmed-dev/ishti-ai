@@ -1,13 +1,14 @@
-"""Creates the ISHTI desktop shortcut (Start) for the current user's desktop.
+"""Creates the ISHTI desktop shortcut (Start) for the current user's desktop and Start Menu.
 
-Owner request 2026-09-29: no "Stop ISHTI" desktop shortcut - stopping ISHTI belongs inside the app
-(the Shut down button / the window's X), which shuts down cleanly. Any old Stop shortcut on the
-desktop is removed here so stale ones disappear.
+Sets the explicit Windows Application User Model ID (PKEY_AppUserModel_ID) on the shortcuts
+so Windows Taskbar pinning cleanly associates the pinned taskbar button with ISHTI's official logo
+rather than falling back to the generic Python interpreter icon.
 """
 import os
 import sys
 import win32com.client
 
+APP_ID = "ISHTI.PersonalAI.Assistant.Desktop.1.0"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PYTHONW = os.path.join(ROOT, "venv", "Scripts", "pythonw.exe")
 LAUNCHER = os.path.join(ROOT, "desktop", "launcher.py")
@@ -24,12 +25,26 @@ def _setup_shortcut(ws, shortcut_path, target, args, desc, icon_path):
     if icon_path and os.path.exists(icon_path):
         shortcut.IconLocation = f"{icon_path},0"
     shortcut.Save()
-    print(f"[SUCCESS] Configured shortcut: {shortcut_path}")
+    shortcut = None
+
+    # Set explicit AppUserModelID on the shortcut via Windows Property Store
+    try:
+        from win32com.propsys import propsys, pscon
+        store = propsys.SHGetPropertyStoreFromParsingName(
+            shortcut_path, None, 2, propsys.IID_IPropertyStore
+        )
+        prop = propsys.PROPVARIANTType(APP_ID)
+        store.SetValue(pscon.PKEY_AppUserModel_ID, prop)
+        store.Commit()
+        store = None
+    except Exception as exc:
+        pass
+
+    print(f"[SUCCESS] Configured shortcut with AppID: {shortcut_path}")
 
 
 def create_desktop_shortcuts():
-    """The ONE desktop icon, "ISHTI": the singleton launcher (a second click focuses the running instance, never
-    duplicates it). Owner request 2026-10-02: one icon only - a leftover "Start ISHTI.lnk" is moved to the Recycle Bin."""
+    """Configures the official ISHTI shortcuts for Desktop, Start Menu Programs, and Taskbar."""
     ws = win32com.client.Dispatch("WScript.Shell")
     desktop = ws.SpecialFolders("Desktop")
 
@@ -43,18 +58,50 @@ def create_desktop_shortcuts():
 
     desc = "ISHTI - Intelligent Personal Assistant"
 
+    # 1. Desktop shortcut
     _setup_shortcut(ws, os.path.join(desktop, "ISHTI.lnk"), target, args, desc, ICON)
+
+    # 2. Start Menu Programs shortcut (CRITICAL for Windows Taskbar Pinning to find AppUserModelID)
+    start_menu_programs = os.path.join(
+        os.environ.get("APPDATA", ""), "Microsoft", "Windows", "Start Menu", "Programs"
+    )
+    if os.path.exists(start_menu_programs):
+        _setup_shortcut(
+            ws, os.path.join(start_menu_programs, "ISHTI.lnk"), target, args, desc, ICON
+        )
+
+    # 3. If User Pinned Taskbar already has a shortcut pointing to ISHTI or python, update its icon
+    taskbar_dir = os.path.join(
+        os.environ.get("APPDATA", ""),
+        "Microsoft",
+        "Internet Explorer",
+        "Quick Launch",
+        "User Pinned",
+        "TaskBar",
+    )
+    if os.path.exists(taskbar_dir):
+        for fname in os.listdir(taskbar_dir):
+            if fname.lower().endswith(".lnk") and ("ishti" in fname.lower() or "python" in fname.lower()):
+                try:
+                    fpath = os.path.join(taskbar_dir, fname)
+                    _setup_shortcut(ws, fpath, target, args, desc, ICON)
+                except Exception:
+                    pass
+
+    # Clean up any stale Start ISHTI shortcut
     stale = os.path.join(desktop, "Start ISHTI.lnk")
     if os.path.exists(stale):
         try:
-            from win32com.shell import shell, shellcon  # Recycle Bin, not a hard delete
-            shell.SHFileOperation((0, shellcon.FO_DELETE, stale, None, shellcon.FOF_ALLOWUNDO | shellcon.FOF_NOCONFIRMATION | shellcon.FOF_SILENT, None, None))
+            from win32com.shell import shell, shellcon
+            shell.SHFileOperation(
+                (0, shellcon.FO_DELETE, stale, None, shellcon.FOF_ALLOWUNDO | shellcon.FOF_NOCONFIRMATION | shellcon.FOF_SILENT, None, None)
+            )
         except Exception as exc:
             print(f"[WARN] could not remove {stale}: {exc}")
 
 
 def remove_stop_shortcut():
-    """Owner request 2026-09-29: the desktop has no Stop shortcut; the app's own Shut down button / X
+    """Owner request: the desktop has no Stop shortcut; the app's own Shut down button / X
     closes ISHTI cleanly. Deletes any Stop ISHTI.lnk left by older versions."""
     ws = win32com.client.Dispatch("WScript.Shell")
     desktop = ws.SpecialFolders("Desktop")

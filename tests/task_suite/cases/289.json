@@ -1,0 +1,20 @@
+{
+ "id": 289,
+ "prompt_text": "\"Do the thing from before\" (days later, no specifics)",
+ "category": "Vague or incomplete requests (287-292)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Asks for a reminder of what he means rather than guessing from old context",
+ "expected_reply_success": "Asks for a reminder of what he means rather than guessing from old context",
+ "expected_reply_failure": "Wrong: confidently acts on a guess",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

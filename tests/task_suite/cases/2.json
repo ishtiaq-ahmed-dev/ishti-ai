@@ -1,0 +1,29 @@
+{
+ "id": 2,
+ "prompt_text": "What's the capital of Kazakhstan?",
+ "category": "Information lookup & search (1-10)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Direct answer, no fluff",
+ "expected_reply_success": "Direct answer, no fluff",
+ "expected_reply_failure": "N/A — should never fail a static fact",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat"
+  ],
+  "ok_any": [
+   "astana"
+  ],
+  "bad_any": [
+   "i don't know"
+  ],
+  "forbid": [
+   "web_search",
+   "arch2"
+  ]
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

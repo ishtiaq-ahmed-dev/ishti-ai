@@ -106,9 +106,9 @@ def curate_examples(rows, min_quality=None, cap_per_skill=None):
 
 def dry_run(min_quality=None, eval_also=False) -> dict:
     """G3/G4: the whole offline pipeline WITHOUT training — data sufficiency, curation,
-    eval-set presence, dependency check, and the gate math. Touches nothing; deploys
+    eval-set presence, dependency check, and the gate math. Trains nothing and deploys
     nothing (deployment only ever happens via the explicit `promote` command after a
-    real training run). Safe to run any time."""
+    real training run); the one file it may create is the standard eval set. Safe to run any time."""
     from ishti import ftlog
     ok, s = ftlog.ready_for_training(MIN_EXAMPLES)
     report = {"examples_logged": s["total"], "min_needed": MIN_EXAMPLES, "data_ready": bool(ok)}
@@ -127,7 +127,11 @@ def dry_run(min_quality=None, eval_also=False) -> dict:
     report["curated_examples"] = len(kept)
     report["dropped"] = dropped
     report["curation_would_train"] = len(kept) >= MIN_EXAMPLES
-    report["eval_set"] = "present" if os.path.isfile(EVAL_SET) else "missing (created on first real run)"
+    try:  # the gate always has its eval set: a dry-run that reports the gate file missing is not a dry-run
+        ensure_eval_set()
+        report["eval_set"] = "present"
+    except OSError as exc:
+        report["eval_set"] = f"missing ({type(exc).__name__}: {exc})"
     report["training_deps_missing"] = deps()
     report["would_train"] = bool(report["curation_would_train"] and not report["training_deps_missing"])
     report["auto_deploy"] = False

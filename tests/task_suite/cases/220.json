@@ -1,0 +1,29 @@
+{
+ "id": 220,
+ "prompt_text": "What have you been doing in the background the last hour?",
+ "category": "Long-horizon autonomy & background monitoring (218-223)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "reminders",
+  "automation",
+  "system",
+  "chat"
+ ],
+ "expected_outcome": "Accurate list of what actually ran",
+ "expected_reply_success": "Accurate list of what actually ran",
+ "expected_reply_failure": "\"Nothing's been running in the background\" if genuinely true",
+ "pass_criteria": {
+  "expected_skill": [
+   "meta",
+   "system",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

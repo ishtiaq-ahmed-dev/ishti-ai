@@ -1,0 +1,29 @@
+{
+ "id": 77,
+ "prompt_text": "Message Ahmed",
+ "category": "Ambiguous / needs clarification (77-82)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Asks which Ahmed, maybe with context hints (work/brother/etc)",
+ "expected_reply_success": "Asks which Ahmed, maybe with context hints (work/brother/etc)",
+ "expected_reply_failure": "Wrong: silently picks one and sends/drafts to the wrong person",
+ "pass_criteria": {
+  "expected_skill": [
+   "whatsapp",
+   "contacts",
+   "chat"
+  ],
+  "ok_any": [
+   "which",
+   "ahmed",
+   "who",
+   "message"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

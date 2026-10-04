@@ -1,0 +1,28 @@
+{
+ "id": 262,
+ "prompt_text": "Convert my report to PDF for submission",
+ "category": "Academic & student assistant tasks (257-262)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [
+  "files",
+  "folders",
+  "fileops"
+ ],
+ "expected_outcome": "Confirms converted, correct filename/location",
+ "expected_reply_success": "Confirms converted, correct filename/location",
+ "expected_reply_failure": "If source format unsupported or conversion fails: real error message",
+ "pass_criteria": {
+  "expected_skill": [
+   "writing",
+   "files",
+   "folders"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

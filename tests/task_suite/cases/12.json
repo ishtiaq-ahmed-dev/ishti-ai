@@ -1,0 +1,30 @@
+{
+ "id": 12,
+ "prompt_text": "Remind me every Friday at 6pm to back up my project",
+ "category": "Scheduling & reminders (11-18)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "reminders"
+ ],
+ "expected_outcome": "Confirms recurrence rule in plain words back to Ishtiaq",
+ "expected_reply_success": "Confirms recurrence rule in plain words back to Ishtiaq",
+ "expected_reply_failure": "If recurrence isn't supported yet: says so plainly, offers a one-time version instead",
+ "pass_criteria": {
+  "expected_skill": [
+   "reminders"
+  ],
+  "ok_any": [
+   "friday",
+   "6",
+   "every",
+   "repeat",
+   "back up"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

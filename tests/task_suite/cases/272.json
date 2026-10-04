@@ -1,0 +1,31 @@
+{
+ "id": 272,
+ "prompt_text": "Compare my last 3 videos and tell me what's working",
+ "category": "YouTube & content workflow (269-274)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [
+  "video",
+  "media",
+  "files",
+  "folders"
+ ],
+ "expected_outcome": "Genuine comparison grounded in real numbers",
+ "expected_reply_success": "Genuine comparison grounded in real numbers",
+ "expected_reply_failure": "If data for some videos is missing: says which ones it couldn't compare",
+ "pass_criteria": {
+  "expected_skill": [
+   "fileops",
+   "files",
+   "folders",
+   "video",
+   "media"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

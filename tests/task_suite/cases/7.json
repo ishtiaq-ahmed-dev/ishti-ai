@@ -1,0 +1,38 @@
+{
+ "id": 7,
+ "prompt_text": "What time is it in Peshawar right now?",
+ "category": "Information lookup & search (1-10)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "web_search",
+  "web_fetch",
+  "browser",
+  "deep_research",
+  "chat"
+ ],
+ "expected_outcome": "Direct time, correct timezone",
+ "expected_reply_success": "Direct time, correct timezone",
+ "expected_reply_failure": "N/A",
+ "pass_criteria": {
+  "expected_skill": [
+   "utilities",
+   "weather",
+   "chat"
+  ],
+  "ok_any": [
+   "peshawar",
+   ":",
+   "am",
+   "pm",
+   "pkt"
+  ],
+  "bad_any": [],
+  "forbid": [
+   "web_search"
+  ]
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

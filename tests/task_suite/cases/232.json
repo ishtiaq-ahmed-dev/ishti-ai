@@ -1,0 +1,24 @@
+{
+ "id": 232,
+ "prompt_text": "Stop explaining your reasoning every time, just give me the result",
+ "category": "Personalization & adaptation over time (229-233)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Shorter, result-first responses going forward",
+ "expected_reply_success": "Shorter, result-first responses going forward",
+ "expected_reply_failure": "Wrong: keeps over-explaining after being told not to",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat",
+   "prefs",
+   "owner"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

@@ -33,7 +33,7 @@ OPS = [
     # the needs log (op_needs) and two skills must not fight over one phrasing.
     ("self_check", re.compile(
         r"\b(?:what\s+(?:are\s+your|is\s+your)\s+(?:specs?|specifications|setup|machine|system)|"
-        r"(?:your|the)\s+(?:pc|machine|system)\s+(?:specs?|specifications)|"
+        r"(?:your|this)\s+(?:pc|machine|system)\s+(?:specs?|specifications)|"
         r"what\s+(?:gpu|graphics\s+card|cpu|processor|ram|memory|vram)\b|"
         r"how\s+much\s+(?:ram|memory|disk|vram|space)\s+(?:do\s+(?:i|you)\s+have|have\s+(?:i|you))|"
         r"which\s+models\s+(?:are\s+you|do\s+you)\s+(?:using|have|installed)|"

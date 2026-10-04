@@ -1,0 +1,33 @@
+{
+ "id": 194,
+ "prompt_text": "Turn off notifications for an hour",
+ "category": "Notifications & alerts (193-196)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Confirms, and actually suppresses interruptions for that window except true emergencies (T2 confirmations still need to happen, per spec)",
+ "expected_reply_success": "Confirms, and actually suppresses interruptions for that window except true emergencies (T2 confirmations still need to happen, per spec)",
+ "expected_reply_failure": "Wrong: suppresses even required T2 confirmations, or doesn't actually suppress anything",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat",
+   "owner",
+   "system",
+   "prefs"
+  ],
+  "ok_any": [
+   "hour",
+   "off",
+   "mute",
+   "do not disturb",
+   "dnd",
+   "quiet",
+   "notifications"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

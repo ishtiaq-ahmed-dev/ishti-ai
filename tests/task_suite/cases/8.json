@@ -1,0 +1,37 @@
+{
+ "id": 8,
+ "prompt_text": "Compare three local TTS engines for Urdu support and recommend one",
+ "category": "Information lookup & search (1-10)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "web_search",
+  "web_fetch",
+  "browser",
+  "deep_research",
+  "chat"
+ ],
+ "expected_outcome": "Comparison table/summary, clear recommendation with reasoning",
+ "expected_reply_success": "Comparison table/summary, clear recommendation with reasoning",
+ "expected_reply_failure": "Says which engines it couldn't verify Urdu support for, doesn't invent a verdict",
+ "pass_criteria": {
+  "expected_skill": [
+   "arch2",
+   "deep_research",
+   "web_search",
+   "chat"
+  ],
+  "ok_any": [
+   "tts",
+   "urdu",
+   "piper",
+   "kokoro",
+   "recommend"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

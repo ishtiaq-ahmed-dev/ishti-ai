@@ -1,0 +1,40 @@
+{
+ "id": 5,
+ "prompt_text": "Research the current state of local LLM quantization methods and summarize",
+ "category": "Information lookup & search (1-10)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "web_search",
+  "web_fetch",
+  "browser",
+  "deep_research",
+  "chat",
+  "system",
+  "meta"
+ ],
+ "expected_outcome": "Structured summary with sources cited, not one wall of text",
+ "expected_reply_success": "Structured summary with sources cited, not one wall of text",
+ "expected_reply_failure": "If sources are thin: says so and gives what it has, doesn't pad",
+ "pass_criteria": {
+  "expected_skill": [
+   "arch2",
+   "deep_research",
+   "web_search",
+   "chat"
+  ],
+  "ok_any": [
+   "quantiz",
+   "gguf",
+   "q4",
+   "awq",
+   "gptq",
+   "source"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

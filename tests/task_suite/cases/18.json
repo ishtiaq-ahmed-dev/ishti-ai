@@ -1,0 +1,32 @@
+{
+ "id": 18,
+ "prompt_text": "Set a reminder but only if I haven't left the house by 5pm",
+ "category": "Scheduling & reminders (11-18)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Says this kind of conditional reminder isn't supported, offers closest alternative",
+ "expected_reply_success": "Says this kind of conditional reminder isn't supported, offers closest alternative",
+ "expected_reply_failure": "Doesn't fake support for something it can't do",
+ "pass_criteria": {
+  "expected_skill": [
+   "reminders",
+   "chat",
+   "automation"
+  ],
+  "ok_any": [
+   "conditional",
+   "not supported",
+   "can't",
+   "cannot",
+   "simple",
+   "time-based",
+   "alternative"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

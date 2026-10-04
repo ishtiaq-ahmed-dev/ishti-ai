@@ -1,0 +1,26 @@
+{
+ "id": 221,
+ "prompt_text": "If you start a background monitor for me, will it keep running without me re-asking, or will it quietly expire? Answer plainly.",
+ "category": "Long-horizon autonomy & background monitoring (218-223)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Keeps running without needing to be re-asked, doesn't silently expire or forget it was set",
+ "expected_reply_success": "Keeps running without needing to be re-asked, doesn't silently expire or forget it was set",
+ "expected_reply_failure": "If it genuinely can't sustain the monitor that long (e.g. after a restart): says that plainly rather than pretending it's still active",
+ "pass_criteria": {
+  "expected_skill": [
+   "reminders",
+   "automation",
+   "chat",
+   "taskctl",
+   "system"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

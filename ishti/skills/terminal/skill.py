@@ -107,9 +107,16 @@ def match(text: str) -> bool:
     t = (text or "").lower().strip()
     if len(t.split()) > 25:
         return False
+    # "Run 8 background searches at once and keep answering me" (checklist #75) is a background-task
+    # request, not a shell command. "run <something>" only counts when the something looks like a command:
+    # a known CLI tool, a flag, a path, or a quoted command - never plain English ("run a marathon").
+    looks_like_cmd = bool(re.match(r"^(?:git|pytest|pip|npm|npx|node|python|py|ruff|winget|docker|kubectl|curl|ffmpeg|"
+                                   r"dir|ls|cd|mkdir|where|tasklist|netstat|ipconfig)\b", t)
+                         or re.search(r"\s(?:--?\w+|\./|\w:\\|\w+/\w+|\.(?:py|js|ts|sh|bat|ps1|exe)\b)", t)
+                         or re.search(r"`[^`]+`|\"[^\"]+\"|'[^']+'", t))
     return bool(re.search(r"\b(?:run|execute)\s+(?:the\s+)?(?:command|terminal)\b", t)
-                or re.search(r"\bterminal\b", t) and re.search(r"\b(?:run|in|open|use)\b", t)
-                or t.startswith(("run ", "execute ", "terminal:", "$ "))
+                or (re.search(r"\bterminal\b", t) and re.search(r"\b(?:run|in|open|use)\b", t))
+                or (t.startswith(("run ", "execute ", "terminal:", "$ ")) and looks_like_cmd)
                 or re.match(r"^(?:git|pytest|pip|npm|node)\s", t))
 
 

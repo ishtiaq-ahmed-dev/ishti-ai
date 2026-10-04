@@ -1,0 +1,38 @@
+{
+ "id": 186,
+ "prompt_text": "Stop suggesting things, just wait for me to ask",
+ "category": "Proactive suggestions & learned routines (182-187)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "memory",
+  "learning",
+  "chat",
+  "owner"
+ ],
+ "expected_outcome": "Confirms, stops proactive suggestions going forward",
+ "expected_reply_success": "Confirms, stops proactive suggestions going forward",
+ "expected_reply_failure": "Wrong: keeps making unsolicited suggestions after being told to stop",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat",
+   "owner",
+   "prefs",
+   "memory"
+  ],
+  "ok_any": [
+   "stop",
+   "won't",
+   "will not",
+   "no more suggestion",
+   "only when you ask",
+   "got it",
+   "understood"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

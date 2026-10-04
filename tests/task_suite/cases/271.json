@@ -1,0 +1,20 @@
+{
+ "id": 271,
+ "prompt_text": "Schedule this video to publish Friday at 6pm",
+ "category": "YouTube & content workflow (269-274)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Confirms exact time and that it's queued, not yet live",
+ "expected_reply_success": "Confirms exact time and that it's queued, not yet live",
+ "expected_reply_failure": "If scheduling isn't actually wired to the platform: says that clearly rather than pretending it's scheduled",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": true,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

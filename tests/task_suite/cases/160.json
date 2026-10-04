@@ -1,0 +1,38 @@
+{
+ "id": 160,
+ "prompt_text": "Refactor this function to be more efficient: def add(a, b): return a + b",
+ "category": "Coding / developer assistant tasks (157-164)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "dev",
+  "terminal",
+  "devops",
+  "gitops",
+  "chat"
+ ],
+ "expected_outcome": "Shows before/after, explains what changed and why, confirms tests still pass if a suite exists",
+ "expected_reply_success": "Shows before/after, explains what changed and why, confirms tests still pass if a suite exists",
+ "expected_reply_failure": "If refactor risks breaking behavior and it's not sure: flags that instead of pushing ahead silently",
+ "pass_criteria": {
+  "expected_skill": [
+   "dev",
+   "chat"
+  ],
+  "ok_any": [
+   "add",
+   "refactor",
+   "before",
+   "after",
+   "efficient",
+   "already",
+   "no change",
+   "simple"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

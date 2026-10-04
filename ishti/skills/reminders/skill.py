@@ -27,6 +27,12 @@ LIST = re.compile(r"^(?:list|show|what\s+are)\s+(?:all\s+)?(?:my\s+)?(?:reminder
                   r"|^what\s+(?:do\s+i\s+have\s+to\s+do|is\s+on\s+my\s+list)\b|^what'?s\s+on\s+my\s+(?:list|plate|agenda|schedule|to-?do)", I)
 # "cancel the reminder to drink water" / "delete the task about the rent"
 CANCEL_ABOUT = re.compile(r"^(?:cancel|delete|remove|clear|stop)\s+(?:the\s+|my\s+)?(?:reminder|timer|alarm|task)\s+(?:to|for|about|of)\s+(?P<what>.+?)\W*$", I)
+# "Move my 3pm thing to tomorrow same time" / "reschedule the dentist reminder to Friday": a reminder
+# move, not a file move (checklist #15). The thing being moved is a scheduled item and the destination
+# is a time (tomorrow, Friday, 5pm, next week) - never a folder; file moves are fileops'.
+RESCHEDULE = re.compile(r"^\s*(?:please\s+)?(?:move|reschedule|shift|push|change)\s+(?P<what>.+?)\s+to\s+"
+                        r"(?P<when>(?:tomorrow|today|tonight|next\s+(?:week|month)|monday|tuesday|wednesday|thursday|"
+                        r"friday|saturday|sunday|\d{1,2}(?::\d{2})?\s*(?:am|pm)?|the\s+same\s+time))\b", I)
 # "mark drink water as done" / "I finished the assignment" / "done with the rent"
 DONE = re.compile(r"^(?:mark|tick|check\s+off|set)\s+(?:the\s+)?(?P<what>.+?)\s+(?:as\s+)?(?:done|complete|completed|finished)\W*$"
                   r"|^(?:i\s+)?(?:have\s+)?(?:done|did|finished|completed)\s+(?:with\s+)?(?:the\s+)?(?P<what2>.+?)\W*$", I)
@@ -51,6 +57,9 @@ _DUR_PAIR = re.compile(r"(\d+(?:\.\d+)?)\s*(seconds?|secs?|minutes?|mins?|hours?
 RECUR = re.compile(r"\b(?:every|each)\s+(?P<per>day|morning|evening|night|weekday|month|(?:mon|tues|wednes|thurs|fri|satur|sun)day|"
                    r"(?P<n>\d+)\s*(?P<u>minutes?|mins?|hours?|hrs?))\b|\b(?P<monthly>monthly)\b", I)
 DAY_OF_MONTH = re.compile(r"\b(?:on\s+)?(?:the\s+)?(?P<d>[12]?\d|3[01])(?:st|nd|rd|th)\b", I)
+# a reminder whose trigger is a CONDITION, not a time ("only if I haven't left by 5pm")
+_CONDITIONAL = re.compile(r"\b(?:only\s+(?:if|when)|but\s+only\s+if|unless|provided\s+that|"
+                          r"if\s+i\s+(?:have(?:n'?t|\s+not)?|haven'?t|don'?t|do\s+not|am\s+not|'m\s+not))\b", I)
 
 
 def _db():
@@ -219,9 +228,13 @@ def _done_rows(t):
     return [r for r in _pending(_db()) if words and all(w in r[2].lower() for w in words)]
 
 
+WHEN_DUE = re.compile(r"^\s*when\s+is\s+(?:my\s+)?(?P<what>[\w\s.-]+?)\s+due\??\s*$", I)
+
+
 def match(text):
     t = text.strip()
     return bool(SET.match(t) or LIST.match(t) or CANCEL.match(t) or CANCEL_ABOUT.match(t) or _done_rows(t) or todo(t)
+                or RESCHEDULE.match(t) or WHEN_DUE.match(t)
                 or (re.match(r"^(?:please\s+)?(?:every|each)\s", t, I) and RECUR.search(t)))
 
 
@@ -232,10 +245,32 @@ def _pending(f):
 
 def run(text, session, now=None):
     now, f, t = now or dt.datetime.now(), _db(), text.strip()
+    # a CONDITIONAL reminder ("remind me ... only if I haven't left by 5pm") cannot be honoured: the
+    # engine fires at fixed times / simple repeats, not on an arbitrary condition (checklist 18). Say so
+    # and offer the closest fixed-time alternative instead of silently setting an unconditional reminder.
+    p = (session or {}).get("pending")
+    if p and p.get("skill") == "reminders" and p.get("action"):
+        if re.match(r"^\s*(?:yes|y|yeah|yep|confirm|sure|ok|okay|do\s+it)\b", t, I):
+            session["pending"] = None
+            return {"reply": p["action"](), "sources": []}
+        if re.match(r"^\s*(?:no|n|nope|cancel|stop|don'?t|keep)\b", t, I):
+            session["pending"] = None
+            return {"reply": "OK - I kept your reminders.", "sources": []}
+    if SET.match(t) and _CONDITIONAL.search(t):
+        return {"reply": "I can't set a reminder that only fires on a condition - I do fixed times and "
+                         "simple every-day repeats, not 'only if X'. Closest thing I can do: set a plain "
+                         "reminder at 5pm and you cancel it if you've already left. Want that?", "sources": []}
     if LIST.match(t):
         rows = _pending(f)
         return {"reply": "\n".join(f"{i}. {_fmt(d, now)}: {x}" for i, (_, d, x) in enumerate(rows, 1))
                          or "No reminders set.", "sources": []}
+    if m := WHEN_DUE.match(t):
+        due_item = m.group("what").strip()
+        words = [w for w in re.findall(r"[a-z0-9']+", due_item.lower()) if w not in ("the", "my", "a", "is", "assignment")]
+        hit = [r for r in _pending(f) if words and any(w in r[2].lower() for w in words)]
+        if hit:
+            return {"reply": f"Your {due_item} is due {_fmt(hit[0][1], now)}: {hit[0][2]}.", "sources": []}
+        return {"reply": f"No deadline on file for that {due_item}. Would you like me to set a reminder or schedule it?", "sources": []}
     if rows := _done_rows(t):
         with f.lock, f.db:
             f.db.executemany("UPDATE reminders SET done=1 WHERE id=?", [(r[0],) for r in rows])
@@ -247,8 +282,52 @@ def run(text, session, now=None):
             f.db.executemany("UPDATE reminders SET done=1 WHERE id=?", [(r[0],) for r in hit])
         return {"reply": ("Cancelled: " + "; ".join(r[2] for r in hit)) if hit else f"I don't have a reminder about \"{m['what']}\".",
                 "sources": []}
+    if m := RESCHEDULE.match(t):
+        # "Move my 3pm thing to tomorrow same time" (checklist #15): find the scheduled item the owner
+        # named ("3pm thing"), ask for the exact one when ambiguous, and never silently create a new item.
+        # NB: the target is called `item`, not `what` - a local named `what` shadows the module-level
+        # what() helper that the SET path below calls (UnboundLocalError).
+        item, when_txt = m["what"].strip(" .,!?\"'"), m["when"].strip()
+        rows = _pending(f)
+        words = [w for w in re.findall(r"[a-z0-9']+", item.lower()) if w not in ("the", "my", "a", "thing", "reminder", "task")]
+        at = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", item, I)
+        if at:  # "my 3pm thing": match by the hour it is due at
+            hour = int(at.group(1)) % 12 + (12 if (at.group(3) or "").lower() == "pm" else 0)
+            hit = [r for r in rows if dt.datetime.fromtimestamp(r[1]).hour == hour]
+        else:
+            hit = [r for r in rows if words and all(w in r[2].lower() for w in words)]
+        if not hit:
+            return {"reply": f"Nothing on your list matches \"{item}\" - I didn't create anything new. "
+                             "Say 'list my reminders' to see what is set.", "sources": []}
+        if len(hit) > 1:
+            return {"reply": "More than one matches: " + "; ".join(r[2] for r in hit[:5])
+                             + ". Which one should I move?", "sources": []}
+        rid, due, body = hit[0]
+        new_due = when(when_txt, now)
+        if new_due is None and "same time" in when_txt.lower():
+            new_due = (dt.datetime.fromtimestamp(due) + dt.timedelta(days=1)).replace(
+                hour=dt.datetime.fromtimestamp(due).hour, minute=dt.datetime.fromtimestamp(due).minute)
+        if new_due is None:
+            return {"reply": f"When should I move \"{body}\" to? Give me a time (tomorrow 9am, Friday 5pm...).",
+                    "sources": []}
+        with f.lock, f.db:
+            f.db.execute("UPDATE reminders SET due=? WHERE id=?", (new_due.timestamp(), rid))
+        return {"reply": f"Moved \"{body}\" to {_fmt(new_due.timestamp(), now)}.", "sources": []}
     if (m := CANCEL.match(t)) and not SET.match(t):
         rows = _pending(f)
+        # "delete ALL my reminders" is destructive and not undoable in one line - recap the count and
+        # require an explicit yes first (checklist 17). A single named/numbered cancel still acts.
+        if m["all"] and rows and (session or {}).get("pending") is None:
+            ids = [r[0] for r in rows]
+
+            def _wipe():
+                with f.lock, f.db:
+                    f.db.executemany("UPDATE reminders SET done=1 WHERE id=?", [(i,) for i in ids])
+                return f"Deleted all {len(ids)} reminder(s)."
+
+            session["pending"] = {"skill": "reminders", "action": _wipe}
+            return {"reply": f"You have {len(rows)} reminder(s) set. Delete all of them? Say 'yes' to "
+                             f"confirm.", "sources": []}
         if m["all"]:
             hit = rows
         elif m["num"]:

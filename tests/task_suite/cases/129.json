@@ -1,0 +1,22 @@
+{
+ "id": 129,
+ "prompt_text": "Reply to that recruiter on LinkedIn, say I'm open to a call next week",
+ "category": "LinkedIn — reading & professional messaging (128-132)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Shows draft in professional tone before sending",
+ "expected_reply_success": "Shows draft in professional tone before sending",
+ "expected_reply_failure": "If more than one recent recruiter message exists: asks which one",
+ "pass_criteria": {
+  "expected_skill": [
+   "browser"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": true,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

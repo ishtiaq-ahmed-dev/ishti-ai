@@ -1,0 +1,20 @@
+{
+ "id": 298,
+ "prompt_text": "Set this new tool up for my workflow",
+ "category": "Learning a new tool / onboarding help (297-300)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Confirms the actual steps taken, shows what changed",
+ "expected_reply_success": "Confirms the actual steps taken, shows what changed",
+ "expected_reply_failure": "If the tool needs something it can't do locally (an account, a paid tier): says that clearly",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

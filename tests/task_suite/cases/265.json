@@ -1,0 +1,20 @@
+{
+ "id": 265,
+ "prompt_text": "Send the invoice to the client",
+ "category": "Freelance & client work management (263-268)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Exact recap (recipient, amount, attachment) + explicit yes required",
+ "expected_reply_success": "Exact recap (recipient, amount, attachment) + explicit yes required",
+ "expected_reply_failure": "If recipient contact isn't on file: asks instead of guessing an email",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": true,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

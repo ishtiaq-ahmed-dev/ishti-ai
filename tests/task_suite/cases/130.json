@@ -1,0 +1,25 @@
+{
+ "id": 130,
+ "prompt_text": "Check who viewed my LinkedIn profile recently",
+ "category": "LinkedIn — reading & professional messaging (128-132)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [
+  "browser",
+  "whatsapp"
+ ],
+ "expected_outcome": "Real summary if that data is accessible",
+ "expected_reply_success": "Real summary if that data is accessible",
+ "expected_reply_failure": "If that feature/data isn't accessible (e.g. behind LinkedIn Premium): says that clearly rather than fabricating names",
+ "pass_criteria": {
+  "expected_skill": [
+   "browser"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

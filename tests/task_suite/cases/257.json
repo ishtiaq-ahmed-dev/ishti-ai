@@ -1,0 +1,28 @@
+{
+ "id": 257,
+ "prompt_text": "Find my EDA final project file and tell me what's left to finish",
+ "category": "Academic & student assistant tasks (257-262)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [
+  "files",
+  "folders",
+  "fileops"
+ ],
+ "expected_outcome": "Accurate read of actual file content/status",
+ "expected_reply_success": "Accurate read of actual file content/status",
+ "expected_reply_failure": "If file not found: says where it looked",
+ "pass_criteria": {
+  "expected_skill": [
+   "files",
+   "folders",
+   "fileops"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

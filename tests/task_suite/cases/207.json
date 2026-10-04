@@ -1,0 +1,28 @@
+{
+ "id": 207,
+ "prompt_text": "Write a short script intro for a video about [topic]",
+ "category": "Creative & content generation tasks (206-211)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "chat",
+  "writing",
+  "video"
+ ],
+ "expected_outcome": "Draft matching established tone/style",
+ "expected_reply_success": "Draft matching established tone/style",
+ "expected_reply_failure": "If tone/style isn't established yet: asks or offers a default and says it's a default",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat",
+   "writing",
+   "video"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

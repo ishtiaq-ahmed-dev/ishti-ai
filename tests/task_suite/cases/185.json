@@ -1,0 +1,37 @@
+{
+ "id": 185,
+ "prompt_text": "no, I meant Chrome again in the same context",
+ "category": "Proactive suggestions & learned routines (182-187)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "system",
+  "meta",
+  "chat"
+ ],
+ "expected_outcome": "Now treated as a probable/strong preference per the configured thresholds, and it says so if asked why it changed",
+ "expected_reply_success": "Now treated as a probable/strong preference per the configured thresholds, and it says so if asked why it changed",
+ "expected_reply_failure": "Wrong: still treats it as a one-off after that many repetitions, or jumps straight to \"always\" behavior outside that context",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat",
+   "owner",
+   "apps",
+   "browser"
+  ],
+  "ok_any": [
+   "chrome",
+   "got it",
+   "understood",
+   "correct",
+   "noted",
+   "again",
+   "remember"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

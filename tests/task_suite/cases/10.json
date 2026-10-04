@@ -1,0 +1,28 @@
+{
+ "id": 10,
+ "prompt_text": "Define 'imatrix' for me",
+ "category": "Information lookup & search (1-10)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Short, correct, no padding",
+ "expected_reply_success": "Short, correct, no padding",
+ "expected_reply_failure": "N/A",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat"
+  ],
+  "ok_any": [
+   "importance matrix",
+   "quantization",
+   "matrix"
+  ],
+  "bad_any": [],
+  "forbid": [
+   "web_search"
+  ]
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

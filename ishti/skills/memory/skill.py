@@ -17,6 +17,12 @@ from ishti import CONFIG, llm
 from ishti.facts import get_facts, norm
 from ishti.skills import trace
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
 I = re.I
 STATUS = {"finished": "finished", "completed": "finished", "complete": "finished", "done": "finished",
           "started": "in progress", "in progress": "in progress", "paused": "paused", "on hold": "paused",
@@ -24,6 +30,21 @@ STATUS = {"finished": "finished", "completed": "finished", "complete": "finished
           "working": "working", "broken": "broken"}
 _SW = "|".join(sorted(STATUS, key=len, reverse=True))
 DRIVE = r"(?=[A-Za-z]:)"
+# relationship words, so "forget everything about my cousin Bilal" is a PERSON forget, not a fact forget
+REL_WORDS = ("brother", "sister", "father", "mother", "son", "daughter", "cousin", "uncle", "aunt",
+             "nephew", "niece", "grandfather", "grandmother", "friend", "colleague", "classmate",
+             "manager", "boss", "supervisor", "client")
+FORGET_PERSON = re.compile(r"^forget\s+(?:everything|all)?\s*(?:about|of)?\s*(?:my\s+)?"
+                           r"(?:(?P<rel>" + "|".join(REL_WORDS) + r")(?:'s|s)?\s+)?"
+                           r"(?P<name>[A-Za-z][\w'-]*)\s*[.!]?$", re.I)
+# "Delete all data about my <role/relationship>, I want it gone completely" (checklist 237) - a FULL
+# scoped deletion, not a hidden/soft forget. The target may be named by role ("my cardiologist
+# collaborator"), so it is resolved against known people before anything is removed.
+DELETE_ALL = re.compile(
+    r"^\s*(?:please\s+)?(?:delete|remove|erase|wipe|purge|get\s+rid\s+of|destroy)\s+"
+    r"(?:all\s+)?(?:the\s+|my\s+|any\s+)?(?:data|info|information|records?|memory|memories|documents?|details?|everything)"
+    r"\s+(?:about|on|of|for|regarding|related\s+to)\s+(?P<target>.+?)"
+    r"(?:\s*[,.;-]?\s*(?:i\s+(?:want|need)|please\s+make|make|get|have)\s+it\s+(?:gone|removed|deleted)\b.*)?\s*[.!]?$", I)
 RX = {
     "move": re.compile(rf"\bmoved\s+(?P<e>.+?)\s+(?:to|into)\s+{DRIVE}", I),
     "moved_passive": re.compile(rf"^(?P<e>.+?)\s+(?:has\s+been|was|got)\s+moved\s+(?:to|into)\s+{DRIVE}", I),
@@ -40,7 +61,10 @@ RX = {
                         r"(?:which|what)\s+(?:folder|directory|drive)\s+(?:did\s+i\s+)?(?:put|save|keep|store|is|are)(?:\s+(?:in|on))?)"
                         r"\s+(?P<e>.+?)(?:\s+(?:in|on))?\s*\??$", I),
     "status_q": re.compile(r"^(?:what(?:'s|\s+is)\s+the\s+)?status\s+(?:of|on)\s+(?P<e>.+?)\s*\??$", I),
-    "forget": re.compile(r"^forget\s+(?:about\s+)?(?P<e>.+?)[.!]?$", I),
+    # "Actually, forget Chrome - for work I now prefer Edge" is a memory update (forgetting a preference,
+    # checklist #92). The leading discourse marker is optional, so plain "forget X" and "Forget that"
+    # (checklist #91) still match.
+    "forget": re.compile(r"^\s*(?:(?:actually|well|look|listen|ok|okay|so|right|hey),?\s+)?forget\s+(?:about\s+)?(?P<e>.+?)[.!]?$", I),
     "city": re.compile(r"^i\s+(?:now\s+)?(?:live|am\s+living|have\s+moved|moved)\s+(?:to|in)\s+"
                        r"(?P<c>[A-Za-z][A-Za-z .'-]{1,40}?)[.!]?$", I),
     "remember": re.compile(r"^remember\b", I),
@@ -102,6 +126,14 @@ def _open(t, session):
 
 def match(text):
     t = text.strip()
+    if DELETE_ALL.match(t):
+        return True
+    try:
+        from ishti.skills.relationships import skill as rel_skill
+        if rel_skill.match(t):
+            return False
+    except Exception as _exc:
+        swallowed('ishti/skills/memory/skill.py:match', _exc)
     if _saved_location(t):
         return True
     if extract_path(t) and any(RX[k].search(t) for k in ("move", "moved_passive", "at")):
@@ -181,7 +213,82 @@ def _where(e, text, session):
     return R(f"{note}Found {e}:\n{listing}\nWhich one? (number, 'yes' = 1, 'no')")
 
 
+def _forget_person(t, session):
+    """"Forget everything about my cousin Bilal" (checklist 138) - a forget aimed at a PERSON. It deletes
+    only that person's links to the owner (and their own stored facts), never anyone else's, and it
+    reports the real count. Returns None when the target is not a person we know, so the normal
+    entity-level forget still owns projects and folders."""
+    m = FORGET_PERSON.match(t)
+    if not m or not m["rel"]:  # a bare "forget X" is ambiguous - only an explicit relationship is scoped
+        return None
+    from ishti.skills.relationships.skill import forget_person
+    res = forget_person(m["name"], m["rel"], session)
+    if not res:
+        name = m["name"].strip().title()
+        return R(f"I have nothing stored about {name} (your {m['rel']}), so there was nothing to delete - "
+                 f"no other record was touched.")
+    lines = "\n".join(f"- {l}" for l in res["edges"]) or "- (no link was stored)"
+    extra = f" and {res['facts']} saved fact(s)" if res["facts"] else ""
+    trace(session, "save", f"scoped forget: {res['name']}")
+    return R(f"Forgot {len(res['edges'])} relationship record(s) about {res['name'].title()}{extra}:\n{lines}\n"
+             f"No other person was touched.")
+
+
+def _person_desc_matches(desc):
+    """Resolve a person named by role/relationship ("my cardiologist collaborator") to the known
+    people it could mean. Delegates to arch2.people.find_by_description (entity rows + relationship
+    graph). Returns display names (never a guess when more than one matches - the caller asks)."""
+    try:
+        from ishti.arch2 import people as P
+        return sorted({(e.get("display") or e["name"]) for e in P.find_by_description(desc)})
+    except Exception as _exc:
+        swallowed('ishti/skills/memory/skill.py:_person_desc_matches', _exc)
+        return []
+
+
+def _really_delete(name, session):
+    """HARD deletion across every store: memory rows, entity rows, graph node+edges and the
+    best-effort vector snippets (arch2.memory.forget_hard). Reports the real counts so the owner can
+    see it was removed, not just hidden, and never claims more than actually went."""
+    try:
+        from ishti.arch2 import memory as M
+        res = M.forget_hard(name)
+    except Exception as exc:
+        return R(f"I could not complete the deletion of {name.title()}: {type(exc).__name__}: {exc}. "
+                 f"Nothing was removed - your data is unchanged.")
+    m = res.get("memories", 0)
+    e = res.get("entities", 0)
+    ed = res.get("edges", 0)
+    trace(session, "save", f"hard-deleted everything about {name}")
+    return R(f"Deleted everything about {name.title()}: {m} memory record(s), {e} entity record(s), "
+             f"{ed} relationship-graph link(s), plus any stored conversation snippet that mentioned them. "
+             f"This is a real removal from all stores (memory, entity table and relationship graph), not just "
+             f"hidden. The deletion event itself is logged - without the deleted content.")
+
+
+def _delete_all(t, session):
+    m = DELETE_ALL.match(t)
+    cands = _person_desc_matches(m["target"])
+    if not cands:
+        return R(f"I don't have anyone stored that matches \"{m['target'].strip()}\", so there is nothing "
+                 f"to delete. Tell me their exact name and I'll remove everything about them.")
+    if len(cands) > 1:
+        session["pending"] = {"skill": "memory", "delete_all": cands}
+        listing = "\n".join(f"{i}. {n}" for i, n in enumerate(cands, 1))
+        return R(f"That could be more than one person:\n{listing}\nWhich one? (number) - nothing has been "
+                 f"deleted yet.")
+    return _really_delete(cands[0], session)
+
+
 def _pending(t, p, session):
+    if p.get("delete_all"):
+        low, cd = t.lower().strip(" .!"), p["delete_all"]
+        if low.isdigit() and 1 <= int(low) <= len(cd):
+            return _really_delete(cd[int(low) - 1], session)
+        for n in cd:
+            if low and (low in n.lower() or n.lower() in low):
+                return _really_delete(n, session)
+        return None
     low, c = t.lower().strip(" .!"), p["candidates"]
     if low in YES:
         return _store(p["entity"], "location", c[0], session)
@@ -220,7 +327,11 @@ def run(text, session):
         return _pending(t, p, session)
     if _saved_location(t):
         return _open(t, session)
+    if DELETE_ALL.match(t):
+        return _delete_all(t, session)
     if m := RX["forget"].match(t):
+        if out := _forget_person(t, session):  # a relationship, deleted where it lives
+            return out
         e = _resolve(m["e"], session)
         return R(f"Forgot {e}." if facts.forget(e) else f"Nothing saved for {e}.")
     path = extract_path(t)
@@ -278,4 +389,24 @@ if __name__ == "__main__":
     assert run("where is Paris?", s) is None, "general questions fall through"
     assert match("open falcon") and not match("open notepad") and not match("open github.com")
     assert "Forgot" in run("forget eagle", s)["reply"] and not F.get_facts().get("eagle")
-    print("[self-check] memory skill OK - store, move-update, status, pronoun, search+confirm, forget")
+
+    # 138: "forget everything about my cousin Bilal" routes to THIS skill, so the scoped delete happens
+    # here: only that person's link in the relationship graph (+ their own facts) goes, the real count is
+    # reported, and every other person survives. A project forget keeps working as before.
+    import ishti.rgraph as rg
+    rg.DB_PATH = os.path.join(tmp, "g.db")
+    rg._conn = None
+    rg.relate("me", "cousin", "Bilal")
+    rg.relate("me", "brother", "Ahmed")
+    rg.relate("bilal", "works_on", "CardioSense", kind_dst="project")
+    F.get_facts().set("Bilal", "note", "owes me 500")
+    r = run("Forget everything about my cousin Bilal", s)["reply"]
+    assert "Forgot 1 relationship record(s) about Bilal" in r and "1 saved fact" in r, r
+    assert not rg.edges_of("me", rel="cousin", direction="out"), "the cousin link is gone"
+    assert rg.edges_of("me", rel="brother", direction="out"), "Ahmed is untouched"
+    assert rg.edges_of("bilal", rel="works_on", direction="out"), "only the named relationship is scoped"
+    assert not F.get_facts().get("Bilal") and F.get_facts().get("falcon"), "the fact store lost only Bilal"
+    assert "nothing stored about Nobody" in run("Forget everything about my cousin Nobody", s)["reply"]
+    assert "falcon" in F.get_facts().keys(), "the project remember is still there"
+    print("[self-check] memory skill OK - store, move-update, status, pronoun, search+confirm, forget, "
+          "scoped relationship forget (138)")

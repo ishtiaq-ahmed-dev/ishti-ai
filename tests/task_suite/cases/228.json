@@ -1,0 +1,22 @@
+{
+ "id": 228,
+ "prompt_text": "Ishtiaq corrects himself mid-sentence (\"send it to— actually no, don't send it, just save it\")",
+ "category": "Interruptions & conversational context switching (224-228)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Acts on \"save it,\" not \"send it\"",
+ "expected_reply_success": "Acts on \"save it,\" not \"send it\"",
+ "expected_reply_failure": "Wrong: acts on the first instruction before the correction registers",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

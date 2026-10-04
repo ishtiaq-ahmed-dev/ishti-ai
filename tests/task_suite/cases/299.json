@@ -1,0 +1,20 @@
+{
+ "id": 299,
+ "prompt_text": "What's the difference between this and the tool I was using before?",
+ "category": "Learning a new tool / onboarding help (297-300)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Accurate comparison, not guessed from stale training knowledge if either tool is new/recent",
+ "expected_reply_success": "Accurate comparison, not guessed from stale training knowledge if either tool is new/recent",
+ "expected_reply_failure": "Searches when recency matters rather than answering from memory alone",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}
