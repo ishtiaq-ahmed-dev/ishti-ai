@@ -1,0 +1,30 @@
+{
+ "id": 73,
+ "prompt_text": "Find my invoice PDFs",
+ "category": "Multitasking & background behavior (70-76)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Barge-in works (~150ms), original search still completes/surfaces after",
+ "expected_reply_success": "Barge-in works (~150ms), original search still completes/surfaces after",
+ "expected_reply_failure": "If barge-in cancels the background task entirely instead of just the voice output: that's a bug to flag",
+ "pass_criteria": {
+  "expected_skill": [
+   "files",
+   "folders"
+  ],
+  "ok_any": [
+   "invoice",
+   "pdf",
+   "found",
+   "no ",
+   "couldn't",
+   "could not"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

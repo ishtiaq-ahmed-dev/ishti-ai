@@ -23,7 +23,16 @@ OPS = [  # (name, pattern) - first match wins
     ("brightness", re.compile(r"\bbrightness\b|\b(?:brighter|dimmer|dim\s+the\s+screen)\b", I)),
     # an app name is words (may contain dots/dashes), never math: 'maximize 5x + 3y' is optimize's
     ("window", re.compile(r"\b(?P<act>minimi[sz]e|maximi[sz]e|restore|close)\s+(?:the\s+|my\s+)?(?P<app>[A-Za-z][A-Za-z0-9 ._/\\-]*?)(?:\s+window)?\s*$", I)),
-    ("windows_list", re.compile(r"\b(?:which|what|list)\s+(?:windows|apps)\s+(?:are\s+)?open\b|\bopen\s+windows\b", I)),
+    # "Open my Downloads folder", "Open my project folder" - PC control of a folder. "Open my project"
+    # alone (no "folder") is ambiguous - which project? - so it stays with chat/files/folders for entity
+    # resolution (checklist #78). If the owner means an app called "project", the app skill names apps
+    # explicitly ("open project") and this regex requires "folder" after "project".
+    ("open_folder", re.compile(r"\bopen\s+(?:my\s+|the\s+)?(?:downloads|desktop|documents|pictures|videos|music|projects?\s+folder|[A-Za-z0-9][A-Za-z0-9 ._\-]*?\s+folder)\b", I)),
+    ("windows_list", re.compile(r"\b(?:which|what|list)\s+(?:windows|apps|applications|programs)\s+(?:are\s+)?"
+                                 r"(?:currently\s+|now\s+|right\s+now\s+)?(?:open|running|up|active)\b|"
+                                 r"\b(?:open|running|active)\s+(?:windows|apps|applications|programs)\b|"
+                                 r"\bopen\s+(?:my\s+|the\s+)?(?:downloads|desktop|documents|pictures|videos|music|projects?\s+folder|"  # folders by common name
+                                 r"[\w\-]+(?:\s+folder)\b)", I)),
     # process_kill never claims reflexive objects ("kill myself", "end it all") — those are distress language,
     # not a process name; moodlog's safety gate handles them before anything else.
     ("process_kill", re.compile(r"\b(?:kill|end|force\s+(?:close|quit)|terminate)\s+(?:the\s+)?(?:process\s+|task\s+)?(?P<name>(?!myself\b|my\s+self\b|me\b|it\s+all\b|them\b|us\b)[\w .-]+?)(?:\s+process)?\s*$", I)),
@@ -193,6 +202,33 @@ def op_window(m, text, session):
                          lambda: (w.close(), f"Closed '{w.title[:60]}'.")[1])
     {"minimi": w.minimize, "maximi": w.maximize, "restor": w.restore}[act[:6]]()
     return f"{act.capitalize()}d '{w.title[:60]}'." if not act.endswith("e") else f"{act.capitalize()[:-1]}ed '{w.title[:60]}'."
+
+
+# ---------------------------------------------------------------- open a folder by name (checklist: "Open my Downloads folder", "Open my project")
+def op_open_folder(m, text, session):
+    from ishti.skills.folders.skill import known_folders, folder_in
+    from ishti.facts import get_facts
+    from desktop.computer_use import get_computer_use_agent
+    t = text.lower()
+
+    def _open(path):
+        res = get_computer_use_agent().open_file_or_folder(path) or {}
+        if res.get("success") is False:
+            return f"I couldn't open {path}: {res.get('error') or 'the system refused'}"
+        return f"Opened {path}."
+
+    # a project folder the owner saved as a fact location comes first
+    for _, _, value in get_facts().mentioned_in(text):
+        if os.path.isdir(value):
+            return _open(value)
+    _, path = folder_in(t) or (None, None)
+    if path and os.path.isdir(path):
+        return _open(path)
+    known = known_folders()
+    for name in ("downloads", "desktop", "documents", "pictures", "videos", "music"):
+        if name in t and (p := known.get(name)) and os.path.isdir(p):
+            return _open(p)
+    return "I couldn't find that folder on this PC. Say the exact name or path (for example 'open my Downloads folder')."
 
 
 # ---------------------------------------------------------------- processes

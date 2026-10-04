@@ -1,0 +1,25 @@
+{
+ "id": 136,
+ "prompt_text": "Remind me to call my mother every Sunday",
+ "category": "People — family (133-138)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [
+  "reminders"
+ ],
+ "expected_outcome": "Confirms recurring reminder, correctly tied to the actual stored \"mother\" entity",
+ "expected_reply_success": "Confirms recurring reminder, correctly tied to the actual stored \"mother\" entity",
+ "expected_reply_failure": "If no \"mother\" entity is stored yet: asks for her name first rather than creating an anonymous placeholder",
+ "pass_criteria": {
+  "expected_skill": [
+   "reminders",
+   "relationships"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

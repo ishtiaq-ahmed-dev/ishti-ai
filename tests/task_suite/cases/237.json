@@ -1,0 +1,37 @@
+{
+ "id": 237,
+ "prompt_text": "Delete all data about my cardiologist collaborator, I want it gone completely",
+ "category": "Security & privacy actions (234-239)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "memory",
+  "owner",
+  "prefs",
+  "chat"
+ ],
+ "expected_outcome": "Confirms genuinely removed (not just hidden), including from the semantic/graph stores, not just the SQL table",
+ "expected_reply_success": "Confirms genuinely removed (not just hidden), including from the semantic/graph stores, not just the SQL table",
+ "expected_reply_failure": "Wrong: deletes from one store but leaves traces in another",
+ "pass_criteria": {
+  "expected_skill": [
+   "memory",
+   "memory_manager",
+   "relationships",
+   "owner"
+  ],
+  "ok_any": [
+   "deleted everything",
+   "memory item",
+   "entity record",
+   "removed",
+   "for good",
+   "nothing stored"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

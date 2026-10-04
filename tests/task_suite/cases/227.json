@@ -1,0 +1,27 @@
+{
+ "id": 227,
+ "prompt_text": "\"Never mind\" (mid-task, before anything irreversible happened)",
+ "category": "Interruptions & conversational context switching (224-228)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "folders",
+  "fileops",
+  "chat"
+ ],
+ "expected_outcome": "Confirms stopped, nothing further happens",
+ "expected_reply_success": "Confirms stopped, nothing further happens",
+ "expected_reply_failure": "Wrong: continues the task anyway",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat",
+   "folders"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

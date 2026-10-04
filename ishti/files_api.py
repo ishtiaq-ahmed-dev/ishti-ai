@@ -18,6 +18,7 @@ attach(app) is called once from interface/web_ui/server.py:   from ishti import 
 """
 import os
 import re
+import zipfile
 import subprocess
 import sys
 import time
@@ -34,7 +35,7 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 KEEP_DAYS = 30
 KINDS = {
     "document": {".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv", ".pptx", ".txt", ".md", ".json", ".rtf", ".odt"},
-    "image": {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff", ".heic", ".svg"},
+    "image": {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff", ".heic"},
     "audio": {".mp3", ".wav", ".m4a", ".ogg", ".flac", ".opus", ".aac"},
     "video": {".mp4", ".mkv", ".mov", ".avi", ".webm"},
 }
@@ -58,6 +59,80 @@ def safe_name(raw):
     stem, ext = os.path.splitext(base)
     stem = re.sub(r"[^\w .()-]", "_", stem, flags=re.UNICODE).strip(" .") or "file"
     return stem[:80] + ext.lower()[:10]
+
+
+def _valid_upload_content(ext, sample, path):
+    """Cheap signature checks before a file is handed to a parser/model. Never extract archives."""
+    signatures = {
+        ".pdf": (b"%PDF-",), ".png": (b"\x89PNG\r\n\x1a\n",),
+        ".jpg": (b"\xff\xd8\xff",), ".jpeg": (b"\xff\xd8\xff",),
+        ".gif": (b"GIF87a", b"GIF89a"), ".webp": (b"RIFF",), ".bmp": (b"BM",),
+        ".tif": (b"II*\x00", b"MM\x00*"), ".tiff": (b"II*\x00", b"MM\x00*"),
+        ".mp3": (b"ID3", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"),
+        ".wav": (b"RIFF",), ".ogg": (b"OggS",), ".opus": (b"OggS",),
+        ".flac": (b"fLaC",), ".aac": (b"\xff\xf1", b"\xff\xf9"),
+        ".mkv": (b"\x1a\x45\xdf\xa3",), ".webm": (b"\x1a\x45\xdf\xa3",),
+        ".avi": (b"RIFF",), ".doc": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
+        ".xls": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
+    }
+    if ext in (".docx", ".xlsx", ".pptx", ".odt"):
+        try:
+            with zipfile.ZipFile(path) as archive:
+                members = archive.infolist()
+                if len(members) > 2000 or sum(x.file_size for x in members) > 200 * 1024 * 1024:
+                    return False
+                for item in members:
+                    if item.flag_bits & 1 or item.file_size > 100 * 1024 * 1024:
+                        return False
+                    if item.file_size and (not item.compress_size or item.file_size / item.compress_size > 1000):
+                        return False
+                names = {item.filename for item in members}
+                if len(names) != len(members):
+                    return False
+                required = {".docx": "word/document.xml", ".xlsx": "xl/workbook.xml",
+                            ".pptx": "ppt/presentation.xml", ".odt": "mimetype"}[ext]
+                safe_members = all(not n.startswith(("/", "\\")) and ".." not in n.replace("\\", "/").split("/")
+                                   for n in names)
+                no_macros = not any(n.lower().endswith("vbaproject.bin") for n in names)
+                return required in names and safe_members and no_macros
+        except (OSError, zipfile.BadZipFile, ValueError):
+            return False
+    if ext in {".heic", ".m4a", ".mp4", ".mov"}:
+        # ISO-BMFF files use a `ftyp` box at offset 4. A generic zero prefix is
+        # not enough: it accepts arbitrary data (including corrupt/hostile files).
+        if len(sample) < 16 or sample[4:8] != b"ftyp":
+            return False
+        major = sample[8:12]
+        compatible = {sample[i:i + 4] for i in range(16, min(len(sample) - 3, 64), 4)}
+        brands = {
+            ".heic": {b"heic", b"heix", b"hevc", b"hevx", b"mif1", b"msf1"},
+            ".m4a": {b"M4A ", b"M4B ", b"M4P ", b"isom", b"iso2", b"mp42"},
+            ".mp4": {b"isom", b"iso2", b"iso3", b"mp41", b"mp42", b"avc1", b"M4V ", b"dash", b"MSNV"},
+            ".mov": {b"qt  "},
+        }[ext]
+        return major in brands or bool(compatible & brands)
+    allowed = signatures.get(ext)
+    if allowed:
+        if not any(sample.startswith(sig) for sig in allowed):
+            return False
+        if ext == ".webp" and sample[8:12] != b"WEBP":
+            return False
+        if ext == ".wav" and sample[8:12] != b"WAVE":
+            return False
+        if ext == ".avi" and sample[8:12] != b"AVI ":
+            return False
+        return True
+    if ext == ".rtf":
+        return sample.lstrip().startswith(b"{\\rtf")
+    if ext in {".txt", ".md", ".csv", ".json"}:
+        if b"\x00" in sample:
+            return False
+        try:
+            sample.decode("utf-8-sig")
+            return True
+        except UnicodeDecodeError:
+            return False
+    return False
 
 
 def prune(days=KEEP_DAYS, folder=None):
@@ -108,6 +183,16 @@ async def save_upload(file: UploadFile, folder=None):
     if size == 0:
         os.remove(path)
         return None, ("That file is empty.", 400)
+    try:
+        with open(path, "rb") as uploaded:
+            sample = uploaded.read(8192)
+        if not _valid_upload_content(ext, sample, path):
+            os.remove(path)
+            return None, (f"That file's contents don't match its .{ext.lstrip('.')} extension, or the file isn't a supported format.", 400)
+    except OSError as exc:
+        if os.path.exists(path):
+            os.remove(path)
+        return None, (f"I couldn't validate that file ({exc.strerror or exc}).", 500)
     verb = {"document": "summarize", "image": "describe the image", "audio": "transcribe", "video": "info about"}[kind_of(name)]
     return {"ok": True, "path": path, "name": os.path.basename(path), "size": size, "kind": kind_of(name),
             "mention": f"{verb} {path}"}, None

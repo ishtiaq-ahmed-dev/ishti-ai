@@ -1,0 +1,24 @@
+{
+ "id": 109,
+ "prompt_text": "Close all my social media tabs",
+ "category": "Opening apps — social & communication (101-110)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Confirms which tabs it closed",
+ "expected_reply_success": "Confirms which tabs it closed",
+ "expected_reply_failure": "If none were open: says so",
+ "pass_criteria": {
+  "expected_skill": [
+   "browser",
+   "apps",
+   "desktop"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

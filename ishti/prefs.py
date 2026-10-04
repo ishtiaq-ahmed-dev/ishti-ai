@@ -50,6 +50,11 @@ def whatsapp_mode():
 def statement(text):
     """If `text` states a preference, store it and return ISHTI's one-line confirmation; else None."""
     t = text.strip()
+    # a plain "open X" is an action to do it NOW, not a standing preference - only "open whatsapp
+    # web always" / "from now on" states one (checklist: "open my whatsapp web" must open it)
+    if re.match(r"^\s*(?:please\s+)?open\b", t, re.I) and not re.search(
+            r"\b(?:always|from\s+now\s+on|only|every\s+time)\b", t, re.I):
+        return None
     m = _WHATSAPP.search(t)
     if m and not re.search(r"\b(?:send|message|text|write|tell)\b", t, re.I):
         kind = (m.group("kind") or m.group("kind2") or "web").lower()

@@ -1,0 +1,40 @@
+{
+ "id": 174,
+ "prompt_text": "Add captions to this video automatically",
+ "category": "Media & video tasks (171-176)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "video",
+  "media",
+  "files",
+  "folders",
+  "system",
+  "meta",
+  "chat"
+ ],
+ "expected_outcome": "Confirms captions generated, flags accuracy isn't guaranteed and offers a quick review",
+ "expected_reply_success": "Confirms captions generated, flags accuracy isn't guaranteed and offers a quick review",
+ "expected_reply_failure": "If STT confidence is low throughout: says so rather than presenting shaky captions as reliable",
+ "pass_criteria": {
+  "expected_skill": [
+   "video",
+   "media"
+  ],
+  "ok_any": [
+   "caption",
+   "subtitle",
+   "transcri",
+   "accuracy",
+   "review",
+   "no video",
+   "which",
+   "confidence"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

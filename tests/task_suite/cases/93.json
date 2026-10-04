@@ -1,0 +1,32 @@
+{
+ "id": 93,
+ "prompt_text": "Who is Ahmed to me?",
+ "category": "Memory & personalization (89-94)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "States what's actually confirmed (or \"unknown\" if never confirmed)",
+ "expected_reply_success": "States what's actually confirmed (or \"unknown\" if never confirmed)",
+ "expected_reply_failure": "Wrong: invents a relationship it was never told",
+ "pass_criteria": {
+  "expected_skill": [
+   "relationships",
+   "memory_manager",
+   "memory"
+  ],
+  "ok_any": [
+   "ahmed",
+   "unknown",
+   "don't know",
+   "do not know",
+   "brother",
+   "friend",
+   "not"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

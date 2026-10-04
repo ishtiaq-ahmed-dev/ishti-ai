@@ -1,0 +1,27 @@
+{
+ "id": 208,
+ "prompt_text": "Brainstorm names for my new startup",
+ "category": "Creative & content generation tasks (206-211)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "chat",
+  "writing",
+  "video"
+ ],
+ "expected_outcome": "Genuinely varied options, not near-duplicates",
+ "expected_reply_success": "Genuinely varied options, not near-duplicates",
+ "expected_reply_failure": "N/A for hard failure — flag if it just repeats \"Zyntiqo\"-adjacent ideas with no real variation",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat",
+   "writing"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

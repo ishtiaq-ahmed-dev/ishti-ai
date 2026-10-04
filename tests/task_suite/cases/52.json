@@ -1,0 +1,28 @@
+{
+ "id": 52,
+ "prompt_text": "Draft a short YouTube community post about my new video",
+ "category": "Communication (45-52)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Shows draft text",
+ "expected_reply_success": "Shows draft text",
+ "expected_reply_failure": "N/A — drafting shouldn't really fail outright, but should flag if it's guessing at missing details",
+ "pass_criteria": {
+  "expected_skill": [
+   "writing",
+   "chat"
+  ],
+  "ok_any": [
+   "draft",
+   "video",
+   "youtube",
+   "post"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

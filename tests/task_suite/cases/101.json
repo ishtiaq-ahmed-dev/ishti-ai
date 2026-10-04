@@ -1,0 +1,28 @@
+{
+ "id": 101,
+ "prompt_text": "Open WhatsApp",
+ "category": "Opening apps — social & communication (101-110)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [
+  "apps",
+  "browser",
+  "desktop"
+ ],
+ "expected_outcome": "Confirms, says whether it reused or opened new",
+ "expected_reply_success": "Confirms, says whether it reused or opened new",
+ "expected_reply_failure": "If Profile 9 not logged in: states that plainly",
+ "pass_criteria": {
+  "expected_skill": [
+   "whatsapp",
+   "apps",
+   "browser"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

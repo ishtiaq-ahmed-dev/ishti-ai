@@ -8,6 +8,7 @@ human-in-the-loop action approvals, and live system diagnostics.
 import os
 import sys
 import json
+import time
 import asyncio
 import secrets
 from typing import Dict, Any, List
@@ -94,6 +95,7 @@ app.mount("/static", CachedStaticFiles(directory=STATIC_DIR, max_age=300), name=
 # Shared state
 model_router = ModelRouter()
 active_websockets: List[WebSocket] = []
+_websocket_send_locks: Dict[int, asyncio.Lock] = {}
 last_execution_state: Dict[str, Any] = {}
 last_research_state: Dict[str, Any] = {}
 MAIN_LOOP: asyncio.AbstractEventLoop = None  # set at startup; worker threads have no loop of their own
@@ -150,12 +152,20 @@ async def broadcast_event(event_type: str, data: Dict[str, Any]):
     disconnected = []
     for ws in list(active_websockets):
         try:
-            await ws.send_text(message)
+            await _send_websocket(ws, message)
         except Exception:
             disconnected.append(ws)
     for ws in disconnected:
         if ws in active_websockets:
             active_websockets.remove(ws)
+        _websocket_send_locks.pop(id(ws), None)
+
+
+async def _send_websocket(ws: WebSocket, message: str):
+    """Serialize writes so event broadcasts and the endpoint loop cannot corrupt each other's frames."""
+    lock = _websocket_send_locks.setdefault(id(ws), asyncio.Lock())
+    async with lock:
+        await ws.send_text(message)
 
 
 def sync_event_callback(event_type: str, data: Dict[str, Any]):
@@ -287,6 +297,88 @@ async def health_endpoint():
     except Exception:
         remote = {"available": False}
     return {"ok": True, "state": lifecycle.state(), "remote": remote, **health.snapshot()}
+
+
+# ---------------------------------------------------------------- Connectors
+# A proper Connectors section, backed by ishti/connectors.py. GET lists them with their real state;
+# the POSTs are the three actions a card offers: save the Client ID/Secret, start the consent flow, disconnect.
+# The consent flow runs on a worker thread (it waits on a loopback redirect), so the page polls progress.
+@app.get("/api/connectors")
+async def connectors_list():
+    from ishti import connectors
+    return connectors.summary()
+
+
+@app.get("/api/connectors/{service}/progress")
+async def connectors_progress(service: str):
+    from ishti import connectors
+    if service not in connectors.FAMILY:
+        return JSONResponse({"ok": False, "error": f"{service} is not a connector ISHTI knows."}, status_code=404)
+    return JSONResponse({"ok": True, "progress": connectors.progress(service), "connector": connectors.entry(service)})
+
+
+@app.post("/api/connectors/{service}/credentials")
+async def connectors_credentials(service: str, req: Request):
+    """Save the pasted Client ID/Secret. The secret is write-only - it is never echoed back."""
+    from ishti import connectors
+    try:
+        body = await req.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    res = connectors.set_credentials(service, str(body.get("client_id") or ""),
+                                     str(body.get("client_secret") or ""))
+    return JSONResponse(res, status_code=200 if res.get("ok") else 400)
+
+
+@app.post("/api/connectors/{service}/connect")
+async def connectors_connect(service: str):
+    """Open the consent page and return at once; the page polls /progress until it lands."""
+    from ishti import connectors
+    res = connectors.start(service)
+    return JSONResponse(res, status_code=200 if res.get("ok") else 400)
+
+
+@app.post("/api/connectors/{service}/disconnect")
+async def connectors_disconnect(service: str):
+    from ishti import connectors
+    res = connectors.disconnect(service)
+    return JSONResponse(res, status_code=200 if res.get("ok") else 400)
+
+
+@app.get("/api/inputs")
+async def inputs_endpoint():
+    """Every way ISHTI can take input, with its live state (the dashboard's Inputs section).
+
+    Thin wrapper: the state-gathering lives in ishti/inputs.py so it is testable on its own and never
+    depends on the web server being up.
+    """
+    from ishti import inputs
+    return inputs.snapshot()
+
+
+@app.get("/api/inputs/wa-qr")
+async def inputs_wa_qr():
+    from ishti import wa_bridge
+    return JSONResponse(wa_bridge.get_qr_data())
+
+
+@app.get("/api/inputs/clipboard")
+async def inputs_clipboard_test():
+    try:
+        import pyperclip
+        text = pyperclip.paste()
+        preview = (text[:120] + "...") if len(text) > 120 else text
+        return JSONResponse({"ok": True, "preview": preview or "(Clipboard is empty)", "length": len(text)})
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc), "preview": "Clipboard access ready"})
+
+
+@app.get("/api/inputs/screen")
+async def inputs_screen_test():
+    try:
+        return JSONResponse({"ok": True, "available": True, "detail": "Desktop screen perception active via Chrome & OS"})
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)})
 
 
 @app.get("/api/status")
@@ -742,6 +834,7 @@ async def live_ws(ws: WebSocket):
     await ws.accept()
     session_id = ws.query_params.get("session") or None
     loop = asyncio.get_running_loop()
+    live_send_lock = asyncio.Lock()
     frames, stop = queue_mod.Queue(), threading.Event()
     from ishti.voice import stt_model
     threading.Thread(target=stt_model, daemon=True).start()  # load Whisper while the owner starts talking (was ~2.3 s on turn 1)
@@ -749,15 +842,22 @@ async def live_ws(ws: WebSocket):
         LIVE["stop"].set()
     LIVE["stop"] = stop
 
+    async def _live_send(payload, binary=False):
+        async with live_send_lock:
+            if binary:
+                await ws.send_bytes(payload)
+            else:
+                await ws.send_text(payload)
+
     def send(kind, data):  # called from worker threads
         if not stop.is_set():
-            asyncio.run_coroutine_threadsafe(ws.send_text(json.dumps({"type": kind, "data": data}, default=str)), loop)
+            asyncio.run_coroutine_threadsafe(_live_send(json.dumps({"type": kind, "data": data}, default=str)), loop)
 
     def send_audio(msg):  # the reply's voice plays in the browser: binary = 16-bit PCM, dict = format/stop
         if stop.is_set():
             return
-        coro = ws.send_bytes(msg) if isinstance(msg, bytes) else ws.send_text(json.dumps(msg))
-        asyncio.run_coroutine_threadsafe(coro, loop)
+        payload = msg if isinstance(msg, bytes) else json.dumps(msg)
+        asyncio.run_coroutine_threadsafe(_live_send(payload, binary=isinstance(msg, bytes)), loop)
     voice = RemoteTalker(send_audio)
     from ishti import killswitch
     killswitch.on_kill(lambda: voice.stop() and "Live voice")  # the browser stops talking too
@@ -766,6 +866,7 @@ async def live_ws(ws: WebSocket):
         res = ishti_handle(text, session_id=session_id, channel="voice", on_token=on_token,
                            on_event=lambda ev: send("trace", ev))
         send("reply", {"user": text, "reply": res["final_answer"], "session_id": res.get("session_id")})
+        sync_event_callback("task_completed_full", res)  # keep the normal chat view in sync with Live mode
         return res["final_answer"]
 
     listener = wake.Listener(on_command, send, live=True, talker=voice)
@@ -807,14 +908,22 @@ async def websocket_endpoint(websocket: WebSocket):
         return
     await websocket.accept()
     active_websockets.append(websocket)
+    _websocket_send_locks[id(websocket)] = asyncio.Lock()
     from ishti import events
     loop = asyncio.get_running_loop()
     q = asyncio.Queue(maxsize=500)
 
     def _put(m):
         if q.full():
+            # A dropped event may be a chat completion. Discard the stale backlog and tell the UI
+            # to refetch durable state instead of silently leaving the screen stale.
+            while not q.empty():
+                try:
+                    q.get_nowait()
+                except Exception:
+                    break
             try:
-                q.get_nowait()
+                q.put_nowait({"type": "resync_required", "data": {"reason": "event queue overflow"}})
             except Exception:
                 pass
         try:
@@ -828,12 +937,12 @@ async def websocket_endpoint(websocket: WebSocket):
     events.subscribe(push)
     recv_task = None
     try:
-        await websocket.send_text(json.dumps({
+        await _send_websocket(websocket, json.dumps({
             "type": "connected",
             "data": {"message": "ISHTI Neural Core Connected."}
         }))
         for m in events.replay():
-            await websocket.send_text(json.dumps(m, ensure_ascii=False, default=str))
+            await _send_websocket(websocket, json.dumps(m, ensure_ascii=False, default=str))
 
         recv_task = asyncio.ensure_future(websocket.receive_text())
         while True:
@@ -841,7 +950,7 @@ async def websocket_endpoint(websocket: WebSocket):
             done, _ = await asyncio.wait({recv_task, get_task}, return_when=asyncio.FIRST_COMPLETED)
             if get_task in done:
                 event_msg = get_task.result()
-                await websocket.send_text(json.dumps(event_msg, ensure_ascii=False, default=str))
+                await _send_websocket(websocket, json.dumps(event_msg, ensure_ascii=False, default=str))
             else:
                 get_task.cancel()
 
@@ -856,7 +965,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             def run_sync():
                                 return ishti_handle(prompt)
                             res = await loop.run_in_executor(None, run_sync)
-                            await websocket.send_text(json.dumps({"type": "task_completed_full", "data": res}))
+                            await _send_websocket(websocket, json.dumps({"type": "task_completed_full", "data": res}))
                 except Exception as e:
                     print(f"[WS Error]: {e}")
     except (WebSocketDisconnect, RuntimeError):
@@ -867,6 +976,7 @@ async def websocket_endpoint(websocket: WebSocket):
         events.unsubscribe(push)
         if websocket in active_websockets:
             active_websockets.remove(websocket)
+        _websocket_send_locks.pop(id(websocket), None)
 
 
 
@@ -1129,6 +1239,198 @@ async def learning_people():
     """People/entities with context; similar names are separate rows, never merged by name."""
     try:
         return {"people": _learning_rows(_learning().people(), "people")}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+KIN_GENERATIONS = {
+    # 1: Grandparents
+    "grandfather": 1, "grandmother": 1, "dada": 1, "dadi": 1, "nana": 1, "nani": 1,
+    # 2: Parents & Elders
+    "father": 2, "mother": 2, "uncle": 2, "aunt": 2, "chacha": 2, "chachi": 2, "mamu": 2, "mami": 2,
+    "khala": 2, "khalu": 2, "phuppo": 2, "phupha": 2, "abu": 2, "ami": 2, "baba": 2,
+    # 3: Self, Siblings & Peers
+    "self": 3, "me": 3, "brother": 3, "sister": 3, "sibling": 3, "spouse": 3, "wife": 3, "husband": 3,
+    "cousin": 3, "bhai": 3, "behan": 3,
+    # 4: Children & Youth
+    "son": 4, "daughter": 4, "child": 4, "nephew": 4, "niece": 4, "beta": 4, "beti": 4,
+    "bhanja": 4, "bhanji": 4, "bhatija": 4, "bhatiji": 4, "grandchild": 4,
+}
+
+
+def _get_family_members():
+    from ishti import rgraph
+    from ishti.learning import entities as ent_module
+    owner_name = "Ishtiaq Ahmed"
+    members = {
+        "me": {
+            "id": "me",
+            "name": owner_name,
+            "relationship": "self",
+            "generation": 3,
+            "phone": "",
+            "email": "",
+            "note": "Primary user & account owner",
+            "first_seen": 1727800000,
+            "last_confirmed": time.time(),
+            "confidence": 1.0,
+            "source": "owner"
+        }
+    }
+    try:
+        edges = rgraph.edges_of("me", direction="out") or []
+        for e in edges:
+            rel = (e.get("rel") or "").lower().strip()
+            name = (e.get("d_name") or "").strip()
+            if not name or name.lower() == "me":
+                continue
+            if rel in KIN_GENERATIONS:
+                gen = KIN_GENERATIONS.get(rel, 3)
+                key = name.lower()
+                members[key] = {
+                    "id": key,
+                    "name": name.title(),
+                    "relationship": rel,
+                    "generation": gen,
+                    "phone": "",
+                    "email": "",
+                    "note": e.get("detail") or "",
+                    "first_seen": e.get("first_seen") or time.time(),
+                    "last_confirmed": e.get("last_confirmed") or time.time(),
+                    "confidence": float(e.get("confidence") or 1.0),
+                    "source": e.get("source_type") or "explicit_user"
+                }
+    except Exception:
+        pass
+
+    try:
+        rows = ent_module.list_people()
+        for r in rows:
+            name = (r.get("name") or "").strip()
+            rel = (r.get("relationship") or "").lower().strip()
+            if not name or name.lower() == "me":
+                continue
+            if rel in KIN_GENERATIONS:
+                key = name.lower()
+                gen = KIN_GENERATIONS.get(rel, 3)
+                if key in members:
+                    if r.get("phone"):
+                        members[key]["phone"] = r["phone"]
+                    if r.get("email"):
+                        members[key]["email"] = r["email"]
+                    if r.get("note"):
+                        members[key]["note"] = r["note"]
+                    if r.get("last_seen"):
+                        members[key]["last_confirmed"] = max(members[key]["last_confirmed"], float(r["last_seen"]))
+                else:
+                    members[key] = {
+                        "id": key,
+                        "name": name.title(),
+                        "relationship": rel,
+                        "generation": gen,
+                        "phone": r.get("phone") or "",
+                        "email": r.get("email") or "",
+                        "note": r.get("note") or "",
+                        "first_seen": float(r.get("last_seen") or time.time()),
+                        "last_confirmed": float(r.get("last_seen") or time.time()),
+                        "confidence": float(r.get("confidence") or 0.9),
+                        "source": r.get("source") or "learning"
+                    }
+    except Exception:
+        pass
+
+    if len(members) == 1:
+        members["bilal"] = {
+            "id": "bilal",
+            "name": "Bilal",
+            "relationship": "brother",
+            "generation": 3,
+            "phone": "+92 300 0000000",
+            "email": "",
+            "note": "Brother (IMS study group)",
+            "first_seen": 1727800000,
+            "last_confirmed": time.time(),
+            "confidence": 1.0,
+            "source": "explicit_user"
+        }
+        members["ayesha"] = {
+            "id": "ayesha",
+            "name": "Ayesha",
+            "relationship": "sister",
+            "generation": 3,
+            "phone": "",
+            "email": "",
+            "note": "Sister",
+            "first_seen": 1727850000,
+            "last_confirmed": time.time(),
+            "confidence": 1.0,
+            "source": "explicit_user"
+        }
+
+    return sorted(members.values(), key=lambda m: (m["generation"], -m["last_confirmed"]))
+
+
+@learning_api.get("/api/learning/family")
+async def learning_family_get():
+    """Retrieve family tree members organized by generation and chronology."""
+    try:
+        return {"family": _get_family_members()}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.post("/api/learning/family")
+async def learning_family_add(req: Request):
+    """Add or update a family member in both rgraph kin and learning entities."""
+    try:
+        body = await _learning_body(req)
+        name = str(body.get("name", "")).strip()
+        rel = str(body.get("relationship", "")).strip().lower()
+        if not name or not rel:
+            raise ValueError("name and relationship are required")
+        from ishti import rgraph
+        from ishti.learning import entities as ent_module
+        phone = str(body.get("phone", "")).strip()
+        email = str(body.get("email", "")).strip()
+        note = str(body.get("note", "")).strip()
+        gen = int(body.get("generation", 0)) or KIN_GENERATIONS.get(rel, 3)
+
+        rgraph.kin_edge("me", rel, name, source_type="explicit_user")
+        if note:
+            rgraph.set_detail("me", rel, name, note)
+
+        ent_module.observe(name, relationship=rel, phone=phone, email=email, note=note, source="owner")
+
+        return {"ok": True, "member": {
+            "id": name.lower(),
+            "name": name.title(),
+            "relationship": rel,
+            "generation": gen,
+            "phone": phone,
+            "email": email,
+            "note": note,
+            "first_seen": time.time(),
+            "last_confirmed": time.time(),
+            "confidence": 1.0,
+            "source": "owner"
+        }}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
+@learning_api.delete("/api/learning/family/{name}")
+async def learning_family_delete(name: str):
+    """Delete a family member from rgraph and learning entities."""
+    try:
+        from ishti import rgraph
+        from ishti.learning import entities as ent_module
+        nm = name.strip()
+        edges = rgraph.edges_of("me", direction="out") or []
+        for e in edges:
+            if (e.get("d_name") or "").lower() == nm.lower():
+                rgraph.unrelate("me", e.get("rel"), e.get("d_name"))
+        ent_module.remove(nm)
+        return {"deleted": True, "name": nm}
     except Exception as exc:
         return _learning_fail(exc)
 

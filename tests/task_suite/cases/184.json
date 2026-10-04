@@ -1,0 +1,33 @@
+{
+ "id": 184,
+ "prompt_text": "no, I meant Chrome",
+ "category": "Proactive suggestions & learned routines (182-187)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Applied to this task only, not generalized into a permanent rule yet",
+ "expected_reply_success": "Applied to this task only, not generalized into a permanent rule yet",
+ "expected_reply_failure": "Wrong: immediately treats one correction as a confirmed permanent preference",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat",
+   "owner",
+   "apps",
+   "browser"
+  ],
+  "ok_any": [
+   "chrome",
+   "got it",
+   "understood",
+   "my mistake",
+   "correct",
+   "won't",
+   "switching"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

@@ -1,0 +1,37 @@
+{
+ "id": 25,
+ "prompt_text": "Copy my resume to the JQ AI client folder",
+ "category": "Files & folders (19-26)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "files",
+  "folders",
+  "fileops",
+  "system",
+  "meta",
+  "chat"
+ ],
+ "expected_outcome": "Confirms exact source and destination before copying",
+ "expected_reply_success": "Confirms exact source and destination before copying",
+ "expected_reply_failure": "If \"JQ AI client folder\" is ambiguous or missing: asks instead of guessing a path",
+ "pass_criteria": {
+  "expected_skill": [
+   "fileops",
+   "files"
+  ],
+  "ok_any": [
+   "resume",
+   "copy",
+   "folder",
+   "which",
+   "couldn't",
+   "could not"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

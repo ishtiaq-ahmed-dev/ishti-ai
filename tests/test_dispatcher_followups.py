@@ -57,6 +57,11 @@ with scratch_memory():
     # route() stub, the same way it already isolates memory; without this the planner once ran a
     # real deep_research pass for 'send hi to bhai' inside the test.
     saved_runs = {n: D.SKILLS[n].run for n in ("notes", "whatsapp", "browser", "chat")}
+    # Every row here exercises the arch1 skill path through the route() stub. With config arch.active=arch2
+    # the brain would otherwise intercept turns whose route stub carries source="test" (_rule_owned False),
+    # so the skill path is pinned for the whole block - the same intent as stubbing route() itself.
+    saved_rule_owned = D._rule_owned
+    D._rule_owned = lambda text: True
     D.SKILLS["chat"].run = lambda text, s: {"reply": "ROUTED NORMALLY", "sources": []}
     D.route = lambda text, skills, exclude=None: {"skill": "chat", "confidence": 1.0, "source": "test"}
     try:
@@ -125,8 +130,14 @@ with scratch_memory():
                                                 "verified": False, "no_escalate": True}
         D.SESSIONS["t5"] = {"id": "t5", "history": [], "last_entity": None, "pending": None}
         res = D.handle("send hi to bhai", session_id="t5")
-        assert "couldn't confirm that actually went through" in res["final_answer"], res["final_answer"]
+        assert res.get("route", {}).get("skill") == "chat", res
+        # Either honesty guard is a correct correction of the unverified claim: the CLAIM suffix
+        # ("...couldn't confirm that actually went through") or FALSE_ACTION's stronger replacement
+        # ("I haven't actually done that yet..."), which fires first for a first-person send claim.
+        assert ("couldn't confirm that actually went through" in res["final_answer"]
+                or "haven't actually done that yet" in res["final_answer"]), res["final_answer"]
     finally:
+        D._rule_owned = saved_rule_owned
         D._remember, D._learn, D.route = saved_remember, saved_learn, saved_route
         D.planner.candidate = saved_candidate
         for n, run in saved_runs.items():

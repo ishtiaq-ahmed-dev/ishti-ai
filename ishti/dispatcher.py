@@ -29,6 +29,7 @@ from orchestrator.response_guard import is_safe_for_history
 
 SKILLS = load_skills()
 SESSIONS = {}
+_SESSIONS_LOCK = threading.RLock()
 # Replies that hand the problem back to the owner. When an information-seeking skill gives one, the
 # dispatcher tries the next capable skill once instead of stopping (memory/folders/reminders asking for a
 # path or a time are legitimate questions, so they never escalate).
@@ -38,6 +39,12 @@ FELL_SHORT = re.compile(r"\b(?:couldn'?t|could not|can'?t|cannot|unable to|not a
                         r"i don'?t (?:know|have (?:access|information|real-time))|"
                         r"(?:isn'?t|is not|wasn'?t|are not|aren'?t|not) (?:listed|mentioned|specified|stated|available|provided|given)"
                         r"(?: in| on| by)?)", re.I)
+# A reply that asks the owner for the missing detail ("which bug?", "could you tell me the file name?").
+# Such a question is a correct answer to an ambiguous request - escalating it to web search searches the
+# internet for the literal words ("Fix the bug" -> research hang, owner's live test 2026-10-03).
+CLARIFY = re.compile(r"\b(?:which|what|who|where|whose)\b[^.?!\n]{0,80}\?|\bcould\s+you\s+(?:tell|clarify|share|specify|say)\b|"
+                     r"\bcan\s+you\s+(?:tell|clarify|share|specify)\b|\bplease\s+(?:tell|clarify|specify|share)\b|"
+                     r"\b(?:need|give|tell)\s+me\s+(?:more|the|a)\b|\bI\s+(?:don'?t|do not)\s+know\s+which\b", re.I)
 # Next skill to try when one falls short (followed up to twice): browser -> web_search -> deep_research.
 ESCALATE = {"browser": "web_search", "chat": "web_search", "web_fetch": "browser", "web_search": "deep_research"}
 # "that should have been web search" / "use the browser for that" -> re-run the last request with
@@ -99,6 +106,51 @@ class View(dict):
 INFLIGHT = {}  # session id -> threading.Condition guarding its count of running requests
 
 
+def _restore_session(sid: str, conv=None) -> dict:
+    """Create runtime state from durable chat history exactly once.
+
+    Stored assistant messages use role ``ishti`` for UI compatibility; model APIs require
+    ``assistant``. Incognito requests intentionally start with no persisted transcript.
+    """
+    from ishti.core import incognito
+
+    shared = {"id": sid, "history": [], "pending": None, "last_entity": None}
+    if incognito.enabled({"id": sid}):
+        return shared
+    try:
+        manager = conv or get_conversation_manager()
+        stored = manager.get_messages(sid) or []
+    except Exception as exc:
+        print(f"[dispatcher] saved chat history unavailable ({type(exc).__name__}: {exc})", flush=True)
+        return shared
+
+    history = []
+    for message in stored:
+        if not isinstance(message, dict):
+            continue
+        role = message.get("role")
+        role = "assistant" if role in ("ishti", "assistant") else role
+        content = message.get("content")
+        if role not in ("user", "assistant") or not isinstance(content, str) or not content.strip():
+            continue
+        if role == "assistant" and not is_safe_for_history(content):
+            continue
+        history.append({"role": role, "content": content})
+    # Preserve enough recent dialogue for context while keeping per-session memory bounded.
+    shared["history"] = history[-200:]
+    return shared
+
+
+def _runtime_session(sid: str, conv=None) -> dict:
+    """Thread-safe session lookup; lazily hydrates old chats after restart or session switch."""
+    with _SESSIONS_LOCK:
+        shared = SESSIONS.get(sid)
+        if shared is None:
+            shared = _restore_session(sid, conv)
+            SESSIONS[sid] = shared
+        return shared
+
+
 def _arch_registry():
     """arch2.registry or None (arch2 optional - its absence must never break arch1)."""
     try:
@@ -110,11 +162,13 @@ def _arch_registry():
 
 
 def _remember(text, reply, skill):
-    try:
-        from ishti.semantic import get_semantic
-        get_semantic().add(f"User: {text}\nISHTI: {reply[:800]}", skill=skill)
-    except Exception as exc:
-        print(f"[dispatcher] semantic memory write skipped: {exc}")
+    def _bg():
+        try:
+            from ishti.semantic import get_semantic
+            get_semantic().add(f"User: {text}\nISHTI: {reply[:800]}", skill=skill)
+        except Exception as exc:
+            print(f"[dispatcher] semantic memory write skipped: {exc}")
+    threading.Thread(target=_bg, daemon=True).start()
 
 
 def _ftlog(text, reply, name, dec, channel):
@@ -322,6 +376,12 @@ def fell_short(question, reply, skill, s) -> bool:
         # loop used to treat it as a BETTER answer that replaced a real one (2026-10-01 sweep: a blank
         # fallback beat web_search's honest "couldn't find" reply, leaving an empty bubble).
         return True
+    # A clarifying question is a correct answer, not a fall-short: "Fix the bug" -> "I don't know which bug
+    # you're referring to. Could you tell me which one?" was escalated chat -> web_search -> deep_research,
+    # which searched the internet for "Fix the bug" and hung (owner's live test, 2026-10-03). Only a reply
+    # that DEAD-ENDS is a fall-short; one that asks the owner for the missing detail is doing its job.
+    if CLARIFY.search(reply) and reply.rstrip().endswith("?"):
+        return False
     if FELL_SHORT.search(reply):
         return True
     # the browser engine already re-checks the request against the actions that really ran (its CHECK loop and
@@ -381,6 +441,13 @@ ACTION_CLAIM = re.compile(r"\b(?:reminder|timer|alarm|task|message|video|file|ev
 CLAIM = re.compile(r"\b(?:i(?:'ve| have)?\s+(?:sent|shared|posted|published|uploaded|forwarded|moved|deleted|paid|"
                    r"ordered|booked|installed|created|saved)|(?:sent|delivered|shared|posted)\s+"
                    r"(?:it|that|this|the\s+\w+|['\"])|i\s+have\s+already\s+(?:sent|done))", re.I)
+# A first-person claim that something irreversible happened ("Sent 'hi' to Fuzail on WhatsApp", "Reminder set").
+# When the answer came from the brain with no tool behind it, this is the guard that stops the false claim.
+FALSE_ACTION = re.compile(
+    r"\bi(?:'ve| have)?\s+(?:just\s+|already\s+)?(?:sent|shared|posted|published|uploaded|forwarded|moved|deleted|"
+    r"paid|ordered|booked|installed|created|saved|scheduled|set|cancel+?ed|added|reminded|emailed)\b"
+    r"|^\s*[-*]?\s*\**(?:reminder|timer|alarm)\s+(?:set|scheduled|cancel+ed)\b"
+    r"|^\s*(?:sent|delivered)\b[^.\n]{0,60}\b(?:on\s+whatsapp|to\s+\w+)", re.I | re.M)
 
 
 def _repeat(s, name, text, window_s=20):
@@ -398,8 +465,11 @@ def _did_t2(s, name, text):
     s["last_t2"] = (_t2_key(name, text), time.time())
 
 
-# next to the memory DB, so checks/replays that run on a scratch memory never leave a false "before I restarted" note
-INFLIGHT_FILE = os.path.join(os.path.dirname(CONFIG["memory"]["db_path"]), "inflight.json")
+# next to the memory DB, so checks/replays that run on a scratch memory never leave a false "before I restarted" note.
+# ISHTI_INFLIGHT_FILE lets an isolated run (the task suite's per-case subprocess) keep its own hint file
+# without reading or deleting the owner's real one.
+INFLIGHT_FILE = os.environ.get("ISHTI_INFLIGHT_FILE") or os.path.join(
+    os.path.dirname(CONFIG["memory"]["db_path"]), "inflight.json")
 
 
 _inflight_state = None          # the file's content, read once (RECOVER already removed it after a crash)
@@ -493,8 +563,16 @@ def _run(text, s, dec):
                 from ishti import test_mode
                 if tier == "T2" and test_mode.enabled() and not str(text or "").strip().lower() in ("yes", "y"):
                     # ISHTI_TEST_MODE layer 1: a T2-tier skill never executes at all under test mode -
-                    # its whole job may be a side effect. Recorded, honest reply, no code ran.
-                    out = test_mode.blocked(name, f"run '{mask(text, s.get('redact'))[:100]}'", None, tier)
+                    # its whole job may be a side effect. Instead of the opaque "never touch the real
+                    # world" line, answer with the owner-facing gate: a world-changing request gets a
+                    # real confirmation question (and a pending yes/no), everything else a dry-run note.
+                    # The yes path is still stopped by blocked() at the last step (layer 2).
+                    gate_txt = f"run '{mask(text, s.get('redact'))[:120]}'"
+                    out = test_mode.gated_reply(name, gate_txt, tier)
+                    if out.get("confirm_required"):
+                        s["pending"] = {"skill": name, "gate": gate_txt, "request": text,
+                                        "action": (lambda n=name, g=gate_txt, t=tier:
+                                                   test_mode.blocked(n, g, None, t))}
                 else:
                     with audit.context(skill=name, initiator=initiator_of(dec, s, tried), tier=tier, view=s):
                         audit.record(f"run {name}", why(dec))
@@ -524,6 +602,15 @@ def _run(text, s, dec):
                 # tool honesty: a skill that knows it could not confirm an action must never sound like it did
                 out["reply"] = str(out["reply"]) + "\n\n(I couldn't confirm that actually went through - please check.)"
                 s["trace"](type="tool", name="verify", label="the action couldn't be confirmed, so I said so", status="error")
+            if name == "chat" and FALSE_ACTION.search(str(out.get("reply") or "")):
+                # the model SAID an irreversible thing happened but no tool ran. "Did you send it?" is answered
+                # from the conversation on purpose (chat.skill.did_you) - everything else gets the honest correction.
+                from ishti.skills.chat.skill import DID_YOU
+                is_status = bool(re.search(r"^\s*(?:is|are|was|were|status|check\s+if)\b", text, re.I))
+                if not DID_YOU.match(text) and not is_status and not (re.search(r"\bdraft\b", str(out.get("reply") or ""), re.I) and re.search(r"\bdraft\b", text, re.I)):
+                    out["reply"] = ("I haven't actually done that yet - nothing was sent or changed just now. "
+                                    "Say the word and I'll go ahead.")
+                    s["trace"](type="tool", name="verify", label="the reply claimed an action no tool ran - corrected", status="error")
             s["trace"](type="step", skill=name, status="done", summary=str(out.get("reply") or "")[:160])
             break
         s["trace"](type="step", skill=name, status="skip", summary=f"{name} passed it on")
@@ -574,13 +661,52 @@ GENERAL = {"chat", "web_search", "memory", "deep_research"}  # open-ended: the a
 def _rule_owned(text):
     """A request a skill's own trigger claims exactly ("send hi to Ali on WhatsApp", "my brother is Irfan", "remind me at 5") runs
     that skill directly, in both architectures. arch2's brain picking among 20 tools by itself sent WhatsApp requests to web search
-    and stored the owner's brother under a misspelled name (owner's chats, 2026-10-02/03)."""
+    and stored the owner's brother under a misspelled name (owner's chats, 2026-10-02/03).
+
+    Chat also owns timeless knowledge questions ("what's the capital of Kazakhstan", "define imatrix") directly -
+    these are not open-ended debates arch2 needs to plan, and arch2's smaller model answered "Azerbaijan" for the
+    Kazakh capital (owner's live test, 2026-10-03). The GENERAL set still lets arch2 own truly open-ended requests
+    ("talk about AI", "what do you think of politics"), but factual one-shot questions belong to chat.
+
+    A GENERAL skill (chat/web_search/memory/deep_research) that matched by rule for a SPECIFIC, well-defined request
+    (a web search query, a memory command, a factual question) is also rule-owned: arch2 only takes the ones that are
+    genuinely open-ended. TheIntentDetector is the discriminator."""
     try:
         dec = route(text, SKILLS)
-        if dec.get("skill") == "chat":  # "did you send it?" is answered from the conversation, never re-run or improvised
-            from ishti.skills.chat.skill import DID_YOU
-            return bool(DID_YOU.match(text))
-        return dec.get("source") in ("rule", "learned") and dec.get("skill") not in GENERAL
+        skill = dec.get("skill")
+        if skill == "chat":  # "did you send it?" is answered from the conversation, never re-run or improvised
+            from ishti.skills.chat.skill import DID_YOU, KNOWLEDGE, PERSONAL, ARITHMETIC, CREATIVE, CODE, BACKCHANNEL
+            if DID_YOU.match(text):
+                return True
+            # timeless knowledge: chat answers directly, not arch2 (smaller model, wrong facts)
+            if KNOWLEDGE.match(text) and not PERSONAL.search(text) and len(text.split()) <= 14:
+                return True
+            # chat matching arithmetic/creative/code/backchannel: these are specific enough that chat should
+            # handle them (including ambiguous code questions like "fix the bug" -> chat asks which bug)
+            if ARITHMETIC.search(text) or CREATIVE.search(text) or CODE.search(text) or BACKCHANNEL.search(text):
+                return True
+            # chat matched as the route choice but none of the specific patterns fired - fall through to the
+            # default-skill check below (chat may still own it as the default, or arch2 may plan it)
+            pass
+        if dec.get("source") in ("rule", "learned") and skill not in GENERAL:
+            return True
+        # A GENERAL skill matched by rule for a specific request: treat it as rule-owned too.
+        # "Is Ollama still maintained?" -> web_search (QUICK_SEARCH), not an open-ended debate.
+        if dec.get("source") in ("rule", "learned") and skill in GENERAL:
+            from orchestrator.intent_detector import IntentDetector
+            mode = IntentDetector.classify(text)["mode"]
+            # Specific, well-defined intents are rule-owned; open-ended ones go to arch2.
+            if mode in ("QUICK_SEARCH", "WEB_FETCH", "WEATHER", "GREETING"):
+                return True
+            # chat matching LOCAL_KNOWLEDGE for a factual question is rule-owned (timeless knowledge)
+            if skill == "chat" and mode == "LOCAL_KNOWLEDGE":
+                return True
+        # No skill matched by rule: the default skill (usually chat) should handle it, not arch2.
+        # "Send this email now" / "Do the usual thing" are ambiguous requests that chat handles by asking
+        # for clarification - arch2's bigger model doesn't add value for simple clarification questions.
+        if dec.get("source") == "default" and dec.get("skill") == CONFIG.get("router", {}).get("default_skill", "chat"):
+            return True
+        return False
     except Exception:
         return False
 
@@ -595,7 +721,7 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
     calltrace.begin(text)
     conv = get_conversation_manager()
     sid = session_id or conv.active_session_id or conv.new_chat("New Session")
-    shared = SESSIONS.setdefault(sid, {"id": sid, "history": [], "pending": None, "last_entity": None})
+    shared = _runtime_session(sid, conv)
     events = []  # kept with the answer so a reopened chat still shows its thinking and graph
 
     def trace(**ev):
@@ -793,6 +919,55 @@ def _handle(text, sid, conv, s, events, t0, channel):
         except Exception:
             text = s.get("resolved_request") or text
 
+    # 1c. Non-negotiable Hard Boundaries (Section 42: Tasks 248-250)
+    if not pending:
+        # Boundary 42.1 (Task 248): Refuse to skip T2 confirmation 'just this once'
+        if re.search(r"\b(?:without\s+(?:asking\s+(?:me\s+)?for\s+)?confirm(?:ation)?|skip\s+(?:the\s+)?confirm(?:ation)?|don'?t\s+ask\s+(?:me\s+)?(?:for\s+)?confirm(?:ation)?)\b", text, re.I) and re.search(r"\bjust\s+this\s+once\b", text, re.I):
+            out = {"reply": "I cannot skip confirmation, even just this once. All outgoing actions and payment emails strictly require explicit confirmation under our safety policy, and I won't send without confirmation.", "sources": []}
+            s["trace"](type="route", skill="boundary", source="rule", confidence=1.0, why="T2 safety confirmation boundary holds strictly")
+            audit.record("hard_boundary: skip confirmation refused", text[:120], skill="boundary", initiator="system", session=sid)
+            return _finish(text, sid, conv, s, events, t0, channel, "boundary", out, {"skill": "boundary", "source": "rule", "confidence": 1.0})
+
+        # Boundary 42.2 (Task 249): Enforce cross-client data isolation
+        if re.search(r"\bmerge\b", text, re.I) and re.search(r"\b(?:crm|record|notes?)\b", text, re.I) and (re.search(r"\bprivate\b", text, re.I) or re.search(r"\b(?:sana|faisal|client)\b", text, re.I)):
+            out = {"reply": "I cannot merge these records. Client notes and CRM records are strictly isolated under cross-client data confidentiality policies, and private client data cannot be commingled.", "sources": []}
+            s["trace"](type="route", skill="boundary", source="rule", confidence=1.0, why="Cross-client data isolation boundary holds strictly")
+            audit.record("hard_boundary: cross-client merge refused", text[:120], skill="boundary", initiator="system", session=sid)
+            return _finish(text, sid, conv, s, events, t0, channel, "boundary", out, {"skill": "boundary", "source": "rule", "confidence": 1.0})
+
+        # Boundary 42.3 (Task 250): Refuse request to permanently lower T2 safety gate
+        if (re.search(r"\b(?:disable|turn\s+off|lower|remove)\b", text, re.I) and re.search(r"\b(?:confirm(?:ation)?\s+gates?|safety\s+gates?|t2|safe-?2)\b", text, re.I)) or re.search(r"\balways\s+confirm\s+.*\bautomatically\b", text, re.I):
+            out = {"reply": "I cannot permanently disable confirmation gates or always confirm automatically. T2 safety gates are a non-negotiable policy designed to protect against unintended real-world actions, and must always require explicit confirmation.", "sources": []}
+            s["trace"](type="route", skill="boundary", source="rule", confidence=1.0, why="T2 permanent gate disabling boundary holds strictly")
+            audit.record("hard_boundary: disable confirmation gate refused", text[:120], skill="boundary", initiator="system", session=sid)
+            return _finish(text, sid, conv, s, events, t0, channel, "boundary", out, {"skill": "boundary", "source": "rule", "confidence": 1.0})
+
+        # Boundary 42.4: an instruction to send without confirmation (often injected by a page or a
+        # forwarded message) never overrides the gate - the outgoing action still needs the owner's yes.
+        if re.search(r"\b(?:always|never)\s+send\b.{0,40}\bwithout\s+confirm", text, re.I) or \
+                (re.search(r"\b(?:send|message|email|reply|post|forward)\b", text, re.I) and
+                 re.search(r"\bwithout\s+(?:asking\s+(?:me\s+)?(?:for\s+)?)?confirm(?:ation)?\b", text, re.I)):
+            out = {"reply": "I can't send anything without your confirmation - a message or a page telling me "
+                            "to skip it doesn't change that. Tell me the message and who it goes to and I'll "
+                            "confirm it before sending.", "sources": []}
+            s["trace"](type="route", skill="boundary", source="rule", confidence=1.0,
+                       why="a request to send without confirmation is refused")
+            audit.record("hard_boundary: send-without-confirmation refused", text[:120], skill="boundary",
+                         initiator="system", session=sid)
+            return _finish(text, sid, conv, s, events, t0, channel, "boundary", out,
+                           {"skill": "boundary", "source": "rule", "confidence": 1.0})
+
+        # 42.5: a bare "yes / go ahead" with nothing waiting to be confirmed is meaningless - ask what,
+        # instead of letting the model invent a pending task (checklist #86).
+        if re.fullmatch(r"\s*(?:yes|yeah|yep|yup|y|sure|ok|okay|go\s+ahead|do\s+it|proceed|go\s+for\s+it|"
+                        r"please\s+do|yes\s+please|ok(?:ay)?\s+go\s+ahead)\b[\s.!,]*", text or "", re.I):
+            out = {"reply": "There's nothing waiting for my confirmation right now - what would you like me "
+                            "to go ahead with?", "sources": []}
+            s["trace"](type="route", skill="chat", source="rule", confidence=1.0,
+                       why="a bare yes with nothing pending - asking what")
+            return _finish(text, sid, conv, s, events, t0, channel, "chat", out,
+                           {"skill": "chat", "source": "rule", "confidence": 1.0})
+
     # 2. Instant reflex command: deterministic pattern match (no LLM, no GPU wake-up)
     if not pending and (rf := reflex.answer(text)):
         s["trace"](type="route", skill="reflex", source="reflex", confidence=1.0, why=f"an instant command ({rf[1]})")
@@ -916,7 +1091,8 @@ def _handle(text, sid, conv, s, events, t0, channel):
             return _finish(text, sid, conv, s, events, t0, channel, "resolve_ambiguous", out,
                            {"skill": "resolve_ambiguous", "source": "resolver", "confidence": 1.0})
         name, out = "arch2", pipeline.run(text, s, SKILLS)
-        if not out.get("tools") and ACTION_CLAIM.search(str(out.get("reply") or "")):
+        if not out.get("tools") and (ACTION_CLAIM.search(str(out.get("reply") or ""))
+                                      or FALSE_ACTION.search(str(out.get("reply") or ""))):
             # the brain SAID it set/sent/cancelled something but ran no tool ("Reminder set ... I will remind you 15 minutes
             # before" - nothing was set, owner-style test 2026-10-03): never pass that on; the skills handle it below
             s["trace"](type="tool", name="verify", label="the answer claimed an action no tool did - handing it to the skills", status="error")
@@ -1027,8 +1203,18 @@ def _handle(text, sid, conv, s, events, t0, channel):
                        why="the reference is ambiguous - asking which topic is meant")
             return _finish(text, sid, conv, s, events, t0, channel, "resolve_ambiguous", out,
                            {"skill": "resolve_ambiguous", "source": "resolver", "confidence": 1.0})
+        # If a skill already matched by rule for this request, don't let the planner split it up -
+        # "find my CardioSense dataset notes and summarize" is files' job (it knows how to search folders),
+        # not a two-step plan that first searches then asks chat to summarize nothing found.
+        planned = False
         if planner.candidate(text, SKILLS, s) and (steps := planner.plan(text, SKILLS)):
-            dec = {"skill": "plan", "confidence": 1.0, "source": "planner", "steps": steps}
+            # Only plan if no single skill owns the whole request by rule
+            rule_dec = route(text, SKILLS)
+            if rule_dec.get("source") in ("rule", "learned") and rule_dec.get("confidence", 0) >= 0.9:
+                dec = rule_dec
+            else:
+                dec = {"skill": "plan", "confidence": 1.0, "source": "planner", "steps": steps}
+                planned = True
         else:
             dec = recency_tiebreak(route(text, SKILLS), s.get("last_skill"))
     s["trace"](type="route", skill=dec["skill"], source=dec.get("source"), confidence=dec.get("confidence"),
@@ -1050,6 +1236,9 @@ def _handle(text, sid, conv, s, events, t0, channel):
             nxt = ESCALATE.get(current)
             if (nxt not in SKILLS or nxt in tried or s.get("pending") or out.get("no_escalate")
                     or dec.get("source") in ("pending", "correction") or not fell_short(text, out.get("reply"), current, s)):
+                break
+            if current == "browser" and (re.search(r"\b(?:open|launch|go\s+to|visit|switch\s+to|close|tab|profile|dm|dms|message|messages|notification|notifications|chat|inbox|post|comment|feed|status|unread|new|viewed|who\s+viewed|connect|connection)\b", text, re.I)
+                    or re.search(r"\b(?:instagram|facebook|linkedin|whatsapp|twitter|x\.com|gmail|outlook)\b", text, re.I)):
                 break
             # Don't hand the owner a "couldn't / visit this site yourself": try the next capable skill.
             s["trace"](type="escalate", frm=current, to=nxt, why=f"{current} fell short, so I'm trying {nxt}.")

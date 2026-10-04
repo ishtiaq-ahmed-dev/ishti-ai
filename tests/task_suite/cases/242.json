@@ -1,0 +1,29 @@
+{
+ "id": 242,
+ "prompt_text": "Export my learned preferences as a readable file",
+ "category": "Data export, backup & portability (240-243)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "memory",
+  "owner",
+  "prefs",
+  "chat"
+ ],
+ "expected_outcome": "Confirms format, gives the actual content, not a vague summary",
+ "expected_reply_success": "Confirms format, gives the actual content, not a vague summary",
+ "expected_reply_failure": "If export format isn't built yet: says so",
+ "pass_criteria": {
+  "expected_skill": [
+   "learning",
+   "memory",
+   "owner"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

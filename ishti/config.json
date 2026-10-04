@@ -11,7 +11,7 @@
     "timeout_s": 120
   },
   "arch": {
-    "active": "arch1",
+    "active": "arch2",
     "note": "active: arch1 (existing dispatcher) or arch2 (intent-router -> qwen3:14b think/tool loop -> validation -> qwen3:14B final). Switch here, from the dashboard Settings -> Architecture card, or by asking ISHTI. arch2 memory adds a five-table unified store on SQLite + the existing Chroma; nothing else changes.",
     "arch2": {
       "models": {
@@ -99,7 +99,9 @@
         "--profile-dir-name",
         "Profile 10",
         "--output-dir",
-        "D:\\ISHTI\\data\\mcp_output"
+        "D:\\ISHTI\\data\\mcp_output",
+        "--timeout-navigation",
+        "25000"
       ],
       "token_key": "browser",
       "fallback": "browser_isolated"
@@ -114,7 +116,9 @@
         "--profile-dir-name",
         "Profile 9",
         "--output-dir",
-        "D:\\ISHTI\\data\\mcp_output"
+        "D:\\ISHTI\\data\\mcp_output",
+        "--timeout-navigation",
+        "25000"
       ],
       "token_key": "whatsapp",
       "fallback": "browser_isolated"
@@ -128,17 +132,19 @@
         "--user-data-dir",
         "D:\\ISHTI\\data\\mcp_browser_profile",
         "--output-dir",
-        "D:\\ISHTI\\data\\mcp_output"
+        "D:\\ISHTI\\data\\mcp_output",
+        "--timeout-navigation",
+        "25000"
       ]
     }
   },
   "browser_profiles": {
-    "note": "Which Chrome profile (mcp_servers entry) each skill browses with; skills not listed use default",
+    "note": "Which Chrome profile (mcp_servers entry) each skill browses with; skills not listed use default. The owner's MAIN profile is 'main' = Chrome Profile 9 and it is the profile for mail AND social media, so everything defaults to it. 'login' (Profile 10) is only a fallback for a site that is genuinely not signed in on Profile 9.",
     "default": "main",
     "whatsapp": "main",
     "gemini": "main",
     "online_fallback": "main",
-    "email": "login",
+    "email": "main",
     "login": "login",
     "calendar": "main",
     "travel": "main",
@@ -253,5 +259,12 @@
     "voices_note": "Kokoro-82M (Apache-2.0; synthetic voices, no real person cloned) is the live voice: CPU, no VRAM, ~4x faster than real time, speaks Urdu too. Piper voices are the classic fallback. Fish S2 was measured at 2.7x slower than real time and 15.2 of 16.3 GB VRAM next to Qwen - kept only as an optional download in Settings. The owner switches with 'use the deep male voice' or in Settings -> Models & voices.",
     "piper_voice": "en_US-lessac-medium",
     "piper_dir": "D:\\ISHTI\\data\\piper"
+  },
+  "oauth": {
+    "gmail": {
+      "client_id": "",
+      "client_secret": "",
+      "note": "Google Cloud Console -> APIs & Services -> Credentials -> Create OAuth client ID -> Application type **Desktop app**; enable the Gmail API. Desktop client secrets are not secret - they ship with the app - so they live here next to your config."
+    }
   }
 }

@@ -1,0 +1,42 @@
+{
+ "id": 173,
+ "prompt_text": "Pull the thumbnail frame from this video at 1:30",
+ "category": "Media & video tasks (171-176)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "video",
+  "media",
+  "files",
+  "folders",
+  "system",
+  "meta",
+  "chat"
+ ],
+ "expected_outcome": "Confirms extracted, where saved",
+ "expected_reply_success": "Confirms extracted, where saved",
+ "expected_reply_failure": "If timestamp is beyond video length: says so instead of guessing a frame",
+ "pass_criteria": {
+  "expected_skill": [
+   "video",
+   "media"
+  ],
+  "ok_any": [
+   "thumbnail",
+   "frame",
+   "1:30",
+   "saved",
+   "longer than",
+   "no video",
+   "which",
+   "couldn't"
+  ],
+  "bad_any": [],
+  "forbid": [
+   "fileops"
+  ]
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

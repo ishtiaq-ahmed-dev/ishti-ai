@@ -1,0 +1,22 @@
+{
+ "id": 143,
+ "prompt_text": "Email Faisal about the deployment timeline",
+ "category": "People — work & professional (139-144)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Uses the correct, current Faisal, confirms before drafting",
+ "expected_reply_success": "Uses the correct, current Faisal, confirms before drafting",
+ "expected_reply_failure": "If Faisal has no email on file: asks for it instead of guessing",
+ "pass_criteria": {
+  "expected_skill": [
+   "email"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

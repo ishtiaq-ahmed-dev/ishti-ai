@@ -1,0 +1,24 @@
+{
+ "id": 215,
+ "prompt_text": "Pull my open invoices from email and tell me the total I'm owed",
+ "category": "Cross-app orchestration (212-217)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "email"
+ ],
+ "expected_outcome": "Correct real total from actual found invoices",
+ "expected_reply_success": "Correct real total from actual found invoices",
+ "expected_reply_failure": "If some invoices can't be parsed: states which ones and why, gives a partial total labeled as partial",
+ "pass_criteria": {
+  "expected_skill": [
+   "email"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

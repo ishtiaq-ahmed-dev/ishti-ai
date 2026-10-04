@@ -1,0 +1,38 @@
+{
+ "id": 190,
+ "prompt_text": "Which architecture profile are you running?",
+ "category": "Self-diagnostics & status reporting (188-192)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "dev",
+  "terminal",
+  "devops",
+  "gitops",
+  "chat",
+  "system",
+  "meta"
+ ],
+ "expected_outcome": "States the actual active profile",
+ "expected_reply_success": "States the actual active profile",
+ "expected_reply_failure": "N/A — this should never be wrong if the system is self-consistent",
+ "pass_criteria": {
+  "expected_skill": [
+   "system",
+   "chat"
+  ],
+  "ok_any": [
+   "arch",
+   "arch1",
+   "arch2",
+   "profile",
+   "router",
+   "active"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

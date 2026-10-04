@@ -1,0 +1,32 @@
+{
+ "id": 197,
+ "prompt_text": "Undo that",
+ "category": "Undo / cancel / correction handling (197-200)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Confirms exactly what was undone",
+ "expected_reply_success": "Confirms exactly what was undone",
+ "expected_reply_failure": "Wrong: undoes the wrong thing, or claims undo when the action wasn't actually reversible",
+ "pass_criteria": {
+  "expected_skill": [
+   "folders",
+   "fileops",
+   "chat"
+  ],
+  "ok_any": [
+   "undo",
+   "undid",
+   "reversed",
+   "nothing to undo",
+   "restored",
+   "no recent",
+   "revert"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

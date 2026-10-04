@@ -1,0 +1,41 @@
+{
+ "id": 243,
+ "prompt_text": "How much memory data do you have stored about me total?",
+ "category": "Data export, backup & portability (240-243)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "dev",
+  "terminal",
+  "devops",
+  "gitops",
+  "chat",
+  "system",
+  "meta"
+ ],
+ "expected_outcome": "Honest estimate from real data",
+ "expected_reply_success": "Honest estimate from real data",
+ "expected_reply_failure": "Wrong: a made-up round number with no basis",
+ "pass_criteria": {
+  "expected_skill": [
+   "memory",
+   "memory_manager",
+   "meta",
+   "owner",
+   "system"
+  ],
+  "ok_any": [
+   "memory item",
+   "entity record",
+   "count",
+   "memory",
+   "stored",
+   "right now"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

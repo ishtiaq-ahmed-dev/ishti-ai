@@ -1,0 +1,46 @@
+{
+ "id": 63,
+ "prompt_text": "Research competitor pricing for Zyntiqo, save it to a file, and remind me to review it tomorrow",
+ "category": "Multi-step chained tasks (62-69)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "reminders",
+  "files",
+  "folders",
+  "fileops",
+  "web_search",
+  "web_fetch",
+  "browser",
+  "deep_research",
+  "chat",
+  "system",
+  "meta"
+ ],
+ "expected_outcome": "Confirms each step completed, final summary of what was created",
+ "expected_reply_success": "Confirms each step completed, final summary of what was created",
+ "expected_reply_failure": "If any step fails mid-chain: says exactly which step failed, doesn't claim the whole chain succeeded",
+ "pass_criteria": {
+  "expected_skill": [
+   "arch2",
+   "deep_research",
+   "fileops",
+   "plan",
+   "reminders",
+   "web_search",
+   "chat"
+  ],
+  "ok_any": [
+   "zyntiqo",
+   "saved",
+   "remind",
+   "file",
+   "step"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

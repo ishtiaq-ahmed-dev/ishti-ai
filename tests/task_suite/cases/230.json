@@ -1,0 +1,24 @@
+{
+ "id": 230,
+ "prompt_text": "You're being too formal, just talk normal with me",
+ "category": "Personalization & adaptation over time (229-233)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Shifts to a casual tone and keeps it going forward",
+ "expected_reply_success": "Shifts to a casual tone and keeps it going forward",
+ "expected_reply_failure": "Wrong: reverts to formal after one or two exchanges",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat",
+   "owner",
+   "learning"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

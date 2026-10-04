@@ -1,0 +1,46 @@
+{
+ "id": 192,
+ "prompt_text": "Is anything currently broken that you know of?",
+ "category": "Self-diagnostics & status reporting (188-192)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "dev",
+  "terminal",
+  "devops",
+  "gitops",
+  "chat",
+  "video",
+  "media",
+  "files",
+  "folders",
+  "system",
+  "meta"
+ ],
+ "expected_outcome": "Honest answer based on what's actually known to be broken/blocked",
+ "expected_reply_success": "Honest answer based on what's actually known to be broken/blocked",
+ "expected_reply_failure": "Wrong: claims everything's fine when known issues exist",
+ "pass_criteria": {
+  "expected_skill": [
+   "system",
+   "chat"
+  ],
+  "ok_any": [
+   "broken",
+   "issue",
+   "nothing",
+   "no known",
+   "needs",
+   "blocked",
+   "fine",
+   "working"
+  ],
+  "bad_any": [],
+  "forbid": [
+   "web_search"
+  ]
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

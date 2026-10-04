@@ -1,0 +1,35 @@
+{
+ "id": 62,
+ "prompt_text": "Find my CardioSense dataset notes and summarize the key findings",
+ "category": "Multi-step chained tasks (62-69)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "files",
+  "folders",
+  "fileops"
+ ],
+ "expected_outcome": "Finds file, gives summary, cites which file",
+ "expected_reply_success": "Finds file, gives summary, cites which file",
+ "expected_reply_failure": "If file not found: says where it looked, asks for a hint",
+ "pass_criteria": {
+  "expected_skill": [
+   "files",
+   "folders",
+   "deep_research"
+  ],
+  "ok_any": [
+   "cardi",
+   "found",
+   "no file",
+   "couldn't",
+   "could not",
+   "summary"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

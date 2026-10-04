@@ -1,0 +1,37 @@
+{
+ "id": 19,
+ "prompt_text": "Open my Downloads folder",
+ "category": "Files & folders (19-26)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "files",
+  "folders",
+  "fileops",
+  "system",
+  "meta",
+  "chat"
+ ],
+ "expected_outcome": "Opens it, confirms",
+ "expected_reply_success": "Opens it, confirms",
+ "expected_reply_failure": "If path doesn't exist: states that plainly",
+ "pass_criteria": {
+  "expected_skill": [
+   "files",
+   "desktop",
+   "folders",
+   "apps"
+  ],
+  "ok_any": [
+   "download",
+   "opened",
+   "couldn't",
+   "could not"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

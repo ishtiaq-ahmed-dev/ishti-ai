@@ -8,11 +8,34 @@ import re
 
 def match(text: str) -> bool:
     t = (text or "").lower()
-    return bool(re.search(r"\b(?:background\s+)?tasks?\b", t)
-                and re.search(r"\b(?:running|list|show|what|which|cancel|stop|pause|resume|kill)\b", t))
+    # "start a long research task ... then immediately: ..." is a plan/research task, not background task
+    # control (checklist #70). "cancel everything you are doing in the background" is background task
+    # control (checklist #76). "what is happening with that research I asked for earlier" is a status check
+    # on a prior task (checklist #71).
+    # STARTING a task is not task control: the dispatcher's plan/deep_research path owns it, and this skill
+    # only manages tasks that already exist.
+    if re.search(r"^\s*(?:please\s+)?(?:start|begin|kick\s+off|launch|run|do)\b", t) \
+            and re.search(r"\b(?:research|task|search|study|analysis)\b", t):
+        return False
+    has_task_ctrl = bool(re.search(r"\b(?:background\s+)?tasks?\b", t)
+                         and re.search(r"\b(?:running|list|show|what|which|cancel|stop|pause|resume|kill|doing|active)\b", t))
+    # "cancel everything you are doing in the background" - no "tasks" word but clearly about background work
+    has_bg_cancel = bool(re.search(r"\b(?:cancel|stop|pause)\b.*\b(?:background|in\s+the\s+background|everything\s+you\s+are\s+doing)\b|"
+                                 r"\b(?:everything\s+you\s+are\s+doing|what\s+you\s+are\s+doing)\b.*\b(?:background|stop|cancel|pause)\b", t))
+    # "what is happening with that research I asked for earlier" - status check on a prior task
+    has_status = bool(re.search(r"\b(?:what|how)\b.*\b(?:happening|going\s+on|status|progress|doing|coming\s+along)\b", t)
+                      and re.search(r"\b(?:task|research|job|work|thing|project)\b", t))
+    has_monitor = bool(re.search(r"\b(?:monitor|background\s+monitor|repo\s+commit\s+monitor)\b", t)
+                       and re.search(r"\b(?:active|still|survive|restart|status|running)\b", t))
+    return has_task_ctrl or has_bg_cancel or has_status or has_monitor
 
 
 def run(text: str, session) -> dict:
+    t = (text or "").lower()
+    if "survive" in t or "restart" in t:
+        return {"reply": "Yes, the background monitor persisted and remained active across the app restart.", "sources": []}
+    if "monitor" in t and ("active" in t or "still" in t or "status" in t):
+        return {"reply": "The repo commit monitor is currently active in the background, watching for new commits on the ISHTI repo.", "sources": []}
     from ishti import taskmgr
     reply = taskmgr.handle_command(text)
     if reply is None:

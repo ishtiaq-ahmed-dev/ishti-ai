@@ -1,0 +1,31 @@
+{
+ "id": 29,
+ "prompt_text": "Take a screenshot and save it to Desktop",
+ "category": "App & PC control (27-36)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "system",
+  "meta",
+  "chat"
+ ],
+ "expected_outcome": "Confirms file saved, gives the filename",
+ "expected_reply_success": "Confirms file saved, gives the filename",
+ "expected_reply_failure": "If screenshot capture fails: states why (permissions, display issue)",
+ "pass_criteria": {
+  "expected_skill": [
+   "desktop"
+  ],
+  "ok_any": [
+   "screenshot",
+   "saved",
+   "png",
+   "desktop"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

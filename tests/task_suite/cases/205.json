@@ -1,0 +1,32 @@
+{
+ "id": 205,
+ "prompt_text": "Which skill handled that request?",
+ "category": "Explaining its own actions & reasoning (201-205)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "dev",
+  "terminal",
+  "devops",
+  "gitops",
+  "chat",
+  "system",
+  "meta"
+ ],
+ "expected_outcome": "Names the actual skill(s) invoked",
+ "expected_reply_success": "Names the actual skill(s) invoked",
+ "expected_reply_failure": "Wrong: misattributes it to a skill that wasn't actually used",
+ "pass_criteria": {
+  "expected_skill": [
+   "meta",
+   "system",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

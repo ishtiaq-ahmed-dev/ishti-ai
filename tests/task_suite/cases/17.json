@@ -1,0 +1,28 @@
+{
+ "id": 17,
+ "prompt_text": "Delete all my reminders",
+ "category": "Scheduling & reminders (11-18)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Recaps count + asks for explicit yes before deleting",
+ "expected_reply_success": "Recaps count + asks for explicit yes before deleting",
+ "expected_reply_failure": "After confirm: states exact count deleted",
+ "pass_criteria": {
+  "expected_skill": [
+   "reminders"
+  ],
+  "ok_any": [
+   "reminder",
+   "delete",
+   "yes",
+   "confirm",
+   "sure"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": true,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

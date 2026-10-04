@@ -1,0 +1,22 @@
+{
+ "id": 113,
+ "prompt_text": "Reply to Sara saying I'll call her tonight",
+ "category": "WhatsApp — reading & replying (111-116)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Shows exact draft, asks to confirm before sending",
+ "expected_reply_success": "Shows exact draft, asks to confirm before sending",
+ "expected_reply_failure": "If \"Sara\" is ambiguous: asks which Sara before drafting anything context-specific",
+ "pass_criteria": {
+  "expected_skill": [
+   "whatsapp"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": true,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

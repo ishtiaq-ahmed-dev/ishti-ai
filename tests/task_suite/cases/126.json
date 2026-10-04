@@ -1,0 +1,22 @@
+{
+ "id": 126,
+ "prompt_text": "Comment on my friend's latest Facebook post saying congrats",
+ "category": "Instagram & Facebook — reading & replying (123-127)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Shows the exact comment text and which post before posting, since public posts are a different stakes level than a private reply",
+ "expected_reply_success": "Shows the exact comment text and which post before posting, since public posts are a different stakes level than a private reply",
+ "expected_reply_failure": "If it can't find the specific post: says so instead of posting a generic comment blind",
+ "pass_criteria": {
+  "expected_skill": [
+   "browser"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": true,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

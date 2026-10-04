@@ -144,6 +144,14 @@ def arch2_block(request: str, state_summary: str = "") -> str:
                        memories=memories, people=people_lines, relationships=rel_lines,
                        procedures=procedures, lessons=lessons, task_state="",
                        tools=None, include_request=False)]  # the pipeline adds the request itself
+    # Verified glossary: a definition question about a local-AI term gets the sourced definition in the
+    # context, so the small model answers from it instead of inventing a meaning (see ishti/glossary.py).
+    try:
+        from ishti import glossary
+        if line := glossary.context_line(request):
+            blocks.append(line)
+    except Exception as _exc:
+        swallowed('ishti/core/assemble.py:arch2_block.glossary', _exc)
     if convo:
         blocks.append("POSSIBLY RELEVANT PAST CONTEXT:\n" + "\n".join(f"- {c}" for c in convo))
     out = "\n\n".join(x for x in blocks if x)

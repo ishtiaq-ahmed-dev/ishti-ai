@@ -1,0 +1,37 @@
+{
+  "name": "connectors",
+  "version": "1.0.0",
+  "description": "Connect any OAuth 2.0 service with a Client ID and Client Secret (Gmail, Drive, Sheets, Docs, Calendar, People, YouTube, Microsoft/Outlook, GitHub, Instagram, Facebook, LinkedIn), show what is connected, and disconnect one.",
+  "route": "connect or disconnect a service with a client id and secret, authorise an account, list which accounts are connected",
+  "priority": 6,
+  "laya": false,
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "status": "working",
+  "tier": "T1",
+  "scope": {
+    "write": [
+      "data",
+      "ishti"
+    ],
+    "net": [
+      "*.google.com",
+      "*.googleapis.com",
+      "*.github.com",
+      "*.facebook.com",
+      "*.graph.facebook.com",
+      "*.linkedin.com",
+      "*.microsoftonline.com",
+      "*.graph.microsoft.com",
+      "127.0.0.1"
+    ],
+    "apps": false
+  },
+  "category": "Settings & Connections",
+  "path": "ishti/skills/connectors",
+  "test_file": "tests/skills/connectors/test_connectors.py"
+}

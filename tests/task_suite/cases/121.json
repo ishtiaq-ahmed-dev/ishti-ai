@@ -1,0 +1,22 @@
+{
+ "id": 121,
+ "prompt_text": "Forward the invoice email to my accountant",
+ "category": "Email — reading & replying (117-122)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Exact recap of email + recipient before sending",
+ "expected_reply_success": "Exact recap of email + recipient before sending",
+ "expected_reply_failure": "If \"my accountant\" isn't a known contact: asks for the email address or which saved contact",
+ "pass_criteria": {
+  "expected_skill": [
+   "email"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": true,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

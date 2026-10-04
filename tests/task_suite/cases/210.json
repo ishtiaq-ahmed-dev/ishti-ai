@@ -1,0 +1,28 @@
+{
+ "id": 210,
+ "prompt_text": "Write a thumbnail text overlay for this video idea",
+ "category": "Creative & content generation tasks (206-211)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "chat",
+  "writing",
+  "video"
+ ],
+ "expected_outcome": "Punchy, on-topic, length-appropriate for a thumbnail",
+ "expected_reply_success": "Punchy, on-topic, length-appropriate for a thumbnail",
+ "expected_reply_failure": "N/A for hard failure — flag generic or overly long output",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat",
+   "video",
+   "writing"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

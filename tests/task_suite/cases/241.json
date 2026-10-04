@@ -1,0 +1,31 @@
+{
+ "id": 241,
+ "prompt_text": "Show me everything you know about my family",
+ "category": "Data export, backup & portability (240-243)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "memory",
+  "owner",
+  "prefs",
+  "chat"
+ ],
+ "expected_outcome": "Accurate, complete listing of actually-stored family entities",
+ "expected_reply_success": "Accurate, complete listing of actually-stored family entities",
+ "expected_reply_failure": "\"Nothing stored under family yet\" if genuinely empty",
+ "pass_criteria": {
+  "expected_skill": [
+   "memory",
+   "relationships",
+   "contacts",
+   "owner",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

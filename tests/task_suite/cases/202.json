@@ -1,0 +1,25 @@
+{
+ "id": 202,
+ "prompt_text": "What steps did you take to find that file?",
+ "category": "Explaining its own actions & reasoning (201-205)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Lists the real search order (D:, Desktop, Downloads per spec) and what it found where",
+ "expected_reply_success": "Lists the real search order (D:, Desktop, Downloads per spec) and what it found where",
+ "expected_reply_failure": "Wrong: describes a process it didn't actually follow",
+ "pass_criteria": {
+  "expected_skill": [
+   "meta",
+   "system",
+   "files",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

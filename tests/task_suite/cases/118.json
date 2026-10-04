@@ -1,0 +1,22 @@
+{
+ "id": 118,
+ "prompt_text": "Read me the email from the JQ AI client",
+ "category": "Email — reading & replying (117-122)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "States actual content, who it's from",
+ "expected_reply_success": "States actual content, who it's from",
+ "expected_reply_failure": "If no matching email found: says so, asks for more detail",
+ "pass_criteria": {
+  "expected_skill": [
+   "email"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

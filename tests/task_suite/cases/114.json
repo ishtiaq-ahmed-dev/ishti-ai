@@ -1,0 +1,28 @@
+{
+ "id": 114,
+ "prompt_text": "Catch me up on my group chat with the IMS classmates",
+ "category": "WhatsApp — reading & replying (111-116)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [
+  "whatsapp",
+  "apps",
+  "browser",
+  "desktop"
+ ],
+ "expected_outcome": "Summary of actual recent messages, who said what in brief",
+ "expected_reply_success": "Summary of actual recent messages, who said what in brief",
+ "expected_reply_failure": "If group not found by that description: asks for the exact group name",
+ "pass_criteria": {
+  "expected_skill": [
+   "whatsapp",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

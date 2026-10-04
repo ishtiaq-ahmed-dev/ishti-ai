@@ -1,0 +1,31 @@
+{
+ "id": 92,
+ "prompt_text": "Actually, forget Chrome - for work I now prefer Edge",
+ "category": "Memory & personalization (89-94)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Prefers the newer explicit statement, doesn't just silently keep the old one",
+ "expected_reply_success": "Prefers the newer explicit statement, doesn't just silently keep the old one",
+ "expected_reply_failure": "Wrong: keeps acting on the outdated preference",
+ "pass_criteria": {
+  "expected_skill": [
+   "memory_manager",
+   "owner",
+   "memory"
+  ],
+  "ok_any": [
+   "edge",
+   "prefer",
+   "updated",
+   "chrome",
+   "noted",
+   "remember"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

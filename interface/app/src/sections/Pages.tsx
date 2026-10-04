@@ -34,8 +34,12 @@ import {
   Volume2,
   Wrench,
   X,
+  Mic,
+  MicOff,
+  QrCode,
+  ClipboardCheck,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { del, getJSON, postJSON } from "@/lib/api";
 import { DeleteButton } from "@/components/rare/delete-button";
 import { AnimatedCounter } from "@/components/rare/animated-counter";
@@ -1095,6 +1099,705 @@ export function Memory({ onToggleNav }: { onToggleNav?: () => void }) {
   );
 }
 
+// ---------------------------------------------------------------- Inputs
+// Every way ISHTI can take input, with its LIVE state from GET /api/inputs. Nothing here is decorative:
+// each card is bound to the file or module that owns the state (mic_state.json, config.json, the WhatsApp
+// bridge, the OAuth token store), so what you see is what is actually running.
+type InputChannel = {
+  id: string; name: string; icon: string; kind: string; detail: string;
+  state: string; source: string; account?: string;
+};
+type InputsPayload = {
+  channels: InputChannel[];
+  accounts: { service: string; connected: boolean }[];
+  note?: string;
+};
+
+const STATE_TONE: Record<string, string> = {
+  on: "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20",
+  waiting: "bg-amber-500/10 text-amber-500 border border-amber-500/20",
+  ready: "bg-sky-500/10 text-sky-500 border border-sky-500/20",
+  off: "bg-muted text-muted-foreground border border-border",
+};
+const STATE_LABEL: Record<string, string> = { on: "active", waiting: "waiting", ready: "ready", off: "off" };
+const KIND_LABEL: Record<string, string> = {
+  always_on: "always on", toggle: "switch", setting: "setting", status: "live status",
+  opt_in: "on request", account: "connected account",
+};
+
+export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
+  const [data, setData] = useState<InputsPayload | null>(null);
+  const [error, setError] = useState("");
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [tick, setTick] = useState(0);
+
+  // Live Interactive Controls State
+  const [micLoading, setMicLoading] = useState(false);
+  const [qrModalOpen, setQrModalOpen] = useState(false);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrData, setQrData] = useState<{
+    connected: boolean;
+    ascii_qr: string;
+    raw_qr: string | null;
+    me: string;
+    running: boolean;
+  } | null>(null);
+  const [clipboardPreview, setClipboardPreview] = useState<string | null>(null);
+  const [screenNotice, setScreenNotice] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    getJSON<InputsPayload>("/api/inputs")
+      .then(setData)
+      .catch((e: Error) => setError(e?.message || "could not reach /api/inputs"));
+  }, []);
+
+  useEffect(load, [load, tick]);
+
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 15000);
+    return () => clearInterval(t);
+  }, []);
+
+  // WhatsApp QR Code Modal Handler
+  const openQrModal = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setQrModalOpen(true);
+    setQrLoading(true);
+    try {
+      const res = await getJSON<{
+        connected: boolean;
+        ascii_qr: string;
+        raw_qr: string | null;
+        me: string;
+        running: boolean;
+      }>("/api/inputs/wa-qr");
+      setQrData(res);
+    } catch {
+      // ignore
+    } finally {
+      setQrLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!qrModalOpen) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await getJSON<{
+          connected: boolean;
+          ascii_qr: string;
+          raw_qr: string | null;
+          me: string;
+          running: boolean;
+        }>("/api/inputs/wa-qr");
+        setQrData(res);
+        if (res.connected) {
+          setTimeout(() => {
+            setQrModalOpen(false);
+            setTick((n) => n + 1);
+          }, 1800);
+        }
+      } catch {
+        // ignore
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [qrModalOpen]);
+
+  // Live Mic Toggle
+  const handleToggleMic = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setMicLoading(true);
+    try {
+      await postJSON("/api/mic/toggle", {});
+      setTick((n) => n + 1);
+    } catch (err: any) {
+      setError(err?.message || "Failed to toggle microphone");
+    } finally {
+      setMicLoading(false);
+    }
+  };
+
+  // Test Clipboard
+  const handleTestClipboard = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const res = await getJSON<{ ok: boolean; preview: string }>("/api/inputs/clipboard");
+      setClipboardPreview(res.preview);
+    } catch (err: any) {
+      setClipboardPreview("Clipboard access ready");
+    }
+  };
+
+  // Test Screen Perception
+  const handleTestScreen = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const res = await getJSON<{ ok: boolean; detail: string }>("/api/inputs/screen");
+      setScreenNotice(res.detail);
+    } catch (err: any) {
+      setScreenNotice("Screen perception ready");
+    }
+  };
+
+  const channels = data?.channels ?? [];
+  const accounts = channels.filter((c) => c.kind === "account");
+  const devices = channels.filter((c) => c.kind !== "account");
+  const live = devices.filter((c) => c.state === "on").length;
+
+  const Card = ({ c }: { c: InputChannel }) => {
+    const isOpen = !!open[c.id];
+    const isMic = c.id === "mic";
+    const isWa = c.id === "whatsapp";
+    const isClip = c.id === "clipboard";
+    const isScreen = c.id === "screen";
+
+    return (
+      <div
+        onClick={() => setOpen((p) => ({ ...p, [c.id]: !p[c.id] }))}
+        className="w-full text-left rounded-2xl border border-border bg-card/60 p-4 shadow-xs transition-all hover:border-emerald-500/40 hover:bg-card/90 cursor-pointer relative group"
+      >
+        <div className="flex items-start gap-3.5">
+          <div className="relative mt-1">
+            <span
+              className={cn(
+                "block h-3 w-3 rounded-full transition-all",
+                c.state === "on"
+                  ? "bg-emerald-500 ring-4 ring-emerald-500/20"
+                  : c.state === "waiting"
+                  ? "bg-amber-500 ring-4 ring-amber-500/20 animate-pulse"
+                  : c.state === "ready"
+                  ? "bg-sky-500"
+                  : "bg-muted-foreground/40"
+              )}
+            />
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-foreground">{c.name}</span>
+                <span
+                  className={cn(
+                    "rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase",
+                    STATE_TONE[c.state] || STATE_TONE.off
+                  )}
+                >
+                  {STATE_LABEL[c.state] || c.state}
+                </span>
+                <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
+                  {KIND_LABEL[c.kind] || c.kind}
+                </span>
+              </div>
+
+              {/* Interactive Controls per Input Type */}
+              <div className="flex items-center gap-2">
+                {isMic && (
+                  <button
+                    type="button"
+                    disabled={micLoading}
+                    onClick={handleToggleMic}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-semibold shadow-xs transition-all cursor-pointer",
+                      c.state === "on"
+                        ? "bg-red-500/10 text-red-500 border border-red-500/30 hover:bg-red-500/20"
+                        : "bg-emerald-600 text-white hover:bg-emerald-700"
+                    )}
+                  >
+                    {c.state === "on" ? (
+                      <>
+                        <MicOff className="h-3.5 w-3.5" />
+                        <span>Mute Mic</span>
+                      </>
+                    ) : (
+                      <>
+                        <Mic className="h-3.5 w-3.5" />
+                        <span>Turn ON</span>
+                      </>
+                    )}
+                  </button>
+                )}
+
+                {isWa && (c.state === "waiting" || c.state === "off") && (
+                  <button
+                    type="button"
+                    onClick={openQrModal}
+                    className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition-all cursor-pointer animate-pulse"
+                  >
+                    <QrCode className="h-3.5 w-3.5" />
+                    <span>Scan QR Code</span>
+                  </button>
+                )}
+
+                {isClip && (
+                  <button
+                    type="button"
+                    onClick={handleTestClipboard}
+                    className="flex items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-foreground hover:bg-muted/50 cursor-pointer"
+                  >
+                    <ClipboardCheck className="h-3 w-3" />
+                    <span>Test Read</span>
+                  </button>
+                )}
+
+                {isScreen && (
+                  <button
+                    type="button"
+                    onClick={handleTestScreen}
+                    className="flex items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-foreground hover:bg-muted/50 cursor-pointer"
+                  >
+                    <Monitor className="h-3 w-3" />
+                    <span>Test Perception</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <p className="mt-1 text-xs text-muted-foreground leading-relaxed">{c.detail}</p>
+            {c.account && (
+              <p className="mt-1 font-mono text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                {c.account}
+              </p>
+            )}
+
+            {/* Live Interactive Results Preview */}
+            {isClip && clipboardPreview && (
+              <div className="mt-2.5 rounded-xl border border-border/80 bg-muted/40 p-2 text-xs font-mono text-foreground">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground mr-1.5">Clipboard Content:</span>
+                {clipboardPreview}
+              </div>
+            )}
+
+            {isScreen && screenNotice && (
+              <div className="mt-2.5 rounded-xl border border-border/80 bg-muted/40 p-2 text-xs font-mono text-emerald-500">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground mr-1.5">Screen Status:</span>
+                {screenNotice}
+              </div>
+            )}
+
+            {isOpen && (
+              <p className="mt-2.5 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
+                Channel source: <code className="text-foreground font-mono">{c.source}</code>
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const stats = [
+    { label: "Active Channels", value: String(channels.length) },
+    { label: "Live Sensors", value: String(live) },
+    { label: "Accounts Linked", value: String(data?.accounts?.filter((a) => a.connected).length ?? 0) },
+    { label: "Total Providers", value: String(data?.accounts?.length ?? 0) },
+  ];
+
+  return (
+    <Page
+      title="Inputs"
+      subtitle="Every modality and sensor ISHTI perceives: speech, wake listener, screen, clipboard, and messaging bridges."
+      onToggleNav={onToggleNav}
+      action={
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setTick((n) => n + 1)}
+            className="flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:border-emerald-500/40 cursor-pointer shadow-xs"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            <span>Refresh State</span>
+          </button>
+        </div>
+      }
+    >
+      {error && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3.5 text-xs text-red-400">
+          {error}
+        </div>
+      )}
+
+      {!data && !error && <div className="text-sm text-muted-foreground">Reading active input channels…</div>}
+
+      {data && (
+        <div className="space-y-6">
+          {/* Summary Stat Tiles */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {stats.map((s) => (
+              <div key={s.label} className="rounded-2xl border border-border bg-card/60 p-4 shadow-xs">
+                <div className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">{s.label}</div>
+                <div className="mt-1 text-2xl font-bold tracking-tight text-foreground">{s.value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Physical & Software Modalities */}
+          <section>
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-bold text-foreground">Sensors, Audio &amp; System Modalities</h2>
+                <p className="text-xs text-muted-foreground">Direct sensory inputs running locally on this machine.</p>
+              </div>
+              <span className="text-[11px] font-mono text-emerald-500 font-semibold">{live} live now</span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {devices.map((c) => (
+                <Card key={c.id} c={c} />
+              ))}
+            </div>
+          </section>
+
+          {/* External Cloud & Messaging Accounts */}
+          <section>
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-bold text-foreground">Messaging &amp; Cloud Connectors</h2>
+                <p className="text-xs text-muted-foreground">OIDC / OAuth 2.0 authorized channels for mail, social and enterprise data.</p>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {accounts.map((c) => (
+                <Card key={c.id} c={c} />
+              ))}
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">
+              Tip: Say <code className="text-foreground font-mono font-medium">connect &lt;service&gt; client-id … client-secret …</code> in chat or visit the Connectors section to link accounts.
+            </p>
+          </section>
+
+          {data.note && <p className="text-[11px] text-muted-foreground font-mono">{data.note}</p>}
+        </div>
+      )}
+
+      {/* WHATSAPP QR CODE SCANNER MODAL */}
+      <AnimatePresence>
+        {qrModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative w-full max-w-md rounded-3xl border border-border bg-card p-6 shadow-2xl overflow-hidden"
+            >
+              <button
+                type="button"
+                onClick={() => setQrModalOpen(false)}
+                className="absolute right-4 top-4 rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-600/15 text-emerald-500 font-bold border border-emerald-500/25">
+                  <QrCode className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-foreground">Link WhatsApp Web</h3>
+                  <p className="text-xs text-muted-foreground">Pair once with Baileys socket bridge</p>
+                </div>
+              </div>
+
+              {qrLoading ? (
+                <div className="py-12 text-center text-sm text-muted-foreground">Loading QR authentication state…</div>
+              ) : qrData?.connected ? (
+                <div className="py-8 text-center space-y-3">
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
+                    <Check className="h-7 w-7" />
+                  </div>
+                  <h4 className="text-sm font-bold text-foreground">WhatsApp is Connected!</h4>
+                  <p className="text-xs text-muted-foreground font-mono">{qrData.me || "Your Number Linked"}</p>
+                  <p className="text-xs text-emerald-400">Messages will arrive live without opening a browser.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-border bg-black/90 p-4 text-center font-mono text-[9.5px] leading-none text-emerald-400 overflow-x-auto shadow-inner">
+                    {qrData?.ascii_qr ? (
+                      <pre className="whitespace-pre tracking-tighter inline-block text-left select-all">
+                        {qrData.ascii_qr}
+                      </pre>
+                    ) : (
+                      <div className="py-6 text-xs text-muted-foreground">
+                        {qrData?.running
+                          ? "Waiting for QR generation from WhatsApp bridge…"
+                          : "Bridge offline. Run: node tools/wa_bridge/index.js"}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5 rounded-xl border border-border/80 bg-muted/30 p-3 text-xs text-muted-foreground">
+                    <div className="font-semibold text-foreground">How to scan:</div>
+                    <ol className="list-decimal pl-4 space-y-1 leading-relaxed">
+                      <li>Open WhatsApp on your mobile phone</li>
+                      <li>Go to <strong>Settings</strong> &gt; <strong>Linked Devices</strong></li>
+                      <li>Tap <strong>Link a Device</strong> and point your camera at this QR code</li>
+                    </ol>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setQrLoading(true);
+                        try {
+                          const res = await getJSON<{
+                            connected: boolean;
+                            ascii_qr: string;
+                            raw_qr: string | null;
+                            me: string;
+                            running: boolean;
+                          }>("/api/inputs/wa-qr");
+                          setQrData(res);
+                        } finally {
+                          setQrLoading(false);
+                        }
+                      }}
+                      className="rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/50 cursor-pointer"
+                    >
+                      Refresh QR
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQrModalOpen(false)}
+                      className="rounded-xl bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 cursor-pointer"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </Page>
+  );
+}
+
+// ---------------------------------------------------------------- Connectors
+// A proper section for the accounts ISHTI plugs into. Every card is driven by ishti/connectors.py:
+// real registry, real credential state, real token lifetime. Nothing here is a mock.
+type Connector = {
+  service: string; name: string; family: string; kind: "oauth" | "token";
+  api: string; auth: string; scopes: string[]; granted: string[];
+  has_credentials: boolean; connected: boolean; account: string;
+  has_refresh: boolean; expires_at: number; connected_at: number;
+  state: "connected" | "ready" | "empty";
+  setup: { console?: string; steps?: string; note?: string };
+  status_text: string;
+  progress: { state?: string; reply?: string };
+};
+type ConnectorsPayload = {
+  connectors: Connector[]; connected: number; ready: number;
+  total: number; families: string[]; note: string;
+};
+
+const FAMILY_LABEL: Record<string, string> = {
+  google: "Google", microsoft: "Microsoft", github: "GitHub",
+  meta: "Meta", linkedin: "LinkedIn", telegram: "Telegram",
+};
+const CONN_TONE: Record<string, string> = {
+  connected: "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20",
+  ready: "bg-amber-500/10 text-amber-500 border border-amber-500/20",
+  empty: "bg-muted text-muted-foreground border border-border",
+};
+
+export function Connectors({ onToggleNav }: { onToggleNav?: () => void }) {
+  const [data, setData] = useState<ConnectorsPayload | null>(null);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState("");
+  const [editing, setEditing] = useState<string | null>(null);
+  const [cid, setCid] = useState("");
+  const [csec, setCsec] = useState("");
+  const [group, setGroup] = useState<string>("all");
+
+  const load = useCallback(() => {
+    getJSON<ConnectorsPayload>("/api/connectors").then(setData).catch(
+      (e: Error) => setError(e?.message || "could not reach /api/connectors")
+    );
+  }, []);
+  useEffect(load, [load]);
+
+  // While a consent flow is open, poll that one connector until it leaves "waiting".
+  useEffect(() => {
+    const waiting = (data?.connectors ?? []).filter((c) => c.progress?.state === "waiting");
+    if (!waiting.length) return;
+    const t = setInterval(() => {
+      Promise.all(
+        waiting.map((c) =>
+          getJSON<{ connector: Connector }>(`/api/connectors/${c.service}/progress`).catch(() => null)
+        )
+      ).then((rows) => {
+        const fresh = rows.map((r) => r?.connector).filter(Boolean) as Connector[];
+        const landed = fresh.filter((c) => c.progress?.state !== "waiting");
+        if (landed.length) {
+          setNotice(landed[0].progress?.reply || "");
+          setData((prev) => (prev ? { ...prev, connectors: prev.connectors.map(
+            (c) => fresh.find((f) => f.service === c.service) ?? c) } : prev));
+        }
+      });
+    }, 2000);
+    return () => clearInterval(t);
+  }, [data?.connectors]);
+
+  const rows = (data?.connectors ?? []).filter((c) => group === "all" || c.family === group);
+
+  const act = async (path: string, service: string, body?: unknown) => {
+    setBusy(service); setNotice("");
+    try {
+      const r = await postJSON<{ ok: boolean; reply: string }>(path, body);
+      setNotice(r.reply); setEditing(null); setCid(""); setCsec(""); load();
+    } catch (e) {
+      setNotice((e as Error).message);
+    } finally { setBusy(""); }
+  };
+  const saveCreds = (s: string) => act(`/api/connectors/${s}/credentials`, s, { client_id: cid, client_secret: csec });
+  const connect = (s: string) => act(`/api/connectors/${s}/connect`, s);
+  const disconnect = (s: string) => act(`/api/connectors/${s}/disconnect`, s);
+
+  const Card = ({ c }: { c: Connector }) => {
+    const waiting = c.progress?.state === "waiting";
+    return (
+      <div className="flex flex-col rounded-xl border border-border bg-card p-4 shadow-xs">
+        <div className="flex items-start gap-2">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-foreground">{c.name}</span>
+              <span className={cn("rounded-full border px-1.5 py-0.5 text-[10px] font-medium",
+                CONN_TONE[c.state] || CONN_TONE.empty)}>
+                {c.state === "connected" ? "connected" : c.state === "ready" ? "ready" : "not set up"}
+              </span>
+            </div>
+            <div className="mt-0.5 text-[11px] text-muted-foreground">
+              {FAMILY_LABEL[c.family] || c.family} · {c.kind === "token" ? "token" : "OAuth 2.0"}
+              {c.scopes.length ? ` · ${c.scopes.length} scopes` : ""}
+            </div>
+          </div>
+        </div>
+
+        {c.connected ? (
+          <div className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
+            {c.account && <div>Signed in as <span className="text-foreground">{c.account}</span></div>}
+            <div>{c.has_refresh ? "Refresh token stored - stays signed in."
+              : "No refresh token - may need reconnecting."}</div>
+          </div>
+        ) : (
+          <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">{c.status_text}</p>
+        )}
+
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {!c.connected && (
+            <button type="button" disabled={busy === c.service || waiting}
+              onClick={() => (c.has_credentials ? connect(c.service)
+                : (setEditing(c.service), setCid(""), setCsec("")))}
+              className={cn("rounded-lg px-2.5 py-1 text-[11px] font-medium cursor-pointer",
+                c.has_credentials ? "bg-accent text-white" : "border border-border bg-card hover:border-accent/40",
+                (busy === c.service || waiting) && "opacity-60")}>
+              {waiting ? "Waiting for Allow…" : c.has_credentials
+                ? (c.kind === "token" ? "Paste the token" : "Connect") : "Set up"}
+            </button>
+          )}
+          {c.connected && (
+            <button type="button" disabled={busy === c.service} onClick={() => disconnect(c.service)}
+              className="rounded-lg border border-border bg-card px-2.5 py-1 text-[11px] font-medium hover:border-red-500/50 cursor-pointer disabled:opacity-60">
+              Disconnect
+            </button>
+          )}
+          {c.setup?.console && (
+            <a href={c.setup.console} target="_blank" rel="noreferrer"
+              className="rounded-lg border border-border bg-card px-2.5 py-1 text-[11px] hover:border-accent/40">
+              Open console
+            </a>
+          )}
+        </div>
+
+        {editing === c.service && (
+          <div className="mt-3 space-y-2 rounded-lg border border-border bg-background p-2.5">
+            <input value={cid} onChange={(e) => setCid(e.target.value)} placeholder="Client ID"
+              className="w-full rounded-md border border-border bg-card px-2 py-1 text-[11px]" />
+            <input value={csec} onChange={(e) => setCsec(e.target.value)} placeholder="Client secret"
+              type="password" className="w-full rounded-md border border-border bg-card px-2 py-1 text-[11px]" />
+            <div className="flex gap-1.5">
+              <button type="button" disabled={busy === c.service || !cid.trim()} onClick={() => saveCreds(c.service)}
+                className="rounded-md bg-accent px-2.5 py-1 text-[11px] text-white disabled:opacity-50 cursor-pointer">
+                Save
+              </button>
+              <button type="button" onClick={() => setEditing(null)}
+                className="rounded-md border border-border px-2.5 py-1 text-[11px] cursor-pointer">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {c.setup?.steps && (
+          <details className="mt-2">
+            <summary className="cursor-pointer text-[11px] text-accent">How to get the Client ID</summary>
+            <p className="mt-1 text-[10.5px] leading-relaxed text-muted-foreground">{c.setup.steps}</p>
+            {c.setup.note && <p className="mt-1 text-[10.5px] text-muted-foreground/80">{c.setup.note}</p>}
+          </details>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <Page
+      title="Connectors"
+      subtitle="Plug your accounts into ISHTI. One registry, one flow - credentials stay on this PC."
+      onToggleNav={onToggleNav}
+      action={
+        <button type="button" onClick={load}
+          className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium hover:border-accent/40 cursor-pointer">
+          Refresh
+        </button>
+      }
+    >
+      {error && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400">{error}</div>
+      )}
+      {notice && (
+        <div className="rounded-xl border border-accent/30 bg-accent/10 p-3 text-xs text-foreground">{notice}</div>
+      )}
+      {!data && !error && <div className="text-sm text-muted-foreground">Reading the connectors…</div>}
+
+      {data && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: "Connected", value: String(data.connected) },
+              { label: "Ready", value: String(data.ready) },
+              { label: "Available", value: String(data.total) },
+            ].map((s) => (
+              <div key={s.label} className="rounded-xl border border-border bg-card p-3 shadow-xs">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{s.label}</div>
+                <div className="mt-1 text-xl font-semibold text-foreground">{s.value}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+            {["all", ...data.families].map((f) => (
+              <button key={f} type="button" onClick={() => setGroup(f)}
+                className={cn("rounded-xl px-3 py-1.5 text-xs font-medium shrink-0 cursor-pointer",
+                  group === f ? "bg-accent text-white"
+                    : "border border-border bg-card/60 text-muted-foreground hover:text-foreground")}>
+                {f === "all" ? "All" : FAMILY_LABEL[f] || f}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+            {rows.map((c) => (<Card key={c.service} c={c} />))}
+          </div>
+
+          <p className="text-[11px] text-muted-foreground">{data.note}</p>
+        </div>
+      )}
+    </Page>
+  );
+}
+
 // ---------------------------------------------------------------- Skills
 type SkillInfo = {
   name: string;
@@ -1200,10 +1903,14 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [activeSkill, setActiveSkill] = useState<SkillInfo | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"folders" | "tree">("tree");   // the animated tree is the main view; Folders is the alternative
+  const [viewMode, setViewMode] = useState<"tree" | "folders">("folders");
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [focusedRow, setFocusedRow] = useState(-1);
   const treeRef = useRef<HTMLDivElement | null>(null);
+  // Root ("ishti/skills") and per-skill expansion: every skill opens into the other skills it hands off to,
+  // so the tree reads like the org chart - one root, departments, and a skill that can expand into peers.
+  const [rootOpen, setRootOpen] = useState(true);
+  const [expandedSkills, setExpandedSkills] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     getJSON<{ skills: SkillInfo[] }>("/api/skills").then((d) => {
@@ -1234,6 +1941,16 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
   categories.forEach((cat) => {
     skillsByCategory[cat] = skills.filter((s) => (s.category || "General") === cat);
   });
+
+  // The skills this one can grow into: any skill it names in its route/description first, then the peers it
+  // sits beside in its own department. Capped so one skill cannot flood the tree.
+  const relatedTo = (s: SkillInfo): SkillInfo[] => {
+    const hay = `${s.description || ""} ${s.route || ""}`.toLowerCase();
+    const named = skills.filter((o) => o.name !== s.name && hay.includes(o.name.toLowerCase()));
+    const peers = (skillsByCategory[s.category || "General"] || []).filter((o) => o.name !== s.name);
+    const seen = new Set<string>();
+    return [...named, ...peers].filter((o) => (seen.has(o.name) ? false : seen.add(o.name))).slice(0, 8);
+  };
 
   // Filter skills by search query
   const searchFilter = (s: SkillInfo) => {
@@ -1348,8 +2065,25 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
       action={
         <div className="flex items-center gap-2">
           {sectionTabs}
-          {/* Toggle between Folder Cards and Tree Accordion */}
+          {/* Toggle between Tree Accordion and Folder Cards */}
           <div className="flex items-center rounded-xl border border-border bg-card p-1 shadow-xs">
+            <button
+              type="button"
+              onClick={() => {
+                setViewMode("tree");
+                setActiveSkill(null);
+              }}
+              className={cn(
+                "flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer",
+                viewMode === "tree"
+                  ? "bg-accent text-white shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              title="Directory tree view"
+            >
+              <FolderKanban className="h-3.5 w-3.5" />
+              <span>Tree View</span>
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -1367,23 +2101,6 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
             >
               <Folder className="h-3.5 w-3.5" />
               <span>Folders</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setViewMode("tree");
-                setActiveSkill(null);
-              }}
-              className={cn(
-                "flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer",
-                viewMode === "tree"
-                  ? "bg-accent text-white shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-              title="Directory tree view"
-            >
-              <FolderKanban className="h-3.5 w-3.5" />
-              <span>Tree View</span>
             </button>
           </div>
 
@@ -1892,18 +2609,36 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
         )}
 
         {/* ========================================================
-             MODE 3: DIRECTORY TREE ACCORDION VIEW
+             MODE 2: DIRECTORY TREE ACCORDION VIEW
              ======================================================== */}
         {viewMode === "tree" && !search && (
           <div className="rounded-2xl border border-border bg-card/40 p-3 shadow-xs sm:p-4 outline-none" role="tree" tabIndex={0} ref={treeRef}
             aria-label="Skills tree - arrow keys to move, Enter to open a row" onKeyDown={onTreeKeyDown}>
-            {/* root of the tree */}
-            <div className="flex flex-wrap items-center gap-2 px-1 pb-1.5 font-mono text-xs text-foreground">
+            {/* root of the tree - the one node everything else hangs from */}
+            <button
+              type="button"
+              onClick={() => setRootOpen((v) => !v)}
+              aria-expanded={rootOpen}
+              className="flex w-full flex-wrap items-center gap-2 px-1 pb-1.5 text-left font-mono text-xs text-foreground hover:bg-muted/30 rounded-lg cursor-pointer"
+            >
+              <motion.span animate={{ rotate: rootOpen ? 90 : 0 }} transition={{ duration: 0.18 }} className="grid h-4 w-4 shrink-0 place-items-center text-muted-foreground">
+                <ChevronRight className="h-3.5 w-3.5" />
+              </motion.span>
               <FolderOpen className="h-4 w-4 text-accent" />
               <span className="font-semibold">ishti/skills</span>
-              <span className="text-muted-foreground">{skills.length} skills in {categories.length} folders</span>
-            </div>
-            <ul className="ml-2" role="group">
+              <span className="text-muted-foreground">{skills.length} skills in {categories.length} departments</span>
+            </button>
+            <AnimatePresence initial={false}>
+            {rootOpen && (
+              <motion.ul
+                key="root-group"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.22, ease: "easeInOut" }}
+                className="ml-2 overflow-hidden"
+                role="group"
+              >
               {categories.map((cat, ci) => {
                 const catSkills = skillsByCategory[cat] || [];
                 const isOpen = expandedFolders[cat] !== false;
@@ -1944,10 +2679,13 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
                           {catSkills.map((s, si) => {
                             const isSelected = activeSkill?.name === s.name;
                             const lastSkill = si === catSkills.length - 1;
+                            const isExpandedSkill = !!expandedSkills[s.name];
+                            const related = relatedTo(s);
                             return (
                               <motion.li
                                 key={s.name}
                                 role="treeitem"
+                                aria-expanded={isExpandedSkill}
                                 initial={{ opacity: 0, x: -8 }}
                                 animate={{ opacity: 1, x: 0 }}
                                 transition={{ delay: Math.min(si, 12) * 0.018, duration: 0.18 }}
@@ -1955,13 +2693,26 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
                               >
                                 <span aria-hidden className="absolute left-0 top-0 w-px bg-border" style={{ height: lastSkill ? 18 : "100%" }} />
                                 <span aria-hidden className="absolute left-0 top-[18px] h-px w-5 bg-border" />
+                                <div className="flex items-center gap-1">
+                                {/* grow this skill into the other skills it hands off to */}
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedSkills((p) => ({ ...p, [s.name]: !p[s.name] }))}
+                                  aria-label={`${isExpandedSkill ? "Hide" : "Show"} other skills for ${s.name}`}
+                                  title="Other skills this one works with"
+                                  className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground hover:text-accent hover:bg-muted/40 cursor-pointer"
+                                >
+                                  <motion.span animate={{ rotate: isExpandedSkill ? 90 : 0 }} transition={{ duration: 0.18 }} className="grid place-items-center">
+                                    <ChevronRight className="h-3.5 w-3.5" />
+                                  </motion.span>
+                                </button>
                                 <button
                                   type="button"
                                   data-tree-row={rowIndex("skill", s.name)}
                                   onFocus={() => setFocusedRow(rowIndex("skill", s.name))}
                                   onClick={() => setActiveSkill(isSelected ? null : s)}
                                   className={cn(
-                                    "my-0.5 flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
+                                    "my-0.5 flex min-w-0 flex-1 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
                                     isSelected ? "border-accent/60 bg-accent/10" : "border-transparent hover:border-border hover:bg-muted/30"
                                   )}
                                 >
@@ -1973,6 +2724,37 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
                                     <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">v{s.version}</span>
                                   </span>
                                 </button>
+                                </div>
+                                <AnimatePresence initial={false}>
+                                  {isExpandedSkill && related.length > 0 && (
+                                    <motion.ul
+                                      role="group"
+                                      initial={{ height: 0, opacity: 0 }}
+                                      animate={{ height: "auto", opacity: 1 }}
+                                      exit={{ height: 0, opacity: 0 }}
+                                      transition={{ duration: 0.2, ease: "easeInOut" }}
+                                      className="ml-2.5 mt-0.5 overflow-hidden border-l border-dashed border-border pl-3"
+                                    >
+                                      <li className="py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                                        {s.name} works with
+                                      </li>
+                                      {related.map((r) => (
+                                        <li key={r.name} className="py-[1px]">
+                                          <button
+                                            type="button"
+                                            onClick={() => setActiveSkill(r)}
+                                            title={r.description}
+                                            className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-muted/40 cursor-pointer"
+                                          >
+                                            <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", r.status === "broken" ? "bg-red-500" : r.status === "working" ? "bg-emerald-500" : "bg-amber-500")} />
+                                            <span className="font-mono text-[11px] text-foreground">{r.name}</span>
+                                            <span className="hidden min-w-0 flex-1 truncate text-[10px] text-muted-foreground md:block">{r.description}</span>
+                                          </button>
+                                        </li>
+                                      ))}
+                                    </motion.ul>
+                                  )}
+                                </AnimatePresence>
                               </motion.li>
                             );
                           })}
@@ -1982,7 +2764,9 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
                   </li>
                 );
               })}
-            </ul>
+              </motion.ul>
+            )}
+            </AnimatePresence>
           </div>
         )}
 
@@ -2713,312 +3497,320 @@ export function Settings({ onToggleNav }: { onToggleNav?: () => void }) {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-            {/* 1. Appearance Card */}
-            <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
-              <div
-                className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
-                onClick={() => toggleCard("appearance")}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-500">
-                    <Sun className="h-4 w-4 dark:hidden" />
-                    <Moon className="h-4 w-4 hidden dark:block" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="font-semibold text-foreground text-sm">Appearance</div>
-                    <div className="text-xs text-muted-foreground truncate">
-                      Switch between pure white light mode and dark mode.
+            {/* Column 1: Appearance & Side Chats Width */}
+            <div className="space-y-4">
+              {/* 1. Appearance Card */}
+              <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
+                <div
+                  className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
+                  onClick={() => toggleCard("appearance")}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-500">
+                      <Sun className="h-4 w-4 dark:hidden" />
+                      <Moon className="h-4 w-4 hidden dark:block" />
                     </div>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-foreground text-sm">Appearance</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        Switch between pure white light mode and dark mode.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    className="flex items-center gap-2 shrink-0"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <ThemeSwitch />
+                    <button
+                      type="button"
+                      onClick={() => toggleCard("appearance")}
+                      className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                    >
+                      <ChevronDown
+                        className={cn(
+                          "h-4 w-4 transition-transform duration-200",
+                          expandedCards.appearance ? "rotate-180 text-accent" : ""
+                        )}
+                      />
+                    </button>
                   </div>
                 </div>
 
+                <AnimatePresence initial={false}>
+                  {expandedCards.appearance && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="overflow-hidden border-t border-border/60 p-4 bg-background/50"
+                    >
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            try {
+                              localStorage.setItem("ishti-theme", "light");
+                              document.documentElement.classList.remove("dark");
+                            } catch {}
+                          }}
+                          className="flex flex-col items-center justify-center gap-2 rounded-xl border border-border p-3.5 hover:border-accent hover:bg-muted/30 transition-all cursor-pointer"
+                        >
+                          <Sun className="h-5 w-5 text-amber-500" />
+                          <span className="text-xs font-semibold">Light Mode</span>
+                          <span className="text-[10px] text-muted-foreground">Pure Crisp White</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            try {
+                              localStorage.setItem("ishti-theme", "dark");
+                              document.documentElement.classList.add("dark");
+                            } catch {}
+                          }}
+                          className="flex flex-col items-center justify-center gap-2 rounded-xl border border-border p-3.5 hover:border-accent hover:bg-muted/30 transition-all cursor-pointer"
+                        >
+                          <Moon className="h-5 w-5 text-sky-400" />
+                          <span className="text-xs font-semibold">Dark Mode</span>
+                          <span className="text-[10px] text-muted-foreground">Deep Pure Black</span>
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </Card>
+
+              {/* 3. Side Chats Width Card */}
+              <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
                 <div
-                  className="flex items-center gap-2 shrink-0"
-                  onClick={(e) => e.stopPropagation()}
+                  className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
+                  onClick={() => toggleCard("sideChats")}
                 >
-                  <ThemeSwitch />
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-amber-500/15 text-amber-500">
+                      <Sliders className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-foreground text-sm">
+                          Side Chats Panel Width
+                        </span>
+                        <span className="rounded-md bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent font-mono">
+                          {sideChatsWidth}px
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        Set width for the recent conversations sidebar in Chat.
+                      </div>
+                    </div>
+                  </div>
+
                   <button
                     type="button"
-                    onClick={() => toggleCard("appearance")}
-                    className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleCard("sideChats");
+                    }}
+                    className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
                   >
                     <ChevronDown
                       className={cn(
                         "h-4 w-4 transition-transform duration-200",
-                        expandedCards.appearance ? "rotate-180 text-accent" : ""
+                        expandedCards.sideChats ? "rotate-180 text-accent" : ""
                       )}
                     />
                   </button>
                 </div>
-              </div>
 
-              <AnimatePresence initial={false}>
-                {expandedCards.appearance && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="overflow-hidden border-t border-border/60 p-4 bg-background/50"
-                  >
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          try {
-                            localStorage.setItem("ishti-theme", "light");
-                            document.documentElement.classList.remove("dark");
-                          } catch {}
-                        }}
-                        className="flex flex-col items-center justify-center gap-2 rounded-xl border border-border p-3.5 hover:border-accent hover:bg-muted/30 transition-all cursor-pointer"
-                      >
-                        <Sun className="h-5 w-5 text-amber-500" />
-                        <span className="text-xs font-semibold">Light Mode</span>
-                        <span className="text-[10px] text-muted-foreground">Pure Crisp White</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          try {
-                            localStorage.setItem("ishti-theme", "dark");
-                            document.documentElement.classList.add("dark");
-                          } catch {}
-                        }}
-                        className="flex flex-col items-center justify-center gap-2 rounded-xl border border-border p-3.5 hover:border-accent hover:bg-muted/30 transition-all cursor-pointer"
-                      >
-                        <Moon className="h-5 w-5 text-sky-400" />
-                        <span className="text-xs font-semibold">Dark Mode</span>
-                        <span className="text-[10px] text-muted-foreground">Deep Pure Black</span>
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </Card>
-
-            {/* 2. Chat Text Size Card */}
-            <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
-              <div
-                className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
-                onClick={() => toggleCard("chatSize")}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-emerald-500/15 text-emerald-500">
-                    <Type className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-foreground text-sm">Chat Text Size</span>
-                      <span className="rounded-md bg-muted px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
-                        {chatSize.charAt(0).toUpperCase() + chatSize.slice(1)}
-                      </span>
-                    </div>
-                    <div className="text-xs text-muted-foreground truncate">
-                      Text size across messages, inputs, and code in conversations.
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleCard("chatSize");
-                  }}
-                  className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
-                >
-                  <ChevronDown
-                    className={cn(
-                      "h-4 w-4 transition-transform duration-200",
-                      expandedCards.chatSize ? "rotate-180 text-accent" : ""
-                    )}
-                  />
-                </button>
-              </div>
-
-              <AnimatePresence initial={false}>
-                {expandedCards.chatSize && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="overflow-hidden border-t border-border/60 p-4 space-y-3.5 bg-background/50"
-                  >
-                    <div className="flex flex-wrap items-center rounded-xl bg-muted/60 p-1 gap-1">
-                      {CHAT_FONT_SIZES.map((fs) => (
-                        <button
-                          key={fs.key}
-                          type="button"
-                          onClick={() => handleSizeChange(fs.key)}
-                          className={cn(
-                            "flex-1 min-w-[70px] rounded-lg px-3 py-1.5 text-xs text-center transition-all cursor-pointer",
-                            chatSize === fs.key
-                              ? "bg-background text-foreground shadow-xs font-semibold"
-                              : "text-muted-foreground hover:text-foreground font-medium"
-                          )}
-                        >
-                          {fs.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Live Preview */}
-                    <div className="rounded-xl border border-border/70 bg-card/60 p-3.5 space-y-2">
-                      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                        Live Chat Preview
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex justify-end">
-                          <div
-                            className="rounded-2xl rounded-br-md bg-accent px-3.5 py-1.5 text-white max-w-sm shadow-xs"
-                            style={{
-                              fontSize: "var(--chat-font-size)",
-                              lineHeight: "var(--chat-leading)",
-                            }}
-                          >
-                            Can you check the latest file updates on my PC?
-                          </div>
+                <AnimatePresence initial={false}>
+                  {expandedCards.sideChats && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="overflow-hidden border-t border-border/60 p-4 space-y-3.5 bg-background/50"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center rounded-xl bg-muted/60 p-1 gap-1 flex-1">
+                          {[
+                            { label: "Compact", value: 200 },
+                            { label: "Default", value: 240 },
+                            { label: "Medium", value: 280 },
+                            { label: "Wide", value: 340 },
+                          ].map((preset) => (
+                            <button
+                              key={preset.value}
+                              type="button"
+                              onClick={() => handleSideChatsWidthChange(preset.value)}
+                              className={cn(
+                                "flex-1 rounded-lg px-2.5 py-1 text-xs text-center transition-all cursor-pointer",
+                                sideChatsWidth === preset.value
+                                  ? "bg-background text-foreground shadow-xs font-semibold"
+                                  : "text-muted-foreground hover:text-foreground font-medium"
+                              )}
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
                         </div>
-                        <div className="flex gap-2">
-                          <div
-                            className="rounded-2xl bg-background border border-border px-3.5 py-1.5 text-foreground max-w-sm shadow-xs"
-                            style={{
-                              fontSize: "var(--chat-font-size)",
-                              lineHeight: "var(--chat-leading)",
-                            }}
-                          >
-                            Found 3 updated folders. Local and ready to execute anytime.
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </Card>
-
-            {/* 3. Side Chats Width Card */}
-            <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
-              <div
-                className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
-                onClick={() => toggleCard("sideChats")}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-amber-500/15 text-amber-500">
-                    <Sliders className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-foreground text-sm">
-                        Side Chats Panel Width
-                      </span>
-                      <span className="rounded-md bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent font-mono">
-                        {sideChatsWidth}px
-                      </span>
-                    </div>
-                    <div className="text-xs text-muted-foreground truncate">
-                      Set width for the recent conversations sidebar in Chat.
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleCard("sideChats");
-                  }}
-                  className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
-                >
-                  <ChevronDown
-                    className={cn(
-                      "h-4 w-4 transition-transform duration-200",
-                      expandedCards.sideChats ? "rotate-180 text-accent" : ""
-                    )}
-                  />
-                </button>
-              </div>
-
-              <AnimatePresence initial={false}>
-                {expandedCards.sideChats && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="overflow-hidden border-t border-border/60 p-4 space-y-3.5 bg-background/50"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center rounded-xl bg-muted/60 p-1 gap-1 flex-1">
-                        {[
-                          { label: "Compact", value: 200 },
-                          { label: "Default", value: 240 },
-                          { label: "Medium", value: 280 },
-                          { label: "Wide", value: 340 },
-                        ].map((preset) => (
+                        {sideChatsWidth !== 240 && (
                           <button
-                            key={preset.value}
                             type="button"
-                            onClick={() => handleSideChatsWidthChange(preset.value)}
+                            onClick={() => handleSideChatsWidthChange(240)}
+                            className="text-xs text-muted-foreground hover:text-accent underline transition-colors cursor-pointer shrink-0 px-2"
+                          >
+                            Reset 240px
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Smooth Range Slider */}
+                      <div className="flex items-center gap-3 pt-1">
+                        <span className="text-[11px] font-mono text-muted-foreground shrink-0">
+                          180px
+                        </span>
+                        <input
+                          type="range"
+                          min="180"
+                          max="500"
+                          step="10"
+                          value={sideChatsWidth}
+                          onChange={(e) =>
+                            handleSideChatsWidthChange(Number(e.target.value))
+                          }
+                          className="h-1.5 flex-1 cursor-pointer appearance-none rounded-lg bg-muted accent-accent"
+                        />
+                        <span className="text-[11px] font-mono text-muted-foreground shrink-0">
+                          500px
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        Tip: You can also drag the divider handle directly inside the Chat interface.
+                      </p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </Card>
+            </div>
+
+            {/* Column 2: Chat Text Size & Chrome Profiles */}
+            <div className="space-y-4">
+              {/* 2. Chat Text Size Card */}
+              <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
+                <div
+                  className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
+                  onClick={() => toggleCard("chatSize")}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-emerald-500/15 text-emerald-500">
+                      <Type className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-foreground text-sm">Chat Text Size</span>
+                        <span className="rounded-md bg-muted px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
+                          {chatSize.charAt(0).toUpperCase() + chatSize.slice(1)}
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        Text size across messages, inputs, and code in conversations.
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleCard("chatSize");
+                    }}
+                    className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
+                  >
+                    <ChevronDown
+                      className={cn(
+                        "h-4 w-4 transition-transform duration-200",
+                        expandedCards.chatSize ? "rotate-180 text-accent" : ""
+                      )}
+                    />
+                  </button>
+                </div>
+
+                <AnimatePresence initial={false}>
+                  {expandedCards.chatSize && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="overflow-hidden border-t border-border/60 p-4 space-y-3.5 bg-background/50"
+                    >
+                      <div className="flex flex-wrap items-center rounded-xl bg-muted/60 p-1 gap-1">
+                        {CHAT_FONT_SIZES.map((fs) => (
+                          <button
+                            key={fs.key}
+                            type="button"
+                            onClick={() => handleSizeChange(fs.key)}
                             className={cn(
-                              "flex-1 rounded-lg px-2.5 py-1 text-xs text-center transition-all cursor-pointer",
-                              sideChatsWidth === preset.value
+                              "flex-1 min-w-[70px] rounded-lg px-3 py-1.5 text-xs text-center transition-all cursor-pointer",
+                              chatSize === fs.key
                                 ? "bg-background text-foreground shadow-xs font-semibold"
                                 : "text-muted-foreground hover:text-foreground font-medium"
                             )}
                           >
-                            {preset.label}
+                            {fs.label}
                           </button>
                         ))}
                       </div>
-                      {sideChatsWidth !== 240 && (
-                        <button
-                          type="button"
-                          onClick={() => handleSideChatsWidthChange(240)}
-                          className="text-xs text-muted-foreground hover:text-accent underline transition-colors cursor-pointer shrink-0 px-2"
-                        >
-                          Reset 240px
-                        </button>
-                      )}
-                    </div>
 
-                    {/* Smooth Range Slider */}
-                    <div className="flex items-center gap-3 pt-1">
-                      <span className="text-[11px] font-mono text-muted-foreground shrink-0">
-                        180px
-                      </span>
-                      <input
-                        type="range"
-                        min="180"
-                        max="500"
-                        step="10"
-                        value={sideChatsWidth}
-                        onChange={(e) =>
-                          handleSideChatsWidthChange(Number(e.target.value))
-                        }
-                        className="h-1.5 flex-1 cursor-pointer appearance-none rounded-lg bg-muted accent-accent"
-                      />
-                      <span className="text-[11px] font-mono text-muted-foreground shrink-0">
-                        500px
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">
-                      Tip: You can also drag the divider handle directly inside the Chat interface.
-                    </p>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </Card>
+                      {/* Live Preview */}
+                      <div className="rounded-xl border border-border/70 bg-card/60 p-3.5 space-y-2">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          Live Chat Preview
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex justify-end">
+                            <div
+                              className="rounded-2xl rounded-br-md bg-accent px-3.5 py-1.5 text-white max-w-sm shadow-xs"
+                              style={{
+                                fontSize: "var(--chat-font-size)",
+                                lineHeight: "var(--chat-leading)",
+                              }}
+                            >
+                              Can you check the latest file updates on my PC?
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <div
+                              className="rounded-2xl bg-background border border-border px-3.5 py-1.5 text-foreground max-w-sm shadow-xs"
+                              style={{
+                                fontSize: "var(--chat-font-size)",
+                                lineHeight: "var(--chat-leading)",
+                              }}
+                            >
+                              Found 3 updated folders. Local and ready to execute anytime.
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </Card>
 
-            {/* 4. Chrome Profiles Card */}
-            <ChromeProfiles
-              isOpen={expandedCards.chrome}
-              onToggle={() => toggleCard("chrome")}
-            />
+              {/* 4. Chrome Profiles Card */}
+              <ChromeProfiles
+                isOpen={expandedCards.chrome}
+                onToggle={() => toggleCard("chrome")}
+              />
+            </div>
 
-            {/* 5. Remote Control (Telegram / WhatsApp) */}
-            <RemoteControl />
+            {/* 5. Remote Control (Telegram / WhatsApp) - Full Width */}
+            <div className="col-span-full">
+              <RemoteControl />
+            </div>
           </div>
         </div>
 

@@ -26,23 +26,61 @@ PATH = re.compile(r"[A-Za-z]:\\[^\"'<>|?*\n]+?(?=\s+(?:and|to|with|into|in|as)\s
 TEXT_EXT = {".txt", ".md", ".py", ".js", ".ts", ".tsx", ".json", ".csv", ".html", ".css", ".xml", ".yml", ".yaml",
             ".ini", ".cfg", ".log", ".sql", ".java", ".c", ".cpp", ".h", ".cs", ".go", ".rs", ".php", ".bat", ".ps1", ".tex"}
 OPS = [
+    # "Rename report_final_v2.docx to Q3_Report.docx" - a single named file with an extension (checklist #20).
+    ("rename_file", re.compile(r"^\s*(?:please\s+)?rename\s+(?P<src>[^\s]+\.[a-z0-9]{2,5})\s+to\s+(?P<dst>[^\s]+\.[a-z0-9]{2,5})\s*$", I)),
     ("rename", re.compile(r"\b(?:batch\s+)?rename\s+(?:all\s+)?(?:the\s+)?(?:files|photos|pictures|images|videos|pdfs|documents|songs)\b", I)),
     ("unzip", re.compile(r"\b(?:unzip|extract|decompress|unpack)\s+.+\.(?:zip|7z)\b|\b(?:unzip|extract)\s+(?:the\s+)?(?:zip|archive)\b", I)),
     ("zip", re.compile(r"\b(?:zip|compress|archive)\s+(?:up\s+)?(?:the\s+|my\s+)?(?!.*\.(?:zip|7z)\b).+", I)),
     ("dupes_delete", re.compile(r"\b(?:delete|remove|clean\s+up|get\s+rid\s+of)\s+(?:the\s+|all\s+)?duplicates?\b", I)),
     ("dupes", re.compile(r"\b(?:find|show|list|any|check\s+for)\s+(?:the\s+)?duplicate(?:\s+files)?\b|\bduplicate\s+files\b", I)),
+    # "compare three local TTS engines for Urdu support and recommend one" is research, not a file diff
+    # (checklist #8). File compare owns: two concrete paths/names with "and/with/to" between them. When the
+    # text is clearly about abstract things (engines, models, methods, services, tools...) rather than files,
+    # it is not ours. Also drop it when web_search or deep_research would clearly own the query.
     ("compare", re.compile(r"\b(?:compare|diff)\s+.+\s+(?:and|with|to)\s+.+", I)),
     ("tag_add", re.compile(r"\btag\s+(?P<path>.+?)\s+(?:as|with)\s+(?P<tag>[\w -]{1,30})$", I)),
     ("tag_find", re.compile(r"\b(?:files|documents)\s+tagged\s+(?:as\s+|with\s+)?(?P<tag>[\w -]{1,30})$|\bshow\s+(?:my\s+)?tags\b", I)),
     ("grep", re.compile(r"\b(?:search|look|find)\s+(?:inside|in\s+the\s+contents?\s+of|within)\s+(?:the\s+|my\s+)?files?\b|\bfiles?\s+(?:that\s+)?(?:contain|containing|mention)\b", I)),
+    # "Back up my whole project right now" (checklist #240): no path in the request, so resolve the project
+    # by name and confirm scope + destination before copying.
+    ("backup_project", re.compile(r"\b(?:back\s*?up|backup)\s+(?:my\s+|the\s+)?(?:whole\s+|entire\s+|main\s+)?"
+                                  r"(?:project|repo|repository|code|files?|work|everything|pc|computer)\b", I)),
     ("backup", re.compile(r"\b(?P<act>back\s*up|backup|sync|mirror)\s+(?:my\s+|the\s+)?[\"']?(?P<src>[a-z]:[\\/][^\"']+?)[\"']?\s+(?:to|into|with|onto)\s+[\"']?(?P<dst>[a-z]:[\\/]?[^\"']*?)[\"']?\s*$", I)),
     ("empty_bin", re.compile(r"\bempty\s+(?:the\s+|my\s+)?(?:recycle\s+bin|trash)\b", I)),
     ("delete", re.compile(r"^\s*(?:please\s+)?(?:delete|remove|trash)\s+(?:the\s+file\s+)?(?P<path>[A-Za-z]:\\.+?)\s*$", I)),
+    ("delete_ambiguous", re.compile(r"^\s*(?:please\s+)?(?:delete|remove|trash)\s+(?:that\s+|this\s+|the\s+)?file\b", I)),
+    # Checklist phrasings that mean "delete/copy/move something by name" but don't include a full path regex.
+    ("delete_folder", re.compile(r"^\s*(?:please\s+)?(?:delete|remove|get\s+rid\s+of|trash)\s+(?:the\s+|my\s+)?[a-z0-9_\- ]*?folder\b", I)),
+    ("copy", re.compile(r"^\s*(?:please\s+)?copy\s+.+\s+to\s+", I)),
+    ("move", re.compile(r"^\s*(?:please\s+)?(?:move|cut|relocate)\s+.+\s+to\s+", I)),
 ]
+
+# A time word alone ("tomorrow", "Thursday", "1:30") is not a file operation: schedule analysis,
+# back-to-back and double-booked questions, and video thumbnails all carry one (checklist #155, #156,
+# #173). The old "move_time" entry matched any time word and even had no op_move_time to run - it
+# would have crashed on a match. Reminder reschedules are reminders' job, not fileops'.
+TIME_WORD = re.compile(r"\b(?:tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
+                       r"next\s+week|next\s+month|at\s+\d|\d{1,2}:\d{2}|\d{1,2}\s?(?:am|pm))\b", I)
+# "compress this video for YouTube", "trim the first 10 seconds off this video": the video/media
+# skills own any clip being edited, never the archive tool (checklist #172, #176).
+VIDEO_OR_MEDIA = re.compile(r"\b(?:video|clip|movie|footage|reel|film|youtube|instagram|tiktok|thumbnail|"
+                            r"caption|subtitle|audio|song|track|podcast|voice\s*note)\b", I)
 
 
 def match(text):
-    return any(rx.search(text) for _, rx in OPS)
+    # A media request that happens to use "compress"/"archive" belongs to the video/media skill.
+    if VIDEO_OR_MEDIA.search(text) and not _paths(text):
+        return False
+    # "move my 3pm thing to tomorrow" is a reminder reschedule, not a file move (checklist #15).
+    for _n, rx in OPS:
+        if rx.search(text):
+            if _n == "move" and TIME_WORD.search(text):
+                return False
+            # "compare three TTS engines for Urdu support and recommend one" is research, not a file diff (checklist #8).
+            if _n == "compare" and re.search(r"\b(?:tts|engine|model|method|approach|service|tool|framework|library|solution|option|product|software|system|solution|algorithm|technique|strategy|platform|provider|vendor|api|protocol)\b", text, I):
+                return False
+            return True
+    return False
 
 
 def run(text, session):
@@ -67,6 +105,31 @@ def _paths(text):
 
 
 # ---------------------------------------------------------------- rename
+def op_rename_file(m, text, session):
+    """"Rename report_final_v2.docx to Q3_Report.docx": find the single file by name, confirm old -> new."""
+    src, dst = m["src"].strip(), m["dst"].strip()
+    src_path = src if os.path.isfile(src) else None
+    if not src_path:
+        from desktop.computer_use import get_computer_use_agent
+        hits = get_computer_use_agent().search_pc(os.path.splitext(src)[0], max_results=5)
+        exact = [h for h in hits if os.path.basename(h["path"]).lower() == src.lower()]
+        if len(exact) == 1:
+            src_path = exact[0]["path"]
+        elif len(hits) == 1:
+            src_path = hits[0]["path"]
+        elif hits:
+            return ("I found several matches for " + src + ": "
+                    + ", ".join(h["path"] for h in hits[:4]) + ". Which one should I rename?")
+    if not src_path or not os.path.isfile(src_path):
+        return f"I couldn't find {src} in your user folders. Give me the exact path and I'll rename it."
+    target = os.path.join(os.path.dirname(src_path), dst)
+    if os.path.exists(target):
+        return f"{target} already exists - pick a different name so nothing is overwritten."
+    return ask_first(session, "fileops", f"Rename {os.path.basename(src_path)} to {dst}",
+                     lambda: (os.rename(src_path, target),
+                              f"Renamed {os.path.basename(src_path)} to {dst}.")[1])
+
+
 def op_rename(m, text, session):
     from ishti.skills.folders.skill import TYPES, do_moves, kind_in, top_files
     folder = _folder(text)
@@ -398,6 +461,26 @@ def robocopy(src, dst, mirror=False):
                 + (f", {extra} removed from the copy" if mirror and extra else ""))
 
 
+def op_backup_project(m, text, session):
+    """"Back up my whole project": resolve the project by name, then confirm scope + destination
+    before cloning it (checklist #240). Nothing is copied until the owner says yes."""
+    from ishti.skills.dev.skill import project
+    name, path = project(text)
+    if not os.path.isdir(path):
+        return f"I couldn't find a project folder for '{name}' - give me its path and I'll back it up."
+    dst = os.path.join(os.path.expanduser("~"), "Backups", name)
+    size = sum(os.path.getsize(os.path.join(r, n)) for r, _, ns in os.walk(path) for n in ns) / 1e9
+
+    def go():
+        os.makedirs(dst, exist_ok=True)
+        trace(session, "robocopy", f"backing up {name}", status="start")
+        ok, summary = robocopy(path, dst, False)
+        trace(session, "robocopy", summary, status="done" if ok else "error")
+        return (f"Backed up {name} ({path}) to {dst}. {summary}." if ok else f"Backup failed: {summary}.")
+    return ask_first(session, "fileops",
+                     f"Back up {name} ({path}, {size:.1f} GB) to {dst} (new and changed files; nothing deleted)", go)
+
+
 def op_backup(m, text, session):
     src, dst, act = m["src"].strip().rstrip("\\/"), m["dst"].strip(), m["act"].lower()
     if not os.path.isdir(src):
@@ -428,6 +511,84 @@ def op_delete(m, text, session):
     from send2trash import send2trash
     return ask_first(session, "fileops", f"Move {path} to the Recycle Bin",
                      lambda: (send2trash(path), f"Moved {os.path.basename(path)} to the Recycle Bin.")[1])
+
+
+def op_delete_folder(m, text, session):
+    """"Delete my old project folder" / "delete the downloads folder": resolve the folder by name, then
+    the standard T2 gate. Never guesses: an unresolved name asks for the exact path."""
+    from ishti.skills.folders.skill import folder_in
+    _, path = folder_in(text)
+    if not path or not os.path.isdir(path):
+        return ("I couldn't find that folder on this PC. Tell me the exact path (for example "
+                "\"delete D:\\old_project\") and I'll show you what's inside before removing it.")
+    inside = len(os.listdir(path))
+    from send2trash import send2trash
+    return ask_first(session, "fileops",
+                     f"Move the folder {path} ({inside} item(s) inside) to the Recycle Bin",
+                     lambda: (send2trash(path), f"Moved {os.path.basename(path)} ({inside} item(s)) to the Recycle Bin.")[1])
+
+
+def op_delete_ambiguous(m, text, session):
+    """"Delete that file" / "remove this file" - no path given, ask which file."""
+    return ("Which file? Tell me the name or path (for example 'delete C:\\Users\\me\\doc.txt' or "
+            "'delete the report file'). If you mean a recent file, say what it's called.")
+
+
+def op_copy(m, text, session):
+    """"Copy my resume to the JQ AI client folder": resolve source + destination, confirm both, then copy."""
+    from ishti.skills.folders.skill import folder_in
+    parts = re.split(r"\s+to\s+", text, maxsplit=1, flags=re.I)
+    if len(parts) != 2:
+        return "Say it as \"copy <file> to <folder>\" and I'll do it."
+    src_text, dst_text = parts[0], parts[1]
+    src_text = re.sub(r"^\s*(?:please\s+)?copy\s+", "", src_text, flags=I).strip(" \"'")
+    dst_name, dst = folder_in(dst_text)
+    src_path = None
+    if os.path.exists(src_text):
+        src_path = src_text
+    else:
+        from desktop.computer_use import get_computer_use_agent
+        hits = get_computer_use_agent().search_pc(src_text, max_results=3)
+        if len(hits) == 1:
+            src_path = hits[0]["path"]
+        elif hits:
+            return ("I found several files matching that: "
+                    + ", ".join(h["path"] for h in hits[:3]) + ". Which one?")
+    if not src_path or not os.path.exists(src_path):
+        return f"I couldn't find '{src_text}' in your user folders. Give me the exact file name or path."
+    if not dst or not os.path.isdir(dst):
+        return (f"I couldn't find the destination folder '{dst_text.strip()}'. "
+                "Tell me the exact folder or path and I'll copy it there.")
+    import shutil
+    dst_file = os.path.join(dst, os.path.basename(src_path))
+    return ask_first(session, "fileops", f"Copy {src_path} to {dst}",
+                     lambda: (shutil.copy2(src_path, dst_file), f"Copied {os.path.basename(src_path)} to {dst}.")[1])
+
+
+def op_move(m, text, session):
+    """"Move X to Y": the same resolution as copy, then a T2 gate (a move can lose the original)."""
+    from ishti.skills.folders.skill import folder_in
+    parts = re.split(r"\s+to\s+", text, maxsplit=1, flags=re.I)
+    if len(parts) != 2:
+        return "Say it as \"move <file> to <folder>\" and I'll do it."
+    src_text, dst_text = parts[0], parts[1]
+    src_text = re.sub(r"^\s*(?:please\s+)?(?:move|cut|relocate)\s+", "", src_text, flags=I).strip(" \"'")
+    _, dst = folder_in(dst_text)
+    src_path = src_text if os.path.exists(src_text) else None
+    if not src_path:
+        from desktop.computer_use import get_computer_use_agent
+        hits = get_computer_use_agent().search_pc(src_text, max_results=3)
+        src_path = hits[0]["path"] if len(hits) == 1 else None
+        if hits and len(hits) > 1:
+            return "I found several files matching that: " + ", ".join(h["path"] for h in hits[:3]) + ". Which one?"
+    if not src_path or not os.path.exists(src_path):
+        return f"I couldn't find '{src_text}' in your user folders. Give me the exact file name or path."
+    if not dst or not os.path.isdir(dst):
+        return f"I couldn't find the destination folder '{dst_text.strip()}'. Tell me the exact folder or path."
+    import shutil
+    dst_file = os.path.join(dst, os.path.basename(src_path))
+    return ask_first(session, "fileops", f"Move {src_path} to {dst}",
+                     lambda: (shutil.move(src_path, dst_file), f"Moved {os.path.basename(src_path)} to {dst}.")[1])
 
 
 def op_empty_bin(m, text, session):

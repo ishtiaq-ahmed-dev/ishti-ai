@@ -1,0 +1,35 @@
+{
+ "id": 181,
+ "prompt_text": "How do you say 'thank you very much' in Pashto?",
+ "category": "Translation & language switching (177-181)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "utilities",
+  "languages",
+  "chat"
+ ],
+ "expected_outcome": "Correct phrase, maybe pronunciation note",
+ "expected_reply_success": "Correct phrase, maybe pronunciation note",
+ "expected_reply_failure": "N/A — should rarely fail on something this basic",
+ "pass_criteria": {
+  "expected_skill": [
+   "utilities",
+   "chat",
+   "languages"
+  ],
+  "ok_any": [
+   "ډیره",
+   "مننه",
+   "منندوی",
+   "thank",
+   "pashto",
+   "شکریه"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

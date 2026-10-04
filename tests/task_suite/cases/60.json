@@ -1,0 +1,36 @@
+{
+ "id": 60,
+ "prompt_text": "Should I bring a jacket tonight?",
+ "category": "Weather & location (58-61)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "weather",
+  "web_search",
+  "chat"
+ ],
+ "expected_outcome": "Practical yes/no based on actual temp/conditions, not just raw numbers",
+ "expected_reply_success": "Practical yes/no based on actual temp/conditions, not just raw numbers",
+ "expected_reply_failure": "If data's unavailable: says so, doesn't guess a recommendation",
+ "pass_criteria": {
+  "expected_skill": [
+   "weather"
+  ],
+  "ok_any": [
+   "jacket",
+   "yes",
+   "no",
+   "°c",
+   "cool",
+   "warm",
+   "not needed",
+   "couldn't",
+   "could not"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

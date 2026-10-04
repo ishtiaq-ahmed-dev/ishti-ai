@@ -1,0 +1,25 @@
+{
+ "id": 141,
+ "prompt_text": "My manager at the DevOps gig changed, it's now someone named Faisal",
+ "category": "People — work & professional (139-144)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Confirms the update, keeps prior project context intact",
+ "expected_reply_success": "Confirms the update, keeps prior project context intact",
+ "expected_reply_failure": "Wrong: keeps routing manager-related tasks to the old name",
+ "pass_criteria": {
+  "expected_skill": [
+   "clients",
+   "relationships",
+   "memory",
+   "owner"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

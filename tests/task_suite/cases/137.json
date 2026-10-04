@@ -1,0 +1,24 @@
+{
+ "id": 137,
+ "prompt_text": "I talk to my cousin a lot but he's not really family-close, don't treat him as immediate family",
+ "category": "People — family (133-138)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Stores the relationship as stated (cousin, frequent contact) without upgrading it to something closer than what was said",
+ "expected_reply_success": "Stores the relationship as stated (cousin, frequent contact) without upgrading it to something closer than what was said",
+ "expected_reply_failure": "Wrong: generalizes \"talk a lot\" into \"close family\" on its own",
+ "pass_criteria": {
+  "expected_skill": [
+   "memory",
+   "relationships",
+   "owner"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

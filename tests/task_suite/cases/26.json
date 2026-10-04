@@ -1,0 +1,32 @@
+{
+ "id": 26,
+ "prompt_text": "How much free space do I have on D:?",
+ "category": "Files & folders (19-26)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "system",
+  "meta",
+  "chat"
+ ],
+ "expected_outcome": "States free/total space plainly",
+ "expected_reply_success": "States free/total space plainly",
+ "expected_reply_failure": "N/A",
+ "pass_criteria": {
+  "expected_skill": [
+   "system"
+  ],
+  "ok_any": [
+   "gb",
+   "free",
+   "d:"
+  ],
+  "bad_any": [],
+  "forbid": [
+   "web_search"
+  ]
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

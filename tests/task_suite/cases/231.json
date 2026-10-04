@@ -1,0 +1,23 @@
+{
+ "id": 231,
+ "prompt_text": "batao kya haal hai, sab theek chal raha hai?",
+ "category": "Personalization & adaptation over time (229-233)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Responds in a way that's comfortable with the mix, doesn't force pure English when the context doesn't need it",
+ "expected_reply_success": "Responds in a way that's comfortable with the mix, doesn't force pure English when the context doesn't need it",
+ "expected_reply_failure": "Wrong: ignores the stated style and always responds in stiff formal English",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat",
+   "languages"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

@@ -1,0 +1,30 @@
+{
+ "id": 16,
+ "prompt_text": "Remind me to message Ahmed when I'm free this evening",
+ "category": "Scheduling & reminders (11-18)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "reminders"
+ ],
+ "expected_outcome": "Either handles it or explains its reminder system is time-based and asks for a specific time",
+ "expected_reply_success": "Either handles it or explains its reminder system is time-based and asks for a specific time",
+ "expected_reply_failure": "Never silently drops a reminder it can't fully handle",
+ "pass_criteria": {
+  "expected_skill": [
+   "reminders"
+  ],
+  "ok_any": [
+   "time",
+   "evening",
+   "specific",
+   "when",
+   "reminder"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

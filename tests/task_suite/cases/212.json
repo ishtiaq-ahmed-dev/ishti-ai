@@ -1,0 +1,30 @@
+{
+ "id": 212,
+ "prompt_text": "Check my email, pull out any meeting requests, and add them to my schedule",
+ "category": "Cross-app orchestration (212-217)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "calendar",
+  "reminders",
+  "email",
+  "system",
+  "meta",
+  "chat"
+ ],
+ "expected_outcome": "Confirms each meeting found and added, one by one or as a clear list",
+ "expected_reply_success": "Confirms each meeting found and added, one by one or as a clear list",
+ "expected_reply_failure": "If email access fails partway: says exactly what it processed before the failure",
+ "pass_criteria": {
+  "expected_skill": [
+   "email",
+   "calendar"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

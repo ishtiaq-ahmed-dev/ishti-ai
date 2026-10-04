@@ -1,0 +1,24 @@
+{
+ "id": 144,
+ "prompt_text": "What do you know about my work with JQ AI Solutions?",
+ "category": "People — work & professional (139-144)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Accurate summary of actually-stored facts, names the relevant people correctly",
+ "expected_reply_success": "Accurate summary of actually-stored facts, names the relevant people correctly",
+ "expected_reply_failure": "Doesn't invent details not actually stored",
+ "pass_criteria": {
+  "expected_skill": [
+   "clients",
+   "memory",
+   "relationships"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

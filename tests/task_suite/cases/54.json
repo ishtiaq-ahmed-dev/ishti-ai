@@ -1,0 +1,40 @@
+{
+ "id": 54,
+ "prompt_text": "Find me the best-reviewed mechanical keyboard under 15000 PKR",
+ "category": "Shopping & price lookups (53-57)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "system",
+  "meta",
+  "chat",
+  "shopping",
+  "web_search",
+  "markets"
+ ],
+ "expected_outcome": "2-3 options meeting the actual constraint, with sources",
+ "expected_reply_success": "2-3 options meeting the actual constraint, with sources",
+ "expected_reply_failure": "If nothing meets the budget: says so honestly instead of stretching the recommendation",
+ "pass_criteria": {
+  "expected_skill": [
+   "shopping",
+   "web_search",
+   "arch2",
+   "chat"
+  ],
+  "ok_any": [
+   "keyboard",
+   "pkr",
+   "15",
+   "price",
+   "nothing",
+   "couldn't",
+   "could not"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

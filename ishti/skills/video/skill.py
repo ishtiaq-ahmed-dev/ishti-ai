@@ -21,7 +21,19 @@ PRO = re.compile(r"\b(?:ad|ads|advert|advertisement|promo|promotional|commercial
 ORGANIZE = re.compile(r"\b(?:organi[sz]e|arrange|sort|folders?|files\s+in\s+video)\b", re.I)
 
 
+PLAY = re.compile(r"\b(?:play|watch|show|open)\b\s+.{0,40}?\bvideos?\b|\bvideos?\b.{0,20}?\b(?:play|watch)\b", re.I)
+RUNTIME = re.compile(r"\b(?:total|combined|overall|sum\s+of)\b.{0,30}?\b(?:runtime|duration|length)\b|"
+                     r"\b(?:runtime|total\s+duration|how\s+long)\b.{0,40}?\bvideos?\b|\bvideos?\b.{0,30}?\b(?:runtime|total\s+duration|how\s+long)\b", re.I)
+
+
 def match(text):
+    # creative writing / brainstorming / YouTube metadata about videos is chat/writing/web, not FFmpeg video editing
+    if re.search(r'\b(?:ideas?|suggest(?:ions?)?|brainstorm|names?|topics?|scripts?|tags?|description|timestamps?|trending|niche|perform|schedule|compare|write\s+(?:a|me|an|the|short)|generate\s+(?:ideas?|titles?)|concept|turn\s+(?:my\s+)?(?:rough\s+)?notes)\b', text, re.I) and not VIDEO_FILE.search(text):
+        return False
+    # Playback and total-runtime questions about videos aren't edits and must not be lost to folders
+    # (checklist #171, #175). Must run before the ORGANIZE guard, which trips on the word "folder".
+    if (PLAY.search(text) or RUNTIME.search(text)) and re.search(r"\bvideos?\b|\bclips?\b|\bfootage\b", text, re.I):
+        return True
     # needs an edit verb and a video (file or the word); "files in the video folder that are audio" is a folders job
     if ORGANIZE.search(text) and not VIDEO_FILE.search(text):
         return False
@@ -117,6 +129,50 @@ def pick(answer, choices):
     return None
 
 
+def play(text, session):
+    """"Play my latest Obscura video": open the resolved video in the OS default player and say which one
+    (checklist #171). Says so honestly when nothing matches instead of asking a folder question."""
+    explicit = PATH.search(text)
+    named = explicit.group(0) if explicit else (VIDEO_FILE.findall(text) or [""])[0].strip()
+    src = find_video(named)
+    if not src:
+        vids = recent_videos(text)
+        src = vids[0] if vids else None
+    if not src:
+        return {"reply": "I couldn't find that video in Downloads, Videos or Desktop. Give me its name or path.", "sources": []}
+    from ishti import test_mode
+    if test_mode.enabled():
+        return {"reply": f"[test-mode] Would play {os.path.basename(src)} ({src}).", "sources": []}
+    try:
+        os.startfile(src)  # default player; no shell involved
+    except OSError as exc:
+        return {"reply": f"I found {src} but couldn't play it: {exc}", "sources": []}
+    return {"reply": f"Playing {os.path.basename(src)} ({src}).", "sources": []}
+
+
+def runtime(text, session):
+    """"What's the total runtime of all videos in my Obscura folder?": a real sum over the actual files
+    (checklist #175), with an honest "no video files" when there are none."""
+    vids = recent_videos(text, n=200)
+    if not vids:
+        return {"reply": "No video files found in that folder, so there's nothing to add up.", "sources": []}
+    from tools.video.video_editor import get_video_editor
+    ed = get_video_editor()
+    total, counted, skipped = 0.0, 0, 0
+    for v in vids[:80]:
+        d = (ed.get_media_info(v) or {}).get("duration_seconds")
+        try:
+            total += float(d)
+            counted += 1
+        except (TypeError, ValueError):
+            skipped += 1
+    h, rem = divmod(int(total), 3600)
+    m, s = divmod(rem, 60)
+    label = f"{h} h {m} min" if h else (f"{m} min {s} s" if m else f"{s} s")
+    note = f" ({skipped} file(s) had no readable duration)" if skipped else ""
+    return {"reply": f"{counted} video(s): total runtime {label} ({int(total)} s){note}.", "sources": []}
+
+
 def run(text, session):
     pend = session.get("pending")
     if pend and pend.get("skill") == "video":
@@ -140,6 +196,10 @@ def run(text, session):
         if not (EDIT_VERB.search(text) or ANSWER_EDIT.search(text) or PRO.search(text)):
             return None  # moved on to something else
         return edit(f"{text} ({os.path.basename(pend['file'])})", session, pend["file"])  # answer to "what edit?"
+    if PLAY.search(text):
+        return play(text, session)
+    if RUNTIME.search(text) and not EDIT_VERB.search(text):  # a total, not an edit
+        return runtime(text, session)
     return edit(text, session)
 
 
@@ -150,6 +210,11 @@ def edit(text, session, src=None):
     named = explicit.group(0) if explicit else (VIDEO_FILE.findall(text) or [""])[0].strip()
     if not named and VIDEO_FILE.fullmatch(str(p.get("input_file") or "")):
         named = p["input_file"]  # only a real file name: the model's "videos" would start a whole-PC search
+    # An explicit full path that isn't there is a real error, not something to paper over with a
+    # search of Downloads/Videos/Desktop (checklist #172): say exactly which file is missing.
+    if explicit and not os.path.isfile(named):
+        return {"reply": f"I can't find that file: {named} - no such file (or the path is wrong). "
+                         "Give me the correct path and I'll run the edit.", "sources": []}
     src = src or find_video(named)
     # If no source was found by name/path, check if we can reuse the previous video from this session
     if not src and not named and session.get("last_video") and os.path.isfile(session["last_video"]):

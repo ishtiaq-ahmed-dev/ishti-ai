@@ -1,0 +1,25 @@
+{
+ "id": 128,
+ "prompt_text": "Any new LinkedIn messages?",
+ "category": "LinkedIn — reading & professional messaging (128-132)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [
+  "browser",
+  "whatsapp"
+ ],
+ "expected_outcome": "States sender + rough content",
+ "expected_reply_success": "States sender + rough content",
+ "expected_reply_failure": "\"No new messages\" if genuinely none",
+ "pass_criteria": {
+  "expected_skill": [
+   "browser"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

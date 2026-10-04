@@ -31,13 +31,16 @@ TRIGGER = re.compile(rf"{FX_PAIR.pattern}|{FX_RATE.pattern}|\b(?:gold|silver)\s+
                      rf"(?:the\s+)?(?:gold|silver)\b|\b(?:gold|silver)\b.*\btoday\b|{COINS.pattern}|{STOCKY.pattern}|"
                      r"\b(?:crypto|cryptocurrenc(?:y|ies)|forex|exchange\s+rate|stop[-\s]?loss|take[-\s]?profit|price\s+(?:target|prediction)|"
                      r"target\s+price|buy\s+or\s+sell)\b", I)
+# "Buy 10 shares of NVDA" / "purchase 5 shares of Apple" - paper trading only, with confirmation
+BUY_SHARES = re.compile(r"\b(?:buy|purchase|acquire|trade|invest\s+in)\s+(?:\d+\s+)?(?:shares?|stock|stocks?|units?)\b", I)
 # an investment decision ("how much should I buy", "when to sell") - general deep research leaves these to markets/Laya
 INVEST = re.compile(r"\b(?:how\s+much\s+(?:\w+\s+){0,3}(?:should|to|can)\s+(?:i\s+)?(?:buy|invest)|when\s+(?:to|should\s+i)\s+sell|"
                     r"should\s+i\s+(?:buy|sell|invest|hold)|buy\s+or\s+sell|stop[-\s]?loss|take[-\s]?profit|price\s+target)\b", I)
 
 
 def match(text):
-    return bool(TRACK.search(text)) or (bool(TRIGGER.search(text) or (INVEST.search(text) and named_asset(text)))
+    return bool(TRACK.search(text)) or (bool(TRIGGER.search(text) or (INVEST.search(text) and named_asset(text))
+                                        or (BUY_SHARES.search(text) and named_asset(text)))
                                         and not re.search(r"\b(?:jewell?ery|ring|necklace|buy\s+(?:a|an|the))\b", text, I))
 
 
@@ -212,11 +215,63 @@ def quote(item):
             "change_pct": None if a["chg_1d"] is None else float(a["chg_1d"]), "spark": s["closes"][-60:]}
 
 
+def op_buy_shares(text, session, local):
+    """"Buy 10 shares of NVDA" / "purchase 5 shares of Apple" - paper trading simulation with confirmation.
+    Real broker execution is out of scope; this shows the cost and asks before simulating."""
+    from ishti.skills import ask_first
+    # extract quantity and asset name
+    qm = re.search(r"\b(\d+)\s+(?:shares?|stocks?|units?)\b", text, I)
+    qty = int(qm.group(1)) if qm else 1
+    # find the asset name: everything after "of" or the named asset
+    am = re.search(r"\b(?:of\s+)(.+?)(?:\s*$|\s+and\s+)", text, I)
+    asset = am.group(1).strip() if am else ""
+    if not asset:
+        names = stock_names(text)
+        asset = names[0] if names else ""
+    if not asset:
+        return "Which stock or asset do you want to buy? Tell me the name or ticker (for example 'buy 10 shares of NVDA')."
+    # get the price
+    ticker = asset if asset.isupper() and re.fullmatch(r"\^?[A-Z.\-]{1,6}", asset) and data.stock(asset) else data.find_ticker(asset)
+    if not ticker:
+        return f"I couldn't find market data for {asset}. Is it a listed stock?"
+    s = data.stock(ticker)
+    if not s:
+        return f"I couldn't get a live price for {asset}."
+    price = float(s["closes"][-1])
+    cur = s.get("currency", "USD") or "USD"
+    cost = price * qty
+    low = s.get("low_52w")
+    high = s.get("high_52w")
+    range_str = ""
+    if low and high:
+        try:
+            range_str = f"- 52-week range: {money(float(low), cur)}–{money(float(high), cur)}"
+        except (TypeError, ValueError):
+            range_str = "- 52-week range: n/a"
+    else:
+        range_str = "- 52-week range: n/a"
+    reply = (f"**Paper trading simulation** (not real money - ISHTI doesn't execute broker orders):\n"
+             f"- Asset: **{s['name']} ({s['symbol']})**\n"
+             f"- Quantity: {qty} share{'s' if qty > 1 else ''}\n"
+             f"- Price: {money(price, cur)} per share\n"
+             f"- Total cost: **{money(cost, cur)}**\n"
+             f"{range_str}\n\n"
+             f"This is a paper-trading estimate only. Say 'yes' to run the simulation, or 'no' to cancel.")
+    def simulate():
+        return (f"**Paper trade executed** (simulation only - no real money moved):\n"
+                f"Bought {qty} share{'s' if qty > 1 else ''} of {s['name']} ({s['symbol']}) at {money(price, cur)} each.\n"
+                f"Total: {money(cost, cur)}.\n\n"
+                f"This was a simulation. To trade for real you'd need a broker integration.")
+    return ask_first(session, "markets", f"Paper-trade {qty} share{'s' if qty > 1 else ''} of {s['name']} ({s['symbol']}) for {money(cost, s['currency'])} (simulation only)", simulate)
+
+
 def run(text, session):
     local = owner_currency()
     if TRACK.search(text):
         from ishti.skills.markets import research
         return {"reply": research.track_record(), "sources": []}
+    if BUY_SHARES.search(text):
+        return op_buy_shares(text, session, local)
     deep = bool(ANALYZE.search(text))
     if deep and not FX_PAIR.search(text) and (out := research_desk(text, session, local)):
         return out

@@ -1,0 +1,23 @@
+{
+ "id": 219,
+ "prompt_text": "Give me a quick health check right now - are you responsive, and is your resource use stable?",
+ "category": "Long-horizon autonomy & background monitoring (218-223)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Stays responsive, resource use stays stable (no creeping slowdown), reported accurately if asked",
+ "expected_reply_success": "Stays responsive, resource use stays stable (no creeping slowdown), reported accurately if asked",
+ "expected_reply_failure": "Wrong: degrades silently without surfacing that something's off",
+ "pass_criteria": {
+  "expected_skill": [
+   "system",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

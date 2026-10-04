@@ -34,7 +34,9 @@ OPS = [
                                 r"\b(?:copy|restore|paste)\s+(?:clipboard\s+)?(?:item|entry|number)\s+(?P<n>\d+)\b", I)),
     ("displays", re.compile(r"\b(?:list|show|which|how\s+many)\s+(?:my\s+)?(?:monitors|displays|screens)\b|"
                             r"\b(?P<mode>extend|duplicate|mirror|clone)\s+(?:my\s+|the\s+)?(?:displays?|screens?|monitors?)\b|"
-                            r"\b(?P<only>(?:pc|laptop|first|main|second|external)\s+screen\s+only|only\s+(?:the\s+)?(?:second|external|main|laptop)\s+(?:screen|display|monitor))\b", I)),
+                            r"\b(?P<only>(?:pc|laptop|first|main|second|external)\s+screen\s+only|only\s+(?:the\s+)?(?:second|external|main|laptop)\s+(?:screen|display|monitor))\b|"
+                            r"\b(?:switch\s+to\s+)?(?:my\s+)?(?:second|third|first|main|external)\s+(?:monitor|display|screen)\b|"
+                            r"\b(?:move|shift)\s+(?:this\s+)?(?:window|it)\s+(?:to\s+(?:the\s+)?(?:second|third|first|main|external)\s+(?:monitor|display|screen)|there)\b", I)),
     ("print_queue", re.compile(r"\bprint(?:er)?\s+queue\b|\bwhat(?:'s| is)\s+printing\b|\b(?P<cancel>cancel|clear)\s+(?:all\s+)?(?:the\s+)?print(?:ing)?\s+jobs?\b|"
                                r"\b(?:list|show|which)\s+(?:my\s+)?printers\b", I)),
     ("print_file", re.compile(r"^\s*(?:please\s+)?print\s+(?:out\s+)?(?:the\s+file\s+)?[\"']?(?P<path>[a-z]:[\\/].+?\.\w{2,5})[\"']?"

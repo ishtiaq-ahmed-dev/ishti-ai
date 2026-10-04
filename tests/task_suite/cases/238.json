@@ -1,0 +1,33 @@
+{
+ "id": 238,
+ "prompt_text": "Who can currently use voice commands on this system?",
+ "category": "Security & privacy actions (234-239)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "dev",
+  "terminal",
+  "devops",
+  "gitops",
+  "chat",
+  "system",
+  "meta"
+ ],
+ "expected_outcome": "Honest answer based on actual configuration",
+ "expected_reply_success": "Honest answer based on actual configuration",
+ "expected_reply_failure": "Wrong: assumes or guesses instead of checking the real setting",
+ "pass_criteria": {
+  "expected_skill": [
+   "system",
+   "meta",
+   "owner",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

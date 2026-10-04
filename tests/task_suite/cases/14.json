@@ -1,0 +1,33 @@
+{
+ "id": 14,
+ "prompt_text": "Cancel the reminder about the oven",
+ "category": "Scheduling & reminders (11-18)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "reminders",
+  "system",
+  "meta",
+  "chat"
+ ],
+ "expected_outcome": "Confirms exactly which one was cancelled",
+ "expected_reply_success": "Confirms exactly which one was cancelled",
+ "expected_reply_failure": "If multiple/ambiguous matches: asks which one",
+ "pass_criteria": {
+  "expected_skill": [
+   "reminders"
+  ],
+  "ok_any": [
+   "cancel",
+   "oven",
+   "removed",
+   "couldn't find",
+   "could not find"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

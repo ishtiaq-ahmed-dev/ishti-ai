@@ -15,8 +15,34 @@ Design: env-gated, default OFF, zero behaviour change when off (production path 
 function - guarded() - is the only thing skills/dispatcher need to call.
 """
 import os
+import re
 
 _ENV = "ISHTI_TEST_MODE"
+
+# A request that changes the world (send/delete/pay/post/...) must be confirmed by the owner before it
+# runs. Under test mode the skill never executes, so the gate is answered by a real confirmation
+# question instead of the old opaque "never touch the real world" line - the owner is asked, exactly
+# as they would be in a live session, and a following "yes" is stopped by blocked() at the last step.
+_ACTION = re.compile(
+    r"\b(?:send|reply|forward|delete|remove|erase|purge|post|publish|comment|react|mark|pay|buy|order|"
+    r"purchase|upload|install|uninstall|move|rename|call|message|text|email|trade|sell|withdraw|book|"
+    r"schedule|back\s*up|clean\s*up)\b", re.I)
+
+
+def gated_reply(skill: str, gate: str, tier: str = "T2") -> dict:
+    """The reply for a T2 request under test mode. The skill is NOT run (no real side effect), but the
+    answer is honest and shaped as the owner expects: a world-changing action returns the confirmation
+    question, anything else returns a plain dry-run note."""
+    from ishti import audit
+    audit.record(f"TEST-MODE DRY {tier} {skill}: {(gate or '')[:120]}", "", skill=skill,
+                 initiator="test-harness", tier=tier, confirmed=None, request="[test-mode]")
+    req = re.sub(r"^run\s+", "", (gate or "").strip()).strip(" '\"")
+    if _ACTION.search(req):
+        return {"reply": f"Shall I go ahead and {req[:130]}? Confirm with yes or no and I'll act.",
+                "sources": [], "test_mode_dry": True, "confirm_required": True}
+    return {"reply": f"{req[:130]} - in a live session I'd handle this now. "
+                     f"(dry run: test mode is on, so I didn't touch the real app or data.)",
+            "sources": [], "test_mode_dry": True}
 
 # Never executed under test mode, whatever a skill's code path claims. Matched case-insensitively
 # against the action description AND (best effort) audited by the dispatcher wrapper.

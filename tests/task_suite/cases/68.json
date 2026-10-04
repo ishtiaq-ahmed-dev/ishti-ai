@@ -1,0 +1,44 @@
+{
+ "id": 68,
+ "prompt_text": "Find a good tutorial on Python decorators, save the link, and remind me to watch it this weekend",
+ "category": "Multi-step chained tasks (62-69)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "reminders",
+  "files",
+  "folders",
+  "fileops",
+  "web_search",
+  "web_fetch",
+  "browser",
+  "deep_research",
+  "chat",
+  "writing",
+  "video"
+ ],
+ "expected_outcome": "Confirms all three pieces completed",
+ "expected_reply_success": "Confirms all three pieces completed",
+ "expected_reply_failure": "If tutorial search comes up weak: says so rather than forcing a mediocre pick through the rest of the chain",
+ "pass_criteria": {
+  "expected_skill": [
+   "plan",
+   "web_search",
+   "notes",
+   "fileops",
+   "reminders"
+  ],
+  "ok_any": [
+   "tutorial",
+   "decorator",
+   "saved",
+   "remind",
+   "weekend"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

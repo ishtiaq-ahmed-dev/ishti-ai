@@ -1,0 +1,33 @@
+{
+ "id": 156,
+ "prompt_text": "I'm double-booked Thursday, which one should I move?",
+ "category": "Meetings & calendar coordination (151-156)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Lays out both options plainly and asks which matters more, rather than deciding unilaterally for Ishtiaq",
+ "expected_reply_success": "Lays out both options plainly and asks which matters more, rather than deciding unilaterally for Ishtiaq",
+ "expected_reply_failure": "Wrong: picks one to move without asking, especially if both look similarly important",
+ "pass_criteria": {
+  "expected_skill": [
+   "calendar",
+   "reminders",
+   "chat"
+  ],
+  "ok_any": [
+   "thursday",
+   "which",
+   "both",
+   "priority",
+   "matters more",
+   "move",
+   "no events",
+   "don't see"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

@@ -1,0 +1,39 @@
+{
+ "id": 172,
+ "prompt_text": "Trim the first 10 seconds off this video file D:/videos/clip.mp4",
+ "category": "Media & video tasks (171-176)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "video",
+  "media",
+  "files",
+  "folders",
+  "system",
+  "meta",
+  "chat"
+ ],
+ "expected_outcome": "Confirms done, shows new duration",
+ "expected_reply_success": "Confirms done, shows new duration",
+ "expected_reply_failure": "If file format unsupported or path wrong: states the real error",
+ "pass_criteria": {
+  "expected_skill": [
+   "video"
+  ],
+  "ok_any": [
+   "trim",
+   "clip.mp4",
+   "duration",
+   "10 second",
+   "saved",
+   "no such file",
+   "couldn't",
+   "could not"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

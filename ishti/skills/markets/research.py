@@ -282,7 +282,10 @@ def resolve(name, text):
     if sym := psx_symbol(name, text):
         q = data.psx(sym) or {}
         return f"{sym}.KA", q.get("name") or sym, "PKR", q.get("price"), "psx"
-    ticker = name if name.isupper() and re.fullmatch(r"\^?[A-Z.\-]{1,6}", name) else data.find_ticker(name)
+    # a plain word in capitals is only treated as a ticker when it really resolves to one:
+    # "NVIDIA" is not a ticker (that 404'd yfinance and reported "no price history"); "NVDA" is.
+    ticker = name if (name.isupper() and re.fullmatch(r"\^?[A-Z.\-]{1,6}", name) and data.stock(name)) \
+        else data.find_ticker(name)
     return ticker, None, None, None, "stock"
 
 

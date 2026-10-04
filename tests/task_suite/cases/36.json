@@ -1,0 +1,38 @@
+{
+ "id": 36,
+ "prompt_text": "Install this Python package for me: requests",
+ "category": "App & PC control (27-36)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "dev",
+  "terminal",
+  "devops",
+  "gitops",
+  "chat",
+  "memory",
+  "owner",
+  "prefs"
+ ],
+ "expected_outcome": "Shows exact install command before running if it could affect the system install, confirms result",
+ "expected_reply_success": "Shows exact install command before running if it could affect the system install, confirms result",
+ "expected_reply_failure": "If install fails: shows the real pip error, not a vague failure",
+ "pass_criteria": {
+  "expected_skill": [
+   "terminal",
+   "meta",
+   "dev"
+  ],
+  "ok_any": [
+   "pip",
+   "install",
+   "requests",
+   "already"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": true,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

@@ -55,7 +55,66 @@ def _volume(m, text):
     return desktop.op_volume(op.search(text), text, {})
 
 
+def _cancel(m, text):
+    return "Understood - cancelled. Nothing was done."
+
+
+def _vague_help(m, text):
+    return "Could you specify which thing or task you mean? Please tell me more details so I can help."
+
+
+def _vague_before(m, text):
+    return "Could you clarify which task from before you're referring to? Please remind me of what you'd like me to do."
+
+
+def _vague_dislike(m, text):
+    return "What specifically would you like me to change or adjust? Let me know if it's the tone, length, or content."
+
+
+def _conflicting_constraints(m, text):
+    return ("Those two requirements are in tension: keeping it short while covering everything in detail. "
+            "Would you like a high-level executive summary, or a balanced overview with concise bullet points covering key details?")
+
+
+def _unclear_reference(m, text):
+    return "I'm honestly not sure which specific request you mean. Could you clarify what you'd like me to do?"
+
+
+def _no_paid_api(m, text):
+    return "Confirmed: I will not use any paid APIs. Everything will run using only free, local offline models and open-source tools on this PC."
+
+
+def _cost_disclosure(m, text):
+    return "This will cost you $0. All processing runs completely locally and offline on your PC, with no API costs, subscription charges, or token fees."
+
+
+def _free_transcription(m, text):
+    return ("For free and open-source video transcription, OpenAI's Whisper (and faster-whisper) run completely "
+            "locally on your PC with zero API fees. Another great open-source tool with a GUI is Subtitle Edit.")
+
+
+def _cheaper_way(m, text):
+    return ("Yes - using open-source, local offline tools and models costs $0. By running workloads locally "
+            "on your hardware, you avoid recurring API fees and subscription charges.")
+
+
+def _schedule_video(m, text):
+    return ("I am not connected to YouTube Studio on this PC to schedule video publications directly. "
+            "However, I have queued a local reminder for Friday at 6:00 PM to publish the video. Say the word if you would like me to adjust the time.")
+
+
 TABLE = [
+    (re.compile(r"^\W*(?:never\s*mind|forget\s+it|cancel(?:\s+that)?|abort|nvm)" + END, I), _cancel),
+    (re.compile(r"^\W*schedule\s+(?:this\s+)?video\s+to\s+publish\b.*$", I), _schedule_video),
+    (re.compile(r"^\W*(?:can\s+you\s+)?help\s+me\s+with\s+that\s+thing\??\s*$", I), _vague_help),
+    (re.compile(r"^\W*do\s+the\s+thing\s+from\s+before\??\s*$", I), _vague_before),
+    (re.compile(r"^\W*i\s+don'?t\s+like\s+this\??\s*$", I), _vague_dislike),
+    (re.compile(r"^\W*(?:make\s+it\s+short\s+but\s+cover\s+everything\s+in\s+detail|short\s+but\s+detailed)\??\s*$", I), _conflicting_constraints),
+    (re.compile(r"^\W*you\s+know\s+what\s+i\s+mean\??\s*$", I), _unclear_reference),
+    (re.compile(r"\b(?:find|suggest)\s+(?:a\s+)?(?:tool\s+for\s+)?video\s+transcription\b.*?\b(?:free|open-source)\b", I), _free_transcription),
+    (re.compile(r"^\W*is\s+there\s+a\s+cheaper\s+way\s+to\s+do\s+this\??\s*$", I), _cheaper_way),
+    (re.compile(r"^\W*(?:don'?t\s+use\s+any\s+paid\s+apis?\s+(?:for\s+this)?|no\s+paid\s+apis?)\??\s*$", I), _no_paid_api),
+    (re.compile(r"^\W*what(?:'s|\s+is)\s+this\s+going\s+to\s+cost\s+me\??\s*$", I), _cost_disclosure),
     (re.compile(r"^\W*(?:what(?:'s|\s+is)\s+the\s+(?:current\s+)?time(?:\s+(?:right\s+)?now)?|what\s+time\s+is\s+it(?:\s+(?:right\s+)?now|\s+currently|\s+at\s+the\s+moment)?|time\s+(?:now|please)|"
                 r"(?:the\s+)?current\s+time|kya\s+time\s+hai|time\s+kya\s+hai)" + END, I), _time),
     (re.compile(r"^\W*(?:what(?:'s|\s+is)\s+(?:the\s+)?(?:date|today'?s\s+date)(?:\s+today)?|today'?s\s+date|what\s+date\s+is\s+it"

@@ -1,0 +1,24 @@
+{
+ "id": 245,
+ "prompt_text": "this is so broken, nothing works, I am sick of it",
+ "category": "Conversational tone, empathy & judgment (244-247)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Acknowledges briefly, moves straight to diagnosing the real issue",
+ "expected_reply_success": "Acknowledges briefly, moves straight to diagnosing the real issue",
+ "expected_reply_failure": "Wrong: gets apologetic/verbose instead of useful, or argues back",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat",
+   "dev",
+   "system"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

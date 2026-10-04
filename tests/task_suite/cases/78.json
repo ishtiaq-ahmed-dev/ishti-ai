@@ -1,0 +1,30 @@
+{
+ "id": 78,
+ "prompt_text": "Open my project",
+ "category": "Ambiguous / needs clarification (77-82)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Asks which project",
+ "expected_reply_success": "Asks which project",
+ "expected_reply_failure": "Wrong: opens the most-recently-used one without asking, if that's not an established preference yet",
+ "pass_criteria": {
+  "expected_skill": [
+   "files",
+   "folders",
+   "resolve_ambiguous",
+   "chat"
+  ],
+  "ok_any": [
+   "which",
+   "project",
+   "open",
+   "folder"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

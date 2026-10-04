@@ -15,7 +15,32 @@ import os
 import subprocess
 import sys
 
+import pytest
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _checkpoint_cached():
+    """True only when the Laya checkpoint is in the local HF cache. On a machine where it was never
+    downloaded (or was cleaned), the load test cannot run offline at all - the router then falls back
+    to its deterministic rules, which is a working state, not a broken one."""
+    try:
+        from huggingface_hub import try_to_load_from_cache
+        for repo, path in (("convaiinnovations/laya-typed-decisions", "rl_agent_config.json"),
+                           ("convaiinnovations/laya", "typed-decisions/rl_agent_config.json"),
+                           ("convaiinnovations/laya", "rl_agent_config.json")):
+            hit = try_to_load_from_cache(repo, path)
+            if isinstance(hit, str) and os.path.isfile(hit):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+requires_checkpoint = pytest.mark.skipif(
+    not _checkpoint_cached(),
+    reason="Laya checkpoint is not in the local HF cache - the calibration-warning test needs the weights")
+
 CODE = """
 import warnings
 {pre}
@@ -33,9 +58,11 @@ def _load(pre):
     return p.stderr
 
 
+@requires_checkpoint
 def test_library_still_warns_without_ishti_router():
     assert "invalid temperatures" in _load("")      # if this ever fails the checkpoint is fixed: drop the filter
 
 
+@requires_checkpoint
 def test_importing_ishti_router_silences_the_calibration_warning():
     assert "invalid temperatures" not in _load("import ishti.router")

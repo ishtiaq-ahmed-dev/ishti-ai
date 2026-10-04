@@ -1,0 +1,39 @@
+{
+ "id": 193,
+ "prompt_text": "Let me know the moment anyone messages me about the Zyntiqo project",
+ "category": "Notifications & alerts (193-196)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "reminders",
+  "automation",
+  "system",
+  "chat"
+ ],
+ "expected_outcome": "Confirms what it's watching for and how it'll notify, honestly scoped to what it can actually detect",
+ "expected_reply_success": "Confirms what it's watching for and how it'll notify, honestly scoped to what it can actually detect",
+ "expected_reply_failure": "Wrong: claims to monitor something it has no actual access to watch",
+ "pass_criteria": {
+  "expected_skill": [
+   "reminders",
+   "automation",
+   "whatsapp",
+   "chat"
+  ],
+  "ok_any": [
+   "zyntiqo",
+   "watch",
+   "notify",
+   "let you know",
+   "can't",
+   "cannot",
+   "monitor",
+   "alert"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

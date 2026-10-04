@@ -1,0 +1,38 @@
+{
+ "id": 61,
+ "prompt_text": "What's the weather like in Sargodha this weekend?",
+ "category": "Weather & location (58-61)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "weather",
+  "web_search",
+  "chat",
+  "system",
+  "meta",
+  "writing",
+  "video"
+ ],
+ "expected_outcome": "Clear day-by-day or summary",
+ "expected_reply_success": "Clear day-by-day or summary",
+ "expected_reply_failure": "If multi-day forecast isn't available: gives what range it has and says so",
+ "pass_criteria": {
+  "expected_skill": [
+   "weather"
+  ],
+  "ok_any": [
+   "sargodha",
+   "°c",
+   "weekend",
+   "saturday",
+   "sunday",
+   "couldn't",
+   "could not"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

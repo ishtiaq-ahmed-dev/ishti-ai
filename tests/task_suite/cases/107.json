@@ -1,0 +1,27 @@
+{
+ "id": 107,
+ "prompt_text": "Switch to Instagram, I was just on LinkedIn",
+ "category": "Opening apps — social & communication (101-110)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [
+  "apps",
+  "browser",
+  "desktop"
+ ],
+ "expected_outcome": "Switches to the already-open Instagram tab rather than opening a new one",
+ "expected_reply_success": "Switches to the already-open Instagram tab rather than opening a new one",
+ "expected_reply_failure": "If Instagram wasn't already open: opens fresh and says so",
+ "pass_criteria": {
+  "expected_skill": [
+   "browser",
+   "apps"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

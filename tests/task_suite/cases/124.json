@@ -1,0 +1,24 @@
+{
+ "id": 124,
+ "prompt_text": "Reply to that Instagram message from my cousin saying I'll call later",
+ "category": "Instagram & Facebook — reading & replying (123-127)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Confirms which cousin if more than one known, shows draft before send",
+ "expected_reply_success": "Confirms which cousin if more than one known, shows draft before send",
+ "expected_reply_failure": "If \"cousin\" isn't resolvable to a specific saved contact: asks who specifically",
+ "pass_criteria": {
+  "expected_skill": [
+   "browser",
+   "whatsapp",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": true,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

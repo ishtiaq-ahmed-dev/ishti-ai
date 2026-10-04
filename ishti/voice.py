@@ -30,7 +30,21 @@ import wave
 import numpy as np
 
 from ishti import CONFIG
-from voice.tts import speakable
+try:
+    from voice.tts import speakable
+except Exception:
+    # voice/tts.py is the optional SAPI5 fallback (pyttsx3 may be missing on this host).
+    # speakable() is used by the Piper/Kokoro TTS path in ishti/voice.py only; if tts.py cannot
+    # even import, the TTS path degrades rather than crashing voice imports (used by the language
+    # command in ishti/dispatcher.py and by test modules).
+    def speakable(text, max_chars=900):  # pragma: no cover - depends on host audio setup
+        import warnings
+        warnings.warn(
+            "[voice] speakable unavailable (voice/tts.py import failed)",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return (text or "")[:max_chars]
 
 RATE = 16000                             # every caller feeds 16 kHz mono (wake.py, Live mode, /api/stt, voice notes)
 _cfg = CONFIG["voice"]

@@ -1,0 +1,28 @@
+{
+ "id": 35,
+ "prompt_text": "Mute my microphone",
+ "category": "App & PC control (27-36)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Confirms muted, matches VOI-2 behavior (nothing captured while off)",
+ "expected_reply_success": "Confirms muted, matches VOI-2 behavior (nothing captured while off)",
+ "expected_reply_failure": "N/A — should never silently fail this one, it's a safety-relevant toggle",
+ "pass_criteria": {
+  "expected_skill": [
+   "mic",
+   "desktop"
+  ],
+  "ok_any": [
+   "mic",
+   "mute",
+   "off",
+   "on"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

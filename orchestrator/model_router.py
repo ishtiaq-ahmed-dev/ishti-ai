@@ -245,8 +245,10 @@ class ModelRouter:
                 if getattr(exc, "timed_out", False):  # the server itself is stuck: another model would wait just as long
                     return ""
                 alt = self._installed_alternative(requested)
-                if alt != requested:  # the configured name does not exist here: answer with one that does
-                    print(f"[ModelRouter] {requested} is not installed - using {alt}")
+                if alt == requested:
+                    alt = self.get_model("fallback")
+                if alt and alt != requested:
+                    print(f"[ModelRouter] {requested} busy/fallback - using {alt}")
                     try:
                         guard, lease, model_name = self._admit(alt)
                     except Exception as exc2:

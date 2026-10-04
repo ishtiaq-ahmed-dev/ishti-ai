@@ -43,11 +43,26 @@ OPS = [
     ("translate", re.compile(r"^\s*(?:please\s+)?translate\s+(?P<body>.+?)\s+(?:to|into|in)\s+(?P<lang>[a-z ]{3,20})\s*$|^\s*(?:how\s+do\s+(?:you|i)\s+say|what\s+is)\s+(?P<body2>.+?)\s+in\s+(?P<lang2>urdu|english|arabic|pashto|hindi|chinese|french|german|spanish|turkish|persian)\s*\??$", I)),
     ("define", re.compile(r"^\s*(?:define|meaning\s+of|what\s+does\s+(?P<w2>[a-z'-]+)\s+mean)\b\s*(?P<w>[a-z'-]*)", I)),
     # "research the latest AI news" is deep research (read + synthesise with sources), not a headline list
-    ("news", re.compile(r"^(?!.*\b(?:research|investigat\w*|analy[sz]e|deep\s+dive|report\s+on)\b).*\b(?:news|headlines)\b", I)),
+    # "what's trending in AI news this week" is a web search (live results), not a Google News RSS headline list.
+    # The RSS path is for plain "news"/"headlines" requests; when the owner asks for TRENDS or THIS WEEK,
+    # web_search owns it (checklist #9). "latest news about pakistan" is still a plain headline request -
+    # the plain "latest news" phrasing stays here. "...pick the most relevant one and draft a note" is
+    # deep research, not a headline fetch (checklist #66).
+    ("news", re.compile(r"^(?!.*\b(?:research|investigat\w*|analy[sz]e|deep\s+dive|report\s+on|trend|this\s+week|"
+                        r"pick\s+(?:the\s+)?most\s+relevant|draft)\b).*\b(?:news|headlines)\b", I)),
 ]
 
 
 def match(text):
+    # "Define X for me" / "what does X mean" is general knowledge when the text is short and
+    # has no other utility context (conversion, prayer, news, translate) - let the chat brain
+    # answer from its training data instead of hitting the dictionary API (checklist #10).
+    if (rx := next((rx for _n, rx in OPS if rx.search(text)), None)) and \
+       any(rx.search(text) for _n, rx in OPS if _n == "define"):
+        from ishti.skills.chat.skill import KNOWLEDGE, PERSONAL
+        t = text.strip()
+        if KNOWLEDGE.match(t) and not PERSONAL.search(t) and len(t.split()) <= 14:
+            return False  # chat handles this as knowledge; the dictionary API would only parrot a definition
     return any(rx.search(text) for _, rx in OPS)
 
 
@@ -126,9 +141,20 @@ def op_time_in(m, text, session):
 
 
 # ---------------------------------------------------------------- words
+# "Translate this whole email thread into English" points at content the model cannot see; translating the
+# phrase itself is nonsense (checklist #180). Ask for the text instead of inventing a translation.
+DEICTIC = re.compile(r"^\s*(?:this|the|that|my|our)\s+(?:whole\s+|entire\s+|full\s+|long\s+)?"
+                     r"(?:e-?mails?|threads?|messages?|notes?|documents?|docs?|articles?|files?|paragraphs?|"
+                     r"conversations?|chats?)\b", re.I)
+
+
 def op_translate(m, text, session):
     body, lang = (m.group("body"), m.group("lang")) if m.group("body") else (m.group("body2"), m.group("lang2"))
     phrase = body.strip(" \"'")
+    if DEICTIC.match(phrase):
+        return {"reply": f"I can't translate {phrase} - I don't have its content here, and I won't invent one. "
+                         f"Paste the text, or tell me which email/thread to open, and I'll translate all of it into "
+                         f"{lang.strip().title()}.", "sources": []}
     script = {"urdu": "Urdu script (اردو)", "pashto": "Pashto script (پښتو)", "arabic": "Arabic script", "persian": "Persian script",
               "hindi": "Devanagari script", "chinese": "Chinese characters"}.get(lang.strip().lower(), f"{lang}")
     out = llm.ask(f"Translate the text below into {lang.strip().title()}, written in {script}. Output only the translation - no "
@@ -137,7 +163,17 @@ def op_translate(m, text, session):
     if not out or out.lower() == phrase.lower():  # the small model echoed it: one stricter try on the main model
         out = llm.ask(f"Give the {lang.strip().title()} translation ({script}) of: {phrase}\nOnly the translation.", role="planner",
                       system=None, temperature=0, max_tokens=200).strip().strip('"')
-    return {"reply": out, "sources": [], "no_translate": True}  # the answer IS in the other language: never translate it back
+    # Name the language so the reply is unambiguous, and add a pronunciation note for a phrasebook
+    # ask ("how do you say X in Pashto?") - checklist #181 expects the phrase plus a pronunciation note.
+    lang_name = lang.strip().title()
+    if _HOW_SAY.match(text):
+        label = f"{out}\n\n*(in {lang_name} - pronunciation can vary; ask me to romanise it)*"
+    else:
+        label = f"{out}\n\n*(in {lang_name})*"
+    return {"reply": label, "sources": [], "no_translate": True}  # the answer IS in the other language: never translate it back
+
+
+_HOW_SAY = re.compile(r"^\s*(?:how\s+do\s+(?:you|i)\s+say|what\s+is)\b", re.I)
 
 
 def op_define(m, text, session):

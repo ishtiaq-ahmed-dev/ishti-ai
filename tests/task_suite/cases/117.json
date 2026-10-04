@@ -1,0 +1,24 @@
+{
+ "id": 117,
+ "prompt_text": "Do I have any unread emails?",
+ "category": "Email — reading & replying (117-122)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [
+  "email"
+ ],
+ "expected_outcome": "Count + sender/subject summary",
+ "expected_reply_success": "Count + sender/subject summary",
+ "expected_reply_failure": "\"No unread emails\" if genuinely none",
+ "pass_criteria": {
+  "expected_skill": [
+   "email"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

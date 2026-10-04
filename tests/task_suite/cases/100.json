@@ -1,0 +1,31 @@
+{
+ "id": 100,
+ "prompt_text": "Search the web for today's gold price in Pakistan",
+ "category": "Errors, not-found & recovery (99-100)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "States clearly it lost connectivity, what it had so far (if anything), offers to retry when back",
+ "expected_reply_success": "States clearly it lost connectivity, what it had so far (if anything), offers to retry when back",
+ "expected_reply_failure": "Wrong: fabricates a plausible-looking result instead of admitting the failure",
+ "pass_criteria": {
+  "expected_skill": [
+   "web_search",
+   "markets"
+  ],
+  "ok_any": [
+   "gold",
+   "pkr",
+   "price",
+   "gram",
+   "tola",
+   "couldn't",
+   "could not"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

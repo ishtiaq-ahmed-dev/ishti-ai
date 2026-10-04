@@ -1,0 +1,30 @@
+{
+ "id": 140,
+ "prompt_text": "Who are my clients right now?",
+ "category": "People — work & professional (139-144)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Lists actual stored clients, tied to their projects",
+ "expected_reply_success": "Lists actual stored clients, tied to their projects",
+ "expected_reply_failure": "\"No clients currently on file\" if genuinely none stored",
+ "pass_criteria": {
+  "expected_skill": [
+   "clients",
+   "relationships",
+   "memory"
+  ],
+  "ok_any": [
+   "client",
+   "on file",
+   "sana",
+   "jq ai",
+   "ahmed"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

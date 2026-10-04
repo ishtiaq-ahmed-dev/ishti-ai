@@ -43,6 +43,46 @@ VIDEO_EDIT = re.compile(r"\b(?:edit|trim|cut|compress|caption|subtitle|overlay|t
 UNDO_DIR = os.path.join(ROOT, "data", "undo")
 
 
+VERBS = ("open", "delete", "remove", "copy", "move", "list", "show", "what", "whats", "what's", "which", "how",
+         "count", "find", "search", "locate", "organize", "arrange", "clean", "tidy", "sort", "check", "trash",
+         "get", "rid", "is", "in", "on", "from", "the", "my", "a", "an", "and", "also", "please", "me", "for",
+         "old", "new", "there", "here", "that", "this", "it", "s")
+
+
+def folder_name_candidate(text, known=None):
+    """The folder name a request is about, without resolving to a path.
+
+    Returns the candidate name (lowercase) or None. Handles the checklist phrasings:
+    "What's in my Projects folder?" -> 'projects', "delete the old_project folder" -> 'old_project',
+    "open my JQ AI client folder" -> 'jq ai client'. Leading verbs/stop-words are skipped so
+    "open my project" yields 'project', never 'open my'.
+    """
+    if known is None:
+        known = known_folders()
+    t = text.lower()
+    # 1) explicit "X folder" / "X directory" / "X dir" - take everything between "my"/start and the keyword
+    m = re.search(r"\b(?:my\s+|the\s+)?([a-z][a-z0-9_\-]*(?:\s+[a-z][a-z0-9_\-]*)*)\s+(?:folder|directory|dir)\b", t)
+    if m:
+        words = [w for w in m.group(1).split() if w not in VERBS]
+        name = " ".join(words).strip()
+        if name and name not in known:
+            return name
+        if name in known:
+            return name  # "downloads folder" -> downloads (folder_in resolves the path)
+    # 2) bare "my projects" / "my project" / "old_project" (no trailing 'folder')
+    m2 = re.search(r"\bmy\s+([a-z][a-z0-9_\-]*(?:\s+[a-z][a-z0-9_\-]*)?)\b", t)
+    if m2:
+        words = [w for w in m2.group(1).split() if w not in VERBS]
+        name = " ".join(words).strip()
+        if name:
+            return name
+    # 3) a bare token that is already a known folder name ("list downloads", "organize pictures")
+    for tok in re.findall(r"[a-z]+", t):
+        if tok in known:
+            return tok
+    return None
+
+
 def known_folders():
     names = {"downloads": "{374DE290-123F-4565-9164-39C4925E467B}", "desktop": "Desktop", "documents": "Personal",
              "pictures": "My Pictures", "videos": "My Video", "music": "My Music"}
@@ -75,6 +115,25 @@ def folder_in(text):
     for entity, attr, value in get_facts().mentioned_in(text):
         if attr == "location" and os.path.isdir(value):
             return entity, value
+    # "Projects folder", "old_project folder", "my project": an explicit folder name without a known
+    # special-folder mapping is still a real folder request. Treat project-like names as folder candidates so
+    # "what's in my Projects folder", "open my project" and "old_project folder" resolve instead of
+    # falling to the chat brain. "projects" (plural) is very likely a real user folder on this machine.
+    cand = folder_name_candidate(text, known=known_folders())
+    if cand:
+        for base in (cand, cand.capitalize(), cand + "s"):
+            cand_path = os.path.join(os.path.expanduser("~"), base)
+            if os.path.isdir(cand_path):
+                return base, cand_path
+        # Common project-ish folder names the owner uses: fall back to workspace roots so "my project" /
+        # "Projects folder" resolve on a machine that keeps them outside the profile.
+        for root in (os.path.expanduser("~"), os.path.join(os.path.expanduser("~"), "Desktop"),
+                     os.path.join(os.path.expanduser("~"), "Documents"),
+                     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..")):
+            for base in (cand, cand.capitalize(), cand + "s"):
+                cand_path = os.path.join(root, base)
+                if os.path.isdir(cand_path):
+                    return base, cand_path
     return None, None
 
 
@@ -129,9 +188,37 @@ def match(text):
     t = text.strip()
     if UNDO.match(t):
         return True
+    # "Deploy my latest commit" / "push my latest changes" / "revert the last commit": a git/deploy
+    # action, not a folder question. ASK fires on "latest"/"last" and folder_name_candidate reads the
+    # rest as a folder name, so folders used to claim these (checklist #164).
+    if re.search(r"\b(?:deploy|redeploy|release|ship|push|merge|revert|rollback|roll\s+back)\b", t, I) \
+            and re.search(r"\b(?:commit|branch|repo|repository|changes?|code|build|deployment|production|staging)\b", t, I):
+        return False
+    # "Play my latest Obscura video" / "total runtime of all videos in my folder" (checklist #171, #175): a
+    # video task. ASK fires on "latest"/"total", but only a real folder keeps it ours.
+    if re.search(r"\bvideos?\b|\bclips?\b", t, I) \
+            and re.search(r"\b(?:play|watch|runtime|total\s+duration|how\s+long|duration)\b", t, I) \
+            and not folder_in(t)[1]:
+        return False
+    # "Show me everything you know about my family" / "what do you know about X" (checklist #241): a memory
+    # recall, not a folder listing. "my family" was being read as a folder name.
+    if re.search(r"\b(?:everything|what)\s+(?:you\s+)?know(?:s)?\s+about\b|\bshow\s+me\s+everything\s+about\b|"
+                 r"\bwhat\s+do\s+you\s+know\s+about\b|\bdo\s+you\s+remember\b", t, I):
+        return False
     if not ORGANIZE.search(t) and VIDEO_EDIT.search(t):  # "edit the latest video in downloads" is the video skill's
         return False
-    return bool((ORGANIZE.search(t) or ASK.search(t)) and folder_in(t)[1])
+    # "Pull the latest news on local LLMs, pick the most relevant one, and draft a short note" is research +
+    # writing, not a folder question (checklist #66). The word "latest" trips ASK, and "channel"/"note" can
+    # look like folder names - so folder skills yield to research/drafting when the text is clearly about news,
+    # research, drafting or content creation rather than a real folder on disk.
+    if re.search(r"\b(?:news|headline|research|investigate|research|draft|write\s+(?:a\|an\|me\s+)?(?:a\|an\s+)?(?:post|article|note|report|essay|email|message|letter)|summarize|pull\s+the\s+latest|pick\s+(?:the\s+)?most\s+relevant|channel)\b", t, I):
+        return False
+    # "What's in my Projects folder?", "Open my Downloads folder", "list my project folder", "how many pdfs in
+    # downloads": a folder question/action. Either the folder resolves to a real path (folder_in) or it is an
+    # explicit folder name (folder_name_candidate) - run() answers honestly when the name has no real folder.
+    if ASK.search(t) or ORGANIZE.search(t):
+        return bool(folder_in(t)[1] or folder_name_candidate(t))
+    return False
 
 
 def plan_moves(path, now=None):
@@ -206,6 +293,11 @@ def run(text, session):
     if UNDO.match(t):
         return {"reply": undo_last(), "sources": []}
     name, path = folder_in(t)
+    if not path:  # a named folder that doesn't exist: say so plainly, never invent contents
+        cand = folder_name_candidate(t) or name or "that folder"
+        return {"reply": f"I couldn't find a folder called '{cand}' in your profile folders (Downloads, Desktop, "
+                         f"Documents, Pictures, Videos, Music). If it's somewhere else, give me the exact path.",
+                "sources": []}
     scanned = top_files(path) if ORGANIZE.search(t) else all_files(path)
     kinds = {}
     for e in scanned:

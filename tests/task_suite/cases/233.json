@@ -1,0 +1,30 @@
+{
+ "id": 233,
+ "prompt_text": "Actually that preference you just learned was a one-off, not a real pattern - forget it.",
+ "category": "Personalization & adaptation over time (229-233)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "system",
+  "meta",
+  "chat"
+ ],
+ "expected_outcome": "If Ishtiaq flags it was wrong, revises the stored confidence/preference accordingly",
+ "expected_reply_success": "If Ishtiaq flags it was wrong, revises the stored confidence/preference accordingly",
+ "expected_reply_failure": "Wrong: defends the wrong learned preference instead of updating it",
+ "pass_criteria": {
+  "expected_skill": [
+   "learning",
+   "memory",
+   "owner",
+   "chat",
+   "memory_manager"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

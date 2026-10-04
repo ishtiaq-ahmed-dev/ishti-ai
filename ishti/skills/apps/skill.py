@@ -19,13 +19,19 @@ HAVE = re.compile(r"^\s*(?:can\s+you\s+(?:see|find)|do\s+i\s+have|is|have\s+i\s+
                   r"(?:app|application|browser)?\s*(?:installed|on\s+(?:my\s+|this\s+)?(?:pc|computer|laptop)|in\s+(?:my\s+|this\s+)?(?:pc|computer))?\s*\??$", re.I)
 SITES = {"youtube": "https://www.youtube.com", "google": "https://www.google.com", "gmail": "https://mail.google.com",
          "facebook": "https://www.facebook.com", "instagram": "https://www.instagram.com", "twitter": "https://x.com", "x": "https://x.com",
-         "github": "https://github.com", "linkedin": "https://www.linkedin.com", "netflix": "https://www.netflix.com",
+         "github": "https://github.com", "linkedin": "https://www.linkedin.com", "netflix": "https://www.netflix.com", "outlook": "https://outlook.live.com/mail/",
          "whatsapp": "https://web.whatsapp.com", "chatgpt": "https://chatgpt.com", "wikipedia": "https://www.wikipedia.org",
          "binance": "https://www.binance.com", "daraz": "https://www.daraz.pk", "amazon": "https://www.amazon.com"}
 SITE_SEARCH = {"youtube": "https://www.youtube.com/results?search_query={}", "google": "https://www.google.com/search?q={}",
                "github": "https://github.com/search?q={}", "wikipedia": "https://en.wikipedia.org/w/index.php?search={}",
                "amazon": "https://www.amazon.com/s?k={}", "daraz": "https://www.daraz.pk/catalog/?q={}"}
 DOMAIN = re.compile(r"^(?:https?://)?[\w-]+(?:\.[\w-]+)+(?:/\S*)?$", re.I)
+# "play the song thaam lo toty na dhagy for me" / "play some music" -> a YouTube search in the owner's browser.
+# Never a local file (that is the media skill's) and never a bare "play it" (nothing to search for).
+PLAY = re.compile(r"^\s*(?:please\s+|can\s+you\s+|could\s+you\s+)?(?:play|put\s+on)\s+(?:me\s+)?(?:the\s+)?"
+                  r"(?:song|music|track|video|singer|band|playlist)?\s*(?P<what>.+?)\s*(?:for\s+me|please)?\s*[.!?]?$", re.I)
+NO_PLAY = re.compile(r"[A-Za-z]:[\\/]|\.(?:mp3|wav|m4a|ogg|opus|flac|mp4|mkv|webm|avi)\b", re.I)
+PRONOUN_PLAY = {"it", "that", "this", "them", "these", "those", "it again", "that again", "the same"}
 
 
 def _installed(name):
@@ -40,7 +46,29 @@ def _have(text):
     return m
 
 
+def _play_words(text):
+    """The thing to play, or None when this is not a "play <song>" request (a file, a pronoun, an app)."""
+    if NO_PLAY.search(text) or VERB.match(text):
+        return None
+    # A video to play is the video skill's job (it opens the real local file and names it), not a YouTube
+    # search - "Play my latest Obscura video" must not be turned into a web search (checklist #171).
+    if re.search(r"\b(?:video|clip|footage|movie)\b", text, re.I):
+        return None
+    m = PLAY.match(text)
+    if not m:
+        return None
+    what = (m.group("what") or "").strip(" .,!?")
+    if not what or what.lower() in PRONOUN_PLAY or len(what.split()) > 12:
+        return None
+    # "play the song X" is unambiguous; a bare "play X" needs a music word or a real multi-word title
+    if not re.search(r"\b(?:song|music|track|singer|band|playlist)\b", text, re.I) and len(what.split()) < 2:
+        return None
+    return what
+
+
 def match(text):
+    if _play_words(text):
+        return True
     if WHATSAPP.search(text):
         return False
     if IN_BROWSER.match(text) or _have(text):
@@ -72,6 +100,16 @@ def browser_url(what, q=None):
 def run(text, session):
     from desktop.computer_use import get_computer_use_agent
     agent = get_computer_use_agent()
+    if what := _play_words(text):
+        from urllib.parse import quote_plus
+        url = "https://www.youtube.com/results?search_query=" + quote_plus(what)
+        import os
+        from ishti import test_mode
+        if test_mode.enabled():
+            return {"reply": f"(test mode) Would play \"{what}\" on YouTube.", "sources": []}
+        os.startfile(url)
+        return {"reply": f"Playing \"{what}\" - opened the YouTube results for it in your browser.",
+                "sources": [{"title": "YouTube", "url": url}], "verified": True}
     if m := IN_BROWSER.match(text):
         name = re.sub(r"^bra[vw]e$", "brave", m["browser"].lower())
         lnk = _installed(name)
@@ -117,4 +155,9 @@ if __name__ == "__main__":
     assert browser_url("ssr movies", "tenet movie").endswith("q=ssr+movies+tenet+movie")
     assert browser_url("youtube.com") == "https://youtube.com"
     assert _have("Can you see my brave app in pc ?") and not _have("is it raining")
-    print("[self-check] apps OK - routing, browser targets, installed check")
+    assert _play_words("play the song thaam lo toty na dhagy for me") == "thaam lo toty na dhagy"
+    assert _play_words("play some music") == "some music"
+    assert _play_words("play it") is None and _play_words("play D:\\music\\song.mp3") is None
+    assert _play_words("open chrome") is None
+    assert match("play the song thaam lo toty na dhagy for me")
+    print("[self-check] apps OK - routing, browser targets, installed check, play on YouTube")

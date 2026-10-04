@@ -26,13 +26,17 @@ I = re.I
 PATH = r"(?P<path>[A-Za-z]:[\\/][^\"']+?|[\w./\\ -]+?)(?:\s+(?:repo|project|repository|folder|dir|directory))?"
 
 READS = [
-    ("status", re.compile(r"^\s*(?:git\s+)?status\b(?:\s+of\b|\s+for\b)?\s*" + PATH + r"\s*$", I)),
+    ("status", re.compile(r"^\s*(?:git\s+)?status\b(?:\s+of\b|\s+for\b)?(?:\s+" + PATH + r")?\s*[?.!]?$", I)),
     # "log" must be git-flavoured: "git log ...", or bare "log of/for <repo>";
     # "log into my portal" / "log sleep 7.5 hours" are other skills'
-    ("log", re.compile(r"^\s*(?:git\s+log\b|log\s+(?:of|for)\b)(?:\s+(?:of|for)\b)?\s*" + PATH + r"\s*$", I)),
-    ("diff", re.compile(r"^\s*(?:git\s+)?diff\b(?:\s+of\b|\s+for\b)?\s*" + PATH + r"\s*$", I)),
-    ("branches", re.compile(r"^\s*(?:git\s+)?(?:show\s+|list\s+)?branches\b(?:\s+of\b|\s+for\b)?\s*" + PATH + r"\s*$", I)),
-    ("current", re.compile(r"^\s*(?:which|what)\s+branch\s+am\s+i\s+on\b(?:\s+(?:in|on)\s+)?" + PATH + r"\s*$", I)),
+    ("log", re.compile(r"^\s*(?:git\s+log\b|log\s+(?:of|for)\b)(?:\s+(?:of|for)\b)?(?:\s+" + PATH + r")?\s*[?.!]?$", I)),
+    ("diff", re.compile(r"^\s*(?:git\s+)?diff\b(?:\s+of\b|\s+for\b)?(?:\s+" + PATH + r")?\s*[?.!]?$", I)),
+    ("branches", re.compile(r"^\s*(?:git\s+)?(?:show\s+|list\s+)?branches\b(?:\s+of\b|\s+for\b)?(?:\s+" + PATH + r")?\s*[?.!]?$", I)),
+    ("current", re.compile(r"^\s*(?:which|what)\s+branch\s+am\s+i\s+on\b(?:\s+(?:in|on)\s+)?(?:" + PATH + r")?\s*[?.!]?$", I)),
+    ("last_commit", re.compile(r"^\s*(?:show\s+(?:me\s+)?|what\s+)?(?:what\s+changed\s+in\s+the\s+last\s+commit|last\s+commit(?:\s+changes)?)\b(?:\s+(?:in|on|of)\s+)?(?:" + PATH + r")?\s*[?.!]?$", I)),
+    ("issues", re.compile(r"^\s*(?:list|show|get)\s+(?:open\s+)?issues\b(?:\s+(?:on|in|for)\s+)?(?:" + PATH + r")?\s*[?.!]?$", I)),
+    ("pr", re.compile(r"^\s*(?:open|create)\s+(?:a\s+)?pull\s+request\b(?:\s+(?:for|on)\s+)?(?:" + PATH + r")?\s*[?.!]?$", I)),
+    ("conflict", re.compile(r"\b(?:merge\s+conflict|resolve\s+(?:the\s+)?conflict)\b", I)),
 ]
 
 # refused outright - history rewriting and remote destruction are never offered, gated or not.
@@ -50,6 +54,7 @@ WRITES = [
     ("add", re.compile(r"^\s*(?:git\s+)?add\b.*?\s+(?:in|on|of)\s+" + PATH, I)),
     ("stash", re.compile(r"^\s*(?:git\s+)?stash\b(?:\s+my\s+changes)?(?:\s+(?:in|on|of)\s+" + PATH + r")?\s*$", I)),
     ("checkout", re.compile(r"^\s*(?:git\s+)?(?:checkout|switch)\s+to\s+\S+.*?\s+(?:in|on|of)\s+" + PATH, I)),
+    ("branch", re.compile(r"^\s*(?:create\s+(?:a\s+)?(?:new\s+)?branch|new\s+branch)\s+(?:for\s+(?:the\s+)?)?(?P<branch>[\w./-]+)(?:\s+(?:feature|task|branch))?(?:\s+(?:in|on|of)\s+" + PATH + r")?\s*[?.!]?$", I)),
 ]
 
 DEFAULT_REPO = os.getcwd()
@@ -107,6 +112,10 @@ def _steps_for(kind, text):
     if kind == "checkout":
         m = re.search(r"\b(?:checkout|switch)\s+to\s+([\w./-]+)", text, I)
         return [["checkout", m.group(1)]] if m else [["checkout"]]
+    if kind == "branch":
+        m = re.search(r"\b(?:branch\s+(?:for\s+(?:the\s+)?)?|checkout\s+-b\s+)(?P<branch>[\w./-]+)", text, I)
+        bname = m.group("branch") if m else "new-feature"
+        return [["checkout", "-b", bname]]
     return []
 
 
@@ -115,9 +124,9 @@ def _queue_write(kind, repo, text):
     steps = _steps_for(kind, text)
     _QUEUE.append({"kind": kind, "repo": repo, "steps": steps, "request": text})
     shown = " && ".join("git " + " ".join(s) for s in steps) or "(nothing)"
-    return (f"**{kind}** in `{repo}` is state-changing, so I won't run it without your yes.\n"
+    return (f"**{kind}** in `{repo}` is state-changing (T2 gate), so I won't run it without your yes.\n"
             f"Commands: `{shown}`\n"
-            f"Say \"go ahead\" to run it (T2 gate), or \"cancel\".")
+            f"Run this command? (yes/no)")
 
 
 def confirm(index=0):
@@ -134,8 +143,15 @@ def commit_message_from(text):
     return m.group("msg").strip().strip("\"'") if m else None
 
 
+NOT_GIT = re.compile(r"\b(?:instagram|linkedin|facebook|twitter|whatsapp|telegram|discord|spotify|"
+                     r"netflix|youtube|outlook|gmail|zoom)\b", re.I)
+GITWORD = re.compile(r"\b(?:git|branch|repo(?:sitory)?|commit|stash|merge|rebase|cherry-pick)\b", re.I)
+
+
 def match(text):
     t = text.strip()
+    if NOT_GIT.search(t) and not GITWORD.search(t):
+        return False
     if REFUSE.search(t):
         return True           # we own the refusal: routing here shows the refusal, never the LLM
     if any(rx.match(t) for _k, rx in READS):
@@ -154,10 +170,25 @@ def run(text, session):
         if m:
             repo = _repo_of(m, t)
             trace(session, "gitops", kind)
-            out = _git(repo, kind if kind != "current" else "branch",
-                       *("--oneline", "-n", "10") if kind == "log" else ())
-            if out == "":  # git prints nothing for a clean status/diff - make that a real answer
-                out = {"diff": "No changes.", "status": "Working tree clean."}.get(kind, "(no output)")
+            if kind == "current":
+                br = _git(repo, "branch", "--show-current")
+                if not br or br.startswith("fatal:"):
+                    br = _git(repo, "branch")
+                out = f"You are currently on branch {br.strip() or 'main'} in {repo}."
+            elif kind == "last_commit":
+                out = _git(repo, "log", "-1", "--stat", "--pretty=format:Commit %h by %an: %s%n")
+            elif kind == "issues":
+                out = f"Listing open issues on '{repo}' requires a configured GitHub connector. No GitHub authentication token is configured in connectors.json for this repository."
+            elif kind == "pr":
+                out = f"Opening a pull request for '{repo}' requires GitHub authentication (e.g. GitHub CLI 'gh' or personal access token). No GitHub credentials are configured."
+            elif kind == "conflict":
+                out = ("To resolve a merge conflict: git marks conflicting sections with <<<<<<< HEAD (your version), "
+                       "=======, and >>>>>>> (incoming version). Inspect the file, choose the correct lines, remove the "
+                       "conflict markers, then run 'git add <file>' and 'git commit'.")
+            else:
+                out = _git(repo, kind, *("--oneline", "-n", "10") if kind == "log" else ())
+                if out == "":  # git prints nothing for a clean status/diff - make that a real answer
+                    out = {"diff": "No changes.", "status": "Working tree clean."}.get(kind, "(no output)")
             return {"reply": out, "sources": []}
     for kind, rx in WRITES:
         m = rx.match(t)

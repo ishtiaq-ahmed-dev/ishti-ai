@@ -116,12 +116,14 @@ def list_people() -> List[Dict[str, Any]]:
         out.append(d)
     return out
 
-def merge(keep_key: str, drop_key: str, confirm: bool = True) -> Dict[str, Any]:
-    if not confirm or not keep_key or not drop_key or keep_key == drop_key:
-        return {"merged": False}
-    store.write("UPDATE entity_mentions SET entity_key=? WHERE entity_key=?", (keep_key, drop_key))
-    store.write("DELETE FROM entities WHERE key=?", (drop_key,))
-    return {"merged": True, "kept": keep_key, "dropped": drop_key}
+def remove(key_or_name: str) -> bool:
+    nm = (key_or_name or "").strip()
+    if not nm:
+        return False
+    store.write("DELETE FROM entities WHERE key=? OR lower(name)=lower(?)", (nm, nm))
+    store.write("DELETE FROM entity_mentions WHERE entity_key=?", (nm,))
+    return True
+
 
 if __name__ == "__main__":
     import tempfile

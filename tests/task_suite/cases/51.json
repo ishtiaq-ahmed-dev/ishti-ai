@@ -1,0 +1,32 @@
+{
+ "id": 51,
+ "prompt_text": "Forward this file to my cardiologist collaborator",
+ "category": "Communication (45-52)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Confirms exact recipient and file before any send",
+ "expected_reply_success": "Confirms exact recipient and file before any send",
+ "expected_reply_failure": "If contact has no known messaging channel on file: asks how to reach them",
+ "pass_criteria": {
+  "expected_skill": [
+   "whatsapp",
+   "email",
+   "contacts",
+   "chat"
+  ],
+  "ok_any": [
+   "which",
+   "who",
+   "file",
+   "send",
+   "couldn't",
+   "could not"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

@@ -1,9 +1,9 @@
 import { AnimatePresence, motion } from "motion/react";
-import { Bot, Cpu, FolderKanban, GraduationCap, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, Power, Settings as SettingsIcon, Sparkles, Minimize2, X, Zap } from "lucide-react";
+import { Bot, Cpu, GraduationCap, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, Plug, Power, Cable, Settings as SettingsIcon, Sparkles, Minimize2, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { getJSON, postJSON } from "@/lib/api";
 import { Chat } from "@/sections/Chat";
-import { Settings, Skills, Tasks } from "@/sections/Pages";
+import { Connectors, Inputs, Settings, Skills, Tasks } from "@/sections/Pages";
 import { Learning } from "@/sections/Learning";
 import { Overview } from "@/sections/Overview";
 import { NotificationBell } from "@/components/rare/notification-bell";
@@ -37,6 +37,8 @@ type ShutdownProgress = {
 const NAV = [
   { key: "chat", label: "Chat", icon: MessageSquare },
   { key: "overview", label: "Overview", icon: LayoutDashboard },
+  { key: "inputs", label: "Inputs", icon: Plug },
+  { key: "connectors", label: "Connectors", icon: Cable },
   { key: "tasks", label: "Tasks", icon: ListChecks },
   { key: "learning", label: "Learning", icon: GraduationCap },
   { key: "skills", label: "Skills", icon: Bot },
@@ -72,7 +74,6 @@ export default function App() {
   const boot = useBoot();
   const [page, setPageState] = useState<Key>(getInitialPage);
   const [owner, setOwner] = useState("Ishtiaq Ahmed");
-  const [projects, setProjects] = useState<Fact[]>([]);
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [unread, setUnread] = useState(0);
   const [showNotifs, setShowNotifs] = useState(false);
@@ -220,7 +221,6 @@ export default function App() {
       .then((data) => {
         const facts = data?.facts ?? [];
         setOwner(facts.find((f) => f.entity === "owner" && f.attr === "name")?.value.trim() ?? "Ishtiaq Ahmed");
-        setProjects(facts.filter((f) => f.attr === "location" && f.entity !== "owner").slice(0, 6));
       })
       .catch((err) => console.warn("[App] Failed to load initial facts:", err));
 
@@ -237,12 +237,17 @@ export default function App() {
 
         ws.onopen = () => {
           backoff = 1000;
+          try { window.dispatchEvent(new CustomEvent("ishti-ws-connected")); } catch {}
         };
 
         ws.onmessage = (m) => {
           try {
             const msg = JSON.parse(m.data);
-            if (msg.type === "assistant_message" && String(msg.data?.reply ?? "").startsWith("⏰")) {
+            if (msg.type === "resync_required") {
+              try { window.dispatchEvent(new CustomEvent("ishti-task-completed")); } catch {}
+            } else if (msg.type === "task_completed_full" && msg.data) {
+              try { window.dispatchEvent(new CustomEvent("ishti-task-completed", { detail: msg.data })); } catch {}
+            } else if (msg.type === "assistant_message" && String(msg.data?.reply ?? "").startsWith("⏰")) {
               if (typeof Notification !== "undefined" && Notification?.permission === "granted") {
                 new Notification("ISHTI", { body: msg.data.reply });
               }
@@ -459,15 +464,6 @@ export default function App() {
                       </button>
                     ))}
                   </nav>
-
-                  <div className="mt-5 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">My projects</div>
-                  <div className="mt-1 space-y-0.5">
-                    {projects.length ? projects.map((p, i) => (
-                      <div key={p.entity} title={p.value} className="flex items-center gap-2 truncate rounded-lg px-3 py-1.5 text-sm text-muted-foreground">
-                        <FolderKanban className="h-3.5 w-3.5 shrink-0" style={{ color: ["#6e56cf", "#2f6fdd", "#1f9d6b", "#d98a1c"][i % 4] }} />
-                        <span className="truncate capitalize">{p.entity}</span></div>
-                    )) : <div className="px-3 py-1 text-xs text-muted-foreground">Tell me “Project X is at D:\…”</div>}
-                  </div>
                 </div>
 
                 <div className="mt-3 shrink-0 rounded-2xl bg-gradient-to-br from-indigo-600 via-blue-600 to-emerald-600 p-3 text-white shadow-sm">
@@ -514,6 +510,8 @@ export default function App() {
               transition={{ duration: 0.15 }}>
               {page === "chat" && <Chat owner={owner} onBusy={onBusy} showNav={showNav} onToggleNav={toggleNav} />}
               {page === "overview" && <Overview onToggleNav={toggleNav} />}
+              {page === "inputs" && <Inputs onToggleNav={toggleNav} />}
+              {page === "connectors" && <Connectors onToggleNav={toggleNav} />}
               {page === "tasks" && <Tasks onToggleNav={toggleNav} />}
               {page === "learning" && <Learning onToggleNav={toggleNav} />}
               {page === "skills" && <Skills onToggleNav={toggleNav} />}

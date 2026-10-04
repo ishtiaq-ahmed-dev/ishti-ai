@@ -19,8 +19,9 @@ def test_arch2_first_pass_prompt_tells_the_model_to_use_tools_for_live_data_and_
     to solve a sudoku itself. The prompt must still format cleanly (no stray braces) with both rules present."""
     from ishti.arch2 import pipeline
     text = pipeline.SYSTEM_PASS1.format(tools="- weather: ...", context="(none)")
-    assert "ALWAYS call" in text and "never answer it from memory" in text
-    assert "instead of solving the task yourself" in text
+    assert "ALWAYS call a tool" in text and "never answer from memory" in text
+    assert "call it instead of doing the task yourself" in text
+    assert "resolve it from the conversation first" in text  # pronoun resolution ("send him X")
 
 
 def test_every_skill_loads():

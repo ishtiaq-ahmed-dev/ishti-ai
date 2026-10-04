@@ -1,0 +1,25 @@
+{
+ "id": 122,
+ "prompt_text": "Draft a professional reply declining this meeting request",
+ "category": "Email — reading & replying (117-122)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Shows a genuinely professional-toned draft",
+ "expected_reply_success": "Shows a genuinely professional-toned draft",
+ "expected_reply_failure": "N/A for failure — drafting shouldn't outright fail, but should flag if key details (time, reason) are missing rather than inventing them",
+ "pass_criteria": {
+  "expected_skill": [
+   "email",
+   "chat",
+   "deep_research",
+   "writing"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

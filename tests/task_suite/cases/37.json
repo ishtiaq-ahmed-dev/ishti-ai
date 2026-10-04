@@ -1,0 +1,38 @@
+{
+ "id": 37,
+ "prompt_text": "Open my WhatsApp Web",
+ "category": "Browser & web tasks (37-44)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "apps",
+  "browser",
+  "desktop",
+  "web_search",
+  "web_fetch",
+  "deep_research",
+  "chat",
+  "system",
+  "meta"
+ ],
+ "expected_outcome": "Confirms, reuses existing tab rather than opening a duplicate",
+ "expected_reply_success": "Confirms, reuses existing tab rather than opening a duplicate",
+ "expected_reply_failure": "If no Chrome Profile 9 session: explains and opens fresh",
+ "pass_criteria": {
+  "expected_skill": [
+   "whatsapp",
+   "apps",
+   "browser"
+  ],
+  "ok_any": [
+   "whatsapp",
+   "opened",
+   "web"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

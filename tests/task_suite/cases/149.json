@@ -1,0 +1,24 @@
+{
+ "id": 149,
+ "prompt_text": "Add my friend Hamza, we're not in any project together, just friends",
+ "category": "People — friends, colleagues & university (145-150)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Confirms stored as friend with no fabricated project link",
+ "expected_reply_success": "Confirms stored as friend with no fabricated project link",
+ "expected_reply_failure": "Wrong: invents a project connection that was never stated",
+ "pass_criteria": {
+  "expected_skill": [
+   "memory",
+   "relationships",
+   "contacts"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

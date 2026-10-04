@@ -1,0 +1,31 @@
+{
+ "id": 91,
+ "prompt_text": "Forget that",
+ "category": "Memory & personalization (89-94)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Confirms removed",
+ "expected_reply_success": "Confirms removed",
+ "expected_reply_failure": "Wrong: keeps it or just hides it from display without actually deleting",
+ "pass_criteria": {
+  "expected_skill": [
+   "memory_manager",
+   "owner",
+   "memory"
+  ],
+  "ok_any": [
+   "cleared",
+   "forget",
+   "removed",
+   "deleted",
+   "nothing",
+   "which"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

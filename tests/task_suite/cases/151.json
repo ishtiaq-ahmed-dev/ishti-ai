@@ -1,0 +1,41 @@
+{
+ "id": 151,
+ "prompt_text": "Do I have anything scheduled today?",
+ "category": "Meetings & calendar coordination (151-156)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "calendar",
+  "reminders",
+  "web_search",
+  "web_fetch",
+  "browser",
+  "deep_research",
+  "chat"
+ ],
+ "expected_outcome": "Lists actual items in time order",
+ "expected_reply_success": "Lists actual items in time order",
+ "expected_reply_failure": "\"Nothing scheduled today\" if genuinely none",
+ "pass_criteria": {
+  "expected_skill": [
+   "calendar",
+   "reminders",
+   "chat"
+  ],
+  "ok_any": [
+   "today",
+   "nothing scheduled",
+   "no events",
+   "no meetings",
+   "schedule",
+   "calendar",
+   "reminder",
+   "none"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

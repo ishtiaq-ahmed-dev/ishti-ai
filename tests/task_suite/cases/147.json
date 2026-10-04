@@ -1,0 +1,24 @@
+{
+ "id": 147,
+ "prompt_text": "I'm not that close with Ali anymore, we barely talk",
+ "category": "People — friends, colleagues & university (145-150)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Updates frequency/closeness note without deleting the relationship or the shared project history",
+ "expected_reply_success": "Updates frequency/closeness note without deleting the relationship or the shared project history",
+ "expected_reply_failure": "Wrong: deletes the whole entity just because closeness changed",
+ "pass_criteria": {
+  "expected_skill": [
+   "memory",
+   "relationships",
+   "owner"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

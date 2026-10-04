@@ -1,0 +1,32 @@
+{
+ "id": 213,
+ "prompt_text": "See if Ahmed replied on WhatsApp, and if he agreed, update my file with the new deadline",
+ "category": "Cross-app orchestration (212-217)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "whatsapp",
+  "files",
+  "folders",
+  "fileops",
+  "apps",
+  "browser",
+  "desktop"
+ ],
+ "expected_outcome": "Only updates the file if the actual condition (Ahmed agreeing) is met, states its read of his reply",
+ "expected_reply_success": "Only updates the file if the actual condition (Ahmed agreeing) is met, states its read of his reply",
+ "expected_reply_failure": "Wrong: updates the file regardless of what Ahmed actually said",
+ "pass_criteria": {
+  "expected_skill": [
+   "whatsapp",
+   "files",
+   "fileops"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

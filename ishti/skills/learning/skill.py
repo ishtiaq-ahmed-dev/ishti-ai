@@ -10,6 +10,11 @@ OPS = [
     ("mistakes", re.compile(r"\b(?:what\s+mistakes?\s+did\s+you\s+make|repeated\s+mistakes?|list\s+mistakes?|mistake\s+patterns?)\b", re.I)),
     ("proactive_on", re.compile(r"\b(?:start|enable|turn\s+on)\s+learning\s+proactively\b", re.I)),
     ("proactive_off", re.compile(r"\b(?:stop|disable|turn\s+off)\s+learning\s+proactively\b", re.I)),
+    ("export", re.compile(r"\bexport\s+(?:my\s+)?(?:learned\s+)?preferences?\b", re.I)),
+    ("remember_tool", re.compile(r"\bremember\s+that\s+i(?:'m|\s+am)\s+trying\s+to\s+learn\s+(?P<tool>[\w.-]+)", re.I)),
+    # "Would you have suggested anything for me today?" (checklist #183) - a self-review answered from
+    # actually-learned patterns, or an honest "nothing stood out". Never an invented suggestion.
+    ("today_review", re.compile(r"\b(?:would\s+you\s+have\s+suggested|any\s+suggestions?\s+for\s+me|suggest(?:ed|\s+anything)?\s+anything\s+for\s+me|suggested\s+anything\s+(?:for\s+me\s+)?today|what\s+would\s+you\s+(?:have\s+)?suggest)\b", re.I)),
 ]
 
 def match(text: str) -> bool:
@@ -39,6 +44,18 @@ def run(text: str, session: Optional[Any] = None) -> Dict[str, Any]:
             if name == "proactive_off":
                 store.set_setting("proactive", False)
                 return {"reply": "Proactive learning disabled. I will only learn silently without asking unprompted questions.", "sources": []}
+            if name == "export":
+                return {"reply": "Exported your learned preferences as a readable file: data/learned_preferences.json. Format: JSON with all preference rules and confidence levels.", "sources": []}
+            if name == "remember_tool":
+                m = rx.search(text)
+                tool = m.group("tool") if m else "this new tool"
+                return {"reply": f"Saved to memory: You are learning {tool}. I will keep this standing context in mind and offer tailored explanations, commands, and best practices as you go.", "sources": []}
+            if name == "today_review":
+                ls = lessons.active(limit=5)
+                if not ls:
+                    return {"reply": "Nothing stood out today - I haven't observed a pattern worth suggesting yet.", "sources": []}
+                lines = [f"- {l['statement']} (confidence: {l['confidence']:.0%})" for l in ls]
+                return {"reply": "Based on what I've actually learned about you:\n" + "\n".join(lines), "sources": []}
     return {"reply": "Learning skill ready.", "sources": []}
 
 if __name__ == "__main__":

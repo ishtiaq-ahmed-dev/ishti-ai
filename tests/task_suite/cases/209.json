@@ -1,0 +1,27 @@
+{
+ "id": 209,
+ "prompt_text": "Design a simple logo concept description for Zyntiqo",
+ "category": "Creative & content generation tasks (206-211)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [
+  "chat",
+  "writing",
+  "video"
+ ],
+ "expected_outcome": "Clear text description of a concept, correctly states it can't generate the actual image locally and explains the Gemini-in-Chrome path instead",
+ "expected_reply_success": "Clear text description of a concept, correctly states it can't generate the actual image locally and explains the Gemini-in-Chrome path instead",
+ "expected_reply_failure": "Wrong: pretends to have generated an image",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat",
+   "writing"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

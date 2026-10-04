@@ -1,0 +1,38 @@
+{
+ "id": 1,
+ "prompt_text": "What's the weather today?",
+ "category": "Information lookup & search (1-10)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "weather",
+  "web_search",
+  "chat",
+  "system",
+  "meta"
+ ],
+ "expected_outcome": "States temp, conditions, maybe a short outlook",
+ "expected_reply_success": "States temp, conditions, maybe a short outlook",
+ "expected_reply_failure": "If location unknown: asks for city instead of guessing",
+ "pass_criteria": {
+  "expected_skill": [
+   "weather"
+  ],
+  "ok_any": [
+   "°c",
+   "clear",
+   "rain",
+   "cloud",
+   "sunny",
+   "humid",
+   "weather"
+  ],
+  "bad_any": [
+   "i can't access"
+  ],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

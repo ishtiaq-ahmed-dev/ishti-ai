@@ -1,0 +1,37 @@
+{
+ "id": 94,
+ "prompt_text": "Forget everything about my old client Zyntiqo",
+ "category": "Memory & personalization (89-94)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "memory",
+  "owner",
+  "prefs",
+  "chat"
+ ],
+ "expected_outcome": "Confirms what was removed, doesn't touch unrelated memory",
+ "expected_reply_success": "Confirms what was removed, doesn't touch unrelated memory",
+ "expected_reply_failure": "Wrong: over-deletes unrelated data, or under-deletes and leaves residue",
+ "pass_criteria": {
+  "expected_skill": [
+   "memory_manager",
+   "owner",
+   "clients",
+   "memory"
+  ],
+  "ok_any": [
+   "zyntiqo",
+   "removed",
+   "deleted",
+   "forget",
+   "nothing",
+   "client"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

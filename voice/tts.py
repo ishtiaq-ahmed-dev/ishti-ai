@@ -16,7 +16,11 @@ try:
 except ImportError:
     pythoncom = None
 
-import pyttsx3
+try:  # pyttsx3 is the SAPI5 fallback only; the module must import without it (speakable() is used by the
+    # Piper/Kokoro path in ishti/voice.py, and a missing optional package must not break every voice import)
+    import pyttsx3
+except ImportError:  # pragma: no cover - depends on the host's audio setup
+    pyttsx3 = None
 
 try:  # best-effort failure log (never breaks the module if logging is unavailable)
     from ishti.core.logutil import swallowed
@@ -63,6 +67,9 @@ class TTSEngine:
                 break
             try:
                 self._is_speaking = True
+                if pyttsx3 is None:
+                    print("[TTS] pyttsx3 is not installed - SAPI5 speech is unavailable (install pyttsx3 to enable it).")
+                    continue
                 engine = pyttsx3.init()
                 engine.setProperty("rate", self.rate)
                 engine.setProperty("volume", self.volume)

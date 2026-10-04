@@ -1,0 +1,22 @@
+{
+ "id": 246,
+ "prompt_text": "A light joke or casual aside from Ishtiaq",
+ "category": "Conversational tone, empathy & judgment (244-247)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Responds naturally, doesn't awkwardly ignore it or overcommit to being \"funny\"",
+ "expected_reply_success": "Responds naturally, doesn't awkwardly ignore it or overcommit to being \"funny\"",
+ "expected_reply_failure": "N/A for hard failure — just shouldn't feel robotic or forced",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

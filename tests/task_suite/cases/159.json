@@ -1,0 +1,38 @@
+{
+ "id": 159,
+ "prompt_text": "Run my test suite and tell me what's failing",
+ "category": "Coding / developer assistant tasks (157-164)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "dev",
+  "terminal",
+  "devops",
+  "gitops",
+  "chat"
+ ],
+ "expected_outcome": "Real pass/fail output, not a summary that smooths over failures",
+ "expected_reply_success": "Real pass/fail output, not a summary that smooths over failures",
+ "expected_reply_failure": "If no test suite is configured: says that clearly",
+ "pass_criteria": {
+  "expected_skill": [
+   "dev",
+   "terminal"
+  ],
+  "ok_any": [
+   "pass",
+   "fail",
+   "test",
+   "pytest",
+   "collected",
+   "no test",
+   "not configured",
+   "suite"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

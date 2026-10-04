@@ -423,12 +423,11 @@ def rung_ctx(model, role):
 
 
 def _ours(name):
-    """A model ISHTI itself asked for (it is in a ladder, or ISHTI has called it): only those are ever unloaded as 'idle'.
-    Another Ollama client's model, and the embedding model that semantic memory keeps warm, are left alone."""
+    """A model loaded in Ollama that can be unloaded when idle to make room.
+    The embedding model that semantic memory keeps warm is left alone."""
     if name.startswith("nomic-embed"):
         return False
-    from ishti import models as _m
-    return role_of(name) is not None or name in _m._last_used
+    return True
 
 
 def is_pinned(name):

@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUp, AudioLines, Check, Copy, FolderOpen, Maximize2, MessageSquare, Mic, Minimize2, Network, PanelLeft, PanelLeftClose, Pencil, Plus, Square, Trash2, X } from "lucide-react";
+import { ArrowUp, AudioLines, Check, Copy, FolderOpen, Maximize2, MessageSquare, Mic, Minimize2, Network, PanelLeft, PanelLeftClose, Paperclip, Pencil, Plus, Square, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { del, getJSON, postJSON, streamChat, type Result, type Source, type TraceEvent } from "@/lib/api";
 import { ActivityGraph, ConversationGraph, type Turn } from "@/components/ActivityGraph";
@@ -157,12 +157,20 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   const [graphView, setGraphView] = useState<"answer" | "chat">("answer");
   const [fullGraph, setFullGraph] = useState(false);
   const recorder = useRef<MediaRecorder | null>(null);
+  const sessionLoadGeneration = useRef(0);
+  const msgsRef = useRef(msgs);
+  const uploadInput = useRef<HTMLInputElement>(null);
+  const [uploads, setUploads] = useState<{ name: string; mention: string; size: number }[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
   const box = useRef<HTMLTextAreaElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const scrollContainer = useRef<HTMLDivElement>(null);
   const isInitialLoad = useRef(true);
   const running = msgs.filter((m) => m.live).length;
   const busy = running > 0;
+
+  useEffect(() => { msgsRef.current = msgs; }, [msgs]);
 
   useEffect(() => {
     onBusy?.(busy);
@@ -226,16 +234,19 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   }, [msgs]);
 
   const selectSession = useCallback(async (id: string) => {
+    const generation = ++sessionLoadGeneration.current;
     setGraphFor(null);
     isInitialLoad.current = true;
+    try {
+    await postJSON(`/api/sessions/${id}/activate`);
+    const { messages } = await getJSON<{ messages: { role: string; content: string; sources?: Source[]; metadata?: { events?: TraceEvent[] } }[] }>(`/api/sessions/${id}/messages`);
+    if (generation !== sessionLoadGeneration.current) return;
     try {
       localStorage.setItem("ishti-session-id", id);
       if (window.location.hash.startsWith("#chat") || !window.location.hash) {
         window.history.replaceState(null, "", `#chat/${id}`);
       }
     } catch {}
-    await postJSON(`/api/sessions/${id}/activate`);
-    const { messages } = await getJSON<{ messages: { role: string; content: string; sources?: Source[]; metadata?: { events?: TraceEvent[] } }[] }>(`/api/sessions/${id}/messages`);
     let last = "";
     setMsgs(messages.map((m) => {
       if (m.role === "user") last = m.content;
@@ -252,10 +263,15 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
         bottom.current?.scrollIntoView({ behavior: "instant" });
       }
     });
+    } catch (err) {
+      if (generation === sessionLoadGeneration.current) console.warn("[chat] session load failed:", err);
+    }
   }, []);
 
   const newChat = useCallback(async () => {
+    const generation = ++sessionLoadGeneration.current;
     const d = await postJSON<{ session_id: string }>("/api/sessions/new", { title: "New Conversation" });
+    if (generation !== sessionLoadGeneration.current) return;
     try {
       localStorage.setItem("ishti-session-id", d.session_id);
       if (window.location.hash.startsWith("#chat") || !window.location.hash) {
@@ -264,9 +280,41 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     } catch {}
     setSessionId(d.session_id);
     setMsgs([]);
+    setUploads([]);
     setGraphFor(null);
     loadSessions();
   }, [loadSessions]);
+
+  useEffect(() => {
+    const refresh = (event?: Event) => {
+      const detail = (event as CustomEvent<{ session_id?: string }> | undefined)?.detail;
+      const target = sessionId;
+      if (!target || (detail?.session_id && detail.session_id !== target)) return;
+      loadSessions();
+      if (msgsRef.current.some((m) => m.live)) return;
+      const generation = sessionLoadGeneration.current;
+      getJSON<{ messages: { role: string; content: string; sources?: Source[]; metadata?: { events?: TraceEvent[] } }[] }>(`/api/sessions/${target}/messages`)
+        .then(({ messages }) => {
+          if (generation !== sessionLoadGeneration.current || target !== sessionId || msgsRef.current.some((m) => m.live)) return;
+          let last = "";
+          setMsgs(messages.map((m) => {
+            if (m.role === "user") last = m.content;
+            return m.role === "user"
+              ? { id: nextId++, role: "user", text: m.content, events: [], live: false, sources: [] }
+              : { id: nextId++, role: "ishti", text: m.content, events: m.metadata?.events ?? [], live: false, sources: m.sources ?? [], request: last };
+          }));
+        })
+        .catch((err) => console.warn("[chat] live refresh failed:", err));
+    };
+    const onFinished = () => refresh();
+    const onTask = (event: Event) => refresh(event);
+    window.addEventListener("ishti-task-completed", onTask);
+    window.addEventListener("ishti-chat-finished", onFinished);
+    return () => {
+      window.removeEventListener("ishti-task-completed", onTask);
+      window.removeEventListener("ishti-chat-finished", onFinished);
+    };
+  }, [sessionId, msgs, loadSessions]);
 
   useEffect(() => {
     const handleStartNewChat = () => {
@@ -446,13 +494,52 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     }
   }, []);
 
+  const addUploads = useCallback(async (files: FileList | null) => {
+    if (!files?.length) return;
+    setUploading(true);
+    setUploadError("");
+    try {
+      let totalBytes = uploads.reduce((sum, item) => sum + item.size, 0);
+      let totalCount = uploads.length;
+      for (const file of Array.from(files)) {
+        if (totalCount >= 5) throw new Error("A message can include at most 5 files.");
+        if (totalBytes + file.size > 50 * 1024 * 1024) throw new Error("Attachments in one message are limited to 50 MB total.");
+        const form = new FormData();
+        form.append("file", file);
+        const response = await fetch("/api/upload", { method: "POST", body: form });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data?.error || `Upload failed (${response.status})`);
+        setUploads((current) => [...current, { name: data.name || file.name, mention: data.mention, size: data.size || file.size }]);
+        totalBytes += file.size;
+        totalCount += 1;
+      }
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUploading(false);
+      if (uploadInput.current) uploadInput.current.value = "";
+    }
+  }, [uploads]);
+
+  const onComposerPaste = useCallback((event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = event.clipboardData.files;
+    if (files?.length) {
+      event.preventDefault();
+      void addUploads(files);
+    }
+  }, [addUploads]);
+
   useEffect(() => {
     adjustTextareaHeight();
   }, [input, adjustTextareaHeight]);
 
   async function send(text: string) {
-    text = text.trim();
+    // Enter can submit a form even while the disabled send button is visible.
+    // Keep an in-flight attachment upload from being silently omitted.
+    if (uploading) return;
+    text = [text.trim(), ...uploads.map((f) => f.mention)].filter(Boolean).join("\n");
     if (!text) return;
+    setUploads([]);
     isInitialLoad.current = false;
     setInput("");
     if (box.current) {
@@ -1065,7 +1152,21 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
           )}
         </div>
 
-        <form onSubmit={(e) => { e.preventDefault(); if (!recording && !transcribing) send(input); }} className="px-4 sm:px-6 pb-5 pt-1 shrink-0">
+        <form onSubmit={(e) => { e.preventDefault(); if (!recording && !transcribing && !uploading) send(input); }}
+          onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }}
+          onDrop={(e) => { if (e.dataTransfer.files.length) { e.preventDefault(); void addUploads(e.dataTransfer.files); } }}
+          className="px-4 sm:px-6 pb-5 pt-1 shrink-0">
+          <input ref={uploadInput} type="file" multiple hidden onChange={(e) => addUploads(e.currentTarget.files)} />
+          {(uploads.length > 0 || uploading || uploadError) && (
+            <div className="mx-auto mb-2 flex w-full max-w-4xl xl:max-w-5xl flex-wrap items-center gap-2 text-xs">
+              {uploads.map((file, index) => <span key={`${file.name}-${index}`} className="inline-flex max-w-[240px] items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-1">
+                <span className="truncate">{file.name}</span>
+                <button type="button" aria-label={`Remove ${file.name}`} onClick={() => setUploads((all) => all.filter((_, i) => i !== index))} className="text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>
+              </span>)}
+              {uploading && <span className="text-muted-foreground">Uploading…</span>}
+              {uploadError && <span role="alert" className="text-danger">{uploadError}</span>}
+            </div>
+          )}
           <AnimatePresence initial={false}>
             {queue.length > 0 && (
               <motion.ul initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
@@ -1095,10 +1196,13 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
             >
               <div className="flex w-full items-end gap-2 rounded-2xl border border-border bg-background p-2 shadow-[0_2px_12px_rgba(29,27,46,0.06)] transition-shadow focus-within:shadow-[0_2px_18px_rgba(110,86,207,0.18)]">
                 <textarea ref={box} value={input} onChange={(e) => setInput(e.target.value)} rows={1}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!recording && !transcribing) send(input); } }}
+                  onPaste={onComposerPaste}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!recording && !transcribing && !uploading) send(input); } }}
                   placeholder="Ask or tell ISHTI to do anything…"
                   style={{ fontSize: "var(--chat-input-size)" }}
                   className="scroll-thin max-h-[220px] min-h-[40px] flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 leading-relaxed outline-none placeholder:text-muted-foreground" />
+                <button type="button" onClick={() => uploadInput.current?.click()} disabled={uploading} title="Attach files for ISHTI to inspect" aria-label="Attach files"
+                  className="grid h-9 w-9 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40 cursor-pointer"><Paperclip className="h-4 w-4" /></button>
                 <button type="button" onClick={toggleMic} title="Record a voice message (reply comes as text)"
                   className={`grid h-9 w-9 place-items-center rounded-xl transition-colors cursor-pointer ${recording ? "bg-danger text-white" : "text-muted-foreground hover:bg-muted"}`}>
                   {recording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
@@ -1107,7 +1211,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                   className="flex h-9 items-center gap-1.5 rounded-xl border border-accent/40 px-2.5 text-xs font-semibold text-accent transition-colors hover:bg-accent-soft/40 cursor-pointer">
                   <AudioLines className="h-4 w-4" /> Live
                 </button>
-                <button type="submit" disabled={!input.trim() || recording || transcribing} title={recording ? "Stop the recording first" : transcribing ? "Writing down what you said…" : canStart ? "Send" : "Queue: runs when a slot is free"}
+                <button type="submit" disabled={(!input.trim() && !uploads.length) || uploading || recording || transcribing} title={recording ? "Stop the recording first" : transcribing ? "Writing down what you said…" : canStart ? "Send" : "Queue: runs when a slot is free"}
                   className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-white transition-opacity disabled:opacity-40 cursor-pointer">
                   <ArrowUp className="h-4 w-4" />
                 </button>
@@ -1123,10 +1227,13 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
             >
               <div className="flex w-full items-end gap-2 rounded-2xl border border-border bg-background p-2 shadow-[0_2px_12px_rgba(29,27,46,0.06)] transition-shadow focus-within:shadow-[0_2px_18px_rgba(110,86,207,0.18)]">
                 <textarea ref={box} value={input} onChange={(e) => setInput(e.target.value)} rows={1}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!recording && !transcribing) send(input); } }}
+                  onPaste={onComposerPaste}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!recording && !transcribing && !uploading) send(input); } }}
                   placeholder="Ask or tell ISHTI to do anything…"
                   style={{ fontSize: "var(--chat-input-size)" }}
                   className="scroll-thin max-h-[220px] min-h-[40px] flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 leading-relaxed outline-none placeholder:text-muted-foreground" />
+                <button type="button" onClick={() => uploadInput.current?.click()} disabled={uploading} title="Attach files for ISHTI to inspect" aria-label="Attach files"
+                  className="grid h-9 w-9 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40 cursor-pointer"><Paperclip className="h-4 w-4" /></button>
                 <button type="button" onClick={toggleMic} title="Record a voice message (reply comes as text)"
                   className={`grid h-9 w-9 place-items-center rounded-xl transition-colors cursor-pointer ${recording ? "bg-danger text-white" : "text-muted-foreground hover:bg-muted"}`}>
                   {recording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
@@ -1135,7 +1242,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                   className="flex h-9 items-center gap-1.5 rounded-xl border border-accent/40 px-2.5 text-xs font-semibold text-accent transition-colors hover:bg-accent-soft/40 cursor-pointer">
                   <AudioLines className="h-4 w-4" /> Live
                 </button>
-                <button type="submit" disabled={!input.trim() || recording || transcribing} title={recording ? "Stop the recording first" : transcribing ? "Writing down what you said…" : canStart ? "Send" : "Queue: runs when a slot is free"}
+                <button type="submit" disabled={(!input.trim() && !uploads.length) || uploading || recording || transcribing} title={recording ? "Stop the recording first" : transcribing ? "Writing down what you said…" : canStart ? "Send" : "Queue: runs when a slot is free"}
                   className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-white transition-opacity disabled:opacity-40 cursor-pointer">
                   <ArrowUp className="h-4 w-4" />
                 </button>

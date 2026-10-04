@@ -1,0 +1,36 @@
+{
+ "id": 90,
+ "prompt_text": "Remember that I prefer Chrome for work stuff",
+ "category": "Memory & personalization (89-94)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "memory",
+  "learning",
+  "chat",
+  "owner"
+ ],
+ "expected_outcome": "Confirms stored, scoped to that context",
+ "expected_reply_success": "Confirms stored, scoped to that context",
+ "expected_reply_failure": "Wrong: generalizes it to \"always use Chrome for everything\"",
+ "pass_criteria": {
+  "expected_skill": [
+   "memory_manager",
+   "owner",
+   "memory"
+  ],
+  "ok_any": [
+   "prefer",
+   "chrome",
+   "work",
+   "remember",
+   "noted",
+   "saved"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

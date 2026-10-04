@@ -1,0 +1,23 @@
+{
+ "id": 211,
+ "prompt_text": "\"Turn my rough notes into a polished video script\" (notes given)",
+ "category": "Creative & content generation tasks (206-211)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Coherent script that preserves the actual content of the notes, doesn't invent new claims",
+ "expected_reply_success": "Coherent script that preserves the actual content of the notes, doesn't invent new claims",
+ "expected_reply_failure": "Wrong: adds facts/claims not present in the original notes",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat",
+   "writing"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

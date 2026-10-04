@@ -1,0 +1,31 @@
+{
+ "id": 104,
+ "prompt_text": "Open LinkedIn",
+ "category": "Opening apps — social & communication (101-110)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [
+  "apps",
+  "browser",
+  "desktop",
+  "web_search",
+  "web_fetch",
+  "deep_research",
+  "chat"
+ ],
+ "expected_outcome": "Confirms opened",
+ "expected_reply_success": "Confirms opened",
+ "expected_reply_failure": "Same as above",
+ "pass_criteria": {
+  "expected_skill": [
+   "browser",
+   "apps"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

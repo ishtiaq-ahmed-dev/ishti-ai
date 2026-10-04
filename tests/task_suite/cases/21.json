@@ -1,0 +1,41 @@
+{
+ "id": 21,
+ "prompt_text": "Find all PDFs I downloaded this week",
+ "category": "Files & folders (19-26)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "files",
+  "folders",
+  "fileops",
+  "web_search",
+  "web_fetch",
+  "browser",
+  "deep_research",
+  "chat",
+  "system",
+  "meta"
+ ],
+ "expected_outcome": "Lists them with paths and dates",
+ "expected_reply_success": "Lists them with paths and dates",
+ "expected_reply_failure": "\"No PDFs found matching that in Downloads\" — doesn't silently search elsewhere without saying so",
+ "pass_criteria": {
+  "expected_skill": [
+   "files",
+   "folders"
+  ],
+  "ok_any": [
+   "pdf",
+   "download",
+   "no ",
+   "found",
+   "couldn't",
+   "could not"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

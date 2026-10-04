@@ -39,20 +39,50 @@ BACKCHANNEL = re.compile(r"\b(?:thanks|thank\s+you|that\s+helped|that\s+helps|th
                          r"well\s+done|nice\s+work|appreciate\s+it|got\s+it|makes\s+sense)\b", re.I)
 
 
+# Vague stand-ins for a task ("do the usual thing", "you know what to do") have no referent to act on. The local
+# model asked to answer them claims it is getting on with it (live test 2026-10-03: "I'll get on with that right
+# now.") while doing nothing - the honest answer is to ask which task is meant.
+VAGUE = re.compile(r"^\s*(?:please\s+|just\s+|now\s+)?(?:do\s+(?:the|your|our)\s+usual(?:\s+thing)?|the\s+usual(?:\s+thing)?|"
+                   r"same\s+as\s+usual|as\s+usual|you\s+know\s+what\s+to\s+do|do\s+your\s+thing|"
+                   r"the\s+thing\s+(?:we|you)\s+(?:always|usually)\s+do)\s*[.!]?\s*$", re.I)
+
+
 # "did you edit it?" / "have you sent it yet?" asks about what already happened - answered from the conversation (honestly), never by
 # running the skill again (Laya sent "DID YOU EDITED IT ?" to capcut, which re-ran and claimed effects it never added).
 DID_YOU = re.compile(r"^\s*(?:so\s+|and\s+|but\s+)?(?:did|have|has|were|was)\s+(?:you|it)\s+(?:\w+\s+){0,2}?(?:\w+ed|sent|done|made|"
                      r"finished|written|seen|read|got|gotten|it|that|this|them|him|her|send|edit|make|do|open|add|save|delete|"
                      r"book|call|remind|set|finish|complete|create|write|reply|check|buy|order|pay|post|upload|download)\b[^?]{0,60}\??\s*$", re.I)
+# A mid-action abort ("I didn't mean to confirm that, stop") (checklist #200): stop what can be stopped and
+# say honestly what already happened vs. what was halted - never claim a clean stop over a completed action.
+ABORT = re.compile(r"\b(?:i\s+)?(?:didn'?t|did\s+not|didnt)\s+mean\s+to\s+(?:confirm|approve|send|do|say\s+yes|agree)\b|"
+                   r"^\s*(?:please\s+)?(?:stop|halt|abort)\s*(?:it|that|this|now|please)?\s*[.!]?\s*$|"
+                   r"^\s*(?:please\s+)?cancel\s+(?:that|it|this)\b|\b(?:undo|abort)\s+that\b", re.I)
+# "Can you undo the email you sent?" (checklist #199): a delivered email has no recall. Answer honestly (from
+# the T1 chat brain, since email itself is T2 and would wrongly gate a plain question) with the real option.
+UNSEND = re.compile(r"\b(?:undo|unsend|un-?send|recall|take\s+back|retract)\b[^.!?\n]*\b(?:e-?mails?|mails?|messages?)\b|"
+                    r"\b(?:undo|unsend|recall|retract)\s+(?:the\s+)?(?:e-?mail|mail)\s+(?:you\s+)?(?:sent|send)\b", re.I)
+# "Should I buy this stock right now?" (checklist #167): never a buy/sell recommendation. A deterministic
+# refusal means the answer is stable and never accidentally sounds like advice, whatever the model would say.
+ADVICE = re.compile(r"\bshould\s+i\s+(?:buy|sell|invest|hold|short)\b|\b(?:buy|sell)\s+or\s+(?:sell|buy)\b|"
+                    r"\bwould\s+you\s+(?:buy|sell)\b|\bis\s+(?:this|it|that)\s+(?:a\s+)?(?:good|bad|safe)\s+"
+                    r"(?:buy|investment|stock|trade)\b|\bworth\s+(?:buying|investing\s+in)\b|\bwhen\s+should\s+i\s+(?:buy|sell|sell\s+it)\b", re.I)
 
 
 # "What is the capital of Pakistan?" / "how does a vaccine work" / "who was Allama Iqbal": timeless knowledge the model answers itself
 # in a second. Laya sent it to web search, which pasted raw search snippets (owner's chat). Live topics (prices, news, weather,
 # "latest") are claimed by their own rules first; anything about the owner or this PC is not general knowledge.
-KNOWLEDGE = re.compile(r"^\s*(?:what|who|where|when|which|why|how)\s+(?:is|are|was|were|does|do|did|many|much|far|long|old|big)\b", re.I)
-# also anything dated ("how many days until eid" was answered with an invented date): the calendar moves, the model's memory doesn't
-PERSONAL = re.compile(r"\b(?:my|me|mine|i|i'm|our|we|you|your|ishti|this\s+pc|today|tonight|tomorrow|now|latest|current|price|weather|"
-                      r"until|till|left|next|upcoming|this\s+year|20\d\d|date|days|score|won|winner|election|president|prime\s+minister|ceo)\b", re.I)
+# Contractions matter here: "What's the capital of Kazakhstan?" was NOT claimed (only "what is" matched) and the
+# weaker arch2 model answered "Azerbaijan" - a wrong fact. "Define X" / "what does X mean" are knowledge too.
+KNOWLEDGE = re.compile(r"^\s*(?:(?:what|who|where|when|which|why|how)(?:'s|s\b|\s+(?:is|are|was|were|does|do|did|many|much|far|long|old|big|likely|probably|around|about))\b|"
+                       r"(?:define|what\s+does|meaning\s+of|what's\s+the\s+definition\s+of)\s+['\"]?[A-Za-z][\w'-]*)", re.I)
+# also anything dated ("how many days until eid" was answered with an invented date): the calendar moves, the model's memory doesn't.
+# "for me"/"to me" is polite filler in knowledge questions ("define X for me" is a general fact), so bare "me" is NOT here -
+# only my/mine/i/i'm/our/we (real owner references). "president"/"ceo" are NOT here either: "who's the president of France"
+# is timeless; the live case ("who is the president now") is caught by now/latest/current below.
+PERSONAL = re.compile(r"\b(?:my|mine|i|i'm|our|we|ishti|this\s+pc|today|tonight|tomorrow|now|latest|current|price|weather|"
+                      r"until|till|left|next|upcoming|this\s+year|20\d\d|date|days|score|won|winner|election|"
+                      r"news|trending|this\s+week|released?|maintained|right\s+now|as\s+of\s+today)\b", re.I)
+
 
 
 def match(text):
@@ -71,6 +101,14 @@ def match(text):
 
 
 def build_context(text, domain=""):
+    # Verified glossary first: a definition question about a local-AI term (imatrix, GGUF, LoRA...) gets
+    # the sourced definition so the local model cannot invent a meaning (ishti/glossary.py).
+    try:
+        from ishti import glossary
+        if line := glossary.context_line(text):
+            return line
+    except Exception as _exc:
+        swallowed('ishti/skills/chat/skill.py:build_context.glossary', _exc)
     f = get_facts()
     rows = f.mentioned_in(text) + [("owner", a, v) for a, v in f.get("owner").items()  # instructions/prefs: llm.style()
                                    if a not in ("entity", "instructions") and not a.startswith("prefers_")]
@@ -131,8 +169,33 @@ def did_you(text, session):
 
 
 def run(text, session):
+    if VAGUE.match(text):
+        # ends with the question mark on purpose: fell_short() treats a clarifying question as a real
+        # answer, while a flat "I don't know ..." would escalate chat -> web_search (which hung on
+        # "Do the usual thing" in the live run, 2026-10-03).
+        return {"reply": "I don't know what \"the usual\" is yet - we haven't set up a routine I can run. "
+                         "Which task do you mean?", "sources": []}
     if DID_YOU.match(text):
         return did_you(text, session)
+    if ADVICE.search(text):
+        return {"reply": "I can't tell you whether to buy or sell - that would be me giving financial advice, "
+                         "and I'm not qualified to, so I won't guess or nudge you either way. What I can do is pull "
+                         "the live price, the recent trend and the numbers behind a named stock or coin so you can "
+                         "weigh the risk yourself. Tell me which one and I'll get the data.", "sources": []}
+    if UNSEND.search(text):
+        return {"reply": "I can't unsend an email once it has gone out - email has no recall, and I won't "
+                         "pretend it does. The real options are a short correction or follow-up to the recipient, "
+                         "or a separate note explaining the mistake. Tell me who and what to say and I'll draft it "
+                         "before anything is sent.", "sources": []}
+    if ABORT.search(text):
+        pend = (session or {}).get("pending")
+        if isinstance(pend, dict) and pend.get("gate"):
+            session["pending"] = None
+            return {"reply": f"Stopped. I cancelled the pending \"{str(pend['gate'])[:160]}\" before it ran - "
+                             "nothing was sent or changed.", "sources": []}
+        return {"reply": "Stopped. Nothing was running and no action was waiting for a confirm, so nothing "
+                         "was already done - there's nothing to undo. Tell me what you meant to confirm and I'll ignore it.",
+                "sources": []}
     route = session.get("route") or {}
     if not isinstance(route, dict):
         route = {}
@@ -144,7 +207,18 @@ def run(text, session):
     # "KNOWN FACTS" header back into its answer
     system = llm.style() + (f"\n\nContext you may use (never mention these headings; the known facts are exact "
                            f"and override anything else you recall):\n{ctx}" if ctx else "")
-    msgs = session.get("history", [])[-12:] + [{"role": "user", "content": text}]
+    # Keep the live conversation state pinned and summarize older turns instead of silently
+    # throwing away everything outside the last dozen messages after a long chat resumes.
+    try:
+        from ishti.core.context import ContextAssembler
+        from ishti.core import state as conversation_state
+        state_obj = conversation_state.get_manager().get(session.get("id", "default"))
+        assembled = ContextAssembler(verbatim_turns=6, max_messages=40, max_msg_chars=1600).build(
+            session.get("history", []), state_obj, state_summary=session.get("state_summary") or None)
+        msgs = assembled + [{"role": "user", "content": text}]
+    except Exception as exc:
+        swallowed("ishti/skills/chat/skill.py:context_assembly", exc)
+        msgs = session.get("history", [])[-12:] + [{"role": "user", "content": text}]
     out = (llm.chat(msgs, role=role, system=system, max_tokens=2048 if role == "coder" else 1024,
                     on_token=session.get("on_token")).content or "").strip()
     if not inspect(out)[0]:  # refusal / contamination -> one clean retry

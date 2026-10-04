@@ -42,10 +42,16 @@ def _stub_route(skill):
 
 
 def _isolate(monkeypatch):
-    """No background learning, no planner, no owner stores - the followups/state-flow house rule."""
+    """No background learning, no planner, no owner stores - the followups/state-flow house rule.
+
+    These rows exercise the arch1 skill path (blank reply -> escalation slot, _finish's blank net), so
+    the arch2 brain must not take the turn: with config arch.active=arch2 it intercepts whenever
+    _rule_owned is False, and the route stub below carries source="test". Pinning _rule_owned True keeps
+    the skill path this file is about (same intent as the followups suite's route stub)."""
     for name in ("_remember", "_learn", "_learn_turn", "_arch2_consolidate", "_ftlog"):
         monkeypatch.setattr(D, name, lambda *a, **k: None)
     monkeypatch.setattr(D.planner, "candidate", lambda *a, **k: False)
+    monkeypatch.setattr(D, "_rule_owned", lambda text: True)
 
 
 def _with_scratch_facts(fn):

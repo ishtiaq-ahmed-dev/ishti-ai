@@ -1,0 +1,29 @@
+{
+ "id": 110,
+ "prompt_text": "Open WhatsApp, Instagram, and my email, I need to check all three",
+ "category": "Opening apps — social & communication (101-110)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [
+  "apps",
+  "browser",
+  "desktop"
+ ],
+ "expected_outcome": "Opens all three (reusing existing tabs where applicable), confirms each",
+ "expected_reply_success": "Opens all three (reusing existing tabs where applicable), confirms each",
+ "expected_reply_failure": "If one fails to open: says which one specifically, still completes the other two",
+ "pass_criteria": {
+  "expected_skill": [
+   "browser",
+   "apps",
+   "whatsapp",
+   "email"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

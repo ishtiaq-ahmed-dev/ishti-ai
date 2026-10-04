@@ -107,6 +107,11 @@ def route(text, skills, exclude=()):
     # "laya": false = trigger-only skill (deterministic cue exists; as a Laya option it only adds confusion)
     candidates = {n: s for n, s in live.items() if s.manifest.get("laya", True)}
     if r and candidates:
+        # A request NEVER downloads a checkpoint: predict() loads the checkpoint it routed to, and with no
+        # cache that used to go to huggingface.co mid-request (crashed the app on 2026-10-02). Offline
+        # here: a missing model raises and the deterministic rules/default below answer instead.
+        _prev_offline = os.environ.get("HF_HUB_OFFLINE")
+        os.environ["HF_HUB_OFFLINE"] = "1"
         try:
             a = r.predict({"request": text}, questions(candidates), model=_cfg["laya_model"])["answers"]
             probs = a["skill"]["probabilities"]
@@ -120,6 +125,11 @@ def route(text, skills, exclude=()):
                 return done(skill, conf, "laya", **extra)
         except Exception as exc:
             extra = {"laya_error": f"{type(exc).__name__}: {exc}"}
+        finally:
+            if _prev_offline is None:
+                os.environ.pop("HF_HUB_OFFLINE", None)
+            else:
+                os.environ["HF_HUB_OFFLINE"] = _prev_offline
 
     default = _cfg["default_skill"]
     return done(default if default in live else None, 0.0, "default", **extra)

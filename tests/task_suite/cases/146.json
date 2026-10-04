@@ -1,0 +1,23 @@
+{
+ "id": 146,
+ "prompt_text": "Who else worked on CardioSense with me?",
+ "category": "People — friends, colleagues & university (145-150)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Lists actually-stored collaborators for that project",
+ "expected_reply_success": "Lists actually-stored collaborators for that project",
+ "expected_reply_failure": "\"No collaborators on file for that project\" if genuinely none stored",
+ "pass_criteria": {
+  "expected_skill": [
+   "memory",
+   "relationships"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

@@ -178,7 +178,7 @@ def op_portfolio(m, text, session):
         rows = c.execute("SELECT symbol, SUM(qty), SUM(CASE WHEN qty > 0 THEN qty * price ELSE 0 END), SUM(CASE WHEN qty > 0 THEN qty ELSE 0 END) "
                          "FROM trades GROUP BY symbol HAVING SUM(qty) > 0").fetchall()
     if not rows:
-        return "No holdings recorded. Tell me like \"I bought 10 NVDA at 180\"."
+        return "Your portfolio has no holdings recorded yet - I won't estimate. Tell me a trade like \"I bought 10 NVDA at 180\" and I'll start tracking it."
     lines, total_cost, total_value = [], {}, {}
     for sym, qty, cost_all, bought in rows:
         avg = cost_all / bought

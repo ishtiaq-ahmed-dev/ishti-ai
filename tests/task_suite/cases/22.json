@@ -1,0 +1,35 @@
+{
+ "id": 22,
+ "prompt_text": "Compress my ISHTI project folder and put it on the Desktop",
+ "category": "Files & folders (19-26)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "files",
+  "folders",
+  "fileops",
+  "system",
+  "meta",
+  "chat"
+ ],
+ "expected_outcome": "Confirms size and destination before/after",
+ "expected_reply_success": "Confirms size and destination before/after",
+ "expected_reply_failure": "If folder too large or in use: explains why it couldn't",
+ "pass_criteria": {
+  "expected_skill": [
+   "fileops",
+   "files"
+  ],
+  "ok_any": [
+   "zip",
+   "compress",
+   "desktop",
+   "size"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

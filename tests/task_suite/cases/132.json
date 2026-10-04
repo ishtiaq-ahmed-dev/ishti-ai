@@ -1,0 +1,24 @@
+{
+ "id": 132,
+ "prompt_text": "Draft a LinkedIn post about my new project",
+ "category": "LinkedIn — reading & professional messaging (128-132)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Shows draft in a professional tone matching Ishtiaq's usual style if known",
+ "expected_reply_success": "Shows draft in a professional tone matching Ishtiaq's usual style if known",
+ "expected_reply_failure": "N/A for failure — flags if it's missing key specifics rather than inventing project details",
+ "pass_criteria": {
+  "expected_skill": [
+   "planners",
+   "browser",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

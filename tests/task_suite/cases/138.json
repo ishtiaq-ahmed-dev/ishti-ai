@@ -1,0 +1,29 @@
+{
+ "id": 138,
+ "prompt_text": "Forget everything about my cousin Bilal",
+ "category": "People — family (133-138)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [
+  "memory",
+  "owner",
+  "prefs",
+  "chat"
+ ],
+ "expected_outcome": "Confirms exactly what was removed",
+ "expected_reply_success": "Confirms exactly what was removed",
+ "expected_reply_failure": "Wrong: also deletes unrelated people, or confuses which Bilal if there's also a non-cousin Bilal stored",
+ "pass_criteria": {
+  "expected_skill": [
+   "memory",
+   "relationships",
+   "owner"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

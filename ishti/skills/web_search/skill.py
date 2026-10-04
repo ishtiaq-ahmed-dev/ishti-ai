@@ -24,9 +24,56 @@ MINE = re.compile(r"\b(?:my|this)\s+(?:pc|computer|laptop|system|machine)\b", re
 SEARCH = re.compile(r"^\s*(?:please\s+)?(?:search|look\s+up|google|find\s+out)\b", re.I)
 LOCAL = re.compile(r"\b(?:on\s+(?:my\s+)?(?:pc|computer|laptop|drive)|files?|folders?|pdfs?|documents?|downloads|desktop|"
                    r"\.[a-z0-9]{2,4}\b)", re.I)
+# Sending a person a message is not a search, whatever the intent classifier says. "Message all my IMS
+# classmates about a study group" and "message him about meeting up" were both classified QUICK_SEARCH and
+# routed to the web, which cannot possibly answer them (checklist 148, 150).
+MESSAGE_PEOPLE = re.compile(
+    r"^\s*(?:please\s+)?(?:message|msg|text|whatsapp|reply\s+to|write\s+to|ask|ping)\s+"
+    r"(?:all\s+|every\s+|both\s+|the\s+|my\s+|his\s+|her\s+|them\s+|him\s+)?\w", re.I)
+# the same verb can sit mid-sentence: "my friend from university, not the CardioSense one, message him
+# about meeting up" was still classified QUICK_SEARCH and sent to the web.
+MESSAGE_ANYWHERE = re.compile(
+    r"\b(?:message|text|reply\s+to|write\s+to|whatsapp)\s+(?:him|her|them|us|all|everyone|every\s+\w+|"
+    r"my\s+\w+|the\s+\w+)\b", re.I)
+# "Are you running okay?" / "Is anything currently broken that you know of?": the intent classifier
+# reads "currently" as a live factual query, but the answer is ISHTI's own health, which the system/meta
+# skills report. Never a web search (checklist #188, #192).
+SELF_STATUS = re.compile(
+    r"\b(?:are\s+you\s+(?:running|ok|okay|fine|working|healthy|alright)|how\s+are\s+you\s+(?:doing|running)|"
+    r"(?:is|anything)\s+anything?\s+(?:currently\s+|right\s+now\s+)?(?:broken|wrong|down|failing|offline)|"
+    r"what(?:'s|\s+is)\s+(?:currently\s+)?(?:broken|wrong|down|failing)\b|anything\s+broken\b)", re.I)
+# "Find a time this week that works for me and the JQ AI client": coordination with a real calendar,
+# not a web fact. The intent classifier saw "this week" and called it a live query (checklist #153).
+SCHEDULE_COORD = re.compile(
+    r"\b(?:find|suggest|pick|propose|give\s+me)\s+(?:me\s+)?(?:a\s+|an\s+|some\s+)?"
+    r"(?:time|slot|opening|free\s+slot)\b|\btime\s+(?:this|next)\s+week\s+that\s+works\b|"
+    r"\bthat\s+works\s+for\s+(?:me|us|both|everyone)\b|\bfind\s+a\s+time\b", re.I)
 
 
 def match(text):
+    t = text.strip()
+    if MESSAGE_PEOPLE.match(t) or MESSAGE_ANYWHERE.search(t):
+        return False          # a person is being written to, not looked up
+    if SELF_STATUS.search(t) or SCHEDULE_COORD.search(t):
+        return False          # own health / calendar coordination, not a web fact
+    # A style/behaviour instruction ("stop explaining your reasoning", "be more concise", "talk normal")
+    # is a preference for how ISHTI answers, not a lookup. The classifier saw "result"/"every time" as a
+    # live query and sent it to the web.
+    if re.search(r"\b(?:stop\s+\w+ing\b|just\s+give\s+me\s+the\s+result|from\s+now\s+on|don'?t\s+explain|"
+                 r"be\s+(?:more\s+)?(?:concise|brief|short|casual|formal|normal)|talk\s+normal|no\s+more\s+"
+                 r"explanation|don'?t\s+over-?explain)\b", t, re.I):
+        return False
+    # "Deploy my latest commit" / "push my latest changes": a dev/git action on the owner's repo, not a
+    # web fact. The classifier read "latest" as a live query (checklist #164).
+    if re.search(r"\b(?:deploy|redeploy|release|ship|push|merge|revert|rollback|roll\s+back|commit|pull\s+request)\b", t, re.I) \
+            and re.search(r"\b(?:commit|branch|repo|repository|changes?|code|build|deployment|production|staging|github|gitlab|origin)\b", t, re.I):
+        return False
+    # "Find 3 YouTube videos about local LLM fine-tuning" (checklist #42): a request to FIND links/results
+    # about a topic is a web search, whatever the intent classifier says. The "find N <media> about X"
+    # shape names a count and a topic - nothing on this PC can answer it.
+    if re.search(r"\b(?:find|search|look\s+up|give\s+me|show\s+me)\s+(?:me\s+)?(?:\d+|three|five|ten|a\s+few)?\s*"
+                 r".{0,24}?\b(?:videos?|articles?|results?|tutorials?|links?|posts?|examples?|papers?)\b", t, re.I):
+        return True
     return (IntentDetector.classify(text)["mode"] == "QUICK_SEARCH" or (bool(PRODUCT.search(text)) and not MINE.search(text))
             or (bool(SEARCH.search(text)) and not LOCAL.search(text)))
 

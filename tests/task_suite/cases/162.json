@@ -1,0 +1,42 @@
+{
+ "id": 162,
+ "prompt_text": "Write unit tests for the new leads skill",
+ "category": "Coding / developer assistant tasks (157-164)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "dev",
+  "terminal",
+  "devops",
+  "gitops",
+  "chat",
+  "system",
+  "meta"
+ ],
+ "expected_outcome": "Shows actual test code, explains coverage",
+ "expected_reply_success": "Shows actual test code, explains coverage",
+ "expected_reply_failure": "If it can't determine expected behavior from the code alone: asks what the skill is supposed to do in the edge cases",
+ "pass_criteria": {
+  "expected_skill": [
+   "dev",
+   "chat",
+   "skillsmith"
+  ],
+  "ok_any": [
+   "test",
+   "def test",
+   "assert",
+   "pytest",
+   "coverage",
+   "leads",
+   "edge case",
+   "behaviour",
+   "behavior"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

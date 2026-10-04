@@ -1,0 +1,30 @@
+{
+ "id": 74,
+ "prompt_text": "Pause what you're working on, I need you for something urgent",
+ "category": "Multitasking & background behavior (70-76)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Background task is actually paused/deprioritized, not silently dropped",
+ "expected_reply_success": "Background task is actually paused/deprioritized, not silently dropped",
+ "expected_reply_failure": "Confirms what's paused and that it'll resume",
+ "pass_criteria": {
+  "expected_skill": [
+   "taskctl",
+   "meta",
+   "chat"
+  ],
+  "ok_any": [
+   "pause",
+   "paused",
+   "nothing",
+   "no task",
+   "running"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

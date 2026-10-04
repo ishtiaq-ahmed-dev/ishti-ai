@@ -1,0 +1,38 @@
+{
+ "id": 66,
+ "prompt_text": "Pull the latest news on local LLMs, pick the most relevant one, and draft a short note about it for my channel",
+ "category": "Multi-step chained tasks (62-69)",
+ "difficulty": "hard",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "web_search",
+  "web_fetch",
+  "browser",
+  "deep_research",
+  "chat"
+ ],
+ "expected_outcome": "Shows the pick and why, then the draft",
+ "expected_reply_success": "Shows the pick and why, then the draft",
+ "expected_reply_failure": "If nothing relevant found: says so, doesn't force a draft out of weak material",
+ "pass_criteria": {
+  "expected_skill": [
+   "deep_research",
+   "web_search",
+   "writing",
+   "plan"
+  ],
+  "ok_any": [
+   "llm",
+   "news",
+   "draft",
+   "note",
+   "couldn't",
+   "could not"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

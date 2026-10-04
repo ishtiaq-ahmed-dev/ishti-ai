@@ -1,0 +1,24 @@
+{
+ "id": 116,
+ "prompt_text": "Send a voice reply to Ahmed on WhatsApp saying I'm running late",
+ "category": "WhatsApp — reading & replying (111-116)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part2.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Confirms transcript before sending as an actual voice note",
+ "expected_reply_success": "Confirms transcript before sending as an actual voice note",
+ "expected_reply_failure": "If voice-note send fails: explains, offers text fallback explicitly instead of silently substituting",
+ "pass_criteria": {
+  "expected_skill": [
+   "whatsapp",
+   "media",
+   "voice"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": true,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

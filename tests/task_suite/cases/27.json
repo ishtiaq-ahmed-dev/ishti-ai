@@ -1,0 +1,32 @@
+{
+ "id": 27,
+ "prompt_text": "Open Chrome",
+ "category": "App & PC control (27-36)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "apps",
+  "browser",
+  "desktop"
+ ],
+ "expected_outcome": "Opens it, confirms",
+ "expected_reply_success": "Opens it, confirms",
+ "expected_reply_failure": "If it fails to launch: states the actual error, not a generic \"done\"",
+ "pass_criteria": {
+  "expected_skill": [
+   "apps"
+  ],
+  "ok_any": [
+   "opened",
+   "chrome",
+   "couldn't",
+   "could not",
+   "isn't installed"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

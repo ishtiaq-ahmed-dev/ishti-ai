@@ -16,9 +16,10 @@ import requests
 from ishti import ROOT
 from ishti.skills import trace
 
-TRIGGER = re.compile(r"\b(?:cheapest|lowest\s+price|best\s+(?:price|deal)|where\s+(?:can\s+i|to|should\s+i)\s+buy|"
-                     r"(?:want|going|planning|looking)\s+to\s+buy|buy\s+(?:a|an|the|me)\b|shop(?:ping)?\s+for|"
-                     r"compare\s+(?:the\s+)?prices?|price\s+comparison|official\s+stores?|verified\s+stores?)", re.I)
+TRIGGER = re.compile(r"\b(?:cheapest|lowest\s+price|best\s+(?:price|deal|reviewed)|where\s+(?:can\s+i|to|should\s+i)\s+buy|"
+                     r"(?:want|going|planning|looking)\s+to\s+buy|buy\s+(?:a|an|the|me|this|that|it)\b|shop(?:ping)?\s+for|"
+                     r"compare\s+(?:the\s+)?prices?|price\s+comparison|official\s+stores?|verified\s+stores?|"
+                     r"best\s+reviewed|under\s+\d|\bprice\b.{0,20}\b(?:under|below|max|at\s+most|limit)\b)", re.I)
 NOT_SHOPPING = re.compile(r"\b(?:file|folder|pdf|documents?|downloads|desktop|my\s+(?:pc|computer|laptop))\b", re.I)
 
 # ponytail: hand-kept allow-lists. Anything not listed (and not the brand's own site) is left out of the table,

@@ -1,0 +1,38 @@
+{
+ "id": 163,
+ "prompt_text": "Check if any of my Python dependencies are outdated",
+ "category": "Coding / developer assistant tasks (157-164)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "dev",
+  "terminal",
+  "devops",
+  "gitops",
+  "chat"
+ ],
+ "expected_outcome": "Real output from the actual check, not a guess",
+ "expected_reply_success": "Real output from the actual check, not a guess",
+ "expected_reply_failure": "If no requirements file found: says where it looked",
+ "pass_criteria": {
+  "expected_skill": [
+   "dev",
+   "terminal"
+  ],
+  "ok_any": [
+   "outdated",
+   "up-to-date",
+   "requirement",
+   "pip",
+   "package",
+   "version",
+   "looked",
+   "no requirement"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

@@ -1,0 +1,36 @@
+{
+ "id": 177,
+ "prompt_text": "Translate 'where is the nearest bank' into Urdu",
+ "category": "Translation & language switching (177-181)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_50_task_test_checklist_part3.md",
+ "expected_tool_sequence": [
+  "utilities",
+  "languages",
+  "chat"
+ ],
+ "expected_outcome": "Correct translation",
+ "expected_reply_success": "Correct translation",
+ "expected_reply_failure": "If translator model is unavailable: says so, offers a best-effort if confident, flagged as such",
+ "pass_criteria": {
+  "expected_skill": [
+   "utilities",
+   "chat",
+   "languages"
+  ],
+  "ok_any": [
+   "بینک",
+   "قریب",
+   "کہاں",
+   "bank",
+   "urdu",
+   "nearest",
+   "translate"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

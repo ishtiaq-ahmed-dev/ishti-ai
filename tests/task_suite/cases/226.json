@@ -1,0 +1,22 @@
+{
+ "id": 226,
+ "prompt_text": "Two rapid, unrelated voice commands arrive almost simultaneously (barge-in territory)",
+ "category": "Interruptions & conversational context switching (224-228)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part4.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Both get handled distinctly, nothing dropped",
+ "expected_reply_success": "Both get handled distinctly, nothing dropped",
+ "expected_reply_failure": "Wrong: blends them into one garbled response",
+ "pass_criteria": {
+  "expected_skill": [
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

@@ -25,7 +25,12 @@ OWN = re.compile(r"\bfrom\s+(?:my|these|those|the)\b|\b(?:my|these|those)\s+(?:c
 WITH_GEMINI = re.compile(r"\s*\b(?:on|with|using|in|via|through)\s+(?:google\s+)?gemini\b", re.I)
 
 
+CONCEPT = re.compile(r'\b(?:description|concept|ideas?|prompt\s+for|in\s+words|outline)\b', re.I)
+
+
 def match(text):
+    if CONCEPT.search(text) and not GEMINI.search(text):
+        return False
     return (bool(GEN.search(text)) or bool(GEMINI.search(text) and re.search(MEDIA, text, re.I))) and not OWN.search(text)
 
 

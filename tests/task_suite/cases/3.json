@@ -1,0 +1,40 @@
+{
+ "id": 3,
+ "prompt_text": "Search for the cheapest RTX 5070 Ti in Pakistan right now",
+ "category": "Information lookup & search (1-10)",
+ "difficulty": "medium",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "web_search",
+  "web_fetch",
+  "browser",
+  "deep_research",
+  "chat",
+  "system",
+  "meta",
+  "shopping",
+  "markets"
+ ],
+ "expected_outcome": "Lists a few options with price and source link",
+ "expected_reply_success": "Lists a few options with price and source link",
+ "expected_reply_failure": "\"Couldn't find current pricing for that — here's the closest I found\" + what it did find",
+ "pass_criteria": {
+  "expected_skill": [
+   "web_search",
+   "shopping"
+  ],
+  "ok_any": [
+   "rtx",
+   "pkr",
+   "price",
+   "rs"
+  ],
+  "bad_any": [
+   "i can't browse"
+  ],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

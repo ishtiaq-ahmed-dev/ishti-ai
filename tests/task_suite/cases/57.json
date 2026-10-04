@@ -1,0 +1,37 @@
+{
+ "id": 57,
+ "prompt_text": "Is 250,000 PKR a good deal for a used RTX 5070 Ti?",
+ "category": "Shopping & price lookups (53-57)",
+ "difficulty": "easy",
+ "source_file": "ISHTI_100_task_test_checklist.md",
+ "expected_tool_sequence": [
+  "web_search",
+  "web_fetch",
+  "browser",
+  "deep_research",
+  "chat"
+ ],
+ "expected_outcome": "Direct yes/no-ish answer with 1-2 comparison points",
+ "expected_reply_success": "Direct yes/no-ish answer with 1-2 comparison points",
+ "expected_reply_failure": "If it can't verify market price: says it can't confirm, gives best guess clearly labeled as such",
+ "pass_criteria": {
+  "expected_skill": [
+   "shopping",
+   "web_search",
+   "chat"
+  ],
+  "ok_any": [
+   "pkr",
+   "good",
+   "price",
+   "market",
+   "can't",
+   "cannot"
+  ],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "curated"
+}

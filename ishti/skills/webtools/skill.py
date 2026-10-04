@@ -37,6 +37,11 @@ OPS = [
 
 
 def match(text):
+    # "bookmark this page for me: <url>" is a browser task (the browser skill opens/reuses the tab);
+    # webtools owns bookmark SEARCH (find my github bookmarks) and the bookmark file itself.
+    # "this page" / "this site" with a URL is the browser's to open, not webtools' to search (checklist #44).
+    if re.search(r"\b(?:bookmark|bookmarks?)\b", text, I) and re.search(r"https?://", text):
+        return False  # browser opens the page; webtools only searches existing bookmarks
     return browser_data.match(text) or any(rx.search(text) for _, rx in OPS)
 
 
