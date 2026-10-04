@@ -304,15 +304,16 @@ async def health_endpoint():
 # the POSTs are the three actions a card offers: save the Client ID/Secret, start the consent flow, disconnect.
 # The consent flow runs on a worker thread (it waits on a loopback redirect), so the page polls progress.
 @app.get("/api/connectors")
-async def connectors_list():
+def connectors_list():
     from ishti import connectors
     return connectors.summary()
 
 
 @app.get("/api/connectors/{service}/progress")
-async def connectors_progress(service: str):
+def connectors_progress(service: str):
     from ishti import connectors
-    if service not in connectors.FAMILY:
+    from ishti import oauth
+    if service not in oauth.PROVIDERS:
         return JSONResponse({"ok": False, "error": f"{service} is not a connector ISHTI knows."}, status_code=404)
     return JSONResponse({"ok": True, "progress": connectors.progress(service), "connector": connectors.entry(service)})
 
@@ -325,13 +326,15 @@ async def connectors_credentials(service: str, req: Request):
         body = await req.json()
     except Exception:  # noqa: BLE001
         body = {}
-    res = connectors.set_credentials(service, str(body.get("client_id") or ""),
-                                     str(body.get("client_secret") or ""))
+    if not isinstance(body, dict):
+        return JSONResponse({"ok": False, "error": "body must be a JSON object"}, status_code=400)
+    res = await asyncio.to_thread(connectors.set_credentials, service, str(body.get("client_id") or ""),
+                                  str(body.get("client_secret") or ""))
     return JSONResponse(res, status_code=200 if res.get("ok") else 400)
 
 
 @app.post("/api/connectors/{service}/connect")
-async def connectors_connect(service: str):
+def connectors_connect(service: str):
     """Open the consent page and return at once; the page polls /progress until it lands."""
     from ishti import connectors
     res = connectors.start(service)
@@ -339,7 +342,7 @@ async def connectors_connect(service: str):
 
 
 @app.post("/api/connectors/{service}/disconnect")
-async def connectors_disconnect(service: str):
+def connectors_disconnect(service: str):
     from ishti import connectors
     res = connectors.disconnect(service)
     return JSONResponse(res, status_code=200 if res.get("ok") else 400)

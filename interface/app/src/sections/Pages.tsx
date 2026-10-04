@@ -1880,12 +1880,13 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
 type Connector = {
   service: string; name: string; family: string; kind: "oauth" | "token";
   api: string; auth: string; scopes: string[]; granted: string[];
-  has_credentials: boolean; connected: boolean; account: string;
+  website?: string; capabilities?: string;
+  has_credentials: boolean; one_click?: boolean; connected: boolean; account: string;
   has_refresh: boolean; expires_at: number; connected_at: number;
-  state: "connected" | "ready" | "empty";
+  state: "connected" | "ready" | "empty" | "reconnect";
   setup: { console?: string; steps?: string; note?: string };
   status_text: string;
-  progress: { state?: string; reply?: string };
+  progress: { state?: string; reply?: string; at?: number };
 };
 type ConnectorsPayload = {
   connectors: Connector[]; connected: number; ready: number;
@@ -1982,35 +1983,39 @@ export function Connectors({ onToggleNav }: { onToggleNav?: () => void }) {
   const [cid, setCid] = useState("");
   const [csec, setCsec] = useState("");
   const [group, setGroup] = useState<string>("all");
+  const loadGeneration = useRef(0);
 
   const load = useCallback(() => {
-    getJSON<ConnectorsPayload>("/api/connectors").then(setData).catch(
-      (e: Error) => setError(e?.message || "could not reach /api/connectors")
+    const generation = ++loadGeneration.current;
+    getJSON<ConnectorsPayload>("/api/connectors").then((fresh) => {
+      if (generation !== loadGeneration.current) return;
+      setData(fresh); setError("");
+      const terminal = fresh.connectors.filter((c) => ["done", "error"].includes(c.progress?.state || ""))
+        .sort((a, b) => (b.progress.at || 0) - (a.progress.at || 0))[0];
+      if (terminal?.progress.reply) setNotice(terminal.progress.reply);
+    }).catch(
+      (e: Error) => { if (generation === loadGeneration.current) setError(e?.message || "could not reach /api/connectors"); }
     );
   }, []);
   useEffect(load, [load]);
 
-  // While a consent flow is open, poll that one connector until it leaves "waiting".
   useEffect(() => {
-    const waiting = (data?.connectors ?? []).filter((c) => c.progress?.state === "waiting");
-    if (!waiting.length) return;
-    const t = setInterval(() => {
-      Promise.all(
-        waiting.map((c) =>
-          getJSON<{ connector: Connector }>(`/api/connectors/${c.service}/progress`).catch(() => null)
-        )
-      ).then((rows) => {
-        const fresh = rows.map((r) => r?.connector).filter(Boolean) as Connector[];
-        const landed = fresh.filter((c) => c.progress?.state !== "waiting");
-        if (landed.length) {
-          setNotice(landed[0].progress?.reply || "");
-          setData((prev) => (prev ? { ...prev, connectors: prev.connectors.map(
-            (c) => fresh.find((f) => f.service === c.service) ?? c) } : prev));
-        }
-      });
-    }, 2000);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = () => {
+      clearTimeout(timer);
+      timer = setTimeout(load, 100);
+    };
+    const events = ["ishti-connectors-updated", "ishti-ws-connected", "ishti-state-resync"];
+    events.forEach((name) => window.addEventListener(name, refresh));
+    return () => { clearTimeout(timer); events.forEach((name) => window.removeEventListener(name, refresh)); };
+  }, [load]);
+
+  // WebSocket changes refresh immediately; polling recovers completion after a dropped connection.
+  useEffect(() => {
+    if (!(data?.connectors ?? []).some((c) => c.progress?.state === "waiting")) return;
+    const t = setInterval(load, 2000);
     return () => clearInterval(t);
-  }, [data?.connectors]);
+  }, [data?.connectors, load]);
 
   const rows = (data?.connectors ?? []).filter((c) => group === "all" || c.family === group);
 
@@ -2018,6 +2023,7 @@ export function Connectors({ onToggleNav }: { onToggleNav?: () => void }) {
     setBusy(service); setNotice("");
     try {
       const r = await postJSON<{ ok: boolean; reply: string }>(path, body);
+      if (!r.ok) throw new Error(r.reply || "The connector action did not complete.");
       setNotice(r.reply); setEditing(null); setCid(""); setCsec(""); load();
     } catch (e) {
       setNotice((e as Error).message);
@@ -2027,17 +2033,18 @@ export function Connectors({ onToggleNav }: { onToggleNav?: () => void }) {
   const connect = (s: string) => act(`/api/connectors/${s}/connect`, s);
   const disconnect = (s: string) => act(`/api/connectors/${s}/disconnect`, s);
 
-  const Card = ({ c }: { c: Connector }) => {
+  // Render as a function: an inline component type remounts the credential inputs on every keystroke.
+  const renderConnector = (c: Connector) => {
     const waiting = c.progress?.state === "waiting";
     return (
-      <div className="flex flex-col rounded-xl border border-border bg-card p-4 shadow-xs">
+      <div key={c.service} className="flex flex-col rounded-xl border border-border bg-card p-4 shadow-xs">
         <div className="flex items-start gap-2">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold text-foreground">{c.name}</span>
               <span className={cn("rounded-full border px-1.5 py-0.5 text-[10px] font-medium",
                 CONN_TONE[c.state] || CONN_TONE.empty)}>
-                {c.state === "connected" ? "connected" : c.state === "ready" ? "ready" : "not set up"}
+                {c.state === "connected" ? "connected" : c.state === "ready" ? "ready" : c.state === "reconnect" ? "reconnect" : "not set up"}
               </span>
             </div>
             <div className="mt-0.5 text-[11px] text-muted-foreground">
@@ -2057,19 +2064,23 @@ export function Connectors({ onToggleNav }: { onToggleNav?: () => void }) {
           <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">{c.status_text}</p>
         )}
 
+        {c.capabilities && <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">{c.capabilities}</p>}
+
         <div className="mt-3 flex flex-wrap gap-1.5">
-          {!c.connected && (
+          {!c.connected && c.kind === "oauth" && (
             <button type="button" disabled={busy === c.service || waiting}
               onClick={() => (c.has_credentials ? connect(c.service)
                 : (setEditing(c.service), setCid(""), setCsec("")))}
               className={cn("rounded-lg px-2.5 py-1 text-[11px] font-medium cursor-pointer",
                 c.has_credentials ? "bg-accent text-white" : "border border-border bg-card hover:border-accent/40",
                 (busy === c.service || waiting) && "opacity-60")}>
-              {waiting ? "Waiting for Allow…" : c.has_credentials
-                ? (c.kind === "token" ? "Paste the token" : "Connect") : "Set up"}
+              {waiting ? "Waiting for consent…" : c.has_credentials ? (c.family === "google" ? "Connect to Google" : `Connect to ${FAMILY_LABEL[c.family] || c.name}`) : "Advanced setup"}
             </button>
           )}
-          {c.connected && (
+          {c.kind === "token" && (
+            <a href="#settings" className="rounded-lg border border-border bg-card px-2.5 py-1 text-[11px] hover:border-accent/40">Remote channel settings</a>
+          )}
+          {c.connected && c.kind === "oauth" && (
             <button type="button" disabled={busy === c.service} onClick={() => disconnect(c.service)}
               className="rounded-lg border border-border bg-card px-2.5 py-1 text-[11px] font-medium hover:border-red-500/50 cursor-pointer disabled:opacity-60">
               Disconnect
@@ -2085,9 +2096,9 @@ export function Connectors({ onToggleNav }: { onToggleNav?: () => void }) {
 
         {editing === c.service && (
           <div className="mt-3 space-y-2 rounded-lg border border-border bg-background p-2.5">
-            <input value={cid} onChange={(e) => setCid(e.target.value)} placeholder="Client ID"
+            <input value={cid} onChange={(e) => setCid(e.target.value)} placeholder="Client ID" aria-label={`${c.name} client ID`}
               className="w-full rounded-md border border-border bg-card px-2 py-1 text-[11px]" />
-            <input value={csec} onChange={(e) => setCsec(e.target.value)} placeholder="Client secret"
+            <input value={csec} onChange={(e) => setCsec(e.target.value)} placeholder={c.service === "microsoft" ? "Client secret (optional for desktop apps)" : "Client secret"} aria-label={`${c.name} client secret`}
               type="password" className="w-full rounded-md border border-border bg-card px-2 py-1 text-[11px]" />
             <div className="flex gap-1.5">
               <button type="button" disabled={busy === c.service || !cid.trim()} onClick={() => saveCreds(c.service)}
@@ -2104,7 +2115,7 @@ export function Connectors({ onToggleNav }: { onToggleNav?: () => void }) {
 
         {c.setup?.steps && (
           <details className="mt-2">
-            <summary className="cursor-pointer text-[11px] text-accent">How to get the Client ID</summary>
+            <summary className="cursor-pointer text-[11px] text-accent">Advanced app setup</summary>
             <p className="mt-1 text-[10.5px] leading-relaxed text-muted-foreground">{c.setup.steps}</p>
             {c.setup.note && <p className="mt-1 text-[10.5px] text-muted-foreground/80">{c.setup.note}</p>}
           </details>
@@ -2116,7 +2127,7 @@ export function Connectors({ onToggleNav }: { onToggleNav?: () => void }) {
   return (
     <Page
       title="Connectors"
-      subtitle="Plug your accounts into ISHTI. One registry, one flow - credentials stay on this PC."
+      subtitle="Connect your accounts. ISHTI uses an available connector first and Chrome when the requested action needs the website."
       onToggleNav={onToggleNav}
       action={
         <button type="button" onClick={load}
@@ -2160,7 +2171,7 @@ export function Connectors({ onToggleNav }: { onToggleNav?: () => void }) {
           </div>
 
           <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-            {rows.map((c) => (<Card key={c.service} c={c} />))}
+            {rows.map(renderConnector)}
           </div>
 
           <FlowiseCard />

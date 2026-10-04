@@ -717,15 +717,21 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
     Skills add their own tool events with session["trace"](type="tool", ...)."""
     t0 = time.perf_counter()
     killswitch.begin()
+    from ishti.connectors import credential_secrets
+    typed_secrets = credential_secrets(text)
     from ishti import calltrace
-    calltrace.begin(text)
+    calltrace.begin(mask(text, typed_secrets))
     conv = get_conversation_manager()
     sid = session_id or conv.active_session_id or conv.new_chat("New Session")
     shared = _runtime_session(sid, conv)
+    if typed_secrets:
+        shared["redact"] = list(dict.fromkeys([*(shared.get("redact") or []), *typed_secrets]))
     events = []  # kept with the answer so a reopened chat still shows its thinking and graph
 
     def trace(**ev):
         ev = {"t": round((time.perf_counter() - t0) * 1000), **ev}
+        if typed_secrets:
+            ev = json.loads(mask(json.dumps(ev, ensure_ascii=False), typed_secrets))
         if ev.get("type") == "tool" and ev.get("status") in ("done", "error") and ev.get("label"):
             audit.record(f"{ev.get('name', 'tool')}: {ev['label']}", "failed" if ev["status"] == "error" else "",
                          session=sid)
@@ -756,9 +762,9 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
             s["trace"](type="tool", name="wait", label="earlier request finished", status="done")
         shared["running"] = shared.get("running", 0) + 1
         # task tracker: what this chat has on the go ("what's the status of my tasks"); the last 10 are kept
-        task = {"topic": text[:80], "status": "running", "started": time.time(), "result": ""}
+        task = {"topic": mask(text, typed_secrets)[:80], "status": "running", "started": time.time(), "result": ""}
         shared["tasks"] = (shared.get("tasks", []) + [task])[-10:]
-    _inflight(sid, text)
+    _inflight(sid, mask(text, typed_secrets))
     try:
         from ishti import lifecycle
         # Still starting (the dashboard opens ~1 s after launch, the models keep loading): say what is loading and queue
@@ -768,7 +774,7 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
             s["trace"](type="done", skill=None, ms=round((time.perf_counter() - t0) * 1000))
             return {"request": text, "final_answer": not_ready, "mode": "STARTING", "skill": None, "sources": [], "session_id": sid,
                     "channel": channel, "route": {}, "latency_ms": round((time.perf_counter() - t0) * 1000)}
-        with audit.context(session=sid, channel=channel, request=text):
+        with audit.context(session=sid, channel=channel, request=text, redact=typed_secrets):
             audit.record(f"request: {text[:150]}", initiator="standing" if channel == "scheduled" else "owner", skill="")
             res = _handle(text, sid, conv, s, events, t0, channel)
         task.update(status="done", result=res["final_answer"][:200])
@@ -781,8 +787,8 @@ def handle(text: str, session_id: str = None, channel: str = "text", on_token=No
                     "session_id": sid, "channel": channel, "route": {}, "latency_ms": round((time.perf_counter() - t0) * 1000)}
         if type(exc).__name__ == "Cancelled" or not isinstance(exc, Exception):
             raise  # barge-in / shutdown: not a failure to report
-        ErrorLogger.log_error(subsystem="DISPATCHER", error=exc, user_prompt=text, context="dispatcher.handle")
-        log_need("error", "dispatcher", text, f"{type(exc).__name__}: {str(exc)[:120]}")
+        ErrorLogger.log_error(subsystem="DISPATCHER", error=exc, user_prompt=mask(text, typed_secrets), context="dispatcher.handle")
+        log_need("error", "dispatcher", mask(text, typed_secrets), f"{type(exc).__name__}: {str(exc)[:120]}")
         audit.record("request failed", f"{type(exc).__name__}: {str(exc)[:200]}", skill="dispatcher", session=sid)
         reply = (f"Something went wrong inside me ({type(exc).__name__}: {str(exc)[:120]}). I logged it and I'm still "
                  "running - try again, or rephrase.")
@@ -1328,7 +1334,6 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
         reply = out["reply"] = reply + f"\n\n(Before I restarted, I was working on {lost} and it didn't finish. Ask again if you still need it.)"
         RECOVER.clear()
     s["trace"](type="done", skill=name, ms=round((time.perf_counter() - t0) * 1000))
-    s["last_request"], s["last_skill"] = text, name
     # secrets (a generated password) are shown once: not kept in history, the saved chat or memory
     secret = s.pop("no_history", False)
     kept = "(a secret was shown here and not saved)" if secret else reply
@@ -1338,6 +1343,7 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
         text, kept = mask(text, hidden), mask(kept, hidden)
         events[:] = json.loads(mask(json.dumps(events, ensure_ascii=False), hidden))
         secret = True  # and nothing from this exchange goes to long-term memory
+    s["last_request"], s["last_skill"] = text, name
     s["history"] = (s["history"] + [{"role": "user", "content": text},
                                     {"role": "assistant", "content": kept}])[-20:]
     # incognito (H3): this conversation writes NOTHING to memory — no chat persistence, no

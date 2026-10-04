@@ -1,7 +1,7 @@
 {
   "name": "connectors",
   "version": "1.0.0",
-  "description": "Connect any OAuth 2.0 service with a Client ID and Client Secret (Gmail, Drive, Sheets, Docs, Calendar, People, YouTube, Microsoft/Outlook, GitHub, Instagram, Facebook, LinkedIn), show what is connected, and disconnect one.",
+  "description": "Sign in through Connectors using ISHTI's configured app registration; show real connection state and disconnect. Supported API reads use the connector first, with Chrome fallback for unsupported or unavailable actions.",
   "route": "connect or disconnect a service with a client id and secret, authorise an account, list which accounts are connected",
   "priority": 6,
   "laya": false,
@@ -15,21 +15,19 @@
   "tier": "T1",
   "scope": {
     "write": [
-      "data",
-      "ishti"
+      "data"
     ],
     "net": [
-      "*.google.com",
-      "*.googleapis.com",
-      "*.github.com",
-      "*.facebook.com",
-      "*.graph.facebook.com",
-      "*.linkedin.com",
-      "*.microsoftonline.com",
-      "*.graph.microsoft.com",
+      "google.com",
+      "googleapis.com",
+      "github.com",
+      "facebook.com",
+      "linkedin.com",
+      "microsoftonline.com",
+      "graph.microsoft.com",
       "127.0.0.1"
     ],
-    "apps": false
+    "apps": true
   },
   "category": "Settings & Connections",
   "path": "ishti/skills/connectors",

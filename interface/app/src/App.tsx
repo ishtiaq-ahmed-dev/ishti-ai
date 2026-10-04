@@ -245,6 +245,9 @@ export default function App() {
             const msg = JSON.parse(m.data);
             if (msg.type === "resync_required") {
               try { window.dispatchEvent(new CustomEvent("ishti-task-completed")); } catch {}
+              try { window.dispatchEvent(new CustomEvent("ishti-state-resync")); } catch {}
+            } else if (msg.type === "connectors_updated") {
+              window.dispatchEvent(new CustomEvent("ishti-connectors-updated", { detail: msg.data }));
             } else if (msg.type === "task_completed_full" && msg.data) {
               try { window.dispatchEvent(new CustomEvent("ishti-task-completed", { detail: msg.data })); } catch {}
             } else if (msg.type === "assistant_message" && String(msg.data?.reply ?? "").startsWith("⏰")) {

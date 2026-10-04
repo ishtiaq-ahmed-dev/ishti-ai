@@ -58,8 +58,7 @@ def run(text, session):
     t = text.strip()
     if HELP.match(t):
         return {"reply": "I can connect: " + ", ".join(oauth.providers())
-                         + ". Say 'connect <name> client-id <ID> client-secret <SECRET>' once you have "
-                           "created a **Desktop app** OAuth client for it.", "sources": []}
+                         + ". Open Connectors and click Connect to choose your account. Advanced app setup is needed once when the app registration has not been configured.", "sources": []}
     if DISC.match(t):
         svc = _name(DISC.match(t)["svc"])
         if svc not in oauth.PROVIDERS:
@@ -80,19 +79,15 @@ def run(text, session):
     if oauth.PROVIDERS[svc].get("kind") == "token":
         return {"reply": f"{svc} doesn't use OAuth - give me the bot token and I'll store it in config.", "sources": []}
 
-    if m["cid"] and m["sec"]:
-        saved = oauth.set_credentials(svc, m["cid"], m["sec"])
+    if m["cid"] and (m["sec"] or svc == "microsoft"):
+        saved = oauth.set_credentials(svc, m["cid"], m["sec"] or "")
         return {"reply": saved + f" Say 'connect {svc}' to authorise it in the browser.", "sources": []}
 
-    if not oauth.config(svc)[0]:
-        return {"reply": f"I don't have a Client ID/Secret for {svc} yet. Create a **Desktop app** OAuth "
-                         f"client for it (Google Cloud Console, GitHub -> Developer settings -> OAuth apps, "
-                         f"or Meta/LinkedIn's developer portal), enable its API, then say "
-                         f"'connect {svc} client-id <ID> client-secret <SECRET>'.", "sources": []}
     trace(session, "oauth", f"authorising {svc}", status="start")
-    res = oauth.connect(svc)
-    trace(session, "oauth", f"{svc}: {'connected' if res['ok'] else 'not connected'}",
-          status="done" if res["ok"] else "error")
+    from ishti import connectors
+    res = connectors.start(svc)
+    trace(session, "oauth", f"{svc}: {'waiting for sign-in' if res.get('waiting') else 'sign-in not started'}",
+          status="waiting" if res.get("waiting") else "error")
     return {"reply": res["reply"], "sources": []}
 
 

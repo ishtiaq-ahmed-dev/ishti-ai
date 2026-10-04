@@ -35,7 +35,7 @@ RISKY = re.compile(r"\b(buy|purchase|pay|checkout|check out|place order|order no
                    r"tweet|delete|remove|confirm|transfer|subscribe|sign up|register|book|reserve|donate|"
                    r"apply|password|log ?in|sign ?in)\b", re.I)
 URL = r"(?:https?://\S+|www\.\S+|[\w-]+\.(?:com|org|net|io|dev|ai|pk|co|edu|gov|app)\b\S*)"
-SITES = r"(?:youtube|google|gmail|github|facebook|twitter|linkedin|reddit|wikipedia|amazon|netflix|instagram|daraz|chatgpt|outlook)"
+SITES = r"(?:youtube|google(?:\s+(?:drive|docs|sheets|calendar|contacts))?|drive|sheets|gmail|github|facebook|twitter|linkedin|reddit|wikipedia|amazon|netflix|instagram|daraz|chatgpt|outlook)"
 TRIGGER = re.compile(rf"^(?:please\s+)?(?:go\s+to|navigate\s+to|visit|browse\s+to|open)\s+(?:my\s+|the\s+)?(?:{URL}|{SITES}\b)|"
                      r"\b(?:in|on|using|with)\s+(?:the\s+|a\s+|my\s+)?(?:web\s+)?browser\b|"
                      r"\b(?:open|launch|start|use)\s+(?:a\s+|the\s+|my\s+)?(?:web\s+)?browser\b|"
@@ -665,6 +665,11 @@ def _loop(session, msgs, log, steps_left):
 
 
 def run(text, session, server=None, start_url=None, hint="", start_snapshot=None):
+    if not session.get("pending") and not start_snapshot:
+        from ishti.connectors import try_request
+        connected_result = try_request(text, session)
+        if connected_result is not None:
+            return connected_result
     if not (session.get("pending") or {}).get("skill") == "browser":
         TAINTED["on"] = False  # a new task starts clean; a resumed one keeps its state
     with LOCK:
@@ -672,6 +677,11 @@ def run(text, session, server=None, start_url=None, hint="", start_snapshot=None
 
 
 KNOWN_SITES = {
+    "drive": "https://drive.google.com",
+    "sheets": "https://sheets.google.com",
+    "docs": "https://docs.google.com",
+    "calendar": "https://calendar.google.com",
+    "contacts": "https://contacts.google.com",
     "facebook": "https://www.facebook.com",
     "instagram": "https://www.instagram.com",
     "linkedin": "https://www.linkedin.com",
@@ -717,110 +727,6 @@ def _run_locked(text, session, server, start_url, hint, start_snapshot):
         out = _loop(session, p["msgs"], p["log"], p["steps"] - 1)
         remember(text, text, p["log"])
         return out
-
-    # Fast path 0: Open multiple sites together ("Open WhatsApp, Instagram and email together" / "Open WhatsApp, Instagram, and my email, I need to check all three")
-    if re.search(r"\bwhatsapp\b", text, re.I) and re.search(r"\binstagram\b", text, re.I) and re.search(r"\b(?:email|gmail|inbox)\b", text, re.I):
-        open_tabs = tabs(session)
-        actions = []
-        for sname, surl in [("WhatsApp Web", "https://web.whatsapp.com"), ("Instagram", "https://www.instagram.com"), ("Gmail", "https://mail.google.com")]:
-            i, _t = _best_tab(surl, open_tabs)
-            if i is not None:
-                _call("browser_tabs", {"action": "select", "index": i})
-                actions.append(f"reused your open {sname} tab")
-            else:
-                _call("browser_navigate", {"url": surl})
-                actions.append(f"opened {sname}")
-        return {"reply": f"Opened WhatsApp, Instagram, and email in Chrome Profile 9: {', '.join(actions)}. All three tabs are ready.",
-                "sources": [{"title": "WhatsApp Web", "url": "https://web.whatsapp.com"},
-                            {"title": "Instagram", "url": "https://www.instagram.com"},
-                            {"title": "Gmail", "url": "https://mail.google.com"}],
-                "no_escalate": True}
-
-    # Fast path: Outlook and inbox ("Open Outlook and show my inbox" / "Open Outlook")
-    if re.search(r"\boutlook\b", text, re.I) and re.search(r"\binbox\b", text, re.I):
-        surl = "https://outlook.live.com/mail/"
-        i, _t = _best_tab(surl, tabs(session))
-        if i is not None:
-            _call("browser_tabs", {"action": "select", "index": i})
-            return {"reply": "Switched to your open Outlook inbox tab in Chrome Profile 9.",
-                    "sources": [{"title": "Outlook", "url": surl}], "no_escalate": True}
-        out = _call("browser_navigate", {"url": surl})
-        lw = login_wall(out)
-        return {"reply": "Opened Outlook in Chrome Profile 9 to show your inbox." + (" (Please sign in to your Microsoft account to view your inbox)." if lw else ""),
-                "sources": [{"title": "Outlook", "url": surl}], "no_escalate": True}
-
-    # Fast path: Social media queries & actions (tasks 123-131)
-    # Task 123: Any new Instagram DMs?
-    if re.search(r"\binstagram\b", text, re.I) and re.search(r"\b(?:any\s+new\s+)?dms?\b", text, re.I):
-        return {"reply": "Checked Instagram in Chrome Profile 9: Instagram is not logged in (please log in to view your account). No new DMs found.",
-                "sources": [{"title": "Instagram", "url": "https://www.instagram.com"}], "no_escalate": True}
-
-    # Task 124: Reply to that Instagram message from my cousin saying I'll call later
-    if re.search(r"\binstagram\b", text, re.I) and re.search(r"\bcousin\b", text, re.I) and re.search(r"\breply\b", text, re.I):
-        return {"reply": "Which cousin do you want to reply to on Instagram? Once you confirm who it is, I can draft the reply: \"I'll call later\".",
-                "sources": [], "no_escalate": True}
-
-    # Task 125: Check my Facebook notifications
-    if re.search(r"\bfacebook\b", text, re.I) and re.search(r"\bnotifications?\b", text, re.I):
-        return {"reply": "Checked Facebook in Chrome Profile 9: Facebook is not logged in (please sign in to view your notifications). No new notifications found.",
-                "sources": [{"title": "Facebook", "url": "https://www.facebook.com"}], "no_escalate": True}
-
-    # Task 126: Comment on my friend's latest Facebook post saying congrats (T2 gate)
-    if re.search(r"\bfacebook\b", text, re.I) and re.search(r"\bcomment\b", text, re.I):
-        return {"reply": "About to post a comment on your friend's latest Facebook post: \"Congrats!\". Which friend's post should I comment on? Confirm if you want to proceed: (yes/no)",
-                "sources": [], "no_escalate": True}
-
-    # Task 127: Who messaged me on Instagram today?
-    if re.search(r"\binstagram\b", text, re.I) and re.search(r"\bwho\s+messaged\b", text, re.I):
-        return {"reply": "Checked Instagram in Chrome Profile 9: Instagram is not logged in (please log in to view your messages). No one messaged you today.",
-                "sources": [{"title": "Instagram", "url": "https://www.instagram.com"}], "no_escalate": True}
-
-    # Task 128: Any new LinkedIn messages?
-    if re.search(r"\blinkedin\b", text, re.I) and re.search(r"\b(?:any\s+new\s+)?(?:messages?|dms?)\b", text, re.I):
-        return {"reply": "Checked LinkedIn in Chrome Profile 9: LinkedIn is not logged in (please sign in to view messages). No new messages found.",
-                "sources": [{"title": "LinkedIn", "url": "https://www.linkedin.com"}], "no_escalate": True}
-
-    # Task 129: Reply to that recruiter on LinkedIn, say I'm open to a call next week
-    if re.search(r"\blinkedin\b", text, re.I) and re.search(r"\brecruiter\b", text, re.I):
-        return {"reply": "Which recruiter on LinkedIn would you like to reply to? Here is the draft response: \"Hi, thank you for reaching out. I would be open to a call next week to discuss this further.\" Should I send this reply? (yes/no)",
-                "sources": [], "no_escalate": True}
-
-    # Task 130: Check who viewed my LinkedIn profile recently
-    if re.search(r"\blinkedin\b", text, re.I) and re.search(r"\bwho\s+viewed\b", text, re.I):
-        return {"reply": "Checked LinkedIn in Chrome Profile 9: LinkedIn is not logged in or profile view analytics require LinkedIn Premium, so I can't access who viewed your LinkedIn profile recently.",
-                "sources": [{"title": "LinkedIn", "url": "https://www.linkedin.com"}], "no_escalate": True}
-
-    # Task 131: Send a connection request to this person with a short note: https://www.linkedin.com/in/example-person
-    if re.search(r"\blinkedin\b", text, re.I) and re.search(r"\b(?:connect(?:ion)?(?:\s+request)?|connect\s+to)\b", text, re.I):
-        m_url = re.search(r"https?://\S+", text)
-        target = m_url.group(0) if m_url else "the profile"
-        return {"reply": f"About to send a LinkedIn connection request to {target} with note: \"Hi, I would love to connect and follow your work.\" Connect now? (yes/no)",
-                "sources": [{"title": "LinkedIn", "url": target}] if m_url else [], "no_escalate": True}
-
-    # Task 214: Research topic, save notes to a file, and post a short version to LinkedIn (T2 gate)
-    if re.search(r"\blinkedin\b", text, re.I) and re.search(r"\bpost\b", text, re.I):
-        return {"reply": "I researched local AI agents and saved your notes. Here is the draft post for LinkedIn: \"Exploring local AI agents and multi-agent workflows in 2026...\". Ready to post this to LinkedIn? (yes/no)",
-                "sources": [{"title": "LinkedIn", "url": "https://www.linkedin.com"}], "no_escalate": True}
-
-    # Task 216: Check Instagram and LinkedIn for messages, summarize both, and draft replies to anything urgent
-    if re.search(r"\binstagram\b", text, re.I) and re.search(r"\blinkedin\b", text, re.I) and re.search(r"\b(?:messages?|dms?)\b", text, re.I):
-        return {"reply": "Checked Instagram and LinkedIn in Chrome Profile 9: No new or urgent messages found on either platform. Summaries: Instagram has no unread DMs; LinkedIn has no pending recruiter requests. No urgent replies need to be drafted.",
-                "sources": [{"title": "Instagram", "url": "https://www.instagram.com"}, {"title": "LinkedIn", "url": "https://www.linkedin.com"}], "no_escalate": True}
-
-    # Fast path: Profile view ("Open Ahmed's LinkedIn profile" / "Open <name>'s <site> profile")
-    if prof_m := re.search(r"\b(?:open|view|show|check)\s+(?P<who>[A-Za-z0-9_'-]+)'s\s+(?P<site>[a-z0-9_.-]+)\s+profile\b", text, re.I):
-        who = prof_m.group("who").replace("'", "").title()
-        psite = prof_m.group("site").lower()
-        sname, surl = _site_url_for(psite)
-        if sname and surl:
-            p_url = f"{surl}/in/{who.lower()}" if sname == "linkedin" else surl
-            i, _t = _best_tab(surl, tabs(session))
-            if i is not None:
-                _call("browser_tabs", {"action": "select", "index": i})
-            out = _call("browser_navigate", {"url": p_url})
-            lw = login_wall(out)
-            return {"reply": f"Opened {who}'s {sname.title()} profile in Chrome Profile 9." + (" (Please sign in to your account to view the full profile)." if lw else ""),
-                    "sources": [{"title": f"{who}'s {sname.title()}", "url": p_url}], "no_escalate": True}
 
     # Fast path 1: Tab switch ("Switch back to the Instagram tab" / "Switch to Instagram, I was just on LinkedIn")
     if sw_m := re.search(r"\b(?:switch\s+(?:back\s+)?to|return\s+to)\s+(?:the\s+)?(?P<site>[a-z0-9_.-]+)", text, re.I):

@@ -98,6 +98,15 @@ def browser_url(what, q=None):
 
 
 def run(text, session):
+    if not _have(text) and not _play_words(text):
+        from ishti.connectors import try_request
+        result = try_request(text, session)
+        if result is not None:
+            return result
+        m = VERB.match(text)
+        if m and m["app"].lower().strip() in SITES and not WHATSAPP.search(text):
+            from ishti.skills.browser import skill as browser
+            return browser.run(text, session)
     from desktop.computer_use import get_computer_use_agent
     agent = get_computer_use_agent()
     if what := _play_words(text):

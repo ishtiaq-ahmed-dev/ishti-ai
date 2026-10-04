@@ -76,7 +76,8 @@ def _oauth_path(text, session):
             reply = oauth.set_credentials("gmail", m["cid"], m["sec"])
             return {"reply": reply + " Say 'connect gmail' to authorise it in the browser.", "sources": []}
         if oauth.config("gmail")[0] and not oauth.connected("gmail"):
-            res = oauth.connect("gmail")
+            from ishti import connectors
+            res = connectors.start("gmail")
             return {"reply": res["reply"], "sources": []}
         return {"reply": oauth.status("gmail"), "sources": []}
     if t.lower() in ("disconnect gmail", "revoke gmail"):
@@ -90,9 +91,9 @@ def _oauth_path(text, session):
     from ishti.skills import trace
     try:
         import ishti.gmail_api as api
-        if re.search(r"^\s*(?:check|show|list|read)?\s*(?:me\s+)?(?:the\s+)?(?:any\s+)?(?:my\s+)?"
+        if (re.search(r"^\s*(?:check|show|list|read)?\s*(?:me\s+)?(?:the\s+)?(?:any\s+)?(?:my\s+)?"
                      r"(?:new\s+|unread\s+)?(?:e-?mails?|mail|gmail|inbox)\b", t, I) \
-                or re.search(r"\bdo\s+i\s+have\b.*\be-?mails?\b", t, I):
+                or re.search(r"\bdo\s+i\s+have\b.*\be-?mails?\b", t, I)) and not re.search(r"\b(?:from|for|about|subject|sender)\b", t, I):
             trace(session, "gmail_api", "unread mail from the Gmail API", status="start")
             rows = api.unread(25)
             if not rows:
