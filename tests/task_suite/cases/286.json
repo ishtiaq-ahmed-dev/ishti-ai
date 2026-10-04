@@ -1,0 +1,20 @@
+{
+ "id": 286,
+ "prompt_text": "Tell everyone in the client group the deadline moved to Monday",
+ "category": "Group & multi-person coordination (281-286)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Full recap of recipients + exact message before sending to any of them",
+ "expected_reply_success": "Full recap of recipients + exact message before sending to any of them",
+ "expected_reply_failure": "Wrong: sends individually without one clear upfront list of who's getting it",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": true,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

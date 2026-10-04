@@ -1,0 +1,30 @@
+{
+ "id": 263,
+ "prompt_text": "What client work do I have due this week?",
+ "category": "Freelance & client work management (263-268)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [
+  "reminders",
+  "memory",
+  "learning",
+  "chat",
+  "owner"
+ ],
+ "expected_outcome": "Accurate list pulled from actually-stored project/client data",
+ "expected_reply_success": "Accurate list pulled from actually-stored project/client data",
+ "expected_reply_failure": "\"Nothing due this week\" if genuinely none",
+ "pass_criteria": {
+  "expected_skill": [
+   "clients",
+   "reminders",
+   "memory"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

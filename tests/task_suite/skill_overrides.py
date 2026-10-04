@@ -142,9 +142,15 @@ OVERRIDES = {
     54: ["shopping", "web_search", "arch2", "chat"],
     63: ["arch2", "deep_research", "fileops", "plan", "reminders", "web_search", "chat"],
     70: ["arch2", "calc", "deep_research", "plan", "chat"],
-    98: ["chat", "security", "whatsapp", "deep_research"],
+    98: ["chat", "security", "whatsapp", "deep_research", "web_search"],
     167: ["markets", "trading", "chat", "deep_research"],
+    88: ["whatsapp", "email", "chat", "boundary"],
     250: ["chat", "system", "prefs", "boundary"],
+    261: ["writing", "files", "folders", "chat"],
+    262: ["writing", "files", "folders"],
+    263: ["clients", "reminders", "memory"],
+    267: ["clients", "reminders"],
+    272: ["fileops", "files", "folders", "video", "media"],
 }
 
 # Better reply cues for derived-range rows whose auto-derived cues were too noisy to grade on (a

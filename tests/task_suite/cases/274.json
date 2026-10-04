@@ -1,0 +1,32 @@
+{
+ "id": 274,
+ "prompt_text": "What's trending in the dark history/mystery niche right now?",
+ "category": "YouTube & content workflow (269-274)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [
+  "web_search",
+  "web_fetch",
+  "browser",
+  "deep_research",
+  "chat"
+ ],
+ "expected_outcome": "Real current results, on-topic for Obscura's niche",
+ "expected_reply_success": "Real current results, on-topic for Obscura's niche",
+ "expected_reply_failure": "\"Couldn't find strong recent trends for that niche right now\" if search comes up weak",
+ "pass_criteria": {
+  "expected_skill": [
+   "web_search",
+   "web_fetch",
+   "browser",
+   "deep_research",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

@@ -89,6 +89,13 @@ def main():
         sys.stdout.reconfigure(errors="replace")
     except Exception:
         pass
+    # The suite is destructive in a few places (#237 deletes its own subject); reseed the additive
+    # fixtures so every run starts from the same known people/graph and stays repeatable.
+    try:
+        from tests.task_suite import fixtures
+        fixtures._seed(False)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[250] fixture seed skipped: {exc}")
     items = load_cases()
     if args.ids:
         want = {int(x) for x in args.ids.split(",") if x.strip()}

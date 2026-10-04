@@ -193,6 +193,15 @@ async def save_upload(file: UploadFile, folder=None):
         if os.path.exists(path):
             os.remove(path)
         return None, (f"I couldn't validate that file ({exc.strerror or exc}).", 500)
+    try:
+        from ishti.security.upload_scanner import scan_upload
+        scan_res = scan_upload(path)
+        if not scan_res.get("safe", False):
+            if os.path.exists(path):
+                os.remove(path)
+            return None, (f"Security scan rejected file: {scan_res.get('reason', 'Malware or unsafe file structure detected')}", 400)
+    except Exception as exc:
+        swallowed("ishti/files_api.py:scan_upload", exc)
     verb = {"document": "summarize", "image": "describe the image", "audio": "transcribe", "video": "info about"}[kind_of(name)]
     return {"ok": True, "path": path, "name": os.path.basename(path), "size": size, "kind": kind_of(name),
             "mention": f"{verb} {path}"}, None

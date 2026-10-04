@@ -1,0 +1,30 @@
+{
+ "id": 266,
+ "prompt_text": "What's the status of the Kestrel Scanner deployment?",
+ "category": "Freelance & client work management (263-268)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [
+  "memory",
+  "learning",
+  "chat",
+  "owner"
+ ],
+ "expected_outcome": "Accurate status from actually-stored info",
+ "expected_reply_success": "Accurate status from actually-stored info",
+ "expected_reply_failure": "\"No recent status update on file for that\" if genuinely stale/missing",
+ "pass_criteria": {
+  "expected_skill": [
+   "memory",
+   "learning",
+   "chat",
+   "owner"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

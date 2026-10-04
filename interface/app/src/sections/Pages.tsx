@@ -38,6 +38,11 @@ import {
   MicOff,
   QrCode,
   ClipboardCheck,
+  Download,
+  Building2,
+  Users,
+  Workflow,
+  Network,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { del, getJSON, postJSON } from "@/lib/api";
@@ -53,6 +58,7 @@ import { ArchitectureCard } from "@/components/ArchitectureCard";
 import { LanguageSettings } from "@/components/LanguageSettings";
 import { PrivacyPanel } from "@/components/PrivacyPanel";
 import { NotificationsPanel } from "@/components/NotificationCenter";
+import { SkillsTreeDiagram } from "@/components/SkillsTreeDiagram";
 
 export function Page({
   title,
@@ -116,10 +122,301 @@ function dueLabel(ts: number): string {
   return new Date(ts * 1000).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
 }
 
+type ClientRow = {
+  id: string;
+  name: string;
+  company?: string;
+  channel_source?: string;
+  phone?: string;
+  email?: string;
+  status?: string;
+  financial_terms?: string;
+  notes?: string;
+  updated_at?: string;
+};
+
+type LeadRow = {
+  id?: string;
+  name?: string;
+  handle?: string;
+  platform?: string;
+  status?: string;
+  score?: number;
+  note?: string;
+  verified?: boolean;
+  source?: string;
+  created_at?: string;
+};
+
+function CRMAndLeadsPanel() {
+  const [clients, setClients] = useState<ClientRow[]>([]);
+  const [leads, setLeads] = useState<LeadRow[]>([]);
+  const [leadsStats, setLeadsStats] = useState<{ total?: number; verified?: number } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const loadData = useCallback(() => {
+    setLoading(true);
+    Promise.all([
+      getJSON<{ clients: ClientRow[] }>("/api/crm/clients").catch(() => ({ clients: [] })),
+      getJSON<{ leads: LeadRow[]; stats: { total?: number; verified?: number } }>("/api/leads").catch(() => ({ leads: [], stats: null })),
+    ]).then(([crmRes, leadsRes]) => {
+      setClients(crmRes?.clients || []);
+      setLeads(leadsRes?.leads || []);
+      setLeadsStats(leadsRes?.stats || null);
+    }).finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handleExportCRM = async (fmt: "json" | "csv") => {
+    setBusy(true);
+    try {
+      const res = await postJSON<{ ok: boolean; path: string }>("/api/crm/export", { fmt });
+      setMsg(`CRM exported to: ${res.path}`);
+    } catch (e) {
+      setMsg(String((e as Error).message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleExportLeads = async () => {
+    setBusy(true);
+    try {
+      const res = await postJSON<{ path: string }>("/api/leads/export", { fmt: "csv" });
+      setMsg(`Leads exported to: ${res.path}`);
+    } catch (e) {
+      setMsg(String((e as Error).message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDeleteClient = async (id: string, name: string) => {
+    if (!window.confirm(`Delete client record for "${name}"?`)) return;
+    try {
+      await postJSON("/api/crm/delete", { client_id: id });
+      setClients((prev) => prev.filter((c) => c.id !== id));
+      setMsg(`Client "${name}" removed.`);
+    } catch (e) {
+      setMsg(String((e as Error).message || e));
+    }
+  };
+
+  const filteredClients = clients.filter((c) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return (
+      (c.name && c.name.toLowerCase().includes(q)) ||
+      (c.company && c.company.toLowerCase().includes(q)) ||
+      (c.phone && c.phone.toLowerCase().includes(q)) ||
+      (c.notes && c.notes.toLowerCase().includes(q))
+    );
+  });
+
+  return (
+    <div className="space-y-4">
+      {/* Top Banner & Stats */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-xl border border-border bg-card p-3 shadow-xs">
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Business Clients</div>
+          <div className="mt-1 text-2xl font-semibold text-foreground">{clients.length}</div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-3 shadow-xs">
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Total Leads</div>
+          <div className="mt-1 text-2xl font-semibold text-foreground">{leadsStats?.total ?? leads.length}</div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-3 shadow-xs">
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Verified Leads</div>
+          <div className="mt-1 text-2xl font-semibold text-emerald-500">{leadsStats?.verified ?? leads.filter((l) => l.verified).length}</div>
+        </div>
+        <div className="flex items-center gap-2 rounded-xl border border-border bg-card p-3 shadow-xs">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => handleExportCRM("csv")}
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors cursor-pointer disabled:opacity-50"
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span>CRM Export</span>
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={handleExportLeads}
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors cursor-pointer disabled:opacity-50"
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span>Leads Export</span>
+          </button>
+        </div>
+      </div>
+
+      {msg && (
+        <div className="rounded-xl border border-accent/40 bg-accent/10 px-4 py-2 text-xs text-foreground flex items-center justify-between">
+          <span>{msg}</span>
+          <button type="button" onClick={() => setMsg("")} className="text-muted-foreground hover:text-foreground">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Business Clients Section */}
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/50 pb-3">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-accent" />
+            <span className="font-semibold text-sm text-foreground">Client Contracts & Contacts</span>
+            <span className="rounded-full bg-accent/10 text-accent font-mono text-[11px] px-2 py-0.5">
+              {filteredClients.length}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search clients..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="rounded-lg border border-border bg-background py-1 pl-8 pr-2.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-hidden"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={loadData}
+              title="Refresh CRM"
+              className="rounded-lg border border-border p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+            </button>
+          </div>
+        </div>
+
+        {filteredClients.length === 0 ? (
+          <div className="py-6 text-center text-xs text-muted-foreground">
+            {loading ? "Loading clients..." : "No business clients registered yet. Clients are tracked via CRM commands or chat interactions."}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-border/60 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <th className="py-2.5 px-3">Name</th>
+                  <th className="py-2.5 px-3">Company</th>
+                  <th className="py-2.5 px-3">Channel / Phone</th>
+                  <th className="py-2.5 px-3">Status</th>
+                  <th className="py-2.5 px-3">Terms & Notes</th>
+                  <th className="py-2.5 px-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/40">
+                {filteredClients.map((c) => (
+                  <tr key={c.id} className="hover:bg-muted/30 transition-colors">
+                    <td className="py-2 px-3 font-medium text-foreground">{c.name}</td>
+                    <td className="py-2 px-3 text-muted-foreground">{c.company || "—"}</td>
+                    <td className="py-2 px-3 font-mono text-[11px] text-muted-foreground">{c.phone || c.channel_source || "—"}</td>
+                    <td className="py-2 px-3">
+                      <span className={cn(
+                        "rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize",
+                        c.status === "active" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
+                        : c.status === "lead" ? "border-blue-500/30 bg-blue-500/10 text-blue-500"
+                        : "border-border bg-muted/30 text-muted-foreground"
+                      )}>
+                        {c.status || "client"}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 max-w-[200px] truncate text-muted-foreground" title={c.notes || c.financial_terms}>
+                      {c.financial_terms ? `[${c.financial_terms}] ` : ""}{c.notes || "—"}
+                    </td>
+                    <td className="py-2 px-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteClient(c.id, c.name)}
+                        className="rounded-md p-1 text-muted-foreground hover:bg-danger/10 hover:text-danger cursor-pointer"
+                        title="Delete client"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {/* Leads Pipeline Section */}
+      <Card>
+        <div className="flex items-center justify-between border-b border-border/50 pb-3">
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4 text-accent" />
+            <span className="font-semibold text-sm text-foreground">Leads & Outreach Pipeline</span>
+            <span className="rounded-full bg-accent/10 text-accent font-mono text-[11px] px-2 py-0.5">
+              {leads.length}
+            </span>
+          </div>
+        </div>
+
+        {leads.length === 0 ? (
+          <div className="py-6 text-center text-xs text-muted-foreground">
+            {loading ? "Loading leads..." : "No leads captured yet. Lead ingestion runs via outreach skills or /api/leads."}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-border/60 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <th className="py-2.5 px-3">Lead / Handle</th>
+                  <th className="py-2.5 px-3">Platform</th>
+                  <th className="py-2.5 px-3">Status</th>
+                  <th className="py-2.5 px-3">Score</th>
+                  <th className="py-2.5 px-3">Notes</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/40">
+                {leads.slice(0, 50).map((l, i) => (
+                  <tr key={l.id || i} className="hover:bg-muted/30 transition-colors">
+                    <td className="py-2 px-3 font-medium text-foreground">{l.name || l.handle || "Lead"}</td>
+                    <td className="py-2 px-3 text-muted-foreground">{l.platform || l.source || "—"}</td>
+                    <td className="py-2 px-3">
+                      <span className={cn(
+                        "rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize",
+                        l.verified ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-500" : "border-border bg-muted/30 text-muted-foreground"
+                      )}>
+                        {l.status || (l.verified ? "verified" : "unverified")}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 font-mono text-[11px] text-muted-foreground">{l.score ?? "—"}</td>
+                    <td className="py-2 px-3 max-w-[240px] truncate text-muted-foreground" title={l.note}>
+                      {l.note || "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 export function Tasks({ onToggleNav }: { onToggleNav?: () => void }) {
   const [items, setItems] = useState<Reminder[]>([]);
-  const [tab, setTab] = useState<"tasks" | "notifications">(() => {
-    try { return window.location.hash.replace(/^#\/?/, "").startsWith("notifications") ? "notifications" : "tasks"; } catch { return "tasks"; }
+  const [tab, setTab] = useState<"tasks" | "notifications" | "crm">(() => {
+    try {
+      const h = window.location.hash.replace(/^#\/?/, "");
+      if (h.startsWith("notifications")) return "notifications";
+      if (h.startsWith("crm")) return "crm";
+      return "tasks";
+    } catch { return "tasks"; }
   });
   const [unreadNotifs, setUnreadNotifs] = useState(0);
   const [listFilter, setListFilter] = useState<"open" | "done" | "all">("open");
@@ -154,9 +451,9 @@ export function Tasks({ onToggleNav }: { onToggleNav?: () => void }) {
     window.addEventListener("ishti-tasks-tab", onTab);
     return () => window.removeEventListener("ishti-tasks-tab", onTab);
   }, []);
-  const selectTab = (next: "tasks" | "notifications") => {
+  const selectTab = (next: "tasks" | "notifications" | "crm") => {
     setTab(next);
-    try { window.history.replaceState(null, "", next === "notifications" ? "#notifications" : "#tasks"); } catch {}
+    try { window.history.replaceState(null, "", next === "notifications" ? "#notifications" : next === "crm" ? "#crm" : "#tasks"); } catch {}
   };
   const toggleDone = async (r: Reminder) => {
     setItems((cur) => cur.map((x) => (x.id === r.id ? { ...x, done: !r.done } : x)));   // stays on screen
@@ -249,7 +546,7 @@ export function Tasks({ onToggleNav }: { onToggleNav?: () => void }) {
   );
   const tabs = (
     <div className="flex items-center gap-1 rounded-xl border border-border bg-muted/30 p-1">
-      {([["tasks", "Tasks"], ["notifications", "Notifications"]] as const).map(([key, label]) => (
+      {([["tasks", "Tasks"], ["notifications", "Notifications"], ["crm", "CRM & Leads"]] as const).map(([key, label]) => (
         <button key={key} type="button" onClick={() => selectTab(key)}
           className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
             tab === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
@@ -265,7 +562,9 @@ export function Tasks({ onToggleNav }: { onToggleNav?: () => void }) {
     <Page title="Tasks" action={tabs}
       subtitle={tab === "tasks"
         ? "Reminders and timers. Tick a task to mark it done (it moves to Done, nothing disappears); use the icons to snooze, edit or delete. Add more from chat: “remind me at 5pm to …”."
-        : "Everything ISHTI told you about — reminders, finished jobs, downloads, alerts and errors."}
+        : tab === "notifications"
+        ? "Everything ISHTI told you about — reminders, finished jobs, downloads, alerts and errors."
+        : "Local business CRM and lead pipeline with complete personal vs business data separation."}
       onToggleNav={onToggleNav}>
       {tab === "tasks" ? (
         <>
@@ -358,8 +657,10 @@ export function Tasks({ onToggleNav }: { onToggleNav?: () => void }) {
             </div>
           )}
         </>
-      ) : (
+      ) : tab === "notifications" ? (
         <NotificationsPanel />
+      ) : (
+        <CRMAndLeadsPanel />
       )}
     </Page>
   );
@@ -1601,6 +1902,77 @@ const CONN_TONE: Record<string, string> = {
   empty: "bg-muted text-muted-foreground border border-border",
 };
 
+function FlowiseCard() {
+  const [data, setData] = useState<{ configured: boolean; health: string; flows: Array<{ id: string; name: string }> } | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    getJSON<{ configured: boolean; health: string; flows: Array<{ id: string; name: string }> }>("/api/flowise/flows")
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 shadow-xs space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="grid h-8 w-8 place-items-center rounded-lg bg-indigo-500/15 text-indigo-500">
+            <Workflow className="h-4 w-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-foreground">Flowise AI Orchestrator</span>
+              <span className={cn(
+                "rounded-full border px-1.5 py-0.5 text-[10px] font-medium",
+                data?.configured ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-500" : "border-border bg-muted/40 text-muted-foreground"
+              )}>
+                {data?.configured ? "configured" : "not configured"}
+              </span>
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              Visual LLM orchestration flows and chatflow endpoints
+            </div>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={load}
+          className="rounded-lg border border-border p-1 text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
+          title="Refresh Flowise status"
+        >
+          <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+        </button>
+      </div>
+
+      <div className="rounded-lg border border-border/60 bg-background/50 p-2.5 text-xs space-y-1">
+        <div className="text-muted-foreground">
+          Health: <span className="font-mono text-foreground">{data?.health || "Checking Flowise connection..."}</span>
+        </div>
+        <div className="text-muted-foreground">
+          Registered Flows: <span className="font-medium text-foreground">{data?.flows?.length ?? 0}</span>
+        </div>
+      </div>
+
+      {data?.flows && data.flows.length > 0 && (
+        <ul className="space-y-1.5 text-xs">
+          {data.flows.map((f) => (
+            <li key={f.id} className="flex items-center justify-between rounded-lg border border-border/40 bg-card/60 px-2.5 py-1.5">
+              <span className="font-medium text-foreground">{f.name}</span>
+              <span className="font-mono text-[10px] text-muted-foreground">{f.id}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function Connectors({ onToggleNav }: { onToggleNav?: () => void }) {
   const [data, setData] = useState<ConnectorsPayload | null>(null);
   const [error, setError] = useState("");
@@ -1791,6 +2163,8 @@ export function Connectors({ onToggleNav }: { onToggleNav?: () => void }) {
             {rows.map((c) => (<Card key={c.service} c={c} />))}
           </div>
 
+          <FlowiseCard />
+
           <p className="text-[11px] text-muted-foreground">{data.note}</p>
         </div>
       )}
@@ -1903,7 +2277,7 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [activeSkill, setActiveSkill] = useState<SkillInfo | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"tree" | "folders">("folders");
+  const [viewMode, setViewMode] = useState<"tree" | "folders" | "diagram">("folders");
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [focusedRow, setFocusedRow] = useState(-1);
   const treeRef = useRef<HTMLDivElement | null>(null);
@@ -2101,6 +2475,24 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
             >
               <Folder className="h-3.5 w-3.5" />
               <span>Folders</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setViewMode("diagram");
+                setSelectedFolder(null);
+                setActiveSkill(null);
+              }}
+              className={cn(
+                "flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer",
+                viewMode === "diagram"
+                  ? "bg-accent text-white shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              title="Interactive tree diagram view"
+            >
+              <Network className="h-3.5 w-3.5" />
+              <span>Diagram</span>
             </button>
           </div>
 
@@ -2768,6 +3160,18 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
             )}
             </AnimatePresence>
           </div>
+        )}
+
+        {/* ========================================================
+             MODE 3: INTERACTIVE SKILLS TREE DIAGRAM
+             ======================================================== */}
+        {viewMode === "diagram" && !search && (
+          <SkillsTreeDiagram
+            skills={skills}
+            activeSkill={activeSkill}
+            onSelectSkill={setActiveSkill}
+            onTestSkill={(s) => handleOpenInChat(s.name)}
+          />
         )}
 
         {/* ========================================================

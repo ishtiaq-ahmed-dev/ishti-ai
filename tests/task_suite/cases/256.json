@@ -1,0 +1,28 @@
+{
+ "id": 256,
+ "prompt_text": "Check my GPU drivers are up to date",
+ "category": "System & device administration (251-256)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [
+  "system",
+  "meta",
+  "chat"
+ ],
+ "expected_outcome": "States actual current driver version vs. latest if checkable",
+ "expected_reply_success": "States actual current driver version vs. latest if checkable",
+ "expected_reply_failure": "If it can't check without risking a bad auto-update: says that and points to the manual path instead",
+ "pass_criteria": {
+  "expected_skill": [
+   "system",
+   "meta",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

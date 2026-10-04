@@ -519,6 +519,9 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
 
   useEffect(() => {
     void load(true);
+    const handleMemoryEvent = () => void load(false);
+    window.addEventListener("ishti-memory-updated", handleMemoryEvent);
+    return () => window.removeEventListener("ishti-memory-updated", handleMemoryEvent);
   }, [load]);
 
   useEffect(() => {   // #about / #memory (and the back/forward buttons) switch tabs without leaving this page

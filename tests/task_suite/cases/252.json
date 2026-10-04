@@ -1,0 +1,20 @@
+{
+ "id": 252,
+ "prompt_text": "Install the pending updates",
+ "category": "System & device administration (251-256)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Exact recap (what's being installed, restart needed or not) + explicit yes required",
+ "expected_reply_success": "Exact recap (what's being installed, restart needed or not) + explicit yes required",
+ "expected_reply_failure": "If install fails partway: states exactly what succeeded vs. failed",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": true,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

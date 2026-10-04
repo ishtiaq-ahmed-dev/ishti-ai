@@ -1,0 +1,20 @@
+{
+ "id": 258,
+ "prompt_text": "Help me write the hypothesis testing section for my Titanic EDA report",
+ "category": "Academic & student assistant tasks (257-262)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Draft that's clearly flagged as a draft needing his real numbers plugged in, doesn't fabricate specific statistical results",
+ "expected_reply_success": "Draft that's clearly flagged as a draft needing his real numbers plugged in, doesn't fabricate specific statistical results",
+ "expected_reply_failure": "Wrong: presents made-up p-values or test results as if they came from his actual analysis",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

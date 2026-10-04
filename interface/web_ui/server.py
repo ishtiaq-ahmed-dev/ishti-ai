@@ -11,7 +11,7 @@ import json
 import time
 import asyncio
 import secrets
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse, Response
@@ -1843,6 +1843,111 @@ async def flowise_flows():
 
 app.include_router(p3_api)  # /api/skills/* /api/agents /api/tasks /api/metrics /api/telemetry/* /api/eval /api/leads /api/flowise
 app.include_router(learning_api)  # /api/learning/* + /api/memory/* - learning & memory dashboards
+
+from ishti import files_api  # /api/upload, /api/reveal
+files_api.attach(app)
+
+# ---------------------------------------------------------------- Media Vault & CRM Endpoints
+@app.get("/api/vault/status")
+async def vault_status():
+    """Encrypted-at-rest media vault metrics and retention policy."""
+    try:
+        from ishti.security import media_vault
+        return media_vault.get_vault_stats()
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.post("/api/vault/purge")
+async def vault_purge(req: Request):
+    """Purge media files from the encrypted vault."""
+    try:
+        body = await req.json() if req.headers.get("content-type") == "application/json" else {}
+        chat_id = body.get("chat_id")
+        from ishti.security import media_vault
+        if chat_id:
+            count = media_vault.purge_chat_media(str(chat_id))
+        else:
+            count = media_vault.purge_all_media()
+        return {"ok": True, "purged": count}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.post("/api/vault/cleanup")
+async def vault_cleanup():
+    """Trigger background expired media scrubber."""
+    try:
+        from ishti.security import media_vault
+        count = media_vault.cleanup_expired_media()
+        return {"ok": True, "cleaned": count}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/api/crm/clients")
+async def crm_clients(status: Optional[str] = None):
+    """List business CRM clients adhering to the separation contract."""
+    try:
+        from ishti import crm_contract
+        clients = crm_contract.list_clients(status=status)
+        return {"ok": True, "clients": clients, "count": len(clients), "separate_personal": crm_contract.SEPARATE_PERSONAL_AND_BUSINESS}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.post("/api/crm/clients")
+async def crm_create_client(req: Request):
+    """Explicitly create a new business client."""
+    try:
+        body = await req.json()
+        from ishti import crm_contract
+        rec = crm_contract.create_client(
+            name=body.get("name", ""),
+            company=body.get("company", ""),
+            channel_source=body.get("channel_source", "manual"),
+            phone=body.get("phone", ""),
+            email=body.get("email", ""),
+            status=body.get("status", "lead"),
+            financial_terms=body.get("financial_terms", ""),
+            notes=body.get("notes", ""),
+            allow_auto=True,
+        )
+        return {"ok": True, "client": rec}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@app.post("/api/crm/export")
+async def crm_export(req: Request):
+    """Export CRM client records."""
+    try:
+        body = await req.json() if req.headers.get("content-type") == "application/json" else {}
+        fmt = body.get("fmt", "json")
+        from ishti import crm_contract
+        path = crm_contract.export_crm(fmt=fmt)
+        return {"ok": True, "path": path}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.post("/api/crm/delete")
+async def crm_delete(req: Request):
+    """Delete a CRM client or purge CRM data."""
+    try:
+        body = await req.json()
+        from ishti import crm_contract
+        client_id = body.get("client_id")
+        if client_id:
+            ok = crm_contract.delete_client(client_id)
+            return {"ok": ok}
+        purge_all = body.get("purge_all", False)
+        if purge_all:
+            count = crm_contract.purge_all_crm_data()
+            return {"ok": True, "purged": count}
+        return JSONResponse({"error": "client_id or purge_all required"}, status_code=400)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
 
 from ishti import lifecycle_api  # noqa: E402  /api/ready, /api/vram, /api/shutdown, /ws/events (docs/API_CONTRACT.md)
 lifecycle_api.attach(app)

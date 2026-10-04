@@ -19,6 +19,7 @@ FILES = [
     r"C:\Users\PC\Downloads\ISHTI_50_task_test_checklist_part2.md",
     r"C:\Users\PC\Downloads\ISHTI_50_task_test_checklist_part3.md",
     r"C:\Users\PC\Downloads\ISHTI_50_task_test_checklist_part4.md",
+    r"C:\Users\PC\Downloads\ISHTI_50_task_test_checklist_part5.md",
 ]
 
 SECTION = re.compile(r"^##\s+\d+\.\s*(.+?)\s*$")
@@ -74,10 +75,12 @@ def main():
         sys.exit(f"{len(bad)} row(s) did not have 6 cells: {bad[:5]}")
     all_rows.sort(key=lambda r: r["id"])
     ids = [r["id"] for r in all_rows]
-    missing = sorted(set(range(1, 251)) - set(ids))
-    extra = sorted(set(ids) - set(range(1, 251)))
-    if len(all_rows) != 250 or missing or extra:
-        sys.exit(f"count check failed: got {len(all_rows)}, missing={missing[:10]}, extra={extra[:10]}")
+    total_count = len(all_rows)
+    target_count = 300 if any("part5" in p for p in FILES) else 250
+    missing = sorted(set(range(1, target_count + 1)) - set(ids))
+    extra = sorted(set(ids) - set(range(1, target_count + 1)))
+    if total_count != target_count or missing or extra:
+        sys.exit(f"count check failed: got {total_count}, missing={missing[:10]}, extra={extra[:10]}")
 
     # label the two reply columns and derive requires_confirmation from the action/table
     for r in all_rows:
@@ -89,9 +92,12 @@ def main():
             r["requires_confirmation"] = False
         r["expected_reply_a"] = a
         r["expected_reply_b"] = b
-    out = os.path.join(ROOT, "tests", "task_suite", "MASTER_250.json")
-    with io.open(out, "w", encoding="utf-8") as f:
+    out300 = os.path.join(ROOT, "tests", "task_suite", "MASTER_300.json")
+    with io.open(out300, "w", encoding="utf-8") as f:
         json.dump({"count": len(all_rows), "tasks": all_rows}, f, ensure_ascii=False, indent=1)
+    out250 = os.path.join(ROOT, "tests", "task_suite", "MASTER_250.json")
+    with io.open(out250, "w", encoding="utf-8") as f:
+        json.dump({"count": min(len(all_rows), 250), "tasks": all_rows[:250]}, f, ensure_ascii=False, indent=1)
     cats = {}
     for r in all_rows:
         cats.setdefault(r["category"], []).append(r["id"])

@@ -134,6 +134,9 @@ export function useManage() {
 
   useEffect(() => {
     load();
+    const handleModelEvent = () => load();
+    window.addEventListener("ishti-models-updated", handleModelEvent);
+    return () => window.removeEventListener("ishti-models-updated", handleModelEvent);
   }, [load]);
 
   const downloading =

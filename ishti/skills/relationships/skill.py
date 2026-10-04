@@ -28,7 +28,8 @@ I = re.I
 # They are typed edges like kin, so "who is my manager" / "who are my clients" answer from one store.
 KIN = ("brother", "sister", "father", "mother", "son", "daughter", "cousin", "uncle", "aunt",
        "nephew", "niece", "grandfather", "grandmother", "friend", "colleague", "classmate",
-       "manager", "boss", "supervisor", "client")
+       "manager", "boss", "supervisor", "client", "doctor", "dentist", "physician", "lawyer",
+       "accountant", "cardiologist", "teacher", "mentor")
 KIN_ALT = "|".join(KIN)
 # Voice notes and fast typing produce the same kinship word misspelled over and over; the owner's
 # 2026-10-03 chat stored "my brother" as "brotehr" and then "who is my brother" could not find it.
@@ -55,7 +56,7 @@ def _fix(text):
 KIN_DECLARE = re.compile(r"\b(?:this\s+is|meet|that's|that is|introduce)\s+my\s+(?P<rel>" + "|".join(KIN) + r")\s*"
                          r"(?:,?\s*(?:his|her|their)?\s*name\s*(?:is)?)?\s*(?P<name>[A-Z][\w'-]*(?:\s+[A-Z][\w'-]*)?)", I)
 ELDER = r"(?:(?:elder|older|younger|big|little|eldest|youngest|real|only)\s+)?"
-NAME = r"[A-Za-z][\w'-]*(?:\s+[A-Za-z][\w'-]*)?"
+NAME = r"(?:(?:Dr|Prof|Mr|Mrs|Ms|Engr)\.?\s+)?[A-Za-z][\w'-]*(?:\s+(?!(?:in|at|from)\b)[A-Za-z][\w'-]*)*"
 # "irfan is my brother" (any case: the owner types lowercase names), "Ahmed is my elder brother, okay?"
 KIN_DECLARE2 = re.compile(r"^\s*(?P<name>" + NAME + r")\s+is\s+my\s+" + ELDER + r"(?P<rel>" + KIN_ALT + r")\b"
                           r"(?P<ctx>[^?]*)$", I)
@@ -64,7 +65,7 @@ KIN_DECLARE2 = re.compile(r"^\s*(?P<name>" + NAME + r")\s+is\s+my\s+" + ELDER + 
 LEAD = re.compile(r"^\s*(?:(?:please\s+)?(?:remember|note|add|save|store|write)\s+(?:that\s+|down\s+)?)?", I)
 # "my brother name is Ishaq Ahmed and he is my elder brother" / "my brother's name is Bilal"
 KIN_NAME = re.compile(r"^\s*my\s+" + ELDER + r"(?P<rel>" + "|".join(KIN) + r")(?:'s|s)?\s+(?:name\s+)?is\s+(?P<name>" + NAME + r")"
-                      r"(?=[\s,.;!?-]|$)", I)  # trailing words allowed: "my brother name is Irfan and I have to talk to him later"
+                      r"(?P<ctx>\s+(?:in|at|from)\s+[^,;!?]+)?(?=[\s,;!?-]|$)", I)  # trailing words allowed
 MULTI_KIN_DECL = re.compile(
     r"(?:^|[,;]|\band\b)\s*(?:my\s+)?(?:(?:another|also)\s+)?(?P<rel>" + KIN_ALT + r")"
     r"(?:['’]s|s)?\s+(?:name\s+)?is\s+(?P<name>" + NAME + r")"
@@ -101,7 +102,7 @@ STATES = {"sick", "ill", "here", "there", "home", "at", "in", "on", "coming", "g
           # common verbs: "my brother is playing cricket" is not a declaration that his NAME is "playing cricket"
           "playing", "doing", "reading", "watching", "eating", "sleeping", "sitting", "talking", "helping", "learning",
           "practicing", "praying", "traveling", "travelling", "waiting", "leaving", "staying", "living", "feeling", "getting"}
-NOT_NAMES = {"he", "she", "it", "this", "that", "who", "what", "there", "my", "mine", "his", "her", "they", "someone", "everyone", "you"}
+NOT_NAMES = {"he", "she", "it", "this", "that", "who", "what", "there", "my", "mine", "his", "her", "they", "someone", "everyone", "you", "dr", "mr", "mrs", "ms", "prof", "engr"}
 LIKE = re.compile(r"^\s*(?:(?:my\s+)?(?P<who2>" + "|".join(KIN) + r")\s+)?(?P<who>[A-Z][\w'-]*(?:\s+[A-Z][\w'-]*)?)\s+"
                   r"(?P<rel>really\s+)?(?P<rel2>likes?|loves?|prefers?|dislikes?|hates?|can'?t\s+stand)\s+(?P<what>.+?)\s*[.!]?$", I)
 LIKE2 = re.compile(r"^\s*(?:remember\s+|note\s+)?i\s+(?P<rel>really\s+)?(?P<rel2>like|love|prefer|dislike|hate|can'?t\s+stand)\s+(?P<what>.+?)\s*[.!]?$", I)

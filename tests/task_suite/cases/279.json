@@ -1,0 +1,32 @@
+{
+ "id": 279,
+ "prompt_text": "There's a merge conflict, help me resolve it",
+ "category": "GitHub & version control (275-280)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [
+  "dev",
+  "terminal",
+  "devops",
+  "gitops",
+  "chat"
+ ],
+ "expected_outcome": "Shows the actual conflicting sections, proposes a resolution, confirms before committing it",
+ "expected_reply_success": "Shows the actual conflicting sections, proposes a resolution, confirms before committing it",
+ "expected_reply_failure": "Wrong: picks a resolution silently without showing what was actually conflicting",
+ "pass_criteria": {
+  "expected_skill": [
+   "dev",
+   "terminal",
+   "devops",
+   "gitops",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

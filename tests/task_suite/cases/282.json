@@ -1,0 +1,26 @@
+{
+ "id": 282,
+ "prompt_text": "Find a meeting time that works for me, Ahmed, and Sana",
+ "category": "Group & multi-person coordination (281-286)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [
+  "calendar",
+  "reminders"
+ ],
+ "expected_outcome": "Honestly scoped to what it can actually determine (his own availability), proposes options to send rather than claiming to know their calendars",
+ "expected_reply_success": "Honestly scoped to what it can actually determine (his own availability), proposes options to send rather than claiming to know their calendars",
+ "expected_reply_failure": "Wrong: invents their availability",
+ "pass_criteria": {
+  "expected_skill": [
+   "calendar",
+   "reminders"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

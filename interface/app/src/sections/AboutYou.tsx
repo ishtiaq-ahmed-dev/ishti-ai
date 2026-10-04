@@ -90,7 +90,12 @@ export function AboutYouBody() {
   const [showSent, setShowSent] = useState(false);
 
   const load = () => getJSON<About>("/api/about").then((a) => { setAbout(a); setInstructions(a.instructions); });
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    const handleMemoryEvent = () => load();
+    window.addEventListener("ishti-memory-updated", handleMemoryEvent);
+    return () => window.removeEventListener("ishti-memory-updated", handleMemoryEvent);
+  }, []);
 
   const save = async (attr: string, value: string) => { await postJSON("/api/facts", { entity: "owner", attr, value }); await load(); };
   const forget = async (attr: string) => { await del(`/api/facts/owner/${encodeURIComponent(attr)}`); await load(); };

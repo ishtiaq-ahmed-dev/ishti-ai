@@ -1,0 +1,32 @@
+{
+ "id": 277,
+ "prompt_text": "Show me what changed in the last commit",
+ "category": "GitHub & version control (275-280)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [
+  "dev",
+  "terminal",
+  "devops",
+  "gitops",
+  "chat"
+ ],
+ "expected_outcome": "Real diff summary",
+ "expected_reply_success": "Real diff summary",
+ "expected_reply_failure": "If no commits exist yet: says so",
+ "pass_criteria": {
+  "expected_skill": [
+   "dev",
+   "terminal",
+   "devops",
+   "gitops",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

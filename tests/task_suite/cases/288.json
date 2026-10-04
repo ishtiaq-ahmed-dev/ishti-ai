@@ -1,0 +1,20 @@
+{
+ "id": 288,
+ "prompt_text": "\"Make it better\" (after showing a draft)",
+ "category": "Vague or incomplete requests (287-292)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Asks what specifically to improve (tone, length, content) if genuinely unclear, or makes a reasonable first pass and shows what changed",
+ "expected_reply_success": "Asks what specifically to improve (tone, length, content) if genuinely unclear, or makes a reasonable first pass and shows what changed",
+ "expected_reply_failure": "Wrong: rewrites it completely differently without saying what it changed or why",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

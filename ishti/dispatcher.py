@@ -960,7 +960,8 @@ def _handle(text, sid, conv, s, events, t0, channel):
         # 42.5: a bare "yes / go ahead" with nothing waiting to be confirmed is meaningless - ask what,
         # instead of letting the model invent a pending task (checklist #86).
         if re.fullmatch(r"\s*(?:yes|yeah|yep|yup|y|sure|ok|okay|go\s+ahead|do\s+it|proceed|go\s+for\s+it|"
-                        r"please\s+do|yes\s+please|ok(?:ay)?\s+go\s+ahead)\b[\s.!,]*", text or "", re.I):
+                        r"please\s+do|yes\s+please)"
+                        r"(?:\s*,?\s*(?:go\s+ahead|do\s+it|proceed|go\s+for\s+it|please))?[\s.!,]*", text or "", re.I):
             out = {"reply": "There's nothing waiting for my confirmation right now - what would you like me "
                             "to go ahead with?", "sources": []}
             s["trace"](type="route", skill="chat", source="rule", confidence=1.0,

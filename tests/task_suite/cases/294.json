@@ -1,0 +1,20 @@
+{
+ "id": 294,
+ "prompt_text": "Is there a cheaper way to do this?",
+ "category": "Cost & budget awareness (293-296)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Real comparison with actual cost difference if knowable",
+ "expected_reply_success": "Real comparison with actual cost difference if knowable",
+ "expected_reply_failure": "If cost data isn't available: says so, gives what it can",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

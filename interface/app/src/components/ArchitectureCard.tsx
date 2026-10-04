@@ -53,8 +53,20 @@ export function ArchitectureCard() {
 
   useEffect(() => {
     load();
+    const handleArchEvent = (e: Event) => {
+      const custom = e as CustomEvent<ArchState>;
+      if (custom.detail) {
+        setState((s) => (s ? { ...s, ...custom.detail } : custom.detail));
+      } else {
+        load();
+      }
+    };
+    window.addEventListener("ishti-arch-state", handleArchEvent);
     const t = setInterval(load, 20000); // memory stats refresh quietly
-    return () => clearInterval(t);
+    return () => {
+      window.removeEventListener("ishti-arch-state", handleArchEvent);
+      clearInterval(t);
+    };
   }, [load]);
 
   const switchTo = useCallback(

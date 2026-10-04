@@ -207,3 +207,40 @@ def cleanup_expired_media() -> int:
             _save_index(idx)
 
     return deleted_count
+
+
+def get_vault_stats() -> Dict[str, Any]:
+    """Returns storage metrics and policy metadata for the encrypted vault."""
+    with _LOCK:
+        idx = _load_index()
+        total_items = len(idx)
+        total_bytes = sum(rec.get("size_bytes", 0) for rec in idx.values())
+        chats = list(set(rec.get("chat_id", "") for rec in idx.values() if rec.get("chat_id")))
+        return {
+            "total_items": total_items,
+            "file_count": total_items,
+            "total_bytes": total_bytes,
+            "retention_days": DEFAULT_RETENTION_DAYS,
+            "encrypted": True,
+            "algorithm": "AES-256-GCM",
+            "active_chats": len(chats),
+            "vault_dir": VAULT_DIR,
+        }
+
+
+def purge_all_media() -> int:
+    """Permanently deletes all media files across all chats from the vault."""
+    deleted_count = 0
+    with _LOCK:
+        idx = _load_index()
+        for mid, rec in list(idx.items()):
+            enc_path = os.path.join(VAULT_DIR, rec.get("enc_file", f"{mid}.enc"))
+            if os.path.exists(enc_path):
+                try:
+                    os.remove(enc_path)
+                    deleted_count += 1
+                except Exception:
+                    pass
+        _save_index({})
+    return deleted_count
+

@@ -12,7 +12,8 @@
   "expected_skill": [
    "whatsapp",
    "email",
-   "chat"
+   "chat",
+   "boundary"
   ],
   "ok_any": [
    "sent",

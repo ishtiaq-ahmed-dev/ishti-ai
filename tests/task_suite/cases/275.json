@@ -1,0 +1,32 @@
+{
+ "id": 275,
+ "prompt_text": "What branch am I on?",
+ "category": "GitHub & version control (275-280)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [
+  "dev",
+  "terminal",
+  "devops",
+  "gitops",
+  "chat"
+ ],
+ "expected_outcome": "Real current branch name",
+ "expected_reply_success": "Real current branch name",
+ "expected_reply_failure": "If not a git repo: says so",
+ "pass_criteria": {
+  "expected_skill": [
+   "dev",
+   "terminal",
+   "devops",
+   "gitops",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

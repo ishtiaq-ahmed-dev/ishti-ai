@@ -223,7 +223,7 @@ def about_ishti(t):
 
 def run(text, session):
     t = text.strip()
-    if TELL.match(t):
+    if TELL.match(t) or SAVE_MEMORY.search(t):
         return tell(t, session)
     if SELF.search(t):
         return about_ishti(t)

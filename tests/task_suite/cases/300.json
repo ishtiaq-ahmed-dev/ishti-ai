@@ -1,0 +1,20 @@
+{
+ "id": 300,
+ "prompt_text": "Remember that I'm trying to learn this new tool, help me as I go",
+ "category": "Learning a new tool / onboarding help (297-300)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Confirms it'll keep that context in mind, actually applies it in later related questions",
+ "expected_reply_success": "Confirms it'll keep that context in mind, actually applies it in later related questions",
+ "expected_reply_failure": "Wrong: forgets the context by the next related question in the same session",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

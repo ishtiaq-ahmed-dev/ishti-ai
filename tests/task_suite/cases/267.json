@@ -1,0 +1,25 @@
+{
+ "id": 267,
+ "prompt_text": "Remind me to follow up with this client if they haven't replied in 3 days",
+ "category": "Freelance & client work management (263-268)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [
+  "reminders"
+ ],
+ "expected_outcome": "Confirms the condition and timing clearly",
+ "expected_reply_success": "Confirms the condition and timing clearly",
+ "expected_reply_failure": "If conditional-on-reply logic isn't actually supported: says so, offers a plain timed reminder instead",
+ "pass_criteria": {
+  "expected_skill": [
+   "clients",
+   "reminders"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

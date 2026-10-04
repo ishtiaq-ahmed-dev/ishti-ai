@@ -1,0 +1,20 @@
+{
+ "id": 287,
+ "prompt_text": "Can you help me with that thing?",
+ "category": "Vague or incomplete requests (287-292)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Asks what specifically, doesn't guess",
+ "expected_reply_success": "Asks what specifically, doesn't guess",
+ "expected_reply_failure": "Wrong: picks a recent topic at random and runs with it",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

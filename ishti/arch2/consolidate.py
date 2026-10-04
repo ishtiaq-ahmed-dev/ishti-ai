@@ -314,6 +314,10 @@ def handle_command(text: str) -> str | None:  # noqa: C901
         if n:
             edges = [rgraph.describe_edge(e) for e in rgraph.edges_of(who)[:6]]
             return "\n".join(edges) if edges else f"I have a node for {who} but no relationships yet."
+        clean_who = re.sub(r"^(?:my|the)\s+", "", who, flags=re.I).strip()
+        hits = memory.search(clean_who) or memory.search(who)
+        if hits:
+            return f"From what you told me: {hits[0]['content']}."
         return f"I don't know who {who} is yet. Tell me about them and I'll remember."
     m = REMEMBER_RE.search(t)
     if m:

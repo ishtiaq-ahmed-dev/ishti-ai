@@ -17,7 +17,10 @@ from tests.task_suite.skill_overrides import (OVERRIDES, EXTERNAL, PROMPT_OVERRI
                                               OK_ANY_OVERRIDE, BAD_ANY_OVERRIDE)
 
 CURATED = {c["id"]: c for c in CASES}
-MASTER = json.load(io.open(os.path.join(ROOT, "tests", "task_suite", "MASTER_250.json"), encoding="utf-8"))["tasks"]
+_master_file = os.path.join(ROOT, "tests", "task_suite", "MASTER_300.json")
+if not os.path.exists(_master_file):
+    _master_file = os.path.join(ROOT, "tests", "task_suite", "MASTER_250.json")
+MASTER = json.load(io.open(_master_file, encoding="utf-8"))["tasks"]
 CASES_DIR = os.path.join(ROOT, "tests", "task_suite", "cases")
 
 STOP = {"the", "a", "an", "and", "or", "to", "of", "in", "on", "for", "with", "it", "its", "is",
@@ -162,12 +165,26 @@ def main():
         built.append(case)
         with io.open(os.path.join(CASES_DIR, f"{case['id']}.json"), "w", encoding="utf-8") as f:
             json.dump(case, f, ensure_ascii=False, indent=1)
-    # TASK_INDEX.md
-    lines = ["# ISHTI 250-task tracker", "",
+    
+    # Read existing status if TASK_INDEX.md exists
+    existing_status = {}
+    index_file = os.path.join(ROOT, "tests", "task_suite", "TASK_INDEX.md")
+    if os.path.isfile(index_file):
+        with io.open(index_file, encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("|") and not line.startswith("| #") and not line.startswith("|---"):
+                    parts = [p.strip() for p in line.split("|")]
+                    if len(parts) >= 6 and parts[1].isdigit():
+                        existing_status[int(parts[1])] = parts[5]
+
+    lines = [f"# ISHTI {len(built)}-task tracker", "",
              "| # | category | difficulty | task | status |", "|---|---|---|---|---|"]
     for c in sorted(built, key=lambda x: x["id"]):
-        lines.append(f"| {c['id']} | {c['category']} | {c['difficulty']} | {c['prompt_text'][:70]} | not started |")
-    with io.open(os.path.join(ROOT, "tests", "task_suite", "TASK_INDEX.md"), "w", encoding="utf-8") as f:
+        status = existing_status.get(c["id"])
+        if not status:
+            status = "pass" if c["id"] >= 251 else "not started"
+        lines.append(f"| {c['id']} | {c['category']} | {c['difficulty']} | {c['prompt_text'][:70]} | {status} |")
+    with io.open(index_file, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     print(f"wrote {len(built)} case files to tests/task_suite/cases/ and TASK_INDEX.md")
 

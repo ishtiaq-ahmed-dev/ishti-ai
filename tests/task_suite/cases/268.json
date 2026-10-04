@@ -1,0 +1,20 @@
+{
+ "id": 268,
+ "prompt_text": "Summarize all my active client projects and their current status",
+ "category": "Freelance & client work management (263-268)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Accurate per-project summary, not padded or guessed",
+ "expected_reply_success": "Accurate per-project summary, not padded or guessed",
+ "expected_reply_failure": "Flags any project where status is genuinely unknown/stale rather than inventing one",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

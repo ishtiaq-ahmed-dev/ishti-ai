@@ -1,0 +1,10 @@
+"""Verify docs/build/AUDIT_LOG.jsonl (hash chain). Exit 0 = intact. Same check as `python tools/audit_log.py verify`."""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import audit_log
+
+ok, msg = audit_log.verify()
+print(("OK: " if ok else "FAIL: ") + msg)
+sys.exit(0 if ok else 1)

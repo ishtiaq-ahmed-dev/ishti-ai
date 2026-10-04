@@ -1,0 +1,20 @@
+{
+ "id": 284,
+ "prompt_text": "Who's in my CardioSense project group chat?",
+ "category": "Group & multi-person coordination (281-286)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Accurate list from actually-stored/observed data",
+ "expected_reply_success": "Accurate list from actually-stored/observed data",
+ "expected_reply_failure": "\"No group found matching that\" if genuinely not tracked",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

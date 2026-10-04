@@ -1,0 +1,20 @@
+{
+ "id": 269,
+ "prompt_text": "How did my last Obscura video perform?",
+ "category": "YouTube & content workflow (269-274)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [],
+ "expected_outcome": "Real numbers if accessible",
+ "expected_reply_success": "Real numbers if accessible",
+ "expected_reply_failure": "If no analytics connection exists: says so plainly instead of estimating",
+ "pass_criteria": {
+  "expected_skill": [],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

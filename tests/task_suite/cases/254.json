@@ -1,0 +1,34 @@
+{
+ "id": 254,
+ "prompt_text": "Back up my ISHTI project before I make risky changes",
+ "category": "System & device administration (251-256)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [
+  "files",
+  "folders",
+  "fileops",
+  "system",
+  "meta",
+  "chat"
+ ],
+ "expected_outcome": "Confirms backup location and what's included",
+ "expected_reply_success": "Confirms backup location and what's included",
+ "expected_reply_failure": "If destination has insufficient space: says so before attempting, not mid-way",
+ "pass_criteria": {
+  "expected_skill": [
+   "files",
+   "folders",
+   "fileops",
+   "system",
+   "meta",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

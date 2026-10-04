@@ -1,0 +1,28 @@
+{
+ "id": 251,
+ "prompt_text": "Check for Windows updates",
+ "category": "System & device administration (251-256)",
+ "difficulty": "Easy",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [
+  "system",
+  "meta",
+  "chat"
+ ],
+ "expected_outcome": "States what's actually pending, if anything",
+ "expected_reply_success": "States what's actually pending, if anything",
+ "expected_reply_failure": "\"No updates available\" if genuinely none",
+ "pass_criteria": {
+  "expected_skill": [
+   "system",
+   "meta",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

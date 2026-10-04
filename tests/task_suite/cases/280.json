@@ -1,0 +1,32 @@
+{
+ "id": 280,
+ "prompt_text": "List open issues on my ISHTI repo",
+ "category": "GitHub & version control (275-280)",
+ "difficulty": "Medium",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [
+  "dev",
+  "terminal",
+  "devops",
+  "gitops",
+  "chat"
+ ],
+ "expected_outcome": "Real list from the actual repo",
+ "expected_reply_success": "Real list from the actual repo",
+ "expected_reply_failure": "If connector not configured: says so, doesn't invent issues",
+ "pass_criteria": {
+  "expected_skill": [
+   "dev",
+   "terminal",
+   "devops",
+   "gitops",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": false,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

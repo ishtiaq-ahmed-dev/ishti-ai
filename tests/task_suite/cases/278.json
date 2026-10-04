@@ -1,0 +1,32 @@
+{
+ "id": 278,
+ "prompt_text": "Open a pull request for this branch",
+ "category": "GitHub & version control (275-280)",
+ "difficulty": "Hard",
+ "source_file": "ISHTI_50_task_test_checklist_part5.md",
+ "expected_tool_sequence": [
+  "dev",
+  "terminal",
+  "devops",
+  "gitops",
+  "chat"
+ ],
+ "expected_outcome": "Confirms PR details (title, target branch) before creating, gives the real link after",
+ "expected_reply_success": "Confirms PR details (title, target branch) before creating, gives the real link after",
+ "expected_reply_failure": "If GitHub auth/connector isn't set up: says that clearly instead of faking a PR link",
+ "pass_criteria": {
+  "expected_skill": [
+   "dev",
+   "terminal",
+   "devops",
+   "gitops",
+   "chat"
+  ],
+  "ok_any": [],
+  "bad_any": [],
+  "forbid": []
+ },
+ "requires_confirmation": true,
+ "requires_external_condition": false,
+ "cues_source": "derived"
+}

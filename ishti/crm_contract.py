@@ -7,6 +7,7 @@ Guarantees:
 4. Source-linked trace: every CRM client tracks source channel, interaction audit, and business scope.
 """
 import os
+import csv
 import json
 import time
 import re
@@ -141,3 +142,37 @@ def can_ingest_from_message(text: str, sender_name: str) -> Tuple[bool, str]:
     if not AUTO_INGEST_FROM_CHATS and not is_crm_conversion_command(text):
         return False, "CRM auto-ingestion from chat is disabled (Personal/Business separation policy)"
     return True, "Explicit conversion directive detected"
+
+
+def purge_all_crm_data() -> int:
+    """Removes all CRM client records permanently."""
+    store = _load_crm_store()
+    count = len(store)
+    _save_crm_store({})
+    return count
+
+
+def export_crm(fmt: str = "json") -> str:
+    """Exports all CRM records to a local file."""
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    export_dir = os.path.join(root_dir, "data", "exports")
+    os.makedirs(export_dir, exist_ok=True)
+    store = _load_crm_store()
+    clients = list(store.values())
+    if str(fmt).lower() == "csv":
+        out_path = os.path.join(export_dir, f"crm_export_{int(time.time())}.csv")
+        if clients:
+            keys = list(clients[0].keys())
+            with open(out_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=keys)
+                writer.writeheader()
+                writer.writerows(clients)
+        else:
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write("client_id,contact_name,company,status,financial_terms,created_at\n")
+        return out_path
+    out_path = os.path.join(export_dir, f"crm_export_{int(time.time())}.json")
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(clients, f, indent=2)
+    return out_path
+

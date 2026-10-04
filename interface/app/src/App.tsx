@@ -268,7 +268,7 @@ export default function App() {
                 total_mb: Math.round(total),
                 percent: pct,
               });
-            } else if (msg.type === "model_switch" && msg.data) {
+            } else if ((msg.type === "model_switch" || msg.type === "model_loaded") && msg.data) {
               const d = msg.data;
               const ev: ModelSwitchToast = {
                 role: d.role || "Model",
@@ -280,6 +280,18 @@ export default function App() {
               setTimeout(() => {
                 setModelSwitchToast((cur) => (cur === ev ? null : cur));
               }, 4500);
+              try { window.dispatchEvent(new CustomEvent("ishti-models-updated", { detail: d })); } catch {}
+            } else if (msg.type === "arch_state" && msg.data) {
+              try { window.dispatchEvent(new CustomEvent("ishti-arch-state", { detail: msg.data })); } catch {}
+            } else if (msg.type === "memory_updated" && msg.data) {
+              if (msg.data?.entity === "owner" && msg.data?.attr === "name" && msg.data?.value) {
+                setOwner(String(msg.data.value).trim());
+              }
+              try { window.dispatchEvent(new CustomEvent("ishti-memory-updated", { detail: msg.data })); } catch {}
+            } else if (msg.type === "task_progress" && msg.data) {
+              try { window.dispatchEvent(new CustomEvent("ishti-task-progress", { detail: msg.data })); } catch {}
+            } else if (msg.type === "mic_state" && msg.data) {
+              try { window.dispatchEvent(new CustomEvent("ishti-mic-state", { detail: msg.data })); } catch {}
             } else if (msg.type === "shutdown_progress" && msg.data) {
               const d = msg.data;
               const label = d.label || d.stage || d.step || "Shutting down";
