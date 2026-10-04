@@ -13,7 +13,6 @@ import asyncio
 import secrets
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse, Response
 import uvicorn
 
@@ -31,15 +30,9 @@ from ishti.dispatcher import api as ishti_api, handle as ishti_handle, HOOKS as 
 from ishti import notifications as notifications_store
 # Speed (Cycle 4): cached pre-compression, cache headers, selective gzip - with its own offline test.
 from interface.web_ui.static_perf import CachedStaticFiles, SelectiveGZipMiddleware
+from ishti.web_security import authorized as dashboard_authorized, request_origin_ok, token_matches
 
 app = FastAPI(title="ISHTI Personal AI Assistant")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 app.include_router(ishti_api)  # /api/chat, /api/skills, /api/facts (the dispatcher)
 
 app.add_middleware(SelectiveGZipMiddleware)  # 1.02 MB JS -> ~290 KB, 107 KB CSS -> ~16 KB on the wire
@@ -47,14 +40,16 @@ app.add_middleware(SelectiveGZipMiddleware)  # 1.02 MB JS -> ~290 KB, 107 KB CSS
 # Remote access (Cloudflare tunnel, remote/tunnel_setup.md) arrives from cloudflared on 127.0.0.1,
 # so "is it localhost?" is not enough: anything proxied or non-local must carry the token.
 TOKEN_PATH = os.path.join(ROOT_DIR, "data", "api_token")
-PROXY_HEADERS = ("cf-connecting-ip", "x-forwarded-for", "forwarded", "x-real-ip")
 
 
 def _api_token() -> str:
     if not os.path.exists(TOKEN_PATH):
         os.makedirs(os.path.dirname(TOKEN_PATH), exist_ok=True)
-        with open(TOKEN_PATH, "w") as f:
-            f.write(secrets.token_urlsafe(32))
+        try:
+            with open(TOKEN_PATH, "x") as f:
+                f.write(secrets.token_urlsafe(32))
+        except FileExistsError:
+            pass  # another server process created it
     with open(TOKEN_PATH) as f:
         return f.read().strip()
 
@@ -63,20 +58,18 @@ API_TOKEN = _api_token()
 
 
 def authorized(conn) -> bool:
-    """conn: Request or WebSocket. Local, unproxied = trusted; otherwise token via header, cookie or ?token=."""
-    if conn.client and conn.client.host in ("127.0.0.1", "::1") and not any(h in conn.headers for h in PROXY_HEADERS):
-        return True
-    supplied = (conn.headers.get("authorization", "").removeprefix("Bearer ").strip()
-                or conn.cookies.get("ishti_token") or conn.query_params.get("token") or "")
-    return secrets.compare_digest(supplied, API_TOKEN)
+    """Trust a same-origin direct loopback UI, or an authenticated caller."""
+    return dashboard_authorized(conn, API_TOKEN)
 
 
 @app.middleware("http")
 async def require_token_for_remote(request: Request, call_next):
+    if not request_origin_ok(request):
+        return JSONResponse({"error": "foreign origin"}, status_code=403)
     if not authorized(request):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     response = await call_next(request)
-    if request.query_params.get("token"):  # open https://<tunnel>/?token=... once; the cookie does the rest
+    if token_matches(request.query_params.get("token"), API_TOKEN):
         response.set_cookie("ishti_token", API_TOKEN, httponly=True, secure=True, samesite="strict")
     return response
 
@@ -826,14 +819,14 @@ async def live_ws(ws: WebSocket):
     in Live mode (no wake word, barge-in, replies spoken sentence by sentence - played by the browser, so it works
     from a phone and the browser's echo cancellation hears past ISHTI's own voice) and every event (state,
     live transcript, steps, reply, stage timings) comes back on this socket. The talk is saved in the open chat."""
+    if not authorized(ws):
+        await ws.close(code=1008)
+        return
     import queue as queue_mod
     import threading
     import numpy as np
     from ishti import wake
     from ishti.talk import RemoteTalker
-    if not authorized(ws):
-        await ws.close(code=1008)
-        return
     await ws.accept()
     session_id = ws.query_params.get("session") or None
     loop = asyncio.get_running_loop()

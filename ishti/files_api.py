@@ -41,7 +41,8 @@ KINDS = {
 }
 ALLOWED_EXT = set().union(*KINDS.values())
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
-PROXY_HEADERS = (b"cf-connecting-ip", b"x-forwarded-for", b"forwarded", b"x-real-ip")
+from ishti.web_security import PROXY_HEADERS as _PROXY_HEADERS
+PROXY_HEADERS = tuple(h.encode() for h in _PROXY_HEADERS)
 
 
 def _err(msg, code):
