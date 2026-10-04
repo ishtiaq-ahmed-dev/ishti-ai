@@ -393,6 +393,16 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
 
   // ---------------- Recent chats: select / rename / delete-with-undo / share (all local) ----------------
   const [selecting, setSelecting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
+
+  useEffect(() => {
+    if (!deleteTarget) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDeleteTarget(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [deleteTarget]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -839,7 +849,10 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                             <button
                               type="button"
                               title="Delete chat"
-                              onClick={(e) => { e.stopPropagation(); void deleteSession(x.session_id, e); }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteTarget({ id: x.session_id, title: x.title });
+                              }}
                               className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger cursor-pointer"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -962,6 +975,54 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               </button>
             </div>
           </motion.div>
+      )}
+
+      {/* Delete confirmation dialog: Yes / No option */}
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+          onClick={() => setDeleteTarget(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-border bg-background p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-danger/15 text-danger shrink-0">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-sm font-semibold text-foreground">Delete this chat?</h3>
+                <p className="mt-1 text-xs text-muted-foreground truncate font-medium">
+                  {deleteTarget.title || "Untitled Conversation"}
+                </p>
+              </div>
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground leading-relaxed">
+              Are you sure you want to delete this conversation? You can still undo this within 8 seconds after deleting.
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                className="rounded-xl border border-border px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+              >
+                No, keep
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const targetId = deleteTarget.id;
+                  setDeleteTarget(null);
+                  void deleteSession(targetId);
+                }}
+                className="rounded-xl bg-danger px-4 py-1.5 text-xs font-semibold text-white hover:bg-danger/90 transition-colors shadow-xs cursor-pointer"
+              >
+                Yes, delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Share: save the chosen chats to a local Markdown/PDF file, or copy them as text. Nothing is uploaded. */}
