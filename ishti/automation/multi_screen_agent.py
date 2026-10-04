@@ -3,6 +3,7 @@ ISHTI Advanced Multi-Screen OS Automation Agent
 Operates via a continuous "Perceive-Plan-Act" visual loop with full mouse & keyboard
 control across all connected displays and global coordinate mapping.
 """
+from ishti.core.logutil import swallowed
 
 import os
 import sys
@@ -151,7 +152,7 @@ class DisplayManager:
                             )
                         )
             except Exception:
-                pass
+                swallowed('ishti/automation/multi_screen_agent.py:refresh:153')
 
         # Ultimate fallback to single monitor via pyautogui or default 1920x1080
         if not self.monitors:
@@ -161,7 +162,7 @@ class DisplayManager:
                     sz = pyautogui.size()
                     w, h = sz.width, sz.height
                 except Exception:
-                    pass
+                    swallowed('ishti/automation/multi_screen_agent.py:refresh:163')
             self.monitors.append(
                 MonitorInfo(
                     id=1,
@@ -238,13 +239,13 @@ class VisualCaptureEngine:
                 pos = pyautogui.position()
                 return int(pos.x), int(pos.y)
             except Exception:
-                pass
+                swallowed('ishti/automation/multi_screen_agent.py:get_cursor_position:240')
         if win32api is not None:
             try:
                 x, y = win32api.GetCursorPos()
                 return int(x), int(y)
             except Exception:
-                pass
+                swallowed('ishti/automation/multi_screen_agent.py:get_cursor_position:246')
         return (0, 0)
 
     def capture_stitched(self, highlight_cursor: bool = True, allow_synthetic: bool = False) -> Tuple[Image.Image, Tuple[int, int], str]:
@@ -299,7 +300,7 @@ class VisualCaptureEngine:
                     stitched.paste(full.resize((vw, vh)), (0, 0))
                     grab_success = True
             except Exception:
-                pass
+                swallowed('ishti/automation/multi_screen_agent.py:capture_stitched:301')
 
         # A fabricated frame must never authorize a live mouse/keyboard action.
         if not grab_success:
@@ -319,7 +320,7 @@ class VisualCaptureEngine:
         try:
             stitched.save(out_path)
         except Exception:
-            pass
+            swallowed('ishti/automation/multi_screen_agent.py:capture_stitched:321')
 
         return stitched, (cursor_x, cursor_y), out_path
 
@@ -378,7 +379,7 @@ class VisualCaptureEngine:
             try:
                 win32gui.EnumWindows(enum_cb, None)
             except Exception:
-                pass
+                swallowed('ishti/automation/multi_screen_agent.py:_render_synthetic_desktop:380')
 
 
 class ActionExecutor:
@@ -703,7 +704,7 @@ Output your response using ONLY this schema:
                 },
             ]
             resp = llm.chat(messages, role=role, temperature=0.0, max_tokens=250)
-            if resp and resp.content:
+            if resp and resp.content and self.parse_action(resp.content) is not None:
                 return resp.content
         except Exception:
             if self.executor.dry_run:

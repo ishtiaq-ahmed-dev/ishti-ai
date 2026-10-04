@@ -206,7 +206,7 @@ async def save_upload(file: UploadFile, folder=None):
         try:
             os.remove(path)
         except FileNotFoundError:
-            pass
+            swallowed("files_api.rejected_upload_already_removed")
         return None, ("The security scan could not complete. The staged file was rejected.", 503)
     verb = {"document": "summarize", "image": "describe the image", "audio": "transcribe", "video": "info about"}[kind_of(name)]
     return {"ok": True, "path": path, "name": os.path.basename(path), "size": size, "kind": kind_of(name),

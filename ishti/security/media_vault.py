@@ -7,6 +7,7 @@ Guarantees:
 4. Immediate delete-all / purge behavior for any chat.
 5. Automated background cleanup of expired media items.
 """
+from ishti.core.logutil import swallowed
 import os
 import json
 import time
@@ -48,7 +49,7 @@ def _get_or_create_key() -> bytes:
             # Set read/write only for owner on platforms supporting chmod
             os.chmod(KEY_FILE, 0o600)
         except Exception:
-            pass
+            swallowed('ishti/security/media_vault.py:_get_or_create_key:50')
 
         _AESGCM_KEY = new_key
         return _AESGCM_KEY
@@ -176,7 +177,7 @@ def purge_chat_media(chat_id: str) -> int:
                     os.remove(enc_path)
                     deleted_count += 1
                 except Exception:
-                    pass
+                    swallowed('ishti/security/media_vault.py:purge_chat_media:178')
         if to_delete:
             _save_index(idx)
 
@@ -202,7 +203,7 @@ def cleanup_expired_media() -> int:
                     os.remove(enc_path)
                     deleted_count += 1
                 except Exception:
-                    pass
+                    swallowed('ishti/security/media_vault.py:cleanup_expired_media:204')
         if to_delete:
             _save_index(idx)
 
@@ -240,7 +241,7 @@ def purge_all_media() -> int:
                     os.remove(enc_path)
                     deleted_count += 1
                 except Exception:
-                    pass
+                    swallowed('ishti/security/media_vault.py:purge_all_media:242')
         _save_index({})
     return deleted_count
 

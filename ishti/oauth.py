@@ -10,6 +10,7 @@ and token JSON for compatibility; all new writes use the existing local vault ke
 Personal actions unavailable through the provider API fall back to Chrome and its approval flow.
 """
 from __future__ import annotations
+from ishti.core.logutil import swallowed
 
 import base64
 import hashlib
@@ -506,14 +507,14 @@ def disconnect(service: str) -> str:
         try:
             os.remove(_path(service))
         except FileNotFoundError:
-            pass
+            swallowed('ishti/oauth.py:disconnect:508')
     revoked = False
     try:
         if family(service) == "google" and data:
             _post(REVOKE_URL, {"token": data.get("refresh_token") or data.get("access_token")})
             revoked = True
     except Exception:
-        pass
+        swallowed('ishti/oauth.py:disconnect:515')
     _changed(service)
     return f"Disconnected {service}; its local tokens were deleted." + (
         " Google also revoked the grant." if revoked else " You can remove the app's grant in your provider's account settings.")

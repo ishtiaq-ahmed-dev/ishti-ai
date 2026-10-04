@@ -29,7 +29,7 @@ export async function createApi({ token, port, state, store, socket, files, outb
       qrMatrix = encoder.modules; qrCode = qr;
     }
     const { qr: _raw, ...publicState } = state;
-    res.json({ ...publicState, qrAvailable: !!qr, qr_matrix: qr ? qrMatrix : null,
+    res.json({ ...publicState, raw_qr: qr, qrAvailable: !!qr, qr_matrix: qr ? qrMatrix : null,
       historyScope: 'since_bridge_start', revision: store.revision, retainedChats: store.chats.size });
   });
   app.get('/chats', (_req, res) => res.json(store.list()));

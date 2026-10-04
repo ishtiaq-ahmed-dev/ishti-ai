@@ -167,17 +167,22 @@ def get_qr_data() -> dict:
         size = len(matrix)
         if any(not isinstance(row, list) or len(row) != size for row in matrix):
             raise BridgeError("Invalid QR matrix")
-        picture = Image.new("RGB", ((size + 8) * 6, (size + 8) * 6), "white")
+        scale = 8
+        quiet = 4
+        dim = (size + quiet * 2) * scale
+        picture = Image.new("RGB", (dim, dim), (255, 255, 255))
         draw = ImageDraw.Draw(picture)
         for y, row in enumerate(matrix):
             for x, dark in enumerate(row):
                 if dark:
-                    draw.rectangle(((x + 4) * 6, (y + 4) * 6, (x + 5) * 6 - 1, (y + 5) * 6 - 1), fill="black")
+                    x0 = (x + quiet) * scale
+                    y0 = (y + quiet) * scale
+                    draw.rectangle((x0, y0, x0 + scale - 1, y0 + scale - 1), fill=(0, 0, 0))
         buffer = io.BytesIO()
         picture.save(buffer, format="PNG")
         image = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
     return {"connected": bool(state.get("connected")), "running": bool(state.get("running")),
-        "qr_image": image, "raw_qr": None, "ascii_qr": "", "me": state.get("me") or "",
+        "qr_image": image, "raw_qr": state.get("raw_qr") or state.get("qr"), "ascii_qr": "", "me": state.get("me") or "",
         "lastError": state.get("lastError"), "historyScope": state.get("historyScope")}
 
 

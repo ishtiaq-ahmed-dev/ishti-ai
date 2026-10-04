@@ -5,6 +5,7 @@ character budget. Older turns are searched before compression; limits on the
 model payload must never become limits on which saved turns can be searched.
 """
 from __future__ import annotations
+from ishti.core.logutil import swallowed
 
 import re
 import json
@@ -193,7 +194,7 @@ class ContextAssembler:
                 transcript = "\n".join(f"{m['role']}: {m['content'][:400]}" for m in old)
                 overview = str(self.summarize_fn(transcript) or "").strip()[:min(1200, budget // 4)]
             except Exception:
-                pass
+                swallowed('ishti/core/context.py:_summarize_old:195')
         terms = self._terms(query)
         row_terms = [self._terms(m["content"]) for m in old]
         frequency = Counter(t for tokens in row_terms for t in tokens & terms)

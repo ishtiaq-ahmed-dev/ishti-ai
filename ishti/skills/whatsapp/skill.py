@@ -195,7 +195,7 @@ def parse_messages(snap, n=10):
             continue
 
         low = body.lower()
-        if re.fullmatch(r'(?:voice message|play voice message|audio message)(?:\s+[\d:]+)?', low):
+        if re.fullmatch(r'(?:play\s+)?(?:voice message|audio message)(?:\s+voice message)?(?:\s+\d{1,2}:\d{2}(?:/\d{1,2}:\d{2})?)?', low):
             body = "[voice message]"
         elif low == "sticker":
             body = "[sticker]"

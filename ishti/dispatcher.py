@@ -553,6 +553,9 @@ def _run(text, s, dec):
     """Run the decided skill; if it declines ("not mine"), fall through to the next best one."""
     from ishti import calltrace
     tried, out, name = set(), None, None
+    clean_explicit = re.sub(r"^(?:\[skill:[a-z0-9_-]+\]|/(?:use|skill)\s+[a-z0-9_-]+)\s*", "", text, flags=re.I).strip()
+    if clean_explicit:
+        text = clean_explicit
     while dec["skill"]:
         name = dec["skill"]
         s["route"] = dec
@@ -683,6 +686,8 @@ def _rule_owned(text):
     genuinely open-ended. TheIntentDetector is the discriminator."""
     try:
         dec = route(text, SKILLS)
+        if dec.get("source") == "explicit_directive":
+            return True
         skill = dec.get("skill")
         if skill == "chat":  # "did you send it?" is answered from the conversation, never re-run or improvised
             from ishti.skills.chat.skill import DID_YOU, KNOWLEDGE, PERSONAL, ARITHMETIC, CREATIVE, CODE, BACKCHANNEL

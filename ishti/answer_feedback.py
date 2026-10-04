@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+from ishti.core.logutil import swallowed
 from orchestrator.memory.conversation import get_conversation_manager
 
 
@@ -51,13 +52,15 @@ def submit(session_id: str, message_id: str, rating: str, reason: str = "") -> d
     existing = (message.get("metadata") or {}).get("feedback") or {}
     if existing.get("rating") == rating and (rating == "positive" or existing.get("revision_id")):
         saved = manager.save_feedback(session_id, message_id, rating)
+        learning_recorded = False
         try:
             from ishti.learning import feedback
             feedback.apply_answer_rating(session_id, message_id, rating)
+            learning_recorded = True
         except Exception:
-            pass
+            swallowed("answer_feedback.duplicate_rating")
         return {"rating": rating, "message_id": message_id, "revision": saved["revision"], "duplicate": True,
-                "learning_recorded": True}
+                "learning_recorded": learning_recorded}
     issue, revision = "", ""
     error = None
     if rating == "negative":
@@ -88,7 +91,7 @@ def submit(session_id: str, message_id: str, rating: str, reason: str = "") -> d
                 runtime["history_truncated"] = len(manager.get_messages(session_id)) > dispatcher.RUNTIME_MESSAGES
     except Exception:
         # The saved rating and revision remain authoritative after a restart.
-        pass
+        swallowed("answer_feedback.refresh_context")
     learning_recorded = False
     if not saved["duplicate"]:
         try:
@@ -101,12 +104,12 @@ def submit(session_id: str, message_id: str, rating: str, reason: str = "") -> d
                              "skill": (message.get("metadata") or {}).get("skill") or "chat"})
             learning_recorded = True
         except Exception:
-            pass
+            swallowed("answer_feedback.record_learning")
     try:
         from ishti.learning import feedback
         feedback.apply_answer_rating(session_id, message_id, rating)
     except Exception:
-        pass
+        swallowed("answer_feedback.attribute_rating")
     return {"rating": rating, "message_id": message_id, "revision": saved["revision"],
             "duplicate": saved["duplicate"], "learning_recorded": learning_recorded, "error": error,
             "diagnosis": issue if issue else None}

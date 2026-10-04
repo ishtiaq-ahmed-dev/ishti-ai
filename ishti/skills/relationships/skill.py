@@ -14,6 +14,7 @@ A person named by DESCRIPTION ("my friend from university ... message him") is r
 against the graph and ASKED about when more than one person fits - never guessed.
 "Forget everything about my cousin Bilal" is scoped: that relationship only.
 """
+from ishti.core.logutil import swallowed
 import os
 import re
 import sys
@@ -431,14 +432,14 @@ def _rel_delete(rgraph, name, rel, session):
                 if not rel_clean or (p.get("relationship") or "").lower() == rel_clean:
                     ent_module.remove(p["name"])
     except Exception:
-        pass
+        swallowed('ishti/skills/relationships/skill.py:_rel_delete:433')
 
     # 3. Mirror in arch2
     try:
         from ishti.arch2 import memory as a2_mem
         a2_mem.semantic(f"Removed {name_clean.title()} from {rel_clean or 'records'}.")
     except Exception:
-        pass
+        swallowed('ishti/skills/relationships/skill.py:_rel_delete:440')
 
     # 4. Dispatch WebSocket events for UI
     try:
@@ -446,13 +447,13 @@ def _rel_delete(rgraph, name, rel, session):
         events.publish("memory_updated", {"type": "family", "entity": name_clean.title(), "relationship": rel_clean, "action": "delete"})
         events.publish("memory_updated", {"type": "relationship", "entity": name_clean.title(), "relationship": rel_clean, "action": "delete"})
     except Exception:
-        pass
+        swallowed('ishti/skills/relationships/skill.py:_rel_delete:448')
     try:
         from ishti.dispatcher import HOOKS
         if HOOKS.get("emit"):
             HOOKS["emit"]("memory_updated", {"type": "family", "entity": name_clean.title(), "relationship": rel_clean, "action": "delete"})
     except Exception:
-        pass
+        swallowed('ishti/skills/relationships/skill.py:_rel_delete:454')
 
     rel_str = f" from your {rel_clean}s" if rel_clean else ""
     return {"reply": f"Removed **{name_clean.title()}**{rel_str}.", "sources": []}
@@ -512,7 +513,7 @@ def _save_explicit_relation(rgraph, rel, name, detail=""):
                 from ishti.learning import entities as ent_module
                 ent_module.remove(other)
             except Exception:
-                pass
+                swallowed('ishti/skills/relationships/skill.py:_save_explicit_relation:514')
 
     eid, created = rgraph.relate("me", rel, name, detail=detail, confidence=1.0, source_type="explicit_user")
 
@@ -521,7 +522,7 @@ def _save_explicit_relation(rgraph, rel, name, detail=""):
         from ishti.learning import entities as ent_module
         ent_module.observe(name, relationship=rel, note=detail, source="owner")
     except Exception:
-        pass
+        swallowed('ishti/skills/relationships/skill.py:_save_explicit_relation:523')
 
     # Mirror into arch2 memory
     try:
@@ -529,20 +530,20 @@ def _save_explicit_relation(rgraph, rel, name, detail=""):
         a2_mem.entity(name, kind="person", relationship=rel, notes=[detail] if detail else [])
         a2_mem.semantic(f"{name.title()} is my {rel}.")
     except Exception:
-        pass
+        swallowed('ishti/skills/relationships/skill.py:_save_explicit_relation:531')
 
     # Publish real-time events for UI and subscribers
     try:
         from ishti import events
         events.publish("memory_updated", {"type": "family", "entity": name, "relationship": rel, "action": "upsert"})
     except Exception:
-        pass
+        swallowed('ishti/skills/relationships/skill.py:_save_explicit_relation:538')
     try:
         from ishti.dispatcher import HOOKS
         if HOOKS.get("emit"):
             HOOKS["emit"]("memory_updated", {"type": "family", "entity": name, "relationship": rel, "action": "upsert"})
     except Exception:
-        pass
+        swallowed('ishti/skills/relationships/skill.py:_save_explicit_relation:544')
 
     return eid, created
 
@@ -621,7 +622,7 @@ def extract_and_learn_kin(text):
                     from ishti.learning import entities as ent_module
                     ent_module.rename(target, new)
                 except Exception:
-                    pass
+                    swallowed('ishti/skills/relationships/skill.py:extract_and_learn_kin:623')
                 results.append(("rename", f"{target}->{new}"))
                 return results
 
@@ -857,7 +858,7 @@ def _run_single(text, session):
                         if wname not in [p[0] for p in people] and wname.lower() not in ("who", "remember", "cardiosense", "me", "you"):
                             people.append((wname, "collaborator"))
         except Exception:
-            pass
+            swallowed('ishti/skills/relationships/skill.py:_run_single:859')
 
         if not people:
             return {"reply": f"No collaborators on file for {proj.title()}.", "sources": []}
@@ -881,7 +882,7 @@ def _run_single(text, session):
             a2_mem.entity(name, kind="person", relationship=rel, notes=[f"Job: {job}"])
             a2_mem.semantic(f"My {rel} {name} is a {job} now.")
         except Exception:
-            pass
+            swallowed('ishti/skills/relationships/skill.py:_run_single:883')
         art = "an" if job[0].lower() in "aeiou" else "a"
         return {"reply": f"Noted: your {rel} {name} just got a new job — she is now {art} {job}. Updated her records.", "sources": []}
 
@@ -898,7 +899,7 @@ def _run_single(text, session):
             a2_mem.entity(f"{name} (Zyntiqo)", kind="person", relationship="colleague", notes=[f"Colleague from Zyntiqo"])
             a2_mem.semantic(f"I have two colleagues named {name}: one from the Azure project and one from Zyntiqo.")
         except Exception:
-            pass
+            swallowed('ishti/skills/relationships/skill.py:_run_single:900')
         return {"reply": f"Stored both distinctly: {name} from the Azure project and {name} from Zyntiqo as your colleagues.", "sources": []}
 
     if m := WORK_Q.search(t):  # Task 144: "What do you know about my work with JQ AI Solutions?"
@@ -927,7 +928,7 @@ def _run_single(text, session):
                     if wname not in found and wname.lower() not in ("me", "you"):
                         found.append(wname)
         except Exception:
-            pass
+            swallowed('ishti/skills/relationships/skill.py:_run_single:929')
         if not found:
             found = ["Ali", "Usman"]
         recipients = ", ".join(found)
@@ -1032,7 +1033,7 @@ def _run_single(text, session):
                                 ent_module.rename(p["name"], new)
                                 break
             except Exception:
-                pass
+                swallowed('ishti/skills/relationships/skill.py:_run_single:1034')
 
             # Mirror in arch2
             try:
@@ -1040,7 +1041,7 @@ def _run_single(text, session):
                 a2_mem.entity(new.title(), kind="person")
                 a2_mem.semantic(f"{new.title()} is {old_display}'s updated full name.")
             except Exception:
-                pass
+                swallowed('ishti/skills/relationships/skill.py:_run_single:1042')
 
             # Dispatch real-time events for UI
             try:
@@ -1048,13 +1049,13 @@ def _run_single(text, session):
                 events.publish("memory_updated", {"type": "family", "old": old_display, "entity": new.title(), "action": "update"})
                 events.publish("memory_updated", {"type": "relationship", "old": old_display, "entity": new.title(), "action": "update"})
             except Exception:
-                pass
+                swallowed('ishti/skills/relationships/skill.py:_run_single:1050')
             try:
                 from ishti.dispatcher import HOOKS
                 if HOOKS.get("emit"):
                     HOOKS["emit"]("memory_updated", {"type": "family", "old": old_display, "entity": new.title(), "action": "update"})
             except Exception:
-                pass
+                swallowed('ishti/skills/relationships/skill.py:_run_single:1056')
 
             session["rel_last"] = new.title()
             return {"reply": f"Updated: **{old_display}** is now recorded as **{new.title()}** in your family records and dashboard.", "sources": []}

@@ -13,6 +13,7 @@ per-client events carry first_seen / last_confirmed like the relationship graph.
 Sentiment: a lexicon pass (angry/urgent cues) flags messages for the OWNER to
 handle - flagged clients are never auto-drafted.
 """
+from ishti.core.logutil import swallowed
 import datetime as dt
 import json
 import os
@@ -518,7 +519,7 @@ def op_client_roster(text, session):
                     if cproj or "JQ AI Solutions":
                         work[cname] = [cproj or "JQ AI Solutions"]
     except Exception:
-        pass
+        swallowed('ishti/skills/clients/skill.py:op_client_roster:520')
 
     try:
         from ishti import rgraph
@@ -532,7 +533,7 @@ def op_client_roster(text, session):
                     if detail:
                         work[cname] = [detail]
     except Exception:
-        pass
+        swallowed('ishti/skills/clients/skill.py:op_client_roster:534')
 
     if not rows:
         return {"reply": "No clients in your CRM store yet. Say \"new client <name>\" or "

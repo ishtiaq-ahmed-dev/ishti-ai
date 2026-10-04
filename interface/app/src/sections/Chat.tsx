@@ -159,6 +159,20 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     window.addEventListener("pointerup", onPointerUp);
   }, [historyWidth]);
   const [graphFor, setGraphFor] = useState<number | null>(null);
+  const [focusedSkill, setFocusedSkill] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem("ishti-focused-skill");
+    } catch {
+      return null;
+    }
+  });
+
+  const clearFocusedSkill = useCallback(() => {
+    setFocusedSkill(null);
+    try {
+      localStorage.removeItem("ishti-focused-skill");
+    } catch {}
+  }, []);
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false); // Stop pressed: the last words are being written into the box
   const [liveOpen, setLiveOpen] = useState(false);
@@ -243,7 +257,12 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   }, [msgs]);
 
   const selectSession = useCallback(async (id: string) => {
+    clearFocusedSkill();
     const generation = ++sessionLoadGeneration.current;
+    setFeedbackBusy(null);
+    setFeedbackError(null);
+    setFeedbackReasonFor(null);
+    setQueue([]);
     setGraphFor(null);
     isInitialLoad.current = true;
     try {
@@ -280,6 +299,10 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
 
   const newChat = useCallback(async () => {
     const generation = ++sessionLoadGeneration.current;
+    setFeedbackBusy(null);
+    setFeedbackError(null);
+    setFeedbackReasonFor(null);
+    setQueue([]);
     const d = await postJSON<{ session_id: string }>("/api/sessions/new", { title: "New Conversation" });
     if (generation !== sessionLoadGeneration.current) return;
     try {
@@ -329,14 +352,23 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   }, [sessionId, msgs, loadSessions]);
 
   useEffect(() => {
-    const handleStartNewChat = () => {
+    const handleStartNewChat = (e?: Event) => {
+      const detail = (e as CustomEvent<{ focusedSkill?: string }> | undefined)?.detail;
+      if (detail?.focusedSkill) {
+        setFocusedSkill(detail.focusedSkill);
+        try {
+          localStorage.setItem("ishti-focused-skill", detail.focusedSkill);
+        } catch {}
+      } else {
+        clearFocusedSkill();
+      }
       newChat();
     };
     window.addEventListener("ishti-start-new-chat", handleStartNewChat);
     return () => {
       window.removeEventListener("ishti-start-new-chat", handleStartNewChat);
     };
-  }, [newChat]);
+  }, [newChat, clearFocusedSkill]);
 
   useEffect(() => {
     let targetSession: string | null = null;
@@ -583,11 +615,15 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     if (!canStart) { setQueue((q) => [...q, text]); return; }
     const generation = sessionLoadGeneration.current;
     const targetSession = sessionId;
-    const reply: Msg = { id: nextId++, role: "ishti", text: "", events: [], live: true, sources: [], request: text };
-    setMsgs((all) => [...all, { id: nextId++, role: "user", text, events: [], live: false, sources: [] }, reply]);
+    let textToSend = text;
+    if (focusedSkill && !text.toLowerCase().startsWith("[skill:") && !text.toLowerCase().startsWith("/use ") && !text.toLowerCase().startsWith("/skill ")) {
+      textToSend = `[skill:${focusedSkill}] ${text}`;
+    }
+    const reply: Msg = { id: nextId++, role: "ishti", text: "", events: [], live: true, sources: [], request: textToSend };
+    setMsgs((all) => [...all, { id: nextId++, role: "user", text: textToSend, events: [], live: false, sources: [] }, reply]);
     setGraphFor(reply.id);
     try {
-      const res: Result = await streamChat(text, targetSession, {
+      const res: Result = await streamChat(textToSend, targetSession, {
         event: (e) => { if (generation === sessionLoadGeneration.current) patch(reply.id, (m) => ({ ...m, events: [...m.events, e] })); },
         token: (t) => { if (generation === sessionLoadGeneration.current) patch(reply.id, (m) => ({ ...m, text: m.text + t })); },
       });
@@ -1223,7 +1259,20 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                         className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-accent-foreground shadow-xs"
                         style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-leading)" }}
                       >
-                        {m.text}
+                        {(() => {
+                          const skillMatch = m.text.match(/^\[skill:([a-z0-9_-]+)\]\s*(.*)$/is);
+                          if (skillMatch) {
+                            return (
+                              <>
+                                <span className="inline-block mr-2 rounded-md bg-white/25 px-1.5 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider">
+                                  {skillMatch[1]}
+                                </span>
+                                {skillMatch[2]}
+                              </>
+                            );
+                          }
+                          return m.text;
+                        })()}
                       </div>
                     ) : (
                       <>
@@ -1329,6 +1378,29 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               </motion.ul>
             )}
           </AnimatePresence>
+
+          {focusedSkill && (
+            <div className="mx-auto mb-2 flex w-full max-w-4xl xl:max-w-5xl items-center justify-between rounded-xl border border-accent/40 bg-accent/10 px-3.5 py-1.5 shadow-xs">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="flex h-2 w-2 rounded-full bg-accent animate-pulse shrink-0" />
+                <span className="text-xs font-bold text-accent font-mono shrink-0">
+                  Target Skill: {focusedSkill}
+                </span>
+                <span className="text-[11px] text-muted-foreground truncate">
+                  Tasks in this session will be executed directly using this skill
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={clearFocusedSkill}
+                className="text-muted-foreground hover:text-foreground text-xs p-1 rounded-md hover:bg-muted transition-colors cursor-pointer shrink-0 ml-2"
+                title="Clear skill focus"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+
           {recording ? (
             <VoiceBeam
               active={recording}
@@ -1341,7 +1413,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                 <textarea ref={box} value={input} onChange={(e) => setInput(e.target.value)} rows={1}
                   onPaste={onComposerPaste}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!recording && !transcribing && !uploading) send(input); } }}
-                  placeholder="Ask or tell ISHTI to do anything…"
+                  placeholder={focusedSkill ? `Assign a task using ${focusedSkill} skill…` : "Ask or tell ISHTI to do anything…"}
                   style={{ fontSize: "var(--chat-input-size)" }}
                   className="scroll-thin max-h-[220px] min-h-[40px] flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 leading-relaxed outline-none placeholder:text-muted-foreground" />
                 <button type="button" onClick={() => uploadInput.current?.click()} disabled={uploading} title="Attach files for ISHTI to inspect" aria-label="Attach files"
@@ -1372,7 +1444,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                 <textarea ref={box} value={input} onChange={(e) => setInput(e.target.value)} rows={1}
                   onPaste={onComposerPaste}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!recording && !transcribing && !uploading) send(input); } }}
-                  placeholder="Ask or tell ISHTI to do anything…"
+                  placeholder={focusedSkill ? `Assign a task using ${focusedSkill} skill…` : "Ask or tell ISHTI to do anything…"}
                   style={{ fontSize: "var(--chat-input-size)" }}
                   className="scroll-thin max-h-[220px] min-h-[40px] flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 leading-relaxed outline-none placeholder:text-muted-foreground" />
                 <button type="button" onClick={() => uploadInput.current?.click()} disabled={uploading} title="Attach files for ISHTI to inspect" aria-label="Attach files"

@@ -31,6 +31,7 @@ from ishti import notifications as notifications_store
 # Speed (Cycle 4): cached pre-compression, cache headers, selective gzip - with its own offline test.
 from interface.web_ui.static_perf import CachedStaticFiles, SelectiveGZipMiddleware
 from ishti.web_security import authorized as dashboard_authorized, request_origin_ok, token_matches
+from ishti.core.logutil import swallowed
 
 app = FastAPI(title="ISHTI Personal AI Assistant")
 app.include_router(ishti_api)  # /api/chat, /api/skills, /api/facts (the dispatcher)
@@ -435,7 +436,7 @@ async def get_research_memories():
                     with open(os.path.join(RESEARCH_MEM_DIR, fname), "r", encoding="utf-8") as f:
                         memories.append(json.load(f))
                 except Exception:
-                    pass
+                    swallowed("server.research_archive_read")
     # Sort newest first
     memories.sort(key=lambda m: m.get("timestamp", ""), reverse=True)
     return JSONResponse({"archives": memories, "count": len(memories)})
@@ -636,7 +637,7 @@ async def execute_stream(req: Request):
         try:
             await broadcast_event("task_completed_full", result)
         except Exception:
-            pass
+            swallowed("server.broadcast_completion")
         yield json.dumps({"done": True, "result": result}, ensure_ascii=False) + "\n"
 
     return StreamingResponse(lines(), media_type="application/x-ndjson")
@@ -913,7 +914,7 @@ async def live_ws(ws: WebSocket):
             elif msg.get("text") == "end":
                 break
     except WebSocketDisconnect:
-        pass
+        return
     finally:
         stop.set()
         voice.close()
@@ -943,11 +944,11 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 q.put_nowait({"type": "resync_required", "data": {"reason": "event queue overflow"}})
             except Exception:
-                pass
+                swallowed("server.websocket_resync_queue")
         try:
             q.put_nowait(m)
         except Exception:
-            pass
+            swallowed("server.websocket_event_queue")
 
     def push(m):
         loop.call_soon_threadsafe(_put, m)
@@ -987,7 +988,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 except Exception as e:
                     print(f"[WS Error]: {e}")
     except (WebSocketDisconnect, RuntimeError):
-        pass
+        return
     finally:
         if recv_task and not recv_task.done():
             recv_task.cancel()
@@ -1327,7 +1328,7 @@ def _get_family_members():
                     "source": e.get("source_type") or "explicit_user"
                 }
     except Exception:
-        pass
+        swallowed("server.family_relationship_read")
 
     try:
         rows = ent_module.list_people()
@@ -1364,7 +1365,7 @@ def _get_family_members():
                         "source": r.get("source") or "learning"
                     }
     except Exception:
-        pass
+        swallowed("server.family_entities_read")
 
     return sorted(members.values(), key=lambda m: (m["generation"], -m["last_confirmed"]))
 

@@ -341,7 +341,7 @@ class ConversationManager:
             try:
                 os.remove(tmp)
             except FileNotFoundError:
-                pass
+                swallowed("conversation.atomic_temp_already_removed")
 
 
 _conversation_manager_instance: Optional[ConversationManager] = None

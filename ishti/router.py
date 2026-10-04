@@ -2,6 +2,7 @@
 then the default skill. Every decision is logged (facts.route_log) so the Laya typed-decisions
 checkpoint can later be fine-tuned on ISHTI's own traffic (NEEDS.md)."""
 import os
+import re
 import time
 import warnings
 
@@ -93,6 +94,16 @@ def route(text, skills, exclude=()):
     fixed = corrections.learned(text)
     if fixed in live:
         return done(fixed, 1.0, "learned")
+
+    # Explicit skill directive: "[skill:name]" or "/use <name>" or "/skill <name>"
+    explicit = re.match(r"^(?:\[skill:(?P<name>[a-z0-9_-]+)\]|/(?:use|skill)\s+(?P<name2>[a-z0-9_-]+))\s*", text, re.I)
+    if explicit:
+        target = (explicit.group("name") or explicit.group("name2") or "").lower().replace("-", "_")
+        if target in live:
+            return done(target, 1.0, "explicit_directive")
+        if target in skills and skills[target].status == "disabled" and target not in exclude and target not in blocked:
+            return done(target, 1.0, "explicit_directive", needs_enable=True)
+
     for s in sorted(live.values(), key=lambda s: s.manifest.get("priority", 50)):
         if s.matches(text):
             return done(s.name, 1.0, "rule")

@@ -5,17 +5,20 @@ import threading
 import time
 import ctypes
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
+from ishti.core.logutil import swallowed
+
 # 1. Inform Windows Shell of explicit Application User Model ID before any window or webview creation
 # This prevents Windows Taskbar from grouping under Python and ensures the official ISHTI logo is displayed
 APP_ID = "ISHTI.PersonalAI.Assistant.Desktop.1.0"
 try:
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
 except Exception:
-    pass
+    swallowed('desktop/app_window.py:startup:13')
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
 
 from desktop import timeline, window_state
 
@@ -41,7 +44,7 @@ def apply_ishti_icons_daemon():
                 from desktop.create_shortcut import create_desktop_shortcuts
                 create_desktop_shortcuts()
             except Exception:
-                pass
+                swallowed('desktop/app_window.py:apply_ishti_icons_daemon:43')
 
         import win32gui
         import win32con
@@ -79,7 +82,7 @@ def apply_ishti_icons_daemon():
                                 store.SetValue(pscon.PKEY_AppUserModel_ID, prop)
                                 store.Commit()
                             except Exception:
-                                pass
+                                swallowed('desktop/app_window.py:enum_cb:81')
             win32gui.EnumWindows(enum_cb, None)
 
         # Run periodically across the startup & transition window
@@ -87,7 +90,7 @@ def apply_ishti_icons_daemon():
             apply_to_matching()
             time.sleep(0.25)
     except Exception:
-        pass
+        swallowed('desktop/app_window.py:apply_ishti_icons_daemon:89')
 
 
 def _trigger_detached_shutdown():
@@ -112,7 +115,7 @@ def _trigger_detached_shutdown():
             from desktop.shutdown import shutdown
             threading.Thread(target=shutdown, daemon=True).start()
         except Exception:
-            pass
+            swallowed('desktop/app_window.py:_trigger_detached_shutdown:114')
 
 
 def _on_backend_lost():
@@ -193,9 +196,9 @@ def _destroy_all_windows():
             try:
                 w.destroy()
             except Exception:
-                pass
+                swallowed('desktop/app_window.py:_destroy_all_windows:195')
     except Exception:
-        pass
+        swallowed('desktop/app_window.py:_destroy_all_windows:197')
     # Also destroy the stored handle directly, in case webview.windows is stale or empty
     try:
         w = _remember.get("win")
@@ -248,7 +251,7 @@ class MainApi:
             if self._win:
                 self._win.destroy()
         except Exception:
-            pass
+            swallowed('desktop/app_window.py:force_close:250')
 
     def show_window(self):
         if self._win:
@@ -287,7 +290,7 @@ class MainApi:
             import requests
             requests.post(f"{URL}/api/ready/retry", timeout=2)
         except Exception:
-            pass
+            swallowed('desktop/app_window.py:retry_boot:289')
 
 
 # ---- window geometry memory (desktop/window_state.py): saved on resize/move (debounced) and on close
@@ -305,7 +308,7 @@ def _save_geometry():
             state.update(width=int(w.width), height=int(w.height), x=int(w.x), y=int(w.y))
         window_state.save(state)
     except Exception:
-        pass
+        swallowed('desktop/app_window.py:_save_geometry:307')
 
 
 def _remember_soon(*_):
@@ -357,7 +360,7 @@ def _open_dashboard(win):
                 win.load_url(URL)
                 return
         except Exception:
-            pass
+            swallowed('desktop/app_window.py:_open_dashboard:359')
         time.sleep(0.1)
     # backend never answered: stay on the splash, whose error state offers retry / view log
 

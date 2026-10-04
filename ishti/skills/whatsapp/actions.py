@@ -1,5 +1,6 @@
 """Verified message changes using observed WhatsApp controls and frozen T2 previews."""
 from __future__ import annotations
+from ishti.core.logutil import swallowed
 
 import json
 import re
@@ -27,7 +28,7 @@ def _unquote(value):
         try:
             return json.loads(value)
         except ValueError:
-            pass
+            swallowed('ishti/skills/whatsapp/actions.py:_unquote:29')
     return value.strip("'")
 
 
