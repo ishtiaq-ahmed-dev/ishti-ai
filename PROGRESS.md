@@ -1,5 +1,7 @@
 # Progress
 
+16. Core WhatsApp checkpoint: 54 focused checks pass; tab selection, active recipient reuse, exact media controls, transcript parsing and single-use approvals repaired. Chrome file upload is runtime-blocked (`DOM.setFileInputFiles: Not allowed`); picker canceled. Owner authorized QR bridge pairing. Actual synthetic TTS/PDF/OCR readers exercised, with one Windows OCR ID error retained in evidence. Bridge repairs and media delivery remain pending.
+
 Updated: 2026-10-04 (Asia/Karachi)
 
 1. Read the user's WhatsApp/local-CRM/chat-upload brief and inspected the current working tree. Existing edits are retained.

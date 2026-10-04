@@ -132,7 +132,7 @@ MEDIA_PATH = re.compile(r"[A-Za-z]:\\[^\n\"'<>|?*`]+?\.(?:mp4|webm|mov|mkv|png|j
 
 # ---------------------------------------------------------------- chat context (issue 4/5)
 # A message row in the chat pane: row "Bhai: Good 5:38 PM" [ref=...] / 'row "You: hi 1:39 PM Read" [ref=...]'
-MSG_ROW = re.compile(r"\brow \"([^\"]+)\" \[ref=[^\]]+\]")
+MSG_ROW = re.compile(r'\brow "((?:\\.|[^"\\])*)" \[ref=[^\]]+\]')
 #   sender (WhatsApp drops it on consecutive messages from one person) + body + time + optional tick label
 MSG_TIME = re.compile(r"^(?:(?P<who>[^:]{1,40}):\s+)?(?P<body>.*?)\s+(?P<t>(?:\d{1,2}:\d{2}\s?[AP]M|(?:[01]?\d|2[0-3]):[0-5]\d))"
                       r"(?:\s+(?:Sent|Delivered|Read))?(?:\s+(?:React|Menu|(?:Open )?message options))*$", re.I)
@@ -141,11 +141,21 @@ MSG_TIME = re.compile(r"^(?:(?P<who>[^:]{1,40}):\s+)?(?P<body>.*?)\s+(?P<t>(?:\d
 def parse_messages(snap, n=10):
     """The last n messages of the open chat as [(who, text)], oldest first - the context a reply needs.
     Supports row labels and generic/gridcell nodes in Playwright accessibility snapshots.
-    Stops reading further back once the recent request/question is clear (early stopping)."""
+    Sidebar results are excluded, and reading never stops early at a guessed question."""
+    composers = list(re.finditer(r'textbox "Type a message', snap))
+    if composers:
+        banners = list(re.finditer(r'^[ \t]*- banner \[ref=', snap[:composers[-1].start()], re.M))
+        if banners:
+            snap = snap[banners[-1].start():composers[-1].start()]
+    elif (start := snap.find('grid "Message list"')) >= 0:
+        snap = snap[start:]
     out, last = [], None
     candidates = []
     for m in MSG_ROW.finditer(snap):
-        candidates.append(m.group(1))
+        try:
+            candidates.append(json.loads('"' + m.group(1) + '"'))
+        except ValueError:
+            candidates.append(m.group(1))
 
     if not candidates:
         chat_start = snap.find("Message list")
@@ -165,6 +175,12 @@ def parse_messages(snap, n=10):
         who, body, t = None, None, None
         if g:
             who, body, t = (g.group("who") or "").strip(), (g.group("body") or "").strip(), g.group("t")
+            if re.search(r'\s(?:Sent|Delivered|Read)(?:\s+(?:React|Menu|(?:Open )?message options))*$', raw, re.I):
+                # Consecutive outgoing rows may omit You:. A colon in their body
+                # must not turn a sentence prefix into a different sender.
+                body = raw[:g.start("t")].strip()
+                body = re.sub(r'^(?:You|Me|Owner):\s+', '', body, flags=re.I)
+                who = "You"
         else:
             time_match = re.search(r'\b((?:\d{1,2}:\d{2}\s?[AP]M|(?:[01]?\d|2[0-3]):[0-5]\d))\b', raw, re.I)
             if time_match:
@@ -179,29 +195,18 @@ def parse_messages(snap, n=10):
             continue
 
         low = body.lower()
-        if "voice message" in low or "play voice" in low:
+        if re.fullmatch(r'(?:voice message|play voice message|audio message)(?:\s+[\d:]+)?', low):
             body = "[voice message]"
-        elif "sticker" in low:
+        elif low == "sticker":
             body = "[sticker]"
-        elif "photo" in low and "download" not in low:
+        elif low in ("photo", "image"):
             body = "[photo]"
 
         who = who or last or "Them"
         last = who
         out.append((who, body))
 
-    # Early stopping: scan backwards from latest
-    recent = []
-    for who, body in reversed(out):
-        recent.append((who, body))
-        if ("?" in body or re.search(r'\b(?:can you|could you|please|let me know|are you|when|where|what|why|how|reschedule|confirm)\b', body, re.I)) and who.lower() not in ("you", "me", "owner"):
-            if len(recent) >= 2:
-                break
-        if len(recent) >= n:
-            break
-
-    recent.reverse()
-    return recent
+    return out[-max(0, int(n)):] if n else []
 
 
 read_chat_messages_raw = parse_messages
@@ -258,6 +263,10 @@ def formulate_reply(contact, context_str, owner_text, session=None):
 def open_chat(contact, session, exact_name=None):
     """Search for `contact` and open its chat -> (name, fresh chat snapshot); when the match is not exact,
     -> (None, ranked candidate names) so the owner picks - same rule the send flow uses."""
+    snap = browser._call("browser_snapshot", {})
+    actual, _ = current_chat_identity(snap)
+    if actual and norm(actual) == norm(exact_name or contact):
+        return actual, snap
     found = search(contact, session)
     if not found:
         browser._call("browser_press_key", {"key": "Escape"})
@@ -541,6 +550,14 @@ def _file_digest(path):
     return digest.hexdigest()
 
 
+def _control_ref(snap, role, label):
+    """A single enabled control; never guess a consequential control with a model."""
+    found = re.findall(rf'\b{role} "(?:{label})"((?: \[[^\]]+\])*)', snap or "")
+    refs = [match[1] for flags in found if "[disabled]" not in flags
+            and (match := re.search(r'\[ref=([^\]]+)\]', flags))]
+    return refs[0] if len(refs) == 1 else None
+
+
 def deliver(ref, name, path, messages, session):
     """Send a frozen, approved draft after reacquiring and verifying the recipient.
 
@@ -582,18 +599,18 @@ def _deliver_current(name, path, messages, session, snap):
     if path:
         file_baseline = snap
         ext = os.path.splitext(path)[1].lower()
-        # WhatsApp Web attach menu has 'Photos & videos' and 'Document'; audio files are uploaded as Document
-        kind = "Photos & videos" if ext in VISUAL else "Document"
+        kind = "Photos & videos" if ext in VISUAL else "Audio" if ext in AUDIO else "Document"
         task = f"attach the file {path} with the '{kind}' option and send it" + (f" with the caption {messages[0]!r}" if messages else "")
-        attach = browser.locate(snap, "the Attach button (paperclip or plus) of the chat", "button", "Attach", session)
-        if not attach:
-            return _out(_stuck("the attach button", name, task, session), False)
-        snap = browser._call("browser_click", {"element": "Attach", "target": attach})
-        item = browser.locate(snap, f"the '{kind}' option of the attach menu", "menuitem",
-                              re.escape(kind).replace("&", "(?:&|&amp;|and)"), session)
+        option_label = r"Photos\s*(?:&|&amp;|and)\s*videos" if kind == "Photos & videos" else re.escape(kind)
+        item = _control_ref(snap, "menuitem", option_label)
         if not item:
-            browser._call("browser_press_key", {"key": "Escape"})
-            return _out(_stuck(f"the '{kind}' option", name, task, session), False)
+            attach = _control_ref(snap, "button", "Attach")
+            if not attach:
+                return _out("I could not identify the chat's enabled Attach control. Nothing was uploaded.", False)
+            snap = browser._call("browser_click", {"element": "Attach", "target": attach})
+            item = _control_ref(snap, "menuitem", option_label)
+        if not item:
+            return _out(f"WhatsApp did not expose a unique enabled {kind} attachment option. Nothing was uploaded.", False)
         browser._call("browser_click", {"element": kind, "target": item})
         browser._call("browser_file_upload", {"paths": [path]})
         time.sleep(3)  # WhatsApp builds the preview
@@ -602,10 +619,10 @@ def _deliver_current(name, path, messages, session, snap):
                                                                              r"(?:Add a caption|Type a message)[^\"]*", session)):
             browser._call("browser_type", {"element": "caption", "target": cap, "text": messages.pop(0)})
             snap = browser._call("browser_snapshot", {})
-        send = browser.refs(snap, "button", "Send") or [browser.locate(snap, "the Send button of the file preview", session=session)]
-        if not send[-1]:
-            return _out(_stuck("the Send button of the file preview", name, "send the file that is in the preview", session), False)
-        browser._call("browser_click", {"element": "Send", "target": send[-1]})
+        send = _control_ref(snap, "button", "Send")
+        if not send:
+            return _out("The attachment preview has no unique enabled Send control. I stopped before sending.", False)
+        browser._call("browser_click", {"element": "Send", "target": send})
         time.sleep(2)
         snap = browser._call("browser_snapshot", {})
         # A closed preview is not delivery proof: the owner may have dismissed it. Require the
@@ -749,7 +766,9 @@ def send_flow(text, session, pend=None):
     if not contact:
         session["pending"] = {"skill": "whatsapp", "sticky": True, "ask": "contact", "file": path, "messages": messages, "voice": voice}
         return {"reply": "Who should I send it to?", "sources": []}
-    found = search(contact, session)
+    snap = browser._call("browser_snapshot", {})
+    actual, _ = current_chat_identity(snap)
+    found = [(actual, None)] if actual and norm(actual) == norm(exact_name or contact) else search(contact, session)
     browser._call("browser_press_key", {"key": "Escape"}) if not found else None
     ranked = [(n, s) for n, s in rank(contact, [n for n, _ in found]) if s >= 0.66]
     exact = [n for n, _ in ranked if norm(n) == norm(exact_name or contact)]
@@ -786,8 +805,15 @@ def send_flow(text, session, pend=None):
         # T2, always. This used to send straight away on an exact name match: checklist 113/116 require
         # the exact draft shown and an explicit yes first, and a voice note reached the WRONG chat
         # ("Ahmed" resolved to "Ishtiaq Ahmed") with nothing asked. Nothing leaves without the recap.
+        attempted = False
         def _send(ref=ref, who=who, path=path, messages=tuple(messages), session=session,
                   expected_file=expected_file):
+            nonlocal attempted
+            with browser.LOCK:
+                if attempted:
+                    return _out("That approved send was already attempted. Check WhatsApp before creating another draft.", False)
+                attempted = True
+                session["pending"] = None
             if path:
                 try:
                     actual_file = _file_digest(path)

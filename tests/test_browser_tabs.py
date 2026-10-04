@@ -94,6 +94,14 @@ assert skill.find_tab("https://example.com/", ["about:blank", "chrome-extension:
 assert skill.find_tab("https://shop.example.com.pk/page", ["https://www.example.com.pk/page"]) == 0  # 2-part suffix
 two = ["https://web.whatsapp.com/?lang=en", "https://web.whatsapp.com/"]
 assert skill.find_tab("https://web.whatsapp.com/", two) == 1             # the exact page beats same-host
+duplicate_list = "- 0: [WhatsApp](https://web.whatsapp.com/)\n- 1: (current) [WhatsApp](https://web.whatsapp.com/)\n"
+use(FakeMCP(duplicate_list))
+inventory = skill.tabs()
+assert inventory.current_index == 1
+assert skill.find_tab("https://web.whatsapp.com/", inventory) == 1
+# Exact query still outranks current same-host matching.
+inventory[0] = "https://web.whatsapp.com/?lang=en"
+assert skill.find_tab("https://web.whatsapp.com/?lang=en", inventory) == 0
 
 # --- open_url(): reuses the open tab (select + fresh snapshot), never calls browser_navigate --------------
 fake = FakeMCP(LIST)

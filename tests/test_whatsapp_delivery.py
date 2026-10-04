@@ -137,6 +137,7 @@ def test_attachment_preview_includes_words_and_rejects_changed_bytes(monkeypatch
     attachment.write_text("before")
     monkeypatch.setattr(wa, "parse_send", lambda *a: ("Test Self", str(attachment), ["caption words"], None))
     monkeypatch.setattr(wa, "search", lambda *a: [("Test Self", "current-ref")])
+    monkeypatch.setattr(browser, "_call", lambda *a: page())
     monkeypatch.setattr(wa, "deliver", lambda *a: pytest.fail("changed attachment was sent"))
     session = {}
     result = wa.send_flow("send attachment to Test Self", session)
@@ -150,6 +151,7 @@ def test_pending_send_uses_immutable_approved_words(monkeypatch):
     messages = ["approved words"]
     monkeypatch.setattr(wa, "parse_send", lambda *a: ("Test Self", None, messages, None))
     monkeypatch.setattr(wa, "search", lambda *a: [("Test Self", "current-ref")])
+    monkeypatch.setattr(browser, "_call", lambda *a: page())
     seen = []
     monkeypatch.setattr(wa, "deliver", lambda ref, who, path, words, session:
                         seen.append(words) or {"verified": True, "reply": "synthetic"})
@@ -158,3 +160,49 @@ def test_pending_send_uses_immutable_approved_words(monkeypatch):
     messages[0] = "changed words"
     session["pending"]["action"]()
     assert seen == [("approved words",)]
+
+
+def test_active_chat_is_reused_before_preview_and_read(monkeypatch):
+    monkeypatch.setattr(browser, "_call", lambda *a: page())
+    monkeypatch.setattr(wa, "search", lambda *a: pytest.fail("reopened search over current chat"))
+    monkeypatch.setattr(wa, "parse_send", lambda *a: ("Test Self", None, ["approved"], None))
+    session = {}
+    assert "approved" in wa.send_flow("send approved to Test Self", session)["reply"]
+    assert wa.open_chat("Test Self", session) == ("Test Self", page())
+
+
+def test_media_controls_preserve_ampersands_and_refuse_ambiguity():
+    pattern = r"Photos\s*(?:&|&amp;|and)\s*videos"
+    assert wa._control_ref('- menuitem "Photos & videos" [ref=photo]', 'menuitem', pattern) == 'photo'
+    assert not wa._control_ref('- button "Send" [disabled] [ref=send]', 'button', 'Send')
+    assert not wa._control_ref('- button "Send" [ref=a]\n- button "Send" [ref=b]', 'button', 'Send')
+
+
+def test_colon_in_consecutive_outgoing_message_is_preserved():
+    snap = '- row "ISHTI SELF TEST: invoice total 1250 18:42 Read" [ref=row]'
+    assert wa.parse_messages(snap) == [("You", "ISHTI SELF TEST: invoice total 1250")]
+
+
+def test_transcript_excludes_sidebar_and_preserves_quotes_and_photo_words():
+    snap = '- row "Other: unrelated sidebar 18:40" [ref=sidebar]\n' + page(body=(
+        '  - row "You: please read the photo \\"Invoice\\" 18:42 Read" [ref=row]'))
+    assert wa.parse_messages(snap) == [("You", 'please read the photo "Invoice"')]
+
+
+def test_transcript_does_not_stop_at_guessed_question():
+    snap = '\n'.join(f'- row "Ahmed: {body} 18:42" [ref=r{i}]' for i, body in enumerate(
+        ['invoice 1250', 'meeting Tuesday', 'please confirm?', 'hello', 'thanks']))
+    assert len(wa.parse_messages(snap, n=40)) == 5
+
+
+def test_approved_callback_cannot_be_replayed_after_uncertain_outcome(monkeypatch):
+    monkeypatch.setattr(browser, "_call", lambda *a: page())
+    monkeypatch.setattr(wa, "parse_send", lambda *a: ("Test Self", None, ["approved"], None))
+    calls = []
+    monkeypatch.setattr(wa, "deliver", lambda *a: calls.append(a) or {"verified": False, "reply": "unverified"})
+    session = {}
+    wa.send_flow("send approved to Test Self", session)
+    callback = session["pending"]["action"]
+    callback()
+    assert session["pending"] is None
+    assert not callback()["verified"] and len(calls) == 1

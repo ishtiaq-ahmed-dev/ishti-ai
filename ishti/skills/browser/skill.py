@@ -248,7 +248,13 @@ def _best_tab(url, urls):
     if not want:
         return None, None
     exact = same_host_path = same_host = same_domain = None
-    for i, tab in enumerate(urls or []):
+    order = list(range(len(urls or [])))
+    current = getattr(urls, "current_index", None)
+    if isinstance(current, int) and current in order:
+        order.remove(current)
+        order.insert(0, current)
+    for i in order:
+        tab = urls[i]
         got = _where(tab)
         if not got:
             continue
@@ -266,6 +272,11 @@ def _best_tab(url, urls):
     return exact or same_host_path or same_host or same_domain or (None, None)
 
 
+class TabURLs(list):
+    """List-compatible inventory with the current tab marker from this same read."""
+    current_index = None
+
+
 def tabs(session=None):
     """URLs of the open browser tabs, in index order (position = the index browser_tabs select/close take)."""
     try:
@@ -273,7 +284,16 @@ def tabs(session=None):
     except Exception as exc:  # a tab call must never break a task: report it and behave as "no tabs open"
         trace(session, "browser_tabs", f"couldn't read the open tabs ({type(exc).__name__})", status="error")
         return []
-    return [m.group(3) for line in out.splitlines() if (m := TAB.match(line))]
+    result = TabURLs()
+    for line in out.splitlines():
+        if match := TAB.match(line):
+            index = int(match.group(1))
+            while len(result) <= index:
+                result.append("about:blank")
+            result[index] = match.group(3)
+            if "(current)" in line[:line.find("[")]:
+                result.current_index = index
+    return result
 
 
 def find_tab(url, urls=None):
