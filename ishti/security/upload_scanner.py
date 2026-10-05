@@ -7,6 +7,7 @@ Guarantees:
 4. Archive safety bounds: Zip bomb compression ratio limits and path traversal prevention.
 5. Process-isolated parser execution with strict timeouts and memory caps.
 """
+from ishti.core.logutil import swallowed
 import os
 import re
 import sys
@@ -76,7 +77,7 @@ def get_defender_binary() -> Optional[str]:
                 if os.path.exists(cand):
                     return cand
         except Exception:
-            pass
+            swallowed('ishti/security/upload_scanner.py:get_defender_binary:78')
 
     cand_path = shutil.which("MpCmdRun.exe")
     return cand_path if cand_path and os.path.exists(cand_path) else None

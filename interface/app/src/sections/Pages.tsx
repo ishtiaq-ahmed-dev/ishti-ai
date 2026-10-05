@@ -200,9 +200,10 @@ function CRMAndLeadsPanel() {
   };
 
   const handleDeleteClient = async (id: string, name: string) => {
-    if (!window.confirm(`Delete client record for "${name}"?`)) return;
     try {
-      await postJSON("/api/crm/delete", { client_id: id, confirm_name: name });
+      const approval = await postJSON<{ approval_token: string; name: string }>("/api/crm/delete/prepare", { client_id: id });
+      if (!window.confirm(`Permanently delete client record for "${approval.name}"?`)) return;
+      await postJSON("/api/crm/delete", { client_id: id, confirm_name: approval.name, approval_token: approval.approval_token });
       setClients((prev) => prev.filter((c) => c.id !== id));
       setMsg(`Client "${name}" removed.`);
     } catch (e) {
@@ -1431,7 +1432,6 @@ const KIND_LABEL: Record<string, string> = {
 export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
   const [data, setData] = useState<InputsPayload | null>(null);
   const [error, setError] = useState("");
-  const [open, setOpen] = useState<Record<string, boolean>>({});
   const [tick, setTick] = useState(0);
 
   // Live Interactive Controls State
@@ -1552,7 +1552,6 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
   const live = devices.filter((c) => c.state === "on").length;
 
   const Card = ({ c }: { c: InputChannel }) => {
-    const isOpen = !!open[c.id];
     const isMic = c.id === "mic";
     const isWa = c.id === "whatsapp";
     const isClip = c.id === "clipboard";
@@ -1560,8 +1559,7 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
 
     return (
       <div
-        onClick={() => setOpen((p) => ({ ...p, [c.id]: !p[c.id] }))}
-        className="w-full text-left rounded-2xl border border-border bg-card/60 p-4 shadow-xs transition-all hover:border-emerald-500/40 hover:bg-card/90 cursor-pointer relative group"
+        className="w-full text-left rounded-2xl border border-border bg-card/60 p-4 shadow-xs transition-all hover:border-border/90 relative"
       >
         <div className="flex items-start gap-3.5">
           <div className="relative mt-1">
@@ -1681,11 +1679,9 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
               </div>
             )}
 
-            {isOpen && (
-              <p className="mt-2.5 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
-                Channel source: <code className="text-foreground font-mono">{c.source}</code>
-              </p>
-            )}
+            <div className="mt-2.5 border-t border-border/50 pt-2 flex items-center justify-between text-[10px] text-muted-foreground font-mono">
+              <span>Source: <code className="text-foreground/80">{c.source}</code></span>
+            </div>
           </div>
         </div>
       </div>
@@ -1746,7 +1742,7 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
               </div>
               <span className="text-[11px] font-mono text-emerald-500 font-semibold">{live} live now</span>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2 items-start">
               {devices.map((c) => (
                 <Card key={c.id} c={c} />
               ))}
@@ -1761,7 +1757,7 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
                 <p className="text-xs text-muted-foreground">OIDC / OAuth 2.0 authorized channels for mail, social and enterprise data.</p>
               </div>
             </div>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-3 items-start">
               {accounts.map((c) => (
                 <Card key={c.id} c={c} />
               ))}
@@ -1775,10 +1771,10 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
         </div>
       )}
 
-      {/* WHATSAPP QR CODE SCANNER MODAL */}
+      {/* WHATSAPP QR CODE SCANNER MODAL - PURE BLACK AND WHITE WITH TARGETING GUIDES */}
       <AnimatePresence>
         {qrModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -1788,57 +1784,104 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
               <button
                 type="button"
                 onClick={() => setQrModalOpen(false)}
-                className="absolute right-4 top-4 rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
+                className="absolute right-4 top-4 rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer transition-colors"
+                title="Close"
               >
                 <X className="h-4 w-4" />
               </button>
 
-              <div className="flex items-center gap-3 mb-4">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-600/15 text-emerald-500 font-bold border border-emerald-500/25">
+              <div className="flex items-center gap-3 mb-5">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-600/15 text-emerald-500 font-bold border border-emerald-500/25">
                   <QrCode className="h-5 w-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-foreground">Link WhatsApp Web</h3>
-                  <p className="text-xs text-muted-foreground">Scan with WhatsApp Linked devices on your phone</p>
+                  <h3 className="text-base font-bold text-foreground">Link WhatsApp Account</h3>
+                  <p className="text-xs text-muted-foreground">Scan with WhatsApp on your phone to link locally</p>
                 </div>
               </div>
 
-              {qrError && <p role="alert" className="mb-3 text-xs text-destructive">{qrError}</p>}
+              {qrError && (
+                <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-500 flex items-center justify-between">
+                  <span>{qrError}</span>
+                </div>
+              )}
+
               {qrLoading ? (
-                <div className="py-12 text-center text-sm text-muted-foreground">Loading QR authentication state…</div>
+                <div className="py-16 text-center space-y-3">
+                  <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
+                  <div className="text-sm font-medium text-foreground">Contacting WhatsApp bridge…</div>
+                  <div className="text-xs text-muted-foreground">Generating encrypted pairing key</div>
+                </div>
               ) : qrData?.connected ? (
                 <div className="py-8 text-center space-y-3">
                   <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
                     <Check className="h-7 w-7" />
                   </div>
                   <h4 className="text-sm font-bold text-foreground">WhatsApp is Connected!</h4>
-                  <p className="text-xs text-muted-foreground font-mono">{qrData.me || "Your Number Linked"}</p>
-                  <p className="text-xs text-emerald-400">Messages will arrive live without opening a browser.</p>
+                  <p className="text-xs text-muted-foreground font-mono">{qrData.me || "Device Authenticated"}</p>
+                  <p className="text-xs text-emerald-500 font-medium">Messages stream live 100% locally through your machine.</p>
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setQrModalOpen(false)}
+                      className="rounded-xl bg-emerald-600 px-6 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors cursor-pointer shadow-xs"
+                    >
+                      Done
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="rounded-2xl border border-border bg-white p-4 text-center shadow-inner">
+                  {/* PURE BLACK AND WHITE QR CODE FRAME */}
+                  <div className="relative mx-auto flex items-center justify-center rounded-2xl border-2 border-border bg-white p-5 shadow-sm max-w-[300px]">
+                    {/* Corner Targeting Accents */}
+                    <div className="absolute top-2 left-2 h-4 w-4 border-t-2 border-l-2 border-emerald-600 rounded-tl-sm pointer-events-none" />
+                    <div className="absolute top-2 right-2 h-4 w-4 border-t-2 border-r-2 border-emerald-600 rounded-tr-sm pointer-events-none" />
+                    <div className="absolute bottom-2 left-2 h-4 w-4 border-b-2 border-l-2 border-emerald-600 rounded-bl-sm pointer-events-none" />
+                    <div className="absolute bottom-2 right-2 h-4 w-4 border-b-2 border-r-2 border-emerald-600 rounded-br-sm pointer-events-none" />
+
                     {qrData?.qr_image ? (
-                      <img src={qrData.qr_image} alt="WhatsApp linking QR code" className="mx-auto w-full max-w-[280px]" />
+                      <img
+                        src={qrData.qr_image}
+                        alt="WhatsApp linking QR code"
+                        className="block w-full max-w-[260px] h-auto aspect-square select-none [image-rendering:pixelated]"
+                        style={{ imageRendering: "pixelated" }}
+                      />
                     ) : (
-                      <div className="py-6 text-xs text-muted-foreground">
-                        {qrData?.running
-                          ? "Waiting for QR generation from WhatsApp bridge…"
-                          : "Bridge offline. Close and reopen Link to retry."}
+                      <div className="py-14 text-center space-y-2">
+                        <div className="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
+                        <div className="text-xs font-medium text-neutral-800">
+                          {qrData?.running
+                            ? "Generating QR code from WhatsApp bridge…"
+                            : "Starting WhatsApp local bridge…"}
+                        </div>
+                        <div className="text-[11px] text-neutral-500">Takes 2-5 seconds on first start</div>
                       </div>
                     )}
                   </div>
 
-                  <div className="space-y-1.5 rounded-xl border border-border/80 bg-muted/30 p-3 text-xs text-muted-foreground">
-                    <div className="font-semibold text-foreground">How to scan:</div>
-                    <ol className="list-decimal pl-4 space-y-1 leading-relaxed">
-                      <li>Open WhatsApp on your mobile phone</li>
-                      <li>Go to <strong>Settings</strong> &gt; <strong>Linked Devices</strong></li>
-                      <li>Tap <strong>Link a Device</strong> and point your camera at this QR code</li>
+                  {/* HOW TO SCAN INSTRUCTIONS */}
+                  <div className="space-y-2 rounded-2xl border border-border/80 bg-muted/40 p-3.5 text-xs text-muted-foreground">
+                    <div className="font-semibold text-foreground flex items-center gap-1.5">
+                      <span>How to link:</span>
+                    </div>
+                    <ol className="space-y-1.5 pl-1 leading-relaxed text-[12px]">
+                      <li className="flex items-start gap-2">
+                        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">1</span>
+                        <span>Open <strong>WhatsApp</strong> on your mobile phone</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">2</span>
+                        <span>Tap <strong>Menu</strong> or <strong>Settings</strong> &gt; <strong>Linked Devices</strong></span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">3</span>
+                        <span>Tap <strong>Link a Device</strong> and point your camera at this QR code</span>
+                      </li>
                     </ol>
                   </div>
 
-                  <div className="flex items-center justify-between gap-3 pt-2">
+                  <div className="flex items-center justify-between gap-3 pt-1">
                     <button
                       type="button"
                       onClick={async () => {
@@ -1850,6 +1893,7 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
                             raw_qr: string | null;
                             me: string;
                             running: boolean;
+                            qr_image?: string | null;
                           }>("/api/inputs/wa-qr");
                           setQrData(res);
                         } catch (error) {
@@ -1858,14 +1902,15 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
                           setQrLoading(false);
                         }
                       }}
-                      className="rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/50 cursor-pointer"
+                      className="flex items-center gap-1.5 rounded-xl border border-border bg-card px-3.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted/50 cursor-pointer shadow-xs"
                     >
-                      Refresh QR
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      <span>Refresh QR</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setQrModalOpen(false)}
-                      className="rounded-xl bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 cursor-pointer"
+                      className="rounded-xl bg-emerald-600 px-5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors cursor-pointer shadow-xs"
                     >
                       Done
                     </button>
@@ -1890,7 +1935,8 @@ type Connector = {
   has_credentials: boolean; one_click?: boolean; connected: boolean; account: string;
   has_refresh: boolean; expires_at: number; connected_at: number;
   state: "connected" | "ready" | "empty" | "reconnect";
-  setup: { console?: string; steps?: string; note?: string };
+  setup: { console?: string; steps?: string; note?: string; callback_url?: string };
+  callback_url?: string;
   status_text: string;
   progress: { state?: string; reply?: string; at?: number };
 };
@@ -2074,14 +2120,26 @@ export function Connectors({ onToggleNav }: { onToggleNav?: () => void }) {
 
         <div className="mt-3 flex flex-wrap gap-1.5">
           {!c.connected && c.kind === "oauth" && (
-            <button type="button" disabled={busy === c.service || waiting}
-              onClick={() => (c.has_credentials ? connect(c.service)
-                : (setEditing(c.service), setCid(""), setCsec("")))}
-              className={cn("rounded-lg px-2.5 py-1 text-[11px] font-medium cursor-pointer",
-                c.has_credentials ? "bg-accent text-white" : "border border-border bg-card hover:border-accent/40",
-                (busy === c.service || waiting) && "opacity-60")}>
-              {waiting ? "Waiting for consent…" : c.has_credentials ? (c.family === "google" ? "Connect to Google" : `Connect to ${FAMILY_LABEL[c.family] || c.name}`) : "Advanced setup"}
-            </button>
+            <>
+              {c.service === "google" && !c.has_credentials && (
+                <a
+                  href={c.website || "https://accounts.google.com"}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-lg border border-accent bg-accent/10 px-2.5 py-1 text-[11px] font-medium text-accent hover:bg-accent/20 cursor-pointer"
+                >
+                  Continue with Google (Web)
+                </a>
+              )}
+              <button type="button" disabled={busy === c.service || waiting}
+                onClick={() => (c.has_credentials ? connect(c.service)
+                  : (setEditing(c.service), setCid(""), setCsec("")))}
+                className={cn("rounded-lg px-2.5 py-1 text-[11px] font-medium cursor-pointer",
+                  c.has_credentials ? "bg-accent text-white" : "border border-border bg-card hover:border-accent/40",
+                  (busy === c.service || waiting) && "opacity-60")}>
+                {waiting ? "Waiting for consent…" : c.has_credentials ? (c.service === "google" ? "Continue with Google" : c.family === "google" ? "Connect to Google" : `Connect to ${FAMILY_LABEL[c.family] || c.name}`) : (c.service === "google" ? "Configure API Client" : "Advanced setup")}
+              </button>
+            </>
           )}
           {c.kind === "token" && (
             <a href="#settings" className="rounded-lg border border-border bg-card px-2.5 py-1 text-[11px] hover:border-accent/40">Remote channel settings</a>
@@ -2102,14 +2160,38 @@ export function Connectors({ onToggleNav }: { onToggleNav?: () => void }) {
 
         {editing === c.service && (
           <div className="mt-3 space-y-2 rounded-lg border border-border bg-background p-2.5">
-            <input value={cid} onChange={(e) => setCid(e.target.value)} placeholder="Client ID" aria-label={`${c.name} client ID`}
+            <div className="rounded border border-accent/20 bg-accent/5 p-2 text-[11px] space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-foreground">Callback / Redirect URI:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(c.setup?.callback_url || "http://127.0.0.1:8765/");
+                    setNotice(`Callback URL copied: ${c.setup?.callback_url || "http://127.0.0.1:8765/"}`);
+                  }}
+                  className="rounded border border-border bg-card px-2 py-0.5 text-[10px] font-medium hover:bg-muted cursor-pointer"
+                >
+                  Copy Callback URL
+                </button>
+              </div>
+              <code className="block select-all rounded bg-card px-2 py-1 font-mono text-[10.5px] text-foreground border border-border">
+                {c.setup?.callback_url || "http://127.0.0.1:8765/"}
+              </code>
+              <div className="text-[10px] text-muted-foreground leading-normal">
+                {c.family === "google"
+                  ? "In Google Cloud Console, choose Application type: Desktop app (no callback URL needed in console) OR Web application with this exact redirect URI."
+                  : "Paste this exact redirect URL into your provider app registration settings."}
+              </div>
+            </div>
+
+            <input value={cid} onChange={(e) => setCid(e.target.value)} placeholder={c.family === "google" ? "Client ID (from Google Cloud Console)" : "Client ID"} aria-label={`${c.name} client ID`}
               className="w-full rounded-md border border-border bg-card px-2 py-1 text-[11px]" />
-            <input value={csec} onChange={(e) => setCsec(e.target.value)} placeholder={c.service === "microsoft" ? "Client secret (optional for desktop apps)" : "Client secret"} aria-label={`${c.name} client secret`}
+            <input value={csec} onChange={(e) => setCsec(e.target.value)} placeholder={c.service === "microsoft" || c.family === "google" ? "Client secret (optional for desktop apps)" : "Client secret"} aria-label={`${c.name} client secret`}
               type="password" className="w-full rounded-md border border-border bg-card px-2 py-1 text-[11px]" />
             <div className="flex gap-1.5">
               <button type="button" disabled={busy === c.service || !cid.trim()} onClick={() => saveCreds(c.service)}
                 className="rounded-md bg-accent px-2.5 py-1 text-[11px] text-white disabled:opacity-50 cursor-pointer">
-                Save
+                Save &amp; Connect
               </button>
               <button type="button" onClick={() => setEditing(null)}
                 className="rounded-md border border-border px-2.5 py-1 text-[11px] cursor-pointer">
@@ -2433,11 +2515,20 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
 
   const handleOpenInChat = (skillName: string) => {
     try {
+      localStorage.setItem("ishti-focused-skill", skillName);
+      localStorage.removeItem("ishti-session-id");
       localStorage.setItem("ishti-page", "chat");
-      window.location.hash = "#chat";
+      if (window.location.hash === "#chat/new") {
+        window.location.hash = "#chat";
+        setTimeout(() => {
+          window.location.hash = "#chat/new";
+        }, 10);
+      } else {
+        window.location.hash = "#chat/new";
+      }
       window.dispatchEvent(
         new CustomEvent("ishti-start-new-chat", {
-          detail: { initialPrompt: `How do I use the ${skillName} skill?` },
+          detail: { focusedSkill: skillName },
         })
       );
     } catch {}

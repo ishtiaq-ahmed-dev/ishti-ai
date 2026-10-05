@@ -7,6 +7,7 @@ Channels: text chat, microphone, wake word, live listening, languages, files/doc
 clipboard, reminders, the QR-paired WhatsApp bridge, and every account connected with a Client ID/Secret.
 """
 from __future__ import annotations
+from ishti.core.logutil import swallowed
 
 import json
 import os
@@ -86,7 +87,7 @@ def channels() -> list:
                   else "QR ready - scan it in WhatsApp > Linked devices." if qr_avail
                   else "Open Link to start the local bridge and scan its QR.")
     except Exception:  # noqa: BLE001
-        pass
+        swallowed('ishti/inputs.py:channels:88')
     out.append({"id": "whatsapp", "name": "WhatsApp (QR paired)", "icon": "chat", "kind": "status",
                 "detail": detail, "account": me,
                 "state": "on" if st.get("connected") else ("waiting" if qr_avail else "off"),

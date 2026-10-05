@@ -22,6 +22,10 @@ import zipfile
 import subprocess
 import sys
 import time
+import asyncio
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 from fastapi import APIRouter, Request, UploadFile
 from fastapi.responses import JSONResponse
@@ -30,7 +34,8 @@ from ishti import ROOT, audit, test_mode
 from ishti.core.logutil import swallowed
 
 router = APIRouter()
-UPLOAD_DIR = os.path.join(ROOT, "data", "uploads")
+_SCAN_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="upload-scan")
+UPLOAD_DIR = test_mode.scratch_path(os.path.join(ROOT, "data", "uploads"))
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 KEEP_DAYS = 30
 KINDS = {
@@ -158,14 +163,10 @@ async def save_upload(file: UploadFile, folder=None):
     if ext not in ALLOWED_EXT:
         return None, (f"I can't take a {ext or 'extensionless'} file. Documents, images, audio and video are fine.", 400)
     os.makedirs(folder, exist_ok=True)
-    path = os.path.join(folder, f"{time.strftime('%Y%m%d-%H%M%S')}-{name}")
-    n = 1
-    while os.path.exists(path):  # two uploads inside one second
-        n += 1
-        path = os.path.join(folder, f"{time.strftime('%Y%m%d-%H%M%S')}-{n}-{name}")
+    path = os.path.join(folder, f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex}-{name}")
     size = 0
     try:
-        with open(path, "wb") as out:
+        with open(path, "xb") as out:
             while True:
                 chunk = await file.read(1 << 20)
                 if not chunk:
@@ -174,6 +175,9 @@ async def save_upload(file: UploadFile, folder=None):
                 if size > MAX_UPLOAD_BYTES:
                     raise OverflowError
                 out.write(chunk)
+    except asyncio.CancelledError:
+        Path(path).unlink(missing_ok=True)
+        raise
     except OverflowError:
         os.remove(path)
         return None, (f"That file is bigger than {MAX_UPLOAD_BYTES // 2**20} MB, which is the most I take.", 413)
@@ -181,6 +185,10 @@ async def save_upload(file: UploadFile, folder=None):
         if os.path.exists(path):
             os.remove(path)
         return None, (f"I couldn't save that file ({exc.strerror or exc}).", 500)
+    except Exception:
+        swallowed("ishti/files_api.py:read_upload_failed")
+        Path(path).unlink(missing_ok=True)
+        return None, ("The upload could not finish. The staged file was removed.", 503)
     if size == 0:
         os.remove(path)
         return None, ("That file is empty.", 400)
@@ -196,17 +204,17 @@ async def save_upload(file: UploadFile, folder=None):
         return None, (f"I couldn't validate that file ({exc.strerror or exc}).", 500)
     try:
         from ishti.security.upload_scanner import scan_upload
-        scan_res = scan_upload(path)
+        scan_res = await asyncio.get_running_loop().run_in_executor(_SCAN_EXECUTOR, scan_upload, path)
         if not scan_res.get("safe", False):
             if os.path.exists(path):
                 os.remove(path)
             return None, (f"Security scan rejected file: {scan_res.get('reason', 'Malware or unsafe file structure detected')}", 400)
-    except Exception as exc:
-        swallowed("ishti/files_api.py:scan_upload", exc)
-        try:
-            os.remove(path)
-        except FileNotFoundError:
-            pass
+    except asyncio.CancelledError:
+        Path(path).unlink(missing_ok=True)
+        raise
+    except Exception:
+        swallowed("ishti/files_api.py:scan_upload_failed")
+        Path(path).unlink(missing_ok=True)
         return None, ("The security scan could not complete. The staged file was rejected.", 503)
     verb = {"document": "summarize", "image": "describe the image", "audio": "transcribe", "video": "info about"}[kind_of(name)]
     return {"ok": True, "path": path, "name": os.path.basename(path), "size": size, "kind": kind_of(name),
@@ -217,7 +225,7 @@ async def save_upload(file: UploadFile, folder=None):
 async def upload(req: Request, file: UploadFile):
     if _not_direct(req.scope):
         return _err("Uploads are only accepted from this PC's own window.", 403)
-    prune()
+    await asyncio.to_thread(prune)
     info, problem = await save_upload(file)
     if problem:
         return _err(*problem)

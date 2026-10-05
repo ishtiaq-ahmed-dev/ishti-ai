@@ -1,6 +1,7 @@
 """Exact fact store (SQLite). One row per (entity, attribute): a change updates the row in
 place and keeps the old value in `previous`, so the store never goes stale or duplicates.
 Also holds the routing log used later to fine-tune the Laya checkpoint."""
+from ishti.core.logutil import swallowed
 import difflib
 import os
 import re
@@ -20,7 +21,8 @@ def norm(name: str) -> str:
 
 class Facts:
     def __init__(self, path: str = None):
-        path = path or CONFIG["memory"]["db_path"]
+        from ishti.test_mode import scratch_path
+        path = path or scratch_path(CONFIG["memory"]["db_path"])
         os.makedirs(os.path.dirname(path), exist_ok=True)
         self.db = sqlite3.connect(path, check_same_thread=False)
         self.lock = threading.Lock()
@@ -51,7 +53,7 @@ class Facts:
             from ishti import events
             events.publish("memory_updated", {"type": "fact", "entity": entity, "attr": attr, "value": value})
         except Exception:
-            pass
+            swallowed('ishti/facts.py:set:53')
         return prev
 
     def keys(self):
@@ -91,7 +93,7 @@ class Facts:
             from ishti import events
             events.publish("memory_updated", {"type": "forget", "entity": name, "attr": attr})
         except Exception:
-            pass
+            swallowed('ishti/facts.py:forget:93')
         return rc
 
     def mentioned_in(self, text: str) -> list:

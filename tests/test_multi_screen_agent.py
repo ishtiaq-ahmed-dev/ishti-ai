@@ -205,5 +205,17 @@ class TestMultiScreenOSAgent(unittest.TestCase):
             self.assertIn("monitors", res)
 
 
+def test_live_action_requires_approval_before_execution(monkeypatch):
+    from ishti import test_mode
+
+    monkeypatch.setattr(test_mode, "enabled", lambda: False)
+    monkeypatch.setenv("ISHTI_TEST_MODE", "0")
+    executor = ActionExecutor(DisplayManager(), dry_run=False)
+    result = executor.execute(ActionCommand(thought="Unapproved test action", action="click", x=50, y=50))
+    assert result["success"] is False
+    assert result["error"] == "A specific approved screen action is required"
+    assert executor.history == []
+
+
 if __name__ == "__main__":
     unittest.main()

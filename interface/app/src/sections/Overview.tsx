@@ -270,8 +270,16 @@ export function Overview({ onToggleNav }: { onToggleNav?: () => void }) {
 
   const handleOpenNewChat = () => {
     try {
+      localStorage.removeItem("ishti-session-id");
       localStorage.setItem("ishti-page", "chat");
-      window.location.hash = "#chat";
+      if (window.location.hash === "#chat/new") {
+        window.location.hash = "#chat";
+        setTimeout(() => {
+          window.location.hash = "#chat/new";
+        }, 10);
+      } else {
+        window.location.hash = "#chat/new";
+      }
       window.dispatchEvent(new CustomEvent("ishti-start-new-chat"));
     } catch {}
   };
@@ -330,7 +338,7 @@ export function Overview({ onToggleNav }: { onToggleNav?: () => void }) {
           onClick={handleOpenNewChat}
           className="flex items-center gap-1.5 rounded-xl bg-accent px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:opacity-90 transition-all cursor-pointer"
         >
-          <span>Open Main Chat</span>
+          <span>Start New Chat</span>
           <span className="font-mono text-[11px] opacity-80">→</span>
         </button>
       </div>

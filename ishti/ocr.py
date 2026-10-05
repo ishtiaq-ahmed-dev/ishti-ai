@@ -2,13 +2,14 @@
   1. Windows' own OCR engine (Windows.Media.Ocr, built into Windows 11): ~0.1 s a screen, keeps spaces
   2. RapidOCR (PaddleOCR models on ONNX Runtime, CPU) when Windows OCR is missing or reads nothing
 The vision model stays for "what's happening on my screen"."""
+from ishti.core.logutil import swallowed
 import asyncio
 import threading
 
 try:  # must load before the WinRT modules: importing RapidOCR (OpenCV) after them segfaults the process
     import rapidocr_onnxruntime  # noqa: F401
 except ImportError:
-    pass
+    swallowed('ishti/ocr.py:startup:10')
 
 _rapid, _lock = None, threading.Lock()
 
@@ -147,9 +148,9 @@ def ocr_screen():
                     if text.strip():
                         texts.append((f"[Screen {i}]\n" if len(s.monitors) > 2 else "") + text)
                 except Exception:
-                    pass
+                    swallowed('ishti/ocr.py:ocr_screen:149')
     except Exception:
-        pass
+        swallowed('ishti/ocr.py:ocr_screen:151')
     try:
         path = _shot()
     except Exception:

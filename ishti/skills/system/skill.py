@@ -216,9 +216,9 @@ def _cleanup():
                     cleaned += 1
                     freed += sz
                 except Exception:
-                    pass
+                    swallowed('ishti/skills/system/skill.py:_cleanup:218')
     except Exception:
-        pass
+        swallowed('ishti/skills/system/skill.py:_cleanup:220')
     freed_mb = round(freed / (1024 * 1024), 1)
     if cleaned > 0 or freed_mb > 0:
         return {"reply": f"Cleaned temporary files: removed {cleaned} temporary files, freeing approximately {freed_mb} MB of space.", "sources": []}

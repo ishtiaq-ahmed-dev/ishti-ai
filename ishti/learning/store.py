@@ -133,7 +133,8 @@ def evidence():
 
 
 def db_path():
-    return cfg().get("db_path") or DEFAULT_DB
+    from ishti.test_mode import scratch_path
+    return scratch_path(cfg().get("db_path") or DEFAULT_DB)
 
 
 def set_db_path(path):

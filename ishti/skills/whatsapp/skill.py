@@ -128,7 +128,7 @@ def unread(snap):
 
 # "send this video to qasim ims" names no app: WhatsApp is ISHTI's messenger.
 SEND_TO = re.compile(r"^(?!.*(?:\be-?mails?\b|\bgmail\b|@))\s*(?:please\s+)?(?:now\s+)?send\s+.{1,300}?\bto\s+\S+", re.I)  # email is the email skill's
-MEDIA_PATH = re.compile(r"[A-Za-z]:\\[^\n\"'<>|?*`]+?\.(?:mp4|webm|mov|mkv|png|jpe?g|gif|webp|3gp|mp3|wav|ogg|opus|m4a|aac|pdf|docx?|xlsx?|pptx?|txt|csv|zip|rar|7z)\b", re.I)
+MEDIA_PATH = re.compile(r"""(?:[A-Za-z]:[\\/]|/|[A-Za-z0-9_.\-]+[\\/])[^\n"'<>|?*`]+?\.(?:mp4|webm|mov|mkv|png|jpe?g|gif|webp|3gp|mp3|wav|ogg|opus|m4a|aac|pdf|docx?|xlsx?|pptx?|txt|csv|zip|rar|7z)\b""", re.I)
 
 # ---------------------------------------------------------------- chat context (issue 4/5)
 # A message row in the chat pane: row "Bhai: Good 5:38 PM" [ref=...] / 'row "You: hi 1:39 PM Read" [ref=...]'
@@ -195,7 +195,7 @@ def parse_messages(snap, n=10):
             continue
 
         low = body.lower()
-        if re.fullmatch(r'(?:voice message|play voice message|audio message)(?:\s+[\d:]+)?', low):
+        if re.fullmatch(r'(?:play\s+)?(?:voice message|audio message)(?:\s+voice message)?(?:\s+\d{1,2}:\d{2}(?:/\d{1,2}:\d{2})?)?', low):
             body = "[voice message]"
         elif low == "sticker":
             body = "[sticker]"
@@ -453,14 +453,41 @@ def parse_send(text, session, context=None):
     voice = str(d.get("voice_note") or "").strip() or None
     if voice:
         msgs = [m for m in msgs if m != voice]  # the spoken words aren't also typed
-    path = MEDIA_PATH.search(text)
-    if not path and d.get("refers_to_file"):  # "this video": the last file ISHTI showed in this chat
+    path = None
+    m_path = MEDIA_PATH.search(text)
+    if m_path:
+        cand = m_path.group(0).strip('"\' ')
+        if os.path.isfile(cand):
+            path = cand
+    if not path:
+        fn_match = re.search(r"\b([A-Za-z0-9_.\-]+\.(?:mp4|webm|mov|mkv|png|jpe?g|gif|webp|3gp|mp3|wav|ogg|opus|m4a|aac|pdf|docx?|xlsx?|pptx?|txt|csv|zip|rar|7z))\b", text, re.I)
+        if fn_match:
+            cand_name = fn_match.group(1).strip()
+            from ishti import ROOT
+            candidate_dirs = [
+                os.path.join(ROOT, "data", "uploads"),
+                os.path.join(ROOT, "data", "media_output"),
+                os.path.join(ROOT, "reports"),
+                os.path.expanduser("~/Downloads"),
+                os.path.expanduser("~/Desktop"),
+                os.path.expanduser("~/Documents"),
+            ]
+            for cdir in candidate_dirs:
+                cand_path = os.path.join(cdir, cand_name)
+                if os.path.isfile(cand_path):
+                    path = cand_path
+                    break
+    if not path and (d.get("refers_to_file") or re.search(r"\b(?:this|that|the|it)\s+(?:file|image|photo|picture|doc|document|pdf|video|audio|attachment)\b", text, re.I)):
         for m in reversed(session.get("history", [])):
-            if m["role"] == "assistant" and (hit := MEDIA_PATH.findall(m["content"])):
-                path = hit[-1]
+            for cand_str in (m.get("content", ""), m.get("file", ""), m.get("path", "")):
+                hits = MEDIA_PATH.findall(str(cand_str))
+                if hits:
+                    cand = hits[-1].strip('"\' ')
+                    if os.path.isfile(cand):
+                        path = cand
+                        break
+            if path:
                 break
-    else:
-        path = path and path.group(0)
     contact = resolve_contact(str(d.get("contact") or "").strip(), session)
     return contact, path if path and os.path.isfile(path) else None, msgs, voice
 
@@ -716,7 +743,7 @@ def _approve_bridge_send(contact, path, messages, voice, text, session, draft_re
             except bridge.BridgeError as exc:
                 return _out(f"{exc}. I stopped the remaining items. Check WhatsApp before retrying.", False)
             outcomes.append({"id": result.get("id"), "actionId": ids[index], "delivery": result.get("delivery")})
-            if not result.get("id") or result.get("delivery") not in {"server_ack", "delivered", "read"}:
+            if not result.get("id") or result.get("delivery") not in {"submitted", "server_ack", "delivered", "read"}:
                 session["last_whatsapp_outcomes"] = outcomes
                 return _out("The bridge attempted submission, but acknowledgement was not verified. "
                             "I stopped the remaining items. Check WhatsApp before retrying.", False)
@@ -1196,19 +1223,48 @@ def resolve_contact(name, session):
 
 
 def open_preferred(session, kind=None):
-    """Open WhatsApp ONCE, the way the owner prefers (Settings: Learning > About you): Web in Chrome Profile 9 by default, or the desktop
-    app - never both (the owner's complaint: 'it was opening WhatsApp Web and the Desktop app both, which was a mess')."""
-    from ishti import prefs, wa_bridge
-    if wa_bridge.connected() and not kind:
-        return {"reply": "WhatsApp is already linked through the local bridge. New messages arrive there directly; older chat history may still need WhatsApp Web.", "sources": []}
-    mode = "desktop" if (kind or "").lower() in ("desktop", "app", "application") else "web" if kind else prefs.whatsapp_mode()
-    if mode == "desktop":
-        from desktop.computer_use import get_computer_use_agent
-        agent = get_computer_use_agent()
-        agent.launch_app("whatsapp")
-        time.sleep(0.6)
-        agent.focus_window("whatsapp")
-        return {"reply": "Opened WhatsApp Desktop.", "sources": []}
+    """Open WhatsApp following the owner's 3-tier hierarchy:
+    1. Priority 1: Check if WhatsApp is connected via QR scan bridge (send/receive directly).
+    2. Priority 2: If QR bridge is not connected, open WhatsApp Desktop application.
+    3. Priority 3: If desktop app is not available/fails to load, close that app and open WhatsApp Web (Chrome Profile 9)."""
+    from ishti import wa_bridge
+    t_kind = (kind or "").lower().strip()
+
+    # Priority 1: QR scan bridge (unless owner explicitly requested a GUI app/web view)
+    if not t_kind and wa_bridge.connected():
+        return {
+            "reply": "WhatsApp is connected via the local QR bridge. New messages arrive and send directly through it; older chat history remains accessible in WhatsApp Web.",
+            "sources": []
+        }
+
+    # Priority 2: WhatsApp Desktop application
+    if t_kind in ("desktop", "app", "application") or not t_kind:
+        desktop_opened = False
+        try:
+            from desktop.computer_use import get_computer_use_agent
+            agent = get_computer_use_agent()
+            res = agent.launch_app("whatsapp")
+            time.sleep(1.0)
+            if res.get("status") == "success" and agent.focus_window("whatsapp"):
+                desktop_opened = True
+        except Exception:
+            desktop_opened = False
+
+        if desktop_opened:
+            return {"reply": "Opened WhatsApp Desktop.", "sources": []}
+
+        # If desktop app was explicitly requested but failed:
+        if t_kind in ("desktop", "app", "application"):
+            return {"reply": "WhatsApp Desktop could not be opened. You can use WhatsApp Web or link the QR bridge.", "sources": []}
+
+        # Priority 3 fallback: Close any unresponsive/hung desktop process and open WhatsApp Web
+        try:
+            import subprocess
+            subprocess.run(["taskkill", "/F", "/IM", "WhatsApp.exe"], capture_output=True, timeout=3)
+        except Exception:
+            from ishti.core.logutil import swallowed
+            swallowed("whatsapp.open_preferred.taskkill")
+
     snap, ok = open_whatsapp(session)
     if ok:
         return {"reply": "Opened WhatsApp Web (Chrome Profile 9).", "sources": []}

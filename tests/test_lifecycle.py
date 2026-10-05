@@ -139,13 +139,14 @@ src = open(app, encoding="utf-8").read()
 assert "Do you want to exit ISHTI?" in src, "the native close confirmation is required"
 assert "/api/shutdown" in src, "Yes must trigger the clean shutdown"
 assert "sendBeacon" in src, "the shutdown must survive the page unloading (native Yes closes the page first)"
-assert "pagehide" in src, "the native prompt's Yes must be what triggers the shutdown"
+assert 'addEventListener("ishti-window-close-requested", handleCloseReq)' in src
+assert 'addEventListener("pagehide"' not in src, "refreshing a browser tab must preserve the service"
 
 # the bundle that is actually served contains it
 dist_js = [f for f in os.listdir(os.path.join(_ROOT, 'interface', 'app', 'dist', 'assets')) if f.endswith(".js")]
 assert dist_js, "the built bundle is missing"
 bundle = open(os.path.join(os.path.join(_ROOT, 'interface', 'app', 'dist', 'assets'), dist_js[0]), encoding="utf-8").read()
-for needle in ("Do you want to exit ISHTI?", "/api/shutdown", "sendBeacon", "pagehide"):
+for needle in ("Do you want to exit ISHTI?", "/api/shutdown", "sendBeacon", "ishti-window-close-requested"):
     assert needle in bundle, f"the served bundle is stale - it lacks {needle!r}"
 
 # the server endpoint exists: ONE graceful shutdown (ishti/lifecycle_api.py), attached to the app by server.py

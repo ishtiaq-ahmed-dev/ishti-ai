@@ -1,5 +1,7 @@
 # ISHTI reliability and WhatsApp feature repair
 
+This earlier checkpoint is superseded by [the 2026-10-05 audit report](docs/audit/FINAL_REPORT.md).
+
 Date: 2026-10-04. Verdict: **NOT READY for the complete requested WhatsApp + CRM feature set.** Confirmed fixes and local checks are complete for this pass; remaining requirements are listed below instead of being described as finished.
 
 ## User-reported issue fixed

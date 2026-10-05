@@ -56,6 +56,15 @@ def enabled() -> bool:
     return os.environ.get(_ENV) == "1"
 
 
+def scratch_path(default_path: str) -> str:
+    if not enabled() or os.environ.get("ISHTI_SCRATCH") != "1":
+        return default_path
+    from ishti import ROOT
+    folder = os.path.join(ROOT, "_work", "scratch", str(os.getpid()), "data")
+    os.makedirs(folder, exist_ok=True)
+    return os.path.join(folder, os.path.basename(default_path))
+
+
 def blocked_action_desc(action) -> str:
     try:
         import inspect

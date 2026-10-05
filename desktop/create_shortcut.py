@@ -10,6 +10,9 @@ import win32com.client
 
 APP_ID = "ISHTI.PersonalAI.Assistant.Desktop.1.0"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+from ishti.core.logutil import swallowed
 PYTHONW = os.path.join(ROOT, "venv", "Scripts", "pythonw.exe")
 LAUNCHER = os.path.join(ROOT, "desktop", "launcher.py")
 SHUTDOWN = os.path.join(ROOT, "desktop", "shutdown.py")
@@ -38,7 +41,7 @@ def _setup_shortcut(ws, shortcut_path, target, args, desc, icon_path):
         store.Commit()
         store = None
     except Exception as exc:
-        pass
+        swallowed('desktop/create_shortcut.py:_setup_shortcut:40')
 
     print(f"[SUCCESS] Configured shortcut with AppID: {shortcut_path}")
 
@@ -86,7 +89,7 @@ def create_desktop_shortcuts():
                     fpath = os.path.join(taskbar_dir, fname)
                     _setup_shortcut(ws, fpath, target, args, desc, ICON)
                 except Exception:
-                    pass
+                    swallowed('desktop/create_shortcut.py:create_desktop_shortcuts:88')
 
     # Clean up any stale Start ISHTI shortcut
     stale = os.path.join(desktop, "Start ISHTI.lnk")

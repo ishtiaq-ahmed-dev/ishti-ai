@@ -553,6 +553,9 @@ def _run(text, s, dec):
     """Run the decided skill; if it declines ("not mine"), fall through to the next best one."""
     from ishti import calltrace
     tried, out, name = set(), None, None
+    clean_explicit = re.sub(r"^(?:\[skill:[a-z0-9_-]+\]|/(?:use|skill)\s+[a-z0-9_-]+)\s*", "", text, flags=re.I).strip()
+    if clean_explicit:
+        text = clean_explicit
     while dec["skill"]:
         name = dec["skill"]
         s["route"] = dec
@@ -683,6 +686,8 @@ def _rule_owned(text):
     genuinely open-ended. TheIntentDetector is the discriminator."""
     try:
         dec = route(text, SKILLS)
+        if dec.get("source") == "explicit_directive":
+            return True
         skill = dec.get("skill")
         if skill == "chat":  # "did you send it?" is answered from the conversation, never re-run or improvised
             from ishti.skills.chat.skill import DID_YOU, KNOWLEDGE, PERSONAL, ARITHMETIC, CREATIVE, CODE, BACKCHANNEL
@@ -1379,12 +1384,13 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
                                                     metadata={"events": events[-150:], "skill": name,
                                                               "request": text})
                     message_id = saved_answer.get("id") if isinstance(saved_answer, dict) else None
-    if not incog and not secret and name not in ("memory",) and is_safe_for_history(reply):  # exact facts already live in SQLite
+    from ishti import test_mode
+    if not test_mode.enabled() and not incog and not secret and name not in ("memory",) and is_safe_for_history(reply):  # exact facts already live in SQLite
         threading.Thread(target=_remember, args=(text, reply, name), daemon=True).start()
         threading.Thread(target=_ftlog, args=(text, reply, name, dec, channel), daemon=True).start()  # Part 3 collection
         if name != "memory_manager":  # ARCH2: learn from every exchange (extraction + thresholds)
             threading.Thread(target=_arch2_consolidate, args=(text, reply, name, channel), daemon=True).start()
-    if not hidden and not incog:
+    if not test_mode.enabled() and not secret and not hidden and not incog:
         threading.Thread(target=_learn, args=(text,), daemon=True).start()  # the owner's lasting facts and preferences
         threading.Thread(target=_learn_turn, args=(text, reply, name, dec, sid, channel, message_id), daemon=True).start()
         try:

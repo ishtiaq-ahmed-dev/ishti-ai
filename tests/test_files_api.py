@@ -4,6 +4,8 @@ launched (ISHTI_TEST_MODE=1 + a patched launcher)."""
 import io
 import os
 import time
+import asyncio
+import threading
 
 import pytest
 from fastapi import FastAPI
@@ -56,6 +58,66 @@ def test_upload_kinds_drive_the_mention(api):
     c, _ = api
     assert up(c, "pic.png", b"\x89PNG\r\n\x1a\nrest").json()["mention"].startswith("describe the image ")
     assert up(c, "voice.m4a", b"\x00\x00\x00\x18ftypM4A \x00\x00\x00\x00").json()["mention"].startswith("transcribe ")
+
+
+def test_slow_scanner_does_not_block_the_event_loop(tmp_path, monkeypatch):
+    from fastapi import UploadFile
+    from ishti.security import upload_scanner
+    entered, release = threading.Event(), threading.Event()
+    def scanner(_path):
+        entered.set()
+        return {"safe": release.wait(3), "reason": "Synthetic timeout"}
+    monkeypatch.setattr(upload_scanner, "scan_upload", scanner)
+    async def probe():
+        job = asyncio.create_task(files_api.save_upload(UploadFile(filename="probe.txt", file=io.BytesIO(b"synthetic")), str(tmp_path)))
+        try:
+            assert await asyncio.to_thread(entered.wait, 2)
+            await asyncio.sleep(0)
+            assert not job.done(), "The scanner blocked every coroutine until it finished"
+        finally:
+            release.set()
+        info, problem = await job
+        assert info["ok"] and problem is None
+    asyncio.run(probe())
+
+
+def test_cancelled_scan_removes_staged_upload(tmp_path, monkeypatch):
+    from fastapi import UploadFile
+    from ishti.security import upload_scanner
+    entered, release = threading.Event(), threading.Event()
+    folder = tmp_path / "uploads"
+    def scanner(_path):
+        entered.set()
+        release.wait(3)
+        return {"safe": True}
+    monkeypatch.setattr(upload_scanner, "scan_upload", scanner)
+    async def probe():
+        job = asyncio.create_task(files_api.save_upload(
+            UploadFile(filename="cancelled.txt", file=io.BytesIO(b"synthetic")), str(folder)))
+        try:
+            assert await asyncio.to_thread(entered.wait, 2)
+            job.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await job
+            assert not list(folder.iterdir())
+        finally:
+            release.set()
+    asyncio.run(probe())
+
+
+def test_failed_upload_read_removes_partial_file(tmp_path):
+    folder = tmp_path / "uploads"
+    class BrokenUpload:
+        filename = "broken.txt"
+        reads = 0
+        async def read(self, _size):
+            self.reads += 1
+            if self.reads == 1:
+                return b"synthetic"
+            raise RuntimeError("Disconnected stream")
+    info, problem = asyncio.run(files_api.save_upload(BrokenUpload(), str(folder)))
+    assert info is None and problem[1] == 503
+    assert not list(folder.iterdir())
 
 
 def test_upload_refuses_executables_empty_and_oversized(api, monkeypatch):

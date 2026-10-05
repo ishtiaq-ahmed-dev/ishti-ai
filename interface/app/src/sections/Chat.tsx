@@ -159,6 +159,20 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     window.addEventListener("pointerup", onPointerUp);
   }, [historyWidth]);
   const [graphFor, setGraphFor] = useState<number | null>(null);
+  const [focusedSkill, setFocusedSkill] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem("ishti-focused-skill");
+    } catch {
+      return null;
+    }
+  });
+
+  const clearFocusedSkill = useCallback(() => {
+    setFocusedSkill(null);
+    try {
+      localStorage.removeItem("ishti-focused-skill");
+    } catch {}
+  }, []);
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false); // Stop pressed: the last words are being written into the box
   const [liveOpen, setLiveOpen] = useState(false);
@@ -167,6 +181,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   const [fullGraph, setFullGraph] = useState(false);
   const recorder = useRef<MediaRecorder | null>(null);
   const sessionLoadGeneration = useRef(0);
+  const sessionLoadPending = useRef(false);
   const msgsRef = useRef(msgs);
   const uploadInput = useRef<HTMLInputElement>(null);
   const [uploads, setUploads] = useState<{ name: string; mention: string; size: number }[]>([]);
@@ -243,7 +258,15 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   }, [msgs]);
 
   const selectSession = useCallback(async (id: string) => {
+    clearFocusedSkill();
     const generation = ++sessionLoadGeneration.current;
+    sessionLoadPending.current = true;
+    setUploading(false);
+    setUploads([]);
+    setFeedbackBusy(null);
+    setFeedbackError(null);
+    setFeedbackReasonFor(null);
+    setQueue([]);
     setGraphFor(null);
     isInitialLoad.current = true;
     try {
@@ -275,11 +298,21 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     });
     } catch (err) {
       if (generation === sessionLoadGeneration.current) console.warn("[chat] session load failed:", err);
+    } finally {
+      if (generation === sessionLoadGeneration.current) sessionLoadPending.current = false;
     }
   }, []);
 
   const newChat = useCallback(async () => {
     const generation = ++sessionLoadGeneration.current;
+    sessionLoadPending.current = true;
+    setUploading(false);
+    setUploads([]);
+    setFeedbackBusy(null);
+    setFeedbackError(null);
+    setFeedbackReasonFor(null);
+    setQueue([]);
+    try {
     const d = await postJSON<{ session_id: string }>("/api/sessions/new", { title: "New Conversation" });
     if (generation !== sessionLoadGeneration.current) return;
     try {
@@ -293,6 +326,11 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     setUploads([]);
     setGraphFor(null);
     loadSessions();
+    } catch (error) {
+      if (generation === sessionLoadGeneration.current) console.warn("[chat] new session failed:", error);
+    } finally {
+      if (generation === sessionLoadGeneration.current) sessionLoadPending.current = false;
+    }
   }, [loadSessions]);
 
   useEffect(() => {
@@ -329,18 +367,31 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   }, [sessionId, msgs, loadSessions]);
 
   useEffect(() => {
-    const handleStartNewChat = () => {
+    const handleStartNewChat = (e?: Event) => {
+      const detail = (e as CustomEvent<{ focusedSkill?: string }> | undefined)?.detail;
+      if (detail?.focusedSkill) {
+        setFocusedSkill(detail.focusedSkill);
+        try {
+          localStorage.setItem("ishti-focused-skill", detail.focusedSkill);
+        } catch {}
+      } else {
+        clearFocusedSkill();
+      }
       newChat();
     };
     window.addEventListener("ishti-start-new-chat", handleStartNewChat);
     return () => {
       window.removeEventListener("ishti-start-new-chat", handleStartNewChat);
     };
-  }, [newChat]);
+  }, [newChat, clearFocusedSkill]);
 
   useEffect(() => {
     let targetSession: string | null = null;
     if (typeof window !== "undefined") {
+      if (window.location.hash === "#chat/new" || window.location.hash.startsWith("#chat/new")) {
+        newChat();
+        return;
+      }
       const hashMatch = window.location.hash.match(/^#chat\/(sess_[^/?#]+)/i);
       if (hashMatch) {
         targetSession = hashMatch[1];
@@ -363,10 +414,14 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
         selectSession(idToLoad);
       }
     });
-  }, [selectSession]);
+  }, [selectSession, newChat]);
 
   useEffect(() => {
     const onHashChange = () => {
+      if (window.location.hash === "#chat/new" || window.location.hash.startsWith("#chat/new")) {
+        newChat();
+        return;
+      }
       const hashMatch = window.location.hash.match(/^#chat\/(sess_[^/?#]+)/i);
       if (hashMatch && hashMatch[1] && hashMatch[1] !== sessionId) {
         selectSession(hashMatch[1]);
@@ -374,7 +429,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
-  }, [sessionId, selectSession]);
+  }, [sessionId, selectSession, newChat]);
 
   const deleteSession = async (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -393,6 +448,16 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
 
   // ---------------- Recent chats: select / rename / delete-with-undo / share (all local) ----------------
   const [selecting, setSelecting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
+
+  useEffect(() => {
+    if (!deleteTarget) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDeleteTarget(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [deleteTarget]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -512,7 +577,8 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   }, []);
 
   const addUploads = useCallback(async (files: FileList | null) => {
-    if (!files?.length) return;
+    if (!files?.length || sessionLoadPending.current) return;
+    const generation = sessionLoadGeneration.current;
     setUploading(true);
     setUploadError("");
     try {
@@ -525,16 +591,20 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
         form.append("file", file);
         const response = await fetch("/api/upload", { method: "POST", body: form });
         const data = await response.json().catch(() => ({}));
+        if (generation !== sessionLoadGeneration.current) return;
         if (!response.ok) throw new Error(data?.error || `Upload failed (${response.status})`);
         setUploads((current) => [...current, { name: data.name || file.name, mention: data.mention, size: data.size || file.size }]);
         totalBytes += file.size;
         totalCount += 1;
       }
     } catch (err) {
+      if (generation !== sessionLoadGeneration.current) return;
       setUploadError(err instanceof Error ? err.message : String(err));
     } finally {
-      setUploading(false);
-      if (uploadInput.current) uploadInput.current.value = "";
+      if (generation === sessionLoadGeneration.current) {
+        setUploading(false);
+        if (uploadInput.current) uploadInput.current.value = "";
+      }
     }
   }, [uploads]);
 
@@ -553,7 +623,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   async function send(text: string) {
     // Enter can submit a form even while the disabled send button is visible.
     // Keep an in-flight attachment upload from being silently omitted.
-    if (uploading) return;
+    if (uploading || sessionLoadPending.current) return;
     text = [text.trim(), ...uploads.map((f) => f.mention)].filter(Boolean).join("\n");
     if (!text) return;
     setUploads([]);
@@ -563,14 +633,21 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
       box.current.style.height = "40px";
     }
     if (!canStart) { setQueue((q) => [...q, text]); return; }
-    const reply: Msg = { id: nextId++, role: "ishti", text: "", events: [], live: true, sources: [], request: text };
-    setMsgs((all) => [...all, { id: nextId++, role: "user", text, events: [], live: false, sources: [] }, reply]);
+    const generation = sessionLoadGeneration.current;
+    const targetSession = sessionId;
+    let textToSend = text;
+    if (focusedSkill && !text.toLowerCase().startsWith("[skill:") && !text.toLowerCase().startsWith("/use ") && !text.toLowerCase().startsWith("/skill ")) {
+      textToSend = `[skill:${focusedSkill}] ${text}`;
+    }
+    const reply: Msg = { id: nextId++, role: "ishti", text: "", events: [], live: true, sources: [], request: textToSend };
+    setMsgs((all) => [...all, { id: nextId++, role: "user", text: textToSend, events: [], live: false, sources: [] }, reply]);
     setGraphFor(reply.id);
     try {
-      const res: Result = await streamChat(text, sessionId, {
-        event: (e) => patch(reply.id, (m) => ({ ...m, events: [...m.events, e] })),
-        token: (t) => patch(reply.id, (m) => ({ ...m, text: m.text + t })),
+      const res: Result = await streamChat(textToSend, targetSession, {
+        event: (e) => { if (generation === sessionLoadGeneration.current) patch(reply.id, (m) => ({ ...m, events: [...m.events, e] })); },
+        token: (t) => { if (generation === sessionLoadGeneration.current) patch(reply.id, (m) => ({ ...m, text: m.text + t })); },
       });
+      if (generation !== sessionLoadGeneration.current) return;
       setSessionId(res.session_id);
       try {
         localStorage.setItem("ishti-session-id", res.session_id);
@@ -583,13 +660,14 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
       loadSessions();
       try { window.dispatchEvent(new CustomEvent("ishti-chat-finished")); } catch {}
     } catch (err) {
+      if (generation !== sessionLoadGeneration.current) return;
       patch(reply.id, (m) => ({ ...m, text: `Couldn't reach ISHTI: ${(err as Error).message}`, live: false }));
       try { window.dispatchEvent(new CustomEvent("ishti-chat-finished")); } catch {}
     }
   }
 
   async function rateAnswer(messageId: string, rating: "positive" | "negative", reason = "") {
-    if (!sessionId || feedbackBusy) return;
+    if (!sessionId || feedbackBusy || sessionLoadPending.current) return;
     const targetSession = sessionId;
     const generation = sessionLoadGeneration.current;
     setFeedbackBusy(messageId);
@@ -597,7 +675,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     try {
       const result = await postJSON<{
         rating: "positive" | "negative";
-        revision?: { id: string; content: string; metadata?: { revision_of?: string; request?: string } } | null;
+        revision?: { id: string; content: string; sources?: Source[]; metadata?: { revision_of?: string; request?: string } } | null;
         error?: string | null;
       }>(`/api/sessions/${targetSession}/feedback`, { message_id: messageId, rating, reason });
       if (generation !== sessionLoadGeneration.current || targetSession !== sessionId) return;
@@ -605,7 +683,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
         const updated = all.map((m) => m.messageId === messageId ? { ...m, rating: result.rating } : m);
         if (!result.revision || updated.some((m) => m.messageId === result.revision?.id)) return updated;
         return [...updated, { id: nextId++, role: "ishti", text: result.revision.content,
-          events: [], live: false, sources: [], messageId: result.revision.id,
+          events: [], live: false, sources: result.revision.sources ?? [], messageId: result.revision.id,
           revisionOf: result.revision.metadata?.revision_of, request: result.revision.metadata?.request }];
       });
       setFeedbackReasonFor(null);
@@ -613,9 +691,10 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
       if (result.error) setFeedbackError({ messageId, text: result.error });
       loadSessions();
     } catch (error) {
+      if (generation !== sessionLoadGeneration.current) return;
       setFeedbackError({ messageId, text: error instanceof Error ? error.message : "Feedback could not be recorded" });
     } finally {
-      setFeedbackBusy(null);
+      if (generation === sessionLoadGeneration.current) setFeedbackBusy(null);
     }
   }
 
@@ -839,7 +918,10 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                             <button
                               type="button"
                               title="Delete chat"
-                              onClick={(e) => { e.stopPropagation(); void deleteSession(x.session_id, e); }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteTarget({ id: x.session_id, title: x.title });
+                              }}
                               className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger cursor-pointer"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -962,6 +1044,54 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               </button>
             </div>
           </motion.div>
+      )}
+
+      {/* Delete confirmation dialog: Yes / No option */}
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+          onClick={() => setDeleteTarget(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-border bg-background p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-danger/15 text-danger shrink-0">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-sm font-semibold text-foreground">Delete this chat?</h3>
+                <p className="mt-1 text-xs text-muted-foreground truncate font-medium">
+                  {deleteTarget.title || "Untitled Conversation"}
+                </p>
+              </div>
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground leading-relaxed">
+              Are you sure you want to delete this conversation? You can still undo this within 8 seconds after deleting.
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                className="rounded-xl border border-border px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+              >
+                No, keep
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const targetId = deleteTarget.id;
+                  setDeleteTarget(null);
+                  void deleteSession(targetId);
+                }}
+                className="rounded-xl bg-danger px-4 py-1.5 text-xs font-semibold text-white hover:bg-danger/90 transition-colors shadow-xs cursor-pointer"
+              >
+                Yes, delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Share: save the chosen chats to a local Markdown/PDF file, or copy them as text. Nothing is uploaded. */}
@@ -1149,7 +1279,20 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                         className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-accent-foreground shadow-xs"
                         style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-leading)" }}
                       >
-                        {m.text}
+                        {(() => {
+                          const skillMatch = m.text.match(/^\[skill:([a-z0-9_-]+)\]\s*(.*)$/is);
+                          if (skillMatch) {
+                            return (
+                              <>
+                                <span className="inline-block mr-2 rounded-md bg-white/25 px-1.5 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider">
+                                  {skillMatch[1]}
+                                </span>
+                                {skillMatch[2]}
+                              </>
+                            );
+                          }
+                          return m.text;
+                        })()}
                       </div>
                     ) : (
                       <>
@@ -1255,6 +1398,29 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               </motion.ul>
             )}
           </AnimatePresence>
+
+          {focusedSkill && (
+            <div className="mx-auto mb-2 flex w-full max-w-4xl xl:max-w-5xl items-center justify-between rounded-xl border border-accent/40 bg-accent/10 px-3.5 py-1.5 shadow-xs">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="flex h-2 w-2 rounded-full bg-accent animate-pulse shrink-0" />
+                <span className="text-xs font-bold text-accent font-mono shrink-0">
+                  Target Skill: {focusedSkill}
+                </span>
+                <span className="text-[11px] text-muted-foreground truncate">
+                  Tasks in this session will be executed directly using this skill
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={clearFocusedSkill}
+                className="text-muted-foreground hover:text-foreground text-xs p-1 rounded-md hover:bg-muted transition-colors cursor-pointer shrink-0 ml-2"
+                title="Clear skill focus"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+
           {recording ? (
             <VoiceBeam
               active={recording}
@@ -1267,7 +1433,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                 <textarea ref={box} value={input} onChange={(e) => setInput(e.target.value)} rows={1}
                   onPaste={onComposerPaste}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!recording && !transcribing && !uploading) send(input); } }}
-                  placeholder="Ask or tell ISHTI to do anything…"
+                  placeholder={focusedSkill ? `Assign a task using ${focusedSkill} skill…` : "Ask or tell ISHTI to do anything…"}
                   style={{ fontSize: "var(--chat-input-size)" }}
                   className="scroll-thin max-h-[220px] min-h-[40px] flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 leading-relaxed outline-none placeholder:text-muted-foreground" />
                 <button type="button" onClick={() => uploadInput.current?.click()} disabled={uploading} title="Attach files for ISHTI to inspect" aria-label="Attach files"
@@ -1298,7 +1464,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                 <textarea ref={box} value={input} onChange={(e) => setInput(e.target.value)} rows={1}
                   onPaste={onComposerPaste}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!recording && !transcribing && !uploading) send(input); } }}
-                  placeholder="Ask or tell ISHTI to do anything…"
+                  placeholder={focusedSkill ? `Assign a task using ${focusedSkill} skill…` : "Ask or tell ISHTI to do anything…"}
                   style={{ fontSize: "var(--chat-input-size)" }}
                   className="scroll-thin max-h-[220px] min-h-[40px] flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 leading-relaxed outline-none placeholder:text-muted-foreground" />
                 <button type="button" onClick={() => uploadInput.current?.click()} disabled={uploading} title="Attach files for ISHTI to inspect" aria-label="Attach files"

@@ -117,12 +117,12 @@ def star_polygon_points(cx, cy, R, c=0.25, tip_r=1.5, steps=32):
 # ---------------------------------------------------------------------------
 def generate_full_wordmark():
     letter_path, chars, x_offsets, min_font_x, s, start_x, baseline_y, target_h = get_vector_wordmark_paths()
-    # Sparkle star: center cx = 212.0 (nudged right), cy = 11.5 (nudged up), R = 11.5
-    star_path = star_svg_d(212.0, 11.5, R=11.5, c=0.25, tip_r=1.0)
+    # Sparkle star: centered directly above second 'I' like a tittle (dot)
+    star_path = star_svg_d(199.75, 11.5, R=11.5, c=0.25, tip_r=1.0)
 
     svg_content = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 228 112" width="100%" height="100%" fill="none">
   <!-- ISHTI Full Wordmark + Tagline -->
-  <!-- Floating Sparkle Star nudged up-right of second 'I' -->
+  <!-- Sparkle Star centered directly above second 'I' -->
   <path d="{star_path}" fill="{GOLD_HEX}" />
   <!-- ISHTI Wordmark with Optical Kerning -->
   <path d="{letter_path}" fill="{NAVY_HEX}" />
@@ -139,8 +139,8 @@ def generate_full_wordmark():
     font_main = ImageFont.truetype("C:/Windows/Fonts/segoeuib.ttf", int(target_h * scale))
     font_sub = ImageFont.truetype("C:/Windows/Fonts/segoeui.ttf", int(10 * scale))
 
-    # Star
-    star_pts = star_polygon_points(212.0 * scale, 11.5 * scale, 11.5 * scale, c=0.25, tip_r=1.0 * scale)
+    # Star centered directly above second 'I'
+    star_pts = star_polygon_points(199.75 * scale, 11.5 * scale, 11.5 * scale, c=0.25, tip_r=1.0 * scale)
     draw.polygon(star_pts, fill=GOLD_RGBA)
 
     # Letters
@@ -169,7 +169,7 @@ def generate_full_wordmark():
 # ---------------------------------------------------------------------------
 def generate_wordmark_only():
     letter_path, chars, x_offsets, min_font_x, s, start_x, baseline_y, target_h = get_vector_wordmark_paths()
-    star_path = star_svg_d(212.0, 11.5, R=11.5, c=0.25, tip_r=1.0)
+    star_path = star_svg_d(199.75, 11.5, R=11.5, c=0.25, tip_r=1.0)
 
     # Tight viewBox: height 88
     svg_content = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 228 88" width="100%" height="100%" fill="none">
@@ -184,7 +184,7 @@ def generate_wordmark_only():
     draw = ImageDraw.Draw(im)
 
     font_main = ImageFont.truetype("C:/Windows/Fonts/segoeuib.ttf", int(target_h * scale))
-    star_pts = star_polygon_points(212.0 * scale, 11.5 * scale, 11.5 * scale, c=0.25, tip_r=1.0 * scale)
+    star_pts = star_polygon_points(199.75 * scale, 11.5 * scale, 11.5 * scale, c=0.25, tip_r=1.0 * scale)
     draw.polygon(star_pts, fill=GOLD_RGBA)
 
     for c, xoff in zip(chars, x_offsets):
@@ -284,10 +284,10 @@ def generate_readme_brand_logos():
     <rect x="0" y="0" width="120" height="120" rx="28" fill="{NAVY_HEX}" />
     <path d="{star_svg_d(60, 60, 32.5, c=0.24, tip_r=1.5)}" fill="{GOLD_HEX}" />
   </g>
-  <!-- ISHTI Wordmark with Floating Accent Star -->
+  <!-- ISHTI Wordmark with Accent Star Directly Above I -->
   <g transform="translate(154, 76)">
     <text x="0" y="0" class="brand-title brand-text-theme">ISHTI</text>
-    <path d="{star_svg_d(178, -32, 11, c=0.25, tip_r=1.0)}" class="brand-star" />
+    <path d="{star_svg_d(147.5, -56, 11, c=0.25, tip_r=1.0)}" class="brand-star" />
   </g>
   <!-- Tagline -->
   <g transform="translate(156, 110)">
@@ -322,8 +322,8 @@ def generate_readme_brand_logos():
         ty = 38
         draw.text((tx, ty), "ISHTI", font=font_main, fill=text_color)
 
-        # Floating gold star near the top right of wordmark
-        accent_pts = star_polygon_points(tx + 348, ty + 18, 22, c=0.25, tip_r=2.0)
+        # Gold star centered directly above final I (center = tx + 277.5, cy = 56)
+        accent_pts = star_polygon_points(tx + 277.5, 56, 22, c=0.25, tip_r=2.0)
         draw.polygon(accent_pts, fill=GOLD_RGBA)
 
         # Tagline with letter spacing

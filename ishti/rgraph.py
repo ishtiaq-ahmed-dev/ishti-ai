@@ -27,8 +27,9 @@ if __package__ in (None, ""):  # run directly: python ishti/rgraph.py
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ishti import ROOT
+from ishti.test_mode import scratch_path
 
-DB_PATH = os.path.join(ROOT, "data", "rgraph.db")
+DB_PATH = scratch_path(os.path.join(ROOT, "data", "rgraph.db"))
 LOCK = threading.RLock()
 STALE_DAYS = 365  # a preference unconfirmed for a year is flagged "might have changed"
 _conn = None

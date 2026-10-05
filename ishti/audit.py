@@ -16,8 +16,9 @@ import threading
 import time
 
 from ishti import CONFIG
+from ishti.test_mode import scratch_path
 
-DB = os.path.join(os.path.dirname(CONFIG["memory"]["db_path"]), "audit.db")
+DB = scratch_path(os.path.join(os.path.dirname(CONFIG["memory"]["db_path"]), "audit.db"))
 WHO = {"owner": "you, directly", "instructed": "me, on your instruction", "judgment": "me, my own judgment mid-task",
        "standing": "me, on a rule/schedule you set"}
 _local = threading.local()
@@ -37,7 +38,8 @@ def _db():
     key = (threading.get_ident(), DB)
     c = _conn_cache.get(key)
     if c is None:
-        os.makedirs(os.path.dirname(DB), exist_ok=True)
+        with context(skill=""):
+            os.makedirs(os.path.dirname(DB), exist_ok=True)
         c = sqlite3.connect(DB, timeout=10, check_same_thread=False)
         # WAL + synchronous=NORMAL: the audit log is a pure log (no owner data; the module's contract
         # is "must never break the action"), so losing the last commits to a power cut is acceptable
@@ -85,18 +87,23 @@ def _mask(value, secrets):
 
 
 def record(action, detail="", *, skill=None, initiator=None, tier=None, confirmed=None, session=None, request=None):
+    if getattr(_local, "recording", False):
+        return
     ctx = current()
     secrets = ctx.get("redact") or (ctx.get("view") or {}).get("redact")  # the request may add secrets mid-run
     row = (time.time(), session or ctx.get("session", ""), ctx.get("channel", ""), initiator or ctx.get("initiator", "judgment"),
            skill or ctx.get("skill", ""), _mask(str(action), secrets)[:200], _mask(str(detail), secrets)[:500],
            tier or ctx.get("tier", ""), confirmed, _mask(str(request or ctx.get("request", "")), secrets)[:300])
+    _local.recording = True
     try:
         with _lock:
             c = _db()
             with c:
                 c.execute("INSERT INTO actions VALUES(?,?,?,?,?,?,?,?,?,?)", row)
-    except sqlite3.Error as exc:  # the log must never break the action itself
-        print(f"[audit] not recorded: {exc}")
+    except (sqlite3.Error, OSError):
+        print("[audit] not recorded: database unavailable")
+    finally:
+        _local.recording = False
 
 
 def query(since=0.0, until=None, initiators=None, limit=200):

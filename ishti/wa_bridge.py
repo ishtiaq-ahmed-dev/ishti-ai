@@ -133,6 +133,69 @@ def connected() -> bool:
     return bool(status().get("connected"))
 
 
+TEST_DESTINATION_FILE = Path(DATA) / "test_destination"
+
+
+def _digits(value: str) -> str:
+    return re.sub(r"\D", "", str(value or ""))
+
+
+def _jid_number(jid: str) -> str:
+    """The phone number of an account JID, without its device suffix (`...:user@example.com`)."""
+    return _digits(str(jid or "").split("@", 1)[0].split(":", 1)[0])
+
+
+def test_destination() -> str:
+    """The owner-authorized self-chat destination, or '' when no gate is armed.
+
+    An explicit ISHTI_WA_TEST_DESTINATION wins; otherwise the persisted authorization
+    written by `authorize_self_test` is used so the owner does not need an environment
+    variable to run a linked-account self-test.
+    """
+    explicit = os.environ.get("ISHTI_WA_TEST_DESTINATION", "").strip()
+    if explicit:
+        return explicit
+    try:
+        return TEST_DESTINATION_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def account_matches_self_test() -> bool:
+    """True only when the linked bridge account is the authorized self-chat number."""
+    destination = _digits(test_destination())
+    return bool(destination) and destination == _jid_number(status().get("me") or "")
+
+
+def authorize_self_test(destination: str) -> dict:
+    """Persist an owner authorization of the account currently linked to the bridge.
+
+    Refuses any number that is not the linked account, so an authorized self-test can
+    never point at a third party. The Node gate reads the destination at startup, so a
+    running bridge reports requiresRestart.
+    """
+    if _test_mode():
+        raise BridgeError("Live self-test authorization is disabled in test mode")
+    number = _digits(destination)
+    if not 6 <= len(number) <= 15:
+        raise BridgeError("A complete international phone number is required")
+    state = status()
+    linked = _jid_number(state.get("me") or "")
+    if not linked:
+        raise BridgeError("The bridge is not connected to a WhatsApp account yet")
+    if number != linked:
+        raise BridgeError("The authorized number must be the account linked to this bridge")
+    with _lock:
+        TEST_DESTINATION_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = TEST_DESTINATION_FILE.with_suffix("." + uuid.uuid4().hex + ".tmp")
+        try:
+            tmp.write_text(number, encoding="utf-8")
+            os.replace(tmp, TEST_DESTINATION_FILE)
+        finally:
+            tmp.unlink(missing_ok=True)
+    return {"ok": True, "destination": number, "linked": linked, "requiresRestart": bool(state.get("running"))}
+
+
 def start() -> dict:
     global _child
     if _test_mode():
@@ -143,7 +206,7 @@ def start() -> dict:
             return state
         if _child is not None and _child.poll() is None:
             return {"running": True, "connected": False, "starting": True}
-        bootstrap = _credentials(create=True)
+        bootstrap = {**_credentials(create=True), "testDestination": test_destination()}
         node = os.environ.get("ISHTI_NODE_EXE") or shutil.which("node")
         if not node or not Path(node).is_file():
             raise BridgeError("Node.js runtime is unavailable")
@@ -167,17 +230,25 @@ def get_qr_data() -> dict:
         size = len(matrix)
         if any(not isinstance(row, list) or len(row) != size for row in matrix):
             raise BridgeError("Invalid QR matrix")
-        picture = Image.new("RGB", ((size + 8) * 6, (size + 8) * 6), "white")
+        scale = 8
+        quiet = 4
+        dim = (size + quiet * 2) * scale
+        picture = Image.new("RGB", (dim, dim), (255, 255, 255))
         draw = ImageDraw.Draw(picture)
         for y, row in enumerate(matrix):
             for x, dark in enumerate(row):
                 if dark:
-                    draw.rectangle(((x + 4) * 6, (y + 4) * 6, (x + 5) * 6 - 1, (y + 5) * 6 - 1), fill="black")
+                    x0 = (x + quiet) * scale
+                    y0 = (y + quiet) * scale
+                    draw.rectangle((x0, y0, x0 + scale - 1, y0 + scale - 1), fill=(0, 0, 0))
         buffer = io.BytesIO()
         picture.save(buffer, format="PNG")
         image = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+    destination = test_destination()
     return {"connected": bool(state.get("connected")), "running": bool(state.get("running")),
-        "qr_image": image, "raw_qr": None, "ascii_qr": "", "me": state.get("me") or "",
+        "qr_image": image, "raw_qr": state.get("raw_qr") or state.get("qr"), "ascii_qr": "", "me": state.get("me") or "",
+        "testDestination": destination,
+        "accountMatches": bool(_digits(destination)) and _digits(destination) == _jid_number(state.get("me") or ""),
         "lastError": state.get("lastError"), "historyScope": state.get("historyScope")}
 
 
@@ -217,7 +288,7 @@ def find_chat(name: str) -> str:
 
 
 def _stage_media(media: str, kind: str, expected_hash: str | None):
-    path = Path(media)
+    path = Path(str(media).strip('"\' '))
     if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_MEDIA:
         raise BridgeError("Attachment is unreadable or exceeds 50 MB")
     with path.open("rb") as stream:
@@ -246,7 +317,18 @@ def _stage_media(media: str, kind: str, expected_hash: str | None):
         os.replace(tmp, target)
     finally:
         tmp.unlink(missing_ok=True)
-    mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    mime = mimetypes.guess_type(path.name)[0]
+    if not mime or mime == "application/octet-stream":
+        fallbacks = {
+            ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".webp": "image/webp", ".gif": "image/gif", ".pdf": "application/pdf",
+            ".mp4": "video/mp4", ".mp3": "audio/mp3", ".ogg": "audio/ogg",
+            ".opus": "audio/ogg; codecs=opus", ".wav": "audio/wav",
+            ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ".txt": "text/plain",
+        }
+        mime = fallbacks.get(suffix) or mime or "application/octet-stream"
     return {"file": name, "sha256": digest, "kind": kind, "mimetype": mime, "name": path.name}, target
 
 
@@ -341,6 +423,11 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--start", action="store_true")
+    parser.add_argument("--self-test", metavar="NUMBER", default="",
+                        help="authorize the linked account as the self-chat test destination")
     args = parser.parse_args()
-    state = start() if args.start else status()
-    print(json.dumps({key: state.get(key) for key in ("running", "connected", "starting") if key in state}))
+    if args.self_test:
+        print(json.dumps(authorize_self_test(args.self_test)))
+    else:
+        state = start() if args.start else status()
+        print(json.dumps({key: state.get(key) for key in ("running", "connected", "starting") if key in state}))

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+from ishti.core.logutil import swallowed
 from orchestrator.memory.conversation import get_conversation_manager
 
 
@@ -13,11 +14,12 @@ def _review(request: str, answer: dict, context: list, reason: str) -> tuple[str
               "Infer a likely error only when the evidence supports it; otherwise say the cause is unknown. "
               "When diagnosing a factual mismatch, copy the exact wrong words or value from prior_answer and the exact "
               "correct words or value from prior_context. Never describe a value as empty if prior_answer contains one. "
-              "Correct the response in natural Markdown and address every part of the owner's original request. "
+              "Correct the response in structured, polished Markdown: use bold highlights for key points, clean tables "
+              "for comparative data, numbered lists for steps, and bullet dots for features. Address every part of the owner's request. "
               "A revision is text only: do not claim to send, edit, delete, upload, browse, save, sign in, or run a tool now. "
               "Do not claim an earlier action happened unless saved evidence verifies it. If current evidence cannot answer accurately, "
               "state the specific missing evidence. Do not invent names, amounts, citations, or outcomes. "
-              "Return JSON only: {\"issue\":\"short evidence-based or explicitly uncertain diagnosis\",\"revised_answer\":\"Markdown answer\"}.")
+              "Return JSON only: {\"issue\":\"short evidence-based diagnosis of why prior answer was wrong\",\"revised_answer\":\"Markdown answer\"}.")
     evidence = {"owner_request": request[:4000], "prior_answer": str(answer.get("content", ""))[:6000],
                 "owner_feedback": reason[:1000] or "Disliked; no specific reason supplied",
                 "prior_context": context[-8:], "sources": (answer.get("sources") or [])[:6]}
@@ -51,13 +53,15 @@ def submit(session_id: str, message_id: str, rating: str, reason: str = "") -> d
     existing = (message.get("metadata") or {}).get("feedback") or {}
     if existing.get("rating") == rating and (rating == "positive" or existing.get("revision_id")):
         saved = manager.save_feedback(session_id, message_id, rating)
+        learning_recorded = False
         try:
             from ishti.learning import feedback
             feedback.apply_answer_rating(session_id, message_id, rating)
+            learning_recorded = True
         except Exception:
-            pass
+            swallowed("answer_feedback.duplicate_rating")
         return {"rating": rating, "message_id": message_id, "revision": saved["revision"], "duplicate": True,
-                "learning_recorded": True}
+                "learning_recorded": learning_recorded}
     issue, revision = "", ""
     error = None
     if rating == "negative":
@@ -88,25 +92,28 @@ def submit(session_id: str, message_id: str, rating: str, reason: str = "") -> d
                 runtime["history_truncated"] = len(manager.get_messages(session_id)) > dispatcher.RUNTIME_MESSAGES
     except Exception:
         # The saved rating and revision remain authoritative after a restart.
-        pass
+        swallowed("answer_feedback.refresh_context")
     learning_recorded = False
     if not saved["duplicate"]:
         try:
             from ishti.learning import feedback
             feedback.apply({"kind": "positive_confirmation" if rating == "positive" else "negative_reaction",
                 "polarity": rating, "message": reason or ("Owner liked this exact answer" if rating == "positive" else "Owner disliked this exact answer"),
-                "target": (message.get("metadata") or {}).get("skill") or "chat", "error_type": "" if rating == "positive" else "unknown",
-                "source": "owner_button", "confidence": 1.0 if reason else 0.5},
+                "target": (message.get("metadata") or {}).get("skill") or "chat",
+                "error_type": "" if rating == "positive" else ("owner_feedback" if reason else "wrong_interpretation"),
+                "incorrect": str(message.get("content", ""))[:600] if rating == "negative" else "",
+                "correct": revision[:600] if rating == "negative" else "",
+                "source": "owner_button", "confidence": 1.0 if reason else 0.8},
                 interaction={"id": message_id, "request": request,
                              "skill": (message.get("metadata") or {}).get("skill") or "chat"})
             learning_recorded = True
         except Exception:
-            pass
+            swallowed("answer_feedback.record_learning")
     try:
         from ishti.learning import feedback
         feedback.apply_answer_rating(session_id, message_id, rating)
     except Exception:
-        pass
+        swallowed("answer_feedback.attribute_rating")
     return {"rating": rating, "message_id": message_id, "revision": saved["revision"],
             "duplicate": saved["duplicate"], "learning_recorded": learning_recorded, "error": error,
             "diagnosis": issue if issue else None}

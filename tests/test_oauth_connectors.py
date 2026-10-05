@@ -266,7 +266,7 @@ def test_websocket_delivers_connector_state_without_refresh(monkeypatch):
     from ishti import events
     monkeypatch.setattr(events, "replay", lambda: [])
     client = TestClient(server.app, base_url="http://127.0.0.1", client=("127.0.0.1", 50000))
-    with client.websocket_connect("/ws") as socket:
+    with client.websocket_connect("ws://127.0.0.1/ws") as socket:
         assert socket.receive_json()["type"] == "connected"
         events.publish("connectors_updated", {"service": "gmail"})
         message = socket.receive_json()

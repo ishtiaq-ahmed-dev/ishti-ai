@@ -12,6 +12,7 @@ import uuid
 import re
 import shutil
 import threading
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 try:  # best-effort failure log (never breaks the module if logging is unavailable)
@@ -23,12 +24,12 @@ except Exception:  # pragma: no cover
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SESSIONS_DIR = os.path.join(ROOT_DIR, "data", "sessions")
-os.makedirs(SESSIONS_DIR, exist_ok=True)
 
 
 class ConversationManager:
-    def __init__(self, sessions_dir: str = SESSIONS_DIR):
-        self.sessions_dir = sessions_dir
+    def __init__(self, sessions_dir: Optional[str] = None):
+        from ishti.test_mode import scratch_path
+        self.sessions_dir = sessions_dir if sessions_dir is not None else scratch_path(SESSIONS_DIR)
         self._write_lock = threading.RLock()
         os.makedirs(self.sessions_dir, exist_ok=True)
         self.active_session_id: Optional[str] = None
@@ -150,7 +151,8 @@ class ConversationManager:
             if rating == "negative" and revision.strip():
                 successor = {"id": f"msg_{time.strftime('%H%M%S')}_{uuid.uuid4().hex[:12]}",
                     "role": "ishti", "content": revision.strip()[:12000],
-                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"), "sources": [],
+                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "sources": json.loads(json.dumps(target.get("sources") or [])),
                     "metadata": {"revision_of": message_id, "diagnosis": diagnosis[:500], "request": original_request}}
                 messages.append(successor)
             meta = target.setdefault("metadata", {})
@@ -337,10 +339,7 @@ class ConversationManager:
                 os.fsync(f.fileno())
             os.replace(tmp, fpath)
         finally:
-            try:
-                os.remove(tmp)
-            except FileNotFoundError:
-                pass
+            Path(tmp).unlink(missing_ok=True)
 
 
 _conversation_manager_instance: Optional[ConversationManager] = None

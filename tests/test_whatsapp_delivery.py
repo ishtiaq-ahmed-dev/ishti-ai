@@ -1,8 +1,12 @@
 """Synthetic transport checks: no actual browser, contacts, models or sends."""
 import pytest
+from ishti import wa_bridge
 from ishti.skills.whatsapp import skill as wa
 from ishti.skills.browser import skill as browser
 
+@pytest.fixture(autouse=True)
+def _isolate_synthetic_bridge(monkeypatch):
+    monkeypatch.setattr(wa_bridge, "connected", lambda: False)
 
 def page(name="Test Self", self_chat=True, body=""):
     label = name + " (You) Message yourself" if self_chat else name
