@@ -102,13 +102,27 @@ def plan(text, skills):
         f"Where a step needs the previous step's answer, write {PREV} in its request.\n\nRequest: {text}",
         system=None, temperature=0, max_tokens=300, response_format={"type": "json_object"})
     try:
-        steps = json.loads(out).get("steps") or []
-    except (ValueError, AttributeError):
+        payload = json.loads(out)
+    except (ValueError, TypeError):
         return None
-    steps = [s for s in steps if isinstance(s, dict) and s.get("skill") in live and str(s.get("request", "")).strip()
-             and not (s["skill"] == "chat" and smalltalk(re.sub(r"[?,.!]", " ", str(s["request"]))))]
+    if not isinstance(payload, dict) or not isinstance(payload.get("steps"), list):
+        return None
+    if not 1 <= len(payload["steps"]) <= MAX_STEPS:
+        return None
+    steps = []
+    for step in payload["steps"]:
+        if not isinstance(step, dict):
+            return None
+        skill, request = step.get("skill"), step.get("request")
+        # Model output is untrusted. Reject the whole plan when a step is
+        # malformed: dropping it could run a later action without its prerequisite.
+        if not isinstance(skill, str) or skill not in live or not isinstance(request, str) or not request.strip():
+            return None
+        if skill == "chat" and smalltalk(re.sub(r"[?,.!]", " ", request)):
+            continue
+        steps.append({"skill": skill, "request": request.strip()})
     steps = fold(steps)
-    return steps[:MAX_STEPS] if len(steps) >= 2 else None
+    return steps if len(steps) >= 2 else None
 
 
 def fold(steps):
