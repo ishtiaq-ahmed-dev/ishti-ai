@@ -181,6 +181,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   const [fullGraph, setFullGraph] = useState(false);
   const recorder = useRef<MediaRecorder | null>(null);
   const sessionLoadGeneration = useRef(0);
+  const sessionLoadPending = useRef(false);
   const msgsRef = useRef(msgs);
   const uploadInput = useRef<HTMLInputElement>(null);
   const [uploads, setUploads] = useState<{ name: string; mention: string; size: number }[]>([]);
@@ -259,6 +260,9 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   const selectSession = useCallback(async (id: string) => {
     clearFocusedSkill();
     const generation = ++sessionLoadGeneration.current;
+    sessionLoadPending.current = true;
+    setUploading(false);
+    setUploads([]);
     setFeedbackBusy(null);
     setFeedbackError(null);
     setFeedbackReasonFor(null);
@@ -294,15 +298,21 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     });
     } catch (err) {
       if (generation === sessionLoadGeneration.current) console.warn("[chat] session load failed:", err);
+    } finally {
+      if (generation === sessionLoadGeneration.current) sessionLoadPending.current = false;
     }
   }, []);
 
   const newChat = useCallback(async () => {
     const generation = ++sessionLoadGeneration.current;
+    sessionLoadPending.current = true;
+    setUploading(false);
+    setUploads([]);
     setFeedbackBusy(null);
     setFeedbackError(null);
     setFeedbackReasonFor(null);
     setQueue([]);
+    try {
     const d = await postJSON<{ session_id: string }>("/api/sessions/new", { title: "New Conversation" });
     if (generation !== sessionLoadGeneration.current) return;
     try {
@@ -316,6 +326,11 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     setUploads([]);
     setGraphFor(null);
     loadSessions();
+    } catch (error) {
+      if (generation === sessionLoadGeneration.current) console.warn("[chat] new session failed:", error);
+    } finally {
+      if (generation === sessionLoadGeneration.current) sessionLoadPending.current = false;
+    }
   }, [loadSessions]);
 
   useEffect(() => {
@@ -562,7 +577,8 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   }, []);
 
   const addUploads = useCallback(async (files: FileList | null) => {
-    if (!files?.length) return;
+    if (!files?.length || sessionLoadPending.current) return;
+    const generation = sessionLoadGeneration.current;
     setUploading(true);
     setUploadError("");
     try {
@@ -575,16 +591,20 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
         form.append("file", file);
         const response = await fetch("/api/upload", { method: "POST", body: form });
         const data = await response.json().catch(() => ({}));
+        if (generation !== sessionLoadGeneration.current) return;
         if (!response.ok) throw new Error(data?.error || `Upload failed (${response.status})`);
         setUploads((current) => [...current, { name: data.name || file.name, mention: data.mention, size: data.size || file.size }]);
         totalBytes += file.size;
         totalCount += 1;
       }
     } catch (err) {
+      if (generation !== sessionLoadGeneration.current) return;
       setUploadError(err instanceof Error ? err.message : String(err));
     } finally {
-      setUploading(false);
-      if (uploadInput.current) uploadInput.current.value = "";
+      if (generation === sessionLoadGeneration.current) {
+        setUploading(false);
+        if (uploadInput.current) uploadInput.current.value = "";
+      }
     }
   }, [uploads]);
 
@@ -603,7 +623,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   async function send(text: string) {
     // Enter can submit a form even while the disabled send button is visible.
     // Keep an in-flight attachment upload from being silently omitted.
-    if (uploading) return;
+    if (uploading || sessionLoadPending.current) return;
     text = [text.trim(), ...uploads.map((f) => f.mention)].filter(Boolean).join("\n");
     if (!text) return;
     setUploads([]);
@@ -647,7 +667,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   }
 
   async function rateAnswer(messageId: string, rating: "positive" | "negative", reason = "") {
-    if (!sessionId || feedbackBusy) return;
+    if (!sessionId || feedbackBusy || sessionLoadPending.current) return;
     const targetSession = sessionId;
     const generation = sessionLoadGeneration.current;
     setFeedbackBusy(messageId);

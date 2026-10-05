@@ -21,8 +21,9 @@ if __package__ in (None, ""):  # run directly: python ishti/ftlog.py
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ishti import ROOT
+from ishti.test_mode import scratch_path
 
-DB_PATH = os.path.join(ROOT, "data", "ishti.db")  # shared facts DB, own table
+DB_PATH = scratch_path(os.path.join(ROOT, "data", "ishti.db"))  # shared facts DB, own table
 LOCK = threading.RLock()
 _conn = None
 MIN_TURNS = 2  # an exportable example needs a real exchange, not "hi" / "Hello!"

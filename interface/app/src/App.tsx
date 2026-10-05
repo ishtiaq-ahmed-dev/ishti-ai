@@ -157,15 +157,10 @@ export default function App() {
   useEffect(() => {
     const handleCloseReq = () => handleCloseTrigger();
     window.addEventListener("ishti-window-close-requested", handleCloseReq);
-    const handlePageHide = (e: PageTransitionEvent) => {
-      if (!e.persisted && !isShuttingDown) executeShutdown();
-    };
-    window.addEventListener("pagehide", handlePageHide);
     return () => {
       window.removeEventListener("ishti-window-close-requested", handleCloseReq);
-      window.removeEventListener("pagehide", handlePageHide);
     };
-  }, [handleCloseTrigger, executeShutdown, isShuttingDown]);
+  }, [handleCloseTrigger]);
 
   const onBusy = useCallback((b: boolean) => {
     setBusy(b);

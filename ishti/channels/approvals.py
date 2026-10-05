@@ -113,6 +113,9 @@ def pending() -> int:
 if __name__ == "__main__":
     import ishti.channels.policy as P
     import tempfile, os
+    from types import SimpleNamespace
+    clock = [time.time()]
+    time = SimpleNamespace(time=lambda: clock[0])
     P.PATH = os.path.join(tempfile.mkdtemp(), "p.yaml")
     P.reset_cache()
     a1 = new("whatsapp:send:ali:123", "Send 'hello' to Ali (chat 123)", ttl_s=0.05)
@@ -122,7 +125,7 @@ if __name__ == "__main__":
     assert confirm(a1, "whatsapp:send:ali:123")
     assert not confirm(a1, "whatsapp:send:ali:123")  # replay fails
     assert not get(a1)
-    time.sleep(0.08)
+    clock[0] += 0.08
     assert not confirm(a2, "terminal:rm:x")          # expired fails
     assert pending() == 0
     a3 = new("x:1", "r", ttl_s=5)

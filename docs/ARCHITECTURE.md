@@ -327,3 +327,16 @@ relying on it for new files). Per-skill detail: `ishti/skills/<name>/manifest.js
 - Visual fallback: screen_control uses screenshot OCR coordinates and one-action T2 approvals. The multi-screen
   planner proposes one structured action from a screenshot, and the executor checks approval, foreground window,
   fresh capture and monitor coordinates before applying it. Live desktop controls remain unverified.
+
+## 16. Audit repairs (2026-10-05)
+
+- General PDF/Office text extraction uses `ishti.document_reader` and a bounded child worker. Editing/conversion
+  still needs isolation; resource limits and Python network blocking do not constitute an OS security sandbox.
+- Browser refresh no longer requests backend shutdown. Explicit Quit and the native window-close event retain
+  shutdown handling. Chat streams, uploads and feedback use generation guards across session changes.
+- Upload scanners run in a dedicated pool of two workers; failures, cancelled scans and disconnected streams
+  remove staged files. Production upload encryption/retention integration remains incomplete.
+- With both test-mode flags enabled, default core stores use a per-process scratch namespace; explicit fixture
+  paths are preserved and dispatcher background learning is disabled. This does not isolate direct skill calls.
+- Audit directory preparation runs outside skill scoping, while action rows retain their original actor metadata.
+  A recursive-record guard prevents scope-denial logging from deadlocking; skill permissions remain unchanged.

@@ -29,8 +29,10 @@ export async function createApi({ token, port, state, store, socket, files, outb
       qrMatrix = encoder.modules; qrCode = qr;
     }
     const { qr: _raw, ...publicState } = state;
+    let accountMatch = false;
+    if (testDestination) { try { accountMatch = userJid(state.me || '') === jidOf(testDestination); } catch { accountMatch = false; } }
     res.json({ ...publicState, raw_qr: qr, qrAvailable: !!qr, qr_matrix: qr ? qrMatrix : null,
-      historyScope: 'since_bridge_start', revision: store.revision, retainedChats: store.chats.size });
+      testDestination: testDestination || '', accountMatch, historyScope: 'since_bridge_start', revision: store.revision, retainedChats: store.chats.size });
   });
   app.get('/chats', (_req, res) => res.json(store.list()));
   app.get('/messages', route(async (req, res) => res.json(store.messages(req.query.chat ? jidOf(req.query.chat) : '', req.query.limit))));

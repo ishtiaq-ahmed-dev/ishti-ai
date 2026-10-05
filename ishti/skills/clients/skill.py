@@ -26,7 +26,7 @@ if __package__ in (None, ""):  # run directly: python ishti/skills/clients/skill
 
 from ishti import ROOT
 from ishti.facts import get_facts
-from ishti.skills import ask_first, trace
+from ishti.skills import trace
 
 I = re.I
 
@@ -129,9 +129,23 @@ def context_load(name, allow_private=False):
     """ONE client's facts, their events and invoices - nothing else. This is the
     only grounding any client reply may use. Clients' events marked private
     (sensitive) stay out unless allow_private."""
+    from ishti import crm_contract
+    matches = [r for r in crm_contract.list_clients()
+               if r.get("scope") == "business_crm"
+               and (r.get("client_id") == name or _key(r.get("contact_name")) == _key(name))]
     c = _client(name)
-    if not c:
+    if c and matches:
         return None
+    if not c:
+        if len(matches) != 1:
+            return None
+        record = matches[0]
+        return {"client": {"id": record["client_id"], "name": _key(record["contact_name"]),
+                           "channel": record.get("channel_source", ""),
+                           "contact": record.get("phone") or record.get("email", ""),
+                           "style": "", "prefs": "", "company": record.get("company", ""),
+                           "provenance": "registered contract CRM record"},
+                "events": [], "invoices": []}
     f = _db()
     with f.lock:
         events = [dict(zip(("id", "client_id", "kind", "body", "first_seen"), r))
@@ -152,6 +166,10 @@ def grounding_for(name):
         return None
     c = ctx["client"]
     lines = [f"Client: {c['name'].title()}" + (f" ({c['channel']}: {c['contact']})" if c["channel"] else "")]
+    if c.get("company"):
+        lines.append(f"Company: {c['company']}")
+    if c.get("provenance"):
+        lines.append(f"Source: {c['provenance']} ({c['id']})")
     if c["style"]:
         lines.append(f"Communication style: {c['style']}")
     if c["prefs"]:
@@ -204,7 +222,7 @@ def op_log(text, session):
 
 
 def op_context(text, session):
-    m = re.search(r"\b(?:client\s+)?context\s+(?:for\s+|of\s+)?[\"']?(?P<name>[\w .'-]{2,40})[\"']?", text, I)
+    m = re.search(r"\b(?:client\s+)?context\s+(?:for\s+|of\s+)?[\"']?(?P<name>[\w .'-]{2,80})[\"']?", text, I)
     if not m:
         return None
     g = grounding_for(m["name"].strip())
@@ -262,6 +280,8 @@ def op_draft(text, session):
                     f"Reply with only the draft message.",
                     system=None, temperature=0.3, max_tokens=250)
     trace(session, "draft", "draft ready", status="done")
+    who = ctx["client"]["name"]
+    session.update(draft=draft, draft_for=who, draft_client_id=ctx["client"]["id"])
     return {"reply": f"Draft for {who.title()} (their history only - check it, then say "
                      f"\"send draft to {who}\" to send it):\n\n---\n{draft}\n---\n\n"
                      f"Nothing is sent until you say send.", "sources": [], "draft_for": who, "draft": draft}
@@ -272,18 +292,22 @@ def op_send(text, session):
     if not m:
         return None
     who = m["name"].strip()
-    draft = session.get("draft") if isinstance(session, dict) else None
+    if not isinstance(session, dict):
+        return {"reply": "No client draft is available in this session. Nothing was sent.", "sources": []}
+    c = _resolve(who)
+    if not c:
+        return {"reply": "That client is unknown or ambiguous. Nothing was sent; no profile was created.", "sources": []}
+    draft = session.get("draft")
     if not draft:
-        return {"reply": "Draft a reply first (\"draft a reply to " + who + "\") - then I'll ask before sending.",
-                "sources": []}
-
-    def _do():
-        # resolve the same way the draft did, so "send the draft to Aliza" logs against
-        # Aliza Khan's profile instead of spawning a second "aliza" client
-        c = _resolve(who) or _client(who, create=True)
-        _event(c["id"], "sent", draft, private=0)
-        return f"Sent to {c['name'].title()} via {c.get('channel') or 'their channel'} and logged."
-    return ask_first(session, "clients", f"Send this draft to {who.title()}?", _do)
+        return {"reply": f'Draft a reply first ("draft a reply to {who}"). Nothing was sent.', "sources": []}
+    if session.get("draft_client_id") != c["id"] or _key(session.get("draft_for")) != c["name"]:
+        return {"reply": "This draft belongs to a different client or has no verified client binding. "
+                         "Create a draft for the intended client. Nothing was sent.", "sources": []}
+    # This skill has no declared transport scope; recording an event is not delivery.
+    return {"reply": f"The draft for {c['name'].title()} is saved, but CRM message delivery is not integrated. "
+                     "Nothing was sent or logged as sent. Use the approved WhatsApp or email send flow "
+                     "with the exact recipient and this draft.", "sources": [], "ok": False,
+            "delivery": "not_attempted"}
 
 
 def op_followup(text, session):
@@ -477,63 +501,36 @@ def op_client_roster(text, session):
                 "SELECT c.name, i.label, i.amount, i.state FROM client_invoices i "
                 "JOIN clients c ON c.id=i.client_id ORDER BY i.created DESC").fetchall():
             work.setdefault(name, []).append(f"{label} ({state}, {float(amount or 0):,.0f})")
-        for name, body in f.db.execute(
-                "SELECT c.name, e.body FROM client_events e JOIN clients c ON c.id=e.client_id "
-                "WHERE e.kind IN ('message','note','deal','project') ORDER BY e.first_seen DESC").fetchall():
-            items = work.setdefault(name, [])
-    if not rows:
-        return {"reply": "No clients in your CRM store yet. Say \"new client <name>\" or "
-                         "\"Remember that <name> is my client at <company>\" to record one.",
-                "sources": []}
-
-    known_names = {r["name"].lower() for r in rows}
-
-    # Cross-store integration: also include clients stored in arch2 memory, facts, or relationship graph
+    for row in rows:
+        row["work"] = work.get(row["name"], [])
+        row["provenance"] = "registered CRM profile"
+    known_names = {_key(r["name"]) for r in rows}
     try:
-        from ishti.arch2 import memory as a2_mem
-        for ent in a2_mem.entities():
-            ename = (ent.get("name") or ent.get("display") or "").strip()
-            if not ename or ename.lower() in known_names:
+        from ishti import crm_contract
+        for record in crm_contract.list_clients():
+            if record.get("scope") != "business_crm" or not record.get("contact_name"):
                 continue
-            rel = (ent.get("relationship") or "").lower()
-            notes = str(ent.get("notes") or "")
-            if rel == "client" or "client" in notes.lower() or "client" in (ent.get("kind") or "").lower():
-                known_names.add(ename.lower())
-                proj = ""
-                m = re.search(r"client\s+(?:at|for|with)\s+([A-Za-z0-9 _.-]+)", notes, re.I)
-                if m:
-                    proj = m.group(1).strip(" .',\"")
-                rows.append({"name": ename, "channel": "memory", "contact": "", "proj": proj or "JQ AI Solutions"})
-                if proj or "JQ AI Solutions":
-                    work[ename] = [proj or "JQ AI Solutions"]
-        c = a2_mem.conn()
-        for r in c.execute("SELECT content FROM memories WHERE status!='forgotten'").fetchall():
-            fc = a2_mem._dec(r["content"])
-            m_client = re.search(r"\b([A-Z][a-z]+)\b.*?\bclient\b.*?(?:at|for|with)?\s*([A-Za-z0-9 _.-]+)?", fc, re.I)
-            if m_client:
-                cname = m_client.group(1).strip()
-                cproj = (m_client.group(2) or "").strip(" .',\"")
-                if cname.lower() not in known_names and cname.lower() not in ("i", "my", "me", "who", "what"):
-                    known_names.add(cname.lower())
-                    rows.append({"name": cname, "channel": "memory", "contact": "", "proj": cproj or "JQ AI Solutions"})
-                    if cproj or "JQ AI Solutions":
-                        work[cname] = [cproj or "JQ AI Solutions"]
+            name = record["contact_name"]
+            rows.append({"name": name, "channel": record.get("channel_source", ""),
+                         "contact": "", "work": [record["company"]] if record.get("company") else [],
+                         "provenance": "registered contract CRM record " + record["client_id"]})
+            known_names.add(_key(name))
     except Exception:
-        swallowed('ishti/skills/clients/skill.py:op_client_roster:520')
-
+        swallowed("clients:roster_contract_unavailable")
     try:
         from ishti import rgraph
-        for e in (rgraph.edges_of("me", direction="out") or []) + (rgraph.edges_of("me", direction="in") or []):
-            if (e.get("rel") or "").lower() == "client":
-                cname = (e.get("d_name") if e.get("s_name") == "me" else e.get("s_name") or "").strip()
-                if cname and cname.lower() not in known_names and cname.lower() != "me":
-                    known_names.add(cname.lower())
-                    detail = e.get("detail") or ""
-                    rows.append({"name": cname, "channel": "relationships", "contact": "", "proj": detail})
-                    if detail:
-                        work[cname] = [detail]
+        for edge in rgraph.edges_of("me", direction="out") or []:
+            if (edge.get("rel") != "client" or edge.get("s_name") != "me"
+                    or edge.get("source_type") != "explicit_user"):
+                continue
+            name = (edge.get("d_name") or "").strip()
+            if not name or _key(name) in known_names:
+                continue
+            rows.append({"name": name, "channel": "", "contact": "", "work": [],
+                         "provenance": "explicit owner client relationship"})
+            known_names.add(_key(name))
     except Exception:
-        swallowed('ishti/skills/clients/skill.py:op_client_roster:534')
+        swallowed("clients:roster_relationships_unavailable")
 
     if not rows:
         return {"reply": "No clients in your CRM store yet. Say \"new client <name>\" or "
@@ -543,9 +540,10 @@ def op_client_roster(text, session):
     for r in rows:
         name = r["name"]
         bits = [b for b in (r.get("channel"), r.get("contact")) if b and b not in ("memory", "fact", "relationships")]
-        proj_str = "; ".join(work[name]) if work.get(name) else r.get("proj")
+        proj_str = "; ".join(r.get("work", []))
         lines.append(f"- {name.title()}" + (f" ({', '.join(bits)})" if bits else "")
-                     + (f" - work: {proj_str}" if proj_str else " - no project recorded yet"))
+                     + (f" - work: {proj_str}" if proj_str else " - no project recorded yet")
+                     + f" [{r['provenance']}]")
     owed = []
     with f.lock:
         owed = [f"{n.title()} {float(a or 0):,.0f}" for n, a in f.db.execute(
@@ -565,29 +563,80 @@ ACTIVE_SUMMARY = re.compile(r"\bsummarize\s+(?:all\s+)?(?:my\s+)?active\s+client
 
 
 def op_due_work(text, session):
-    return {"reply": "Checked your stored client project milestones: There is no client work currently due this week on file. (Active client projects: JQ AI Solutions, Kestrel Scanner).", "sources": []}
+    f = _db()
+    today = dt.date.today()
+    due = []
+    with f.lock:
+        rows = f.db.execute("SELECT c.name,e.body FROM client_events e JOIN clients c ON c.id=e.client_id "
+                            "WHERE c.status='active' AND e.private=0 AND e.kind IN ('deadline','milestone')").fetchall()
+    for name, body in rows:
+        match = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", body)
+        if not match:
+            continue
+        try:
+            day = dt.date.fromisoformat(match[1])
+        except ValueError:
+            continue
+        if today <= day <= today + dt.timedelta(days=7):
+            due.append(f"- {name.title()}: {body}")
+    return {"reply": "Recorded client deadlines in the next 7 days:\n" + "\n".join(due) if due else
+            "No active-client milestone with an explicit ISO due date is recorded for the next 7 days. "
+            "Other work may still be due; no deadline was inferred.", "sources": []}
 
 
 def op_invoice_draft_custom(text, session):
-    return {"reply": "Invoice Draft for JQ AI Solutions:\n- **Client**: JQ AI Solutions\n- **Project**: AI Solutions Development (Monthly)\n- **Rate/Hours**: [Needs input: Please provide hours worked and hourly rate]\n- **Total**: [Pending input]\n- **Status**: Draft ready. Let me know the hours/rate to finalize the total amount.", "sources": []}
+    match = re.search(r"invoice\s+draft\s+for\s+(?:the\s+)?(.+?)(?:\s+work|\s+project|\s+this\s+month|$)", text, I)
+    name = match[1].strip() if match else ""
+    ctx = context_load(name) if name else None
+    if not ctx:
+        return {"reply": "No unique registered client was selected. Specify the exact client before drafting an invoice.", "sources": []}
+    lines = [f"Invoice draft for {ctx['client']['name'].title()}:"]
+    for invoice in ctx["invoices"]:
+        lines.append(f"- Recorded item #{invoice['id']}: {invoice['label']} — {invoice['amount']:,.2f} ({invoice['state']})")
+    if not ctx["invoices"]:
+        lines.append("- No invoice line items or amounts are recorded for this client.")
+    lines.append("Review the invoice period, line items, rates, currency and payment terms before creating or sending a document.")
+    return {"reply": "\n".join(lines), "sources": []}
 
 
 def op_send_invoice_gate(text, session):
-    def _send():
-        return "Invoice sent to client."
-    return ask_first(session, "clients", "Send invoice for JQ AI Solutions (Amount: $1,250, Attachment: invoice_jq_solutions.pdf) to billing@jqai.com", _send)
+    return {"reply": "No verified invoice attachment, exact client recipient or CRM delivery transport "
+                     "is selected. Nothing was sent. Prepare the invoice and use an approved channel send flow.",
+            "sources": [], "ok": False, "delivery": "not_attempted"}
 
 
 def op_proj_status(text, session):
-    return {"reply": "Kestrel Scanner deployment status: Deployment is active. Local model pipelines and hardware interfaces have been verified. Next scheduled step is onsite user testing.", "sources": []}
+    match = re.search(r"status\s+of\s+(?:the\s+)?(.+?)(?:\s+deployment|[?.!]|$)", text, I)
+    project = match[1].strip() if match else ""
+    f = _db()
+    with f.lock:
+        rows = f.db.execute("SELECT c.name,e.body FROM client_events e JOIN clients c ON c.id=e.client_id "
+                            "WHERE e.private=0 AND e.kind IN ('project','deal','milestone') ORDER BY e.first_seen DESC").fetchall()
+    hits = [(name, body) for name, body in rows if project and re.search(r"\b" + re.escape(project) + r"\b", body, I)]
+    if not hits:
+        return {"reply": f"No recorded project or deployment status for {project or 'the requested project'}. "
+                         "Deployment and hardware verification have not been confirmed by stored evidence.", "sources": []}
+    return {"reply": "Recorded project notes (current deployment is unverified):\n" +
+            "\n".join(f"- {name.title()}: {body}" for name, body in hits[:10]), "sources": []}
 
 
 def op_followup_cond(text, session):
-    return {"reply": "Scheduled conditional reminder: Follow up with client in 3 days (October 7) if no reply is received. Note: Since email tracking is local, I will notify you on October 7 to verify their reply status before following up.", "sources": []}
+    return {"reply": "No conditional follow-up was scheduled: an exact client, channel and reply-tracking "
+                     "integration are required. A dated reminder can be created through the reminders flow.",
+            "sources": [], "ok": False}
 
 
 def op_active_summary(text, session):
-    return {"reply": "Summary of active client projects:\n1. **JQ AI Solutions**: Active consulting & AI solutions; monthly invoice draft created (awaiting hours input).\n2. **Kestrel Scanner**: Deployment active; core inference verified, awaiting user field tests.\n(No other client projects on file).", "sources": []}
+    f = _db()
+    with f.lock:
+        rows = f.db.execute("SELECT c.name,e.body FROM client_events e JOIN clients c ON c.id=e.client_id "
+                            "WHERE c.status='active' AND e.private=0 AND e.kind IN ('project','deal','milestone') "
+                            "ORDER BY e.first_seen DESC").fetchall()
+    if not rows:
+        return {"reply": "No public project, deal or milestone entries are recorded for active clients. "
+                         "No project activity or completion was inferred.", "sources": []}
+    return {"reply": "Recorded active-client project notes:\n" +
+            "\n".join(f"- {name.title()}: {body}" for name, body in rows[:20]), "sources": []}
 
 
 def match(text):

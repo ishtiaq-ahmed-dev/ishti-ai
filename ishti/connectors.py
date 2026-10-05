@@ -55,11 +55,12 @@ SETUP = {
 }
 
 # Which console card a provider belongs to.
-FAMILY = {**{s: "google" for s in ("gmail", "drive", "sheets", "docs", "calendar", "people", "youtube")},
+FAMILY = {**{s: "google" for s in ("google", "gmail", "drive", "sheets", "docs", "calendar", "people", "youtube")},
           "microsoft": "microsoft", "github": "github", "instagram": "meta",
           "facebook": "meta", "linkedin": "linkedin", "telegram": "telegram"}
 
-WEB_URLS = {"gmail": "https://mail.google.com", "drive": "https://drive.google.com",
+WEB_URLS = {"google": "https://myaccount.google.com",
+            "gmail": "https://mail.google.com", "drive": "https://drive.google.com",
             "sheets": "https://sheets.google.com", "docs": "https://docs.google.com",
             "calendar": "https://calendar.google.com", "people": "https://contacts.google.com",
             "youtube": "https://www.youtube.com", "microsoft": "https://outlook.live.com/mail/",
@@ -67,6 +68,7 @@ WEB_URLS = {"gmail": "https://mail.google.com", "drive": "https://drive.google.c
             "facebook": "https://www.facebook.com", "linkedin": "https://www.linkedin.com",
             "telegram": "https://web.telegram.org"}
 READ_CAPABILITIES = {
+    "google": "Sign in with Google. Verifies your Google Account identity, email and profile.",
     "gmail": "Unread inbox, read or search mail. Other actions use Chrome with confirmation.",
     "drive": "List and search your Drive files.", "sheets": "List your Google Sheets files.",
     "docs": "List your Google Docs files.", "calendar": "Read upcoming Google Calendar events.",
@@ -78,6 +80,7 @@ READ_CAPABILITIES = {
     "telegram": "Bot access is managed in Remote channels. Personal web account requests use Chrome.",
 }
 _SERVICE_WORDS = {
+    "google": r"google|google\s+account|sign\s+in\s+with\s+google",
     "gmail": r"gmail|google\s+mail|email|e-mail",
     "drive": r"(?:google\s+)?drive|gdrive",
     "sheets": r"(?:google\s+)?sheets",
@@ -125,6 +128,10 @@ def try_request(text, session):
             return None
 
         trace(session, "connector", f"checking {service} through its connected API", status="start")
+        if service == "google":
+            who = oauth.account(service)
+            return {"reply": f"Connected to Google Account ({who or 'Signed in'}). Verified profile and email access are ready.",
+                    "sources": [], "connector": service, "verified": True, "no_escalate": True}
         if service == "gmail":
             from ishti.skills.email import skill as email
             result = email._oauth_path("check my gmail" if re.fullmatch(r"\s*(?:open|visit)\s+(?:my\s+)?gmail[.!]?\s*", text, re.I) else text, session)
@@ -262,7 +269,7 @@ def entry(service: str) -> dict:
     kind = prov.get("kind") or "oauth"
     return {
         "service": service,
-        "name": service.capitalize(),
+        "name": "Sign in with Google" if service == "google" else service.capitalize(),
         "family": fam,
         "kind": kind,                      # "oauth" = consent screen, "token" = paste a secret
         "api": prov.get("api", ""),

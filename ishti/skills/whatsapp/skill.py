@@ -1196,19 +1196,48 @@ def resolve_contact(name, session):
 
 
 def open_preferred(session, kind=None):
-    """Open WhatsApp ONCE, the way the owner prefers (Settings: Learning > About you): Web in Chrome Profile 9 by default, or the desktop
-    app - never both (the owner's complaint: 'it was opening WhatsApp Web and the Desktop app both, which was a mess')."""
-    from ishti import prefs, wa_bridge
-    if wa_bridge.connected() and not kind:
-        return {"reply": "WhatsApp is already linked through the local bridge. New messages arrive there directly; older chat history may still need WhatsApp Web.", "sources": []}
-    mode = "desktop" if (kind or "").lower() in ("desktop", "app", "application") else "web" if kind else prefs.whatsapp_mode()
-    if mode == "desktop":
-        from desktop.computer_use import get_computer_use_agent
-        agent = get_computer_use_agent()
-        agent.launch_app("whatsapp")
-        time.sleep(0.6)
-        agent.focus_window("whatsapp")
-        return {"reply": "Opened WhatsApp Desktop.", "sources": []}
+    """Open WhatsApp following the owner's 3-tier hierarchy:
+    1. Priority 1: Check if WhatsApp is connected via QR scan bridge (send/receive directly).
+    2. Priority 2: If QR bridge is not connected, open WhatsApp Desktop application.
+    3. Priority 3: If desktop app is not available/fails to load, close that app and open WhatsApp Web (Chrome Profile 9)."""
+    from ishti import wa_bridge
+    t_kind = (kind or "").lower().strip()
+
+    # Priority 1: QR scan bridge (unless owner explicitly requested a GUI app/web view)
+    if not t_kind and wa_bridge.connected():
+        return {
+            "reply": "WhatsApp is connected via the local QR bridge. New messages arrive and send directly through it; older chat history remains accessible in WhatsApp Web.",
+            "sources": []
+        }
+
+    # Priority 2: WhatsApp Desktop application
+    if t_kind in ("desktop", "app", "application") or not t_kind:
+        desktop_opened = False
+        try:
+            from desktop.computer_use import get_computer_use_agent
+            agent = get_computer_use_agent()
+            res = agent.launch_app("whatsapp")
+            time.sleep(1.0)
+            if res.get("status") == "success" and agent.focus_window("whatsapp"):
+                desktop_opened = True
+        except Exception:
+            desktop_opened = False
+
+        if desktop_opened:
+            return {"reply": "Opened WhatsApp Desktop.", "sources": []}
+
+        # If desktop app was explicitly requested but failed:
+        if t_kind in ("desktop", "app", "application"):
+            return {"reply": "WhatsApp Desktop could not be opened. You can use WhatsApp Web or link the QR bridge.", "sources": []}
+
+        # Priority 3 fallback: Close any unresponsive/hung desktop process and open WhatsApp Web
+        try:
+            import subprocess
+            subprocess.run(["taskkill", "/F", "/IM", "WhatsApp.exe"], capture_output=True, timeout=3)
+        except Exception:
+            from ishti.core.logutil import swallowed
+            swallowed("whatsapp.open_preferred.taskkill")
+
     snap, ok = open_whatsapp(session)
     if ok:
         return {"reply": "Opened WhatsApp Web (Chrome Profile 9).", "sources": []}

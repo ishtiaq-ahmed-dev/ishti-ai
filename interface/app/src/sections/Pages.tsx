@@ -2125,7 +2125,7 @@ export function Connectors({ onToggleNav }: { onToggleNav?: () => void }) {
               className={cn("rounded-lg px-2.5 py-1 text-[11px] font-medium cursor-pointer",
                 c.has_credentials ? "bg-accent text-white" : "border border-border bg-card hover:border-accent/40",
                 (busy === c.service || waiting) && "opacity-60")}>
-              {waiting ? "Waiting for consent…" : c.has_credentials ? (c.family === "google" ? "Connect to Google" : `Connect to ${FAMILY_LABEL[c.family] || c.name}`) : "Advanced setup"}
+              {waiting ? "Waiting for consent…" : c.has_credentials ? (c.service === "google" ? "Sign in with Google" : c.family === "google" ? "Connect to Google" : `Connect to ${FAMILY_LABEL[c.family] || c.name}`) : (c.service === "google" ? "Configure Google Sign-In" : "Advanced setup")}
             </button>
           )}
           {c.kind === "token" && (

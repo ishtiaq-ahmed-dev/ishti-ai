@@ -21,7 +21,8 @@ def norm(name: str) -> str:
 
 class Facts:
     def __init__(self, path: str = None):
-        path = path or CONFIG["memory"]["db_path"]
+        from ishti.test_mode import scratch_path
+        path = path or scratch_path(CONFIG["memory"]["db_path"])
         os.makedirs(os.path.dirname(path), exist_ok=True)
         self.db = sqlite3.connect(path, check_same_thread=False)
         self.lock = threading.Lock()

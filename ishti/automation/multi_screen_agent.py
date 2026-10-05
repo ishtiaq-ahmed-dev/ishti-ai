@@ -248,7 +248,7 @@ class VisualCaptureEngine:
                 swallowed('ishti/automation/multi_screen_agent.py:get_cursor_position:246')
         return (0, 0)
 
-    def capture_stitched(self, highlight_cursor: bool = True, allow_synthetic: bool = False) -> Tuple[Image.Image, Tuple[int, int], str]:
+    def capture_stitched(self, highlight_cursor: bool = True, allow_synthetic: Optional[bool] = None) -> Tuple[Image.Image, Tuple[int, int], str]:
         """
         Captures all connected monitors and stitches them side-by-side / in their layout canvas.
         Draws the visual cursor reticle and coordinate text directly onto the stitched image.
@@ -304,6 +304,9 @@ class VisualCaptureEngine:
 
         # A fabricated frame must never authorize a live mouse/keyboard action.
         if not grab_success:
+            if allow_synthetic is None:
+                from ishti import test_mode
+                allow_synthetic = test_mode.enabled()
             if not allow_synthetic:
                 raise RuntimeError("no_interactive_desktop: a real screenshot could not be captured")
             self._render_synthetic_desktop(stitched)

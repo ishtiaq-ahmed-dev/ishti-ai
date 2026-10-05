@@ -24,7 +24,7 @@ import urllib.request
 import urllib.error
 import tempfile
 
-GOOGLE_SERVICES = ("gmail", "drive", "sheets", "docs", "calendar", "people", "youtube")
+GOOGLE_SERVICES = ("google", "gmail", "drive", "sheets", "docs", "calendar", "people", "youtube")
 _LOCK = threading.RLock()
 _TOKEN_LOCKS = {}
 
@@ -180,6 +180,10 @@ def status(service: str) -> str:
 #   scopes - default scopes; connect(service, scopes=[...]) overrides them
 PROVIDERS = {
     # ---------------- Google: same auth server, different scope ----------------
+    "google":  {"auth": "https://accounts.google.com/o/oauth2/v2/auth",
+                "token": "https://oauth2.googleapis.com/token",
+                "api": "https://www.googleapis.com/oauth2/v3/userinfo",
+                "scopes": ["openid", "https://www.googleapis.com/auth/userinfo.profile", "https://www.googleapis.com/auth/userinfo.email"]},
     "gmail":   {"auth": "https://accounts.google.com/o/oauth2/v2/auth",
                 "token": "https://oauth2.googleapis.com/token",
                 "api": "https://gmail.googleapis.com/gmail/v1/users/me", "scopes": GMAIL_SCOPES},

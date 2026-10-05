@@ -16,8 +16,9 @@ import uuid
 import hashlib
 import secrets
 from typing import Dict, Any, List, Optional, Tuple
+from ishti.test_mode import scratch_path
 
-CRM_STORE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "crm_clients.json")
+CRM_STORE_PATH = scratch_path(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "crm_clients.json"))
 _STORE_LOCK = threading.RLock()
 _DELETE_APPROVALS = {}
 DELETE_APPROVAL_TTL = 120

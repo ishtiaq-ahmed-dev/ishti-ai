@@ -133,6 +133,69 @@ def connected() -> bool:
     return bool(status().get("connected"))
 
 
+TEST_DESTINATION_FILE = Path(DATA) / "test_destination"
+
+
+def _digits(value: str) -> str:
+    return re.sub(r"\D", "", str(value or ""))
+
+
+def _jid_number(jid: str) -> str:
+    """The phone number of an account JID, without its device suffix (`...:user@example.com`)."""
+    return _digits(str(jid or "").split("@", 1)[0].split(":", 1)[0])
+
+
+def test_destination() -> str:
+    """The owner-authorized self-chat destination, or '' when no gate is armed.
+
+    An explicit ISHTI_WA_TEST_DESTINATION wins; otherwise the persisted authorization
+    written by `authorize_self_test` is used so the owner does not need an environment
+    variable to run a linked-account self-test.
+    """
+    explicit = os.environ.get("ISHTI_WA_TEST_DESTINATION", "").strip()
+    if explicit:
+        return explicit
+    try:
+        return TEST_DESTINATION_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def account_matches_self_test() -> bool:
+    """True only when the linked bridge account is the authorized self-chat number."""
+    destination = _digits(test_destination())
+    return bool(destination) and destination == _jid_number(status().get("me") or "")
+
+
+def authorize_self_test(destination: str) -> dict:
+    """Persist an owner authorization of the account currently linked to the bridge.
+
+    Refuses any number that is not the linked account, so an authorized self-test can
+    never point at a third party. The Node gate reads the destination at startup, so a
+    running bridge reports requiresRestart.
+    """
+    if _test_mode():
+        raise BridgeError("Live self-test authorization is disabled in test mode")
+    number = _digits(destination)
+    if not 6 <= len(number) <= 15:
+        raise BridgeError("A complete international phone number is required")
+    state = status()
+    linked = _jid_number(state.get("me") or "")
+    if not linked:
+        raise BridgeError("The bridge is not connected to a WhatsApp account yet")
+    if number != linked:
+        raise BridgeError("The authorized number must be the account linked to this bridge")
+    with _lock:
+        TEST_DESTINATION_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = TEST_DESTINATION_FILE.with_suffix("." + uuid.uuid4().hex + ".tmp")
+        try:
+            tmp.write_text(number, encoding="utf-8")
+            os.replace(tmp, TEST_DESTINATION_FILE)
+        finally:
+            tmp.unlink(missing_ok=True)
+    return {"ok": True, "destination": number, "linked": linked, "requiresRestart": bool(state.get("running"))}
+
+
 def start() -> dict:
     global _child
     if _test_mode():
@@ -143,7 +206,7 @@ def start() -> dict:
             return state
         if _child is not None and _child.poll() is None:
             return {"running": True, "connected": False, "starting": True}
-        bootstrap = _credentials(create=True)
+        bootstrap = {**_credentials(create=True), "testDestination": test_destination()}
         node = os.environ.get("ISHTI_NODE_EXE") or shutil.which("node")
         if not node or not Path(node).is_file():
             raise BridgeError("Node.js runtime is unavailable")
@@ -181,8 +244,11 @@ def get_qr_data() -> dict:
         buffer = io.BytesIO()
         picture.save(buffer, format="PNG")
         image = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+    destination = test_destination()
     return {"connected": bool(state.get("connected")), "running": bool(state.get("running")),
         "qr_image": image, "raw_qr": state.get("raw_qr") or state.get("qr"), "ascii_qr": "", "me": state.get("me") or "",
+        "testDestination": destination,
+        "accountMatches": bool(_digits(destination)) and _digits(destination) == _jid_number(state.get("me") or ""),
         "lastError": state.get("lastError"), "historyScope": state.get("historyScope")}
 
 
@@ -346,6 +412,11 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--start", action="store_true")
+    parser.add_argument("--self-test", metavar="NUMBER", default="",
+                        help="authorize the linked account as the self-chat test destination")
     args = parser.parse_args()
-    state = start() if args.start else status()
-    print(json.dumps({key: state.get(key) for key in ("running", "connected", "starting") if key in state}))
+    if args.self_test:
+        print(json.dumps(authorize_self_test(args.self_test)))
+    else:
+        state = start() if args.start else status()
+        print(json.dumps({key: state.get(key) for key in ("running", "connected", "starting") if key in state}))

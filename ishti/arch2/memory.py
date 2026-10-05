@@ -38,7 +38,8 @@ _conn = None
 
 
 def db_path() -> str:
-    return os.path.join(ROOT, "data", MEM().get("db_name", "arch2_memory.db"))
+    from ishti.test_mode import scratch_path
+    return scratch_path(os.path.join(ROOT, "data", MEM().get("db_name", "arch2_memory.db")))
 
 
 def conn():

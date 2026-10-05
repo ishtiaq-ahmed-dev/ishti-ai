@@ -1384,12 +1384,13 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
                                                     metadata={"events": events[-150:], "skill": name,
                                                               "request": text})
                     message_id = saved_answer.get("id") if isinstance(saved_answer, dict) else None
-    if not incog and not secret and name not in ("memory",) and is_safe_for_history(reply):  # exact facts already live in SQLite
+    from ishti import test_mode
+    if not test_mode.enabled() and not incog and not secret and name not in ("memory",) and is_safe_for_history(reply):  # exact facts already live in SQLite
         threading.Thread(target=_remember, args=(text, reply, name), daemon=True).start()
         threading.Thread(target=_ftlog, args=(text, reply, name, dec, channel), daemon=True).start()  # Part 3 collection
         if name != "memory_manager":  # ARCH2: learn from every exchange (extraction + thresholds)
             threading.Thread(target=_arch2_consolidate, args=(text, reply, name, channel), daemon=True).start()
-    if not secret and not hidden and not incog:
+    if not test_mode.enabled() and not secret and not hidden and not incog:
         threading.Thread(target=_learn, args=(text,), daemon=True).start()  # the owner's lasting facts and preferences
         threading.Thread(target=_learn_turn, args=(text, reply, name, dec, sid, channel, message_id), daemon=True).start()
         try:

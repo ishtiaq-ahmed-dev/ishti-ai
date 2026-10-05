@@ -92,6 +92,48 @@ def test_missing_key_preserves_existing_encrypted_session(monkeypatch, tmp_path)
     assert not (tmp_path / 'bootstrap.dpapi').exists()
 
 
+def test_test_destination_prefers_explicit_env_then_persisted_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(bridge, 'DATA', str(tmp_path))
+    monkeypatch.setattr(bridge, 'TEST_DESTINATION_FILE', tmp_path / 'test_destination')
+    monkeypatch.delenv('ISHTI_WA_TEST_DESTINATION', raising=False)
+    assert bridge.test_destination() == ''
+    (tmp_path / 'test_destination').write_text('+92 300 0000000', encoding='utf-8')
+    assert bridge.test_destination() == '+92 300 0000000'
+    monkeypatch.setenv('ISHTI_WA_TEST_DESTINATION', '+92 300 0000000')
+    assert bridge.test_destination() == '+92 300 0000000'
+
+
+def test_authorize_self_test_requires_the_linked_account_and_persists(monkeypatch, tmp_path):
+    monkeypatch.setattr(bridge, 'DATA', str(tmp_path))
+    monkeypatch.setattr(bridge, 'TEST_DESTINATION_FILE', tmp_path / 'test_destination')
+    monkeypatch.delenv('ISHTI_TEST_MODE', raising=False)
+    monkeypatch.delenv('ISHTI_WA_TEST_DESTINATION', raising=False)
+    monkeypatch.setattr(bridge, 'status', lambda: {'running': True, 'connected': True, 'me': '+92 300 0000000:user@example.com'})
+    with pytest.raises(bridge.BridgeError, match='must be the account'):
+        bridge.authorize_self_test('+92 300 0000000')
+    assert not (tmp_path / 'test_destination').exists()
+    result = bridge.authorize_self_test('+92 329 593 5545')
+    assert result == {'ok': True, 'destination': '+92 300 0000000', 'linked': '+92 300 0000000', 'requiresRestart': True}
+    assert (tmp_path / 'test_destination').read_text(encoding='utf-8') == '+92 300 0000000'
+    assert bridge.account_matches_self_test() is True
+
+
+def test_unauthorized_or_unlinked_destination_is_not_a_match(monkeypatch, tmp_path):
+    monkeypatch.setattr(bridge, 'DATA', str(tmp_path))
+    monkeypatch.setattr(bridge, 'TEST_DESTINATION_FILE', tmp_path / 'test_destination')
+    monkeypatch.setenv('ISHTI_WA_TEST_DESTINATION', '+92 300 0000000')
+    monkeypatch.setattr(bridge, 'status', lambda: {'running': True, 'connected': True, 'me': '+92 300 0000000:user@example.com'})
+    assert bridge.account_matches_self_test() is False
+    monkeypatch.setattr(bridge, 'status', lambda: {'running': True, 'connected': False, 'me': ''})
+    assert bridge.account_matches_self_test() is False
+
+
+def test_live_self_test_authorization_disabled_in_test_mode(monkeypatch):
+    monkeypatch.setenv('ISHTI_TEST_MODE', '1')
+    with pytest.raises(bridge.BridgeError, match='disabled in test mode'):
+        bridge.authorize_self_test('+92 300 0000000')
+
+
 @pytest.mark.skipif(os.name != 'nt', reason='Windows DPAPI integration')
 def test_native_dpapi_roundtrip_uses_bytes_without_exposing_synthetic_secret():
     encrypted = bridge._protect(b'synthetic credential verification')

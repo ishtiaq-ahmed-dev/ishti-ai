@@ -30,7 +30,7 @@ for (const method of ['log', 'info', 'debug', 'warn', 'error', 'trace']) console
 let sock, reconnect, stopping = false, attempts = 0;
 const api = await createApi({ token: bootstrap.token, port, state, store, files,
   outbox: new SecureFiles(path.join(DATA, 'encrypted_outbox'), Buffer.from(bootstrap.key, 'base64')), socket: () => sock,
-  testDestination: process.env.ISHTI_WA_TEST_DESTINATION || '',
+  testDestination: bootstrap.testDestination || process.env.ISHTI_WA_TEST_DESTINATION || '',
   download: message => downloadMediaMessage(message, 'stream', { options: { timeout: 20000, maxRedirects: 0 } },
     { logger, reuploadRequest: m => sock.updateMediaMessage(m) }) });
 const server = api.app.listen(port, '127.0.0.1');
