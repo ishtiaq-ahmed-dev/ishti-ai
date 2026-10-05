@@ -12,3 +12,7 @@
 | Real dispatch smoke | `python -m ishti.run_executor` (self-check; requires Ollama) | PASS (state=done) when GPU free; skipped in offline suite (stubbed) |
 
 Not run (needs live services / owner): real WhatsApp/Telegram smoke, GPU A/B evals (WP2-WP6), full default suite. Listed in NEEDS.md.
+
+| Backend suite incl. WP2/WP3/WP7 | `python -m pytest tests/backend -q` | PASS 34/34, 3 consecutive green runs (exit 0 x3, 2026-10-06) |
+| Decision loop self-check | `python -m ishti.decision_loop` | PASS |
+| Agent bus self-check | `python -m ishti.agent_bus` | PASS |

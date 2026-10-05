@@ -59,6 +59,11 @@ def _run_one(run_id: str, run: dict, cancelled: threading.Event, t0: float) -> N
                           sources=ev.get("sources"))
         elif kind == "verify":
             runs.run_step(run_id, "verify", ev.get("label") or "verify")
+        elif kind == "research_state":
+            # WP2 never-early gate: the orchestrator's deep_research state machine publishes
+            # state changes; a final answer may only go out when the state is COMPLET else the
+            # executor holds the result and reports what is still missing.
+            states.add(str(ev.get("state") or ev.get("detail") or ""))
 
     def on_token(chunk: str) -> None:
         if not chunk:
@@ -67,13 +72,24 @@ def _run_one(run_id: str, run: dict, cancelled: threading.Event, t0: float) -> N
             cancelled.set()
         runs.run_delta(run_id, chunk)
 
+    states: set[str] = set()
     try:
         from ishti import dispatcher
         res = dispatcher.handle(_text_of(run), run["chat_id"],
                                 channel="text", on_token=on_token, on_event=on_event)
         if cancelled.is_set() or runs.run_state(run_id) == "cancelled":
             return  # already terminal; the dispatcher result is dropped
-        runs.finish_run(run_id, str(res.get("final_answer") or ""))
+        answer = str(res.get("final_answer") or "")
+        # WP2 gate: RESEARCHING/SEARCHING/VERIFYING states seen and never COMPLET -> the answer
+        # would be early. Replace it with an honest exhaustion report instead of a guess.
+        research_ran = any(s for s in states if s)
+        complete = any("COMPLET" in s.upper() for s in states)
+        if research_ran and not complete:
+            answer = ("I could not finish verifying this one. " + answer[:600] +
+                      "\n\nWhat I tried: " + "; ".join(sorted(s for s in states if s))[:400] +
+                      ". What is missing: independent confirmation of the remaining claims.")
+            runs.run_step(run_id, "verify", "research did not reach COMPLET; answer marked unverified")
+        runs.finish_run(run_id, answer)
     except BaseException as exc:  # dispatcher reports its own Exceptions; this is the belt
         if type(exc).__name__ == "Cancelled":
             runs.cancel_run(run_id)
