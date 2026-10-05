@@ -164,6 +164,7 @@ def _create(**args):
     from ishti import models, vram
     import requests
     role = args.pop("_role", None)
+    recover = args.pop("_recover", True)
     if role in ("main", "validation"):  # arch2's roles are the planner: same rung, same pinning
         role = "planner"
     lease = None
@@ -185,16 +186,35 @@ def _create(**args):
     except requests.HTTPError as exc:  # Ollama refused the load (out of memory...): sending the chat would just retry it ungoverned
         guard.__exit__(None, None, None)
         raise vram.GpuBusy(f"The model could not be loaded onto the graphics card ({exc.response.status_code if exc.response is not None else 'error'}).") from exc
-    except Exception as exc:  # Ollama unreachable / governor bug: never block a chat on it - log, and the degraded path below handles Ollama being down
-        print(f"[llm] VRAM governor skipped ({type(exc).__name__}: {exc})", flush=True)
-    models.used(args["model"])  # D3: usage decides how long the model stays in VRAM
+    except Exception as exc:
+        guard.__exit__(None, None, None)
+        raise vram.GpuBusy("GPU residency could not be verified; no model request was sent. "
+                           "Check the local model service and try again.") from exc
+    except BaseException:
+        guard.__exit__(None, None, None)
+        raise
 
     def done():
         guard.__exit__(None, None, None)
         if lease:
             vram.release(lease)
     try:
+        models.used(args["model"])  # D3: usage decides how long the model stays in VRAM
         out = _create_call(args, openai)
+    except openai.APIConnectionError:
+        done()
+        if not recover:
+            raise RuntimeError("The local model service is unavailable after recovery; try again.") from None
+        from ishti import lifecycle
+        try:
+            ready = lifecycle.start_ollama()
+        except Exception as exc:
+            raise RuntimeError("The local model service could not be restarted; try again.") from exc
+        if not ready:
+            raise RuntimeError("The local model service did not become ready; try again.")
+        # A restarted service has lost the previous residency state and lease.
+        # Re-enter the governor before sending any replacement generation.
+        return _create(**args, _role=role, _recover=False)
     except BaseException:
         done()
         raise
@@ -211,23 +231,7 @@ def _create(**args):
 
 
 def _create_call(args, openai):
-    try:
-        return _get_client().chat.completions.create(**args)
-    except openai.APIConnectionError:
-        import time
-        from ishti import lifecycle
-        try:  # the one place that starts Ollama (hidden, in our Job Object, remembered as ours)
-            lifecycle.start_ollama()
-        except Exception as exc:
-            print(f"[llm] could not start Ollama: {type(exc).__name__}: {exc}", flush=True)
-        for _ in range(15):
-            time.sleep(1)
-            try:
-                return _get_client().chat.completions.create(**args)
-            except openai.APIConnectionError:
-                continue
-        raise RuntimeError("the local AI model (Ollama) isn't running and I couldn't start it - start Ollama "
-                           "and ask again") from None
+    return _get_client().chat.completions.create(**args)
 
 
 class Cancelled(Exception):
