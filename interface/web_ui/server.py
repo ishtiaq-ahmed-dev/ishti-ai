@@ -1995,6 +1995,9 @@ privacy_api.attach(app)
 from ishti.channels import api as remote_api  # noqa: E402  /api/remote/* + channel boot/stop (docs/API_CONTRACT.md §11)
 remote_api.attach(app)
 
+from ishti import contract_api  # noqa: E402  Contract v2 §14: chats/runs/feedback/profiles/connectors/agents/learning (docs/API_CONTRACT.md)
+contract_api.attach(app)
+
 
 def start_server(port: int = 8888):
     from ishti import lifecycle

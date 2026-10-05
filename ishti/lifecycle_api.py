@@ -9,6 +9,7 @@ from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 from ishti import events, lifecycle, vram
+from ishti import runs as runs  # durable event log (contract v2 §14)
 
 router = APIRouter()
 # still answered while shutting down (everything else gets 503)
@@ -117,7 +118,7 @@ async def shutdown(req: Request):
 
 
 @router.websocket("/ws/events")
-async def ws_events(ws: WebSocket):
+async def ws_events(ws: WebSocket, since_seq: int = -1):
     srv = sys.modules.get("interface.web_ui.server")
     if srv is not None and not srv.authorized(ws):
         await ws.close(code=1008)
@@ -133,19 +134,30 @@ async def ws_events(ws: WebSocket):
 
     def push(m):
         loop.call_soon_threadsafe(_put, m)
-    seq = 0
+    seq = 0  # per-connection fallback counter for legacy (seq-less) bus events
 
     async def send(m):
         nonlocal seq
+        """Legacy events carry no global seq -> stamp a per-connection sequence. Contract v2
+        envelopes (durable run-event log) already carry the global seq and go out untouched."""
+        if "seq" in m:
+            await ws.send_text(json.dumps(m, ensure_ascii=False, default=str))
+            return
         seq += 1
         await ws.send_text(json.dumps({**m, "seq": seq}, ensure_ascii=False, default=str))
 
     events.subscribe(push)
     try:
-        replayed = events.replay()
+        if since_seq >= 0:
+            # Contract v2 replay: durable log with global seq. Events that happened while the
+            # client was away are re-sent exactly once, in order (WP1); legacy behavior (no
+            # since_seq param) is unchanged below.
+            for m in runs.events_since(since_seq):
+                await send(m)
+        replayed = [] if since_seq >= 0 else events.replay()
         for m in replayed:
             await send(m)
-        if not any(m["type"] == "boot_stage" for m in replayed):  # nothing published yet: send the current picture
+        if since_seq < 0 and not any(m["type"] == "boot_stage" for m in replayed):  # legacy-only picture
             snap = lifecycle.ready_snapshot()
             cur = next((s for s in snap["stages"] if not s["done"]), snap["stages"][-1])
             await send({"type": "boot_stage", "ts": snap["elapsed_s"], "data": {"id": cur["id"], "label": cur["label"], "done": cur["done"],
@@ -223,6 +235,17 @@ def attach(app):
     app.include_router(router)
     app.add_middleware(Gate)
 
+    def _wire_event_log():
+        """runs.publish fans out to live subscribers AND persists (contract v2 §14.3).
+        publish_raw keeps the durable envelope's global seq; subscribers get the identical object
+        a since_seq replay would return."""
+        runs.set_listener(events.publish_raw)
+
     async def _boot():
+        _wire_event_log()
+        try:
+            runs.recover_interrupted()  # WP1 restart recovery (idempotent)
+        except Exception as exc:
+            print(f"[lifecycle_api] run recovery skipped: {exc}")
         lifecycle.start(lifecycle._st["port"])
     app.on_event("startup")(_boot)
