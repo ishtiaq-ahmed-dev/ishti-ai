@@ -177,7 +177,7 @@ export function IshtiBrand({
     );
   }
 
-  // 4. SIDEBAR HORIZONTAL LOCKUP (Icon 36px + Wordmark & Subtitle)
+  // 4. SIDEBAR HORIZONTAL LOCKUP (Icon 34px + Vector Wordmark & Subtitle)
   if (variant === "lockup") {
     return (
       <div
@@ -192,20 +192,13 @@ export function IshtiBrand({
           <rect x="24" y="24" width="464" height="464" rx="108" fill={NAVY_COLOR} />
           <path d={APP_ICON_SPARKLE_PATH} fill={GOLD_COLOR} />
         </svg>
-        <div className="flex flex-col leading-none">
-          <div className="flex items-center">
-            <span
-              className="font-extrabold text-[17px] tracking-[0.05em] transition-colors relative"
-              style={{ color: textFill }}
-            >
-              ISHTI
-              <span className="absolute -top-1.5 right-[1px] text-[11px] font-bold text-[#ce8418] pointer-events-none select-none">
-                ✦
-              </span>
-            </span>
-          </div>
+        <div className="flex flex-col justify-center leading-none">
+          <svg viewBox="14 0 198 84" className="h-[19px] w-auto shrink-0 select-none" fill="none">
+            <path d={FLOATING_SPARKLE_PATH} fill={GOLD_COLOR} />
+            <path d={ISHTI_VECTOR_PATH} fill={textFill} className="transition-colors" />
+          </svg>
           <span
-            className="text-[9.5px] font-semibold tracking-[0.24em] transition-colors mt-1 opacity-80"
+            className="text-[9px] font-bold tracking-[0.24em] transition-colors mt-0.5 opacity-80"
             style={{ color: taglineFill }}
           >
             PERSONAL AI
