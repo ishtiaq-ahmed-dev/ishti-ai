@@ -12,6 +12,9 @@ import json
 import os
 import re
 import time
+import unicodedata
+from collections import Counter
+from itertools import islice
 
 from ishti import CONFIG
 
@@ -27,26 +30,46 @@ def _db():
 
 
 def norm(text):
-    return " ".join(re.findall(r"[a-z0-9']+", (text or "").lower()))
+    """Keep words from every language; punctuation cannot become a learned request."""
+    value = unicodedata.normalize("NFKC", text or "").casefold()
+    return " ".join(re.findall(r"[^\W_]+(?:'[^\W_]+)*", value))
 
 
 def record(request, wrong, right):
+    request = request[:500]
+    normalized = norm(request)
+    if not normalized or not right:
+        return
     f = _db()
     with f.lock, f.db:
-        f.db.execute("INSERT INTO corrections VALUES(?,?,?,?,?)", (time.time(), request[:500], norm(request), wrong or "", right))
+        f.db.execute("INSERT INTO corrections VALUES(?,?,?,?,?)", (time.time(), request, normalized, wrong or "", right))
 
 
 def learned(text):
     """The skill past corrections point to for this request, or None."""
+    if not norm(text):
+        return None
     f = _db()
     with f.lock:
-        rows = f.db.execute("SELECT norm, right FROM corrections ORDER BY ts DESC LIMIT 2000").fetchall()
-    if not rows:
-        return None
+        rows = f.db.execute("SELECT request, right FROM corrections ORDER BY ts DESC, rowid DESC LIMIT 2000").fetchall()
+    return learned_from_rows(text, rows)
+
+
+def learned_from_rows(text, rows):
+    """Read-only scoring of (original request, corrected skill) rows, newest first.
+
+    Normalize the original text rather than trusting legacy ASCII-only keys. Keeping
+    this pure lets offline evaluation replay candidates without touching live stores.
+    """
     n = norm(text)
+    if not n:
+        return None
+    rows = [(norm(q), r) for q, r in islice(rows, 2000) if r and norm(q)]
     exact = [r for q, r in rows if q == n]
     if exact:
-        return max(set(exact), key=exact.count)  # the most given answer for exactly this request
+        counts = Counter(exact)
+        leaders = [r for r, count in counts.items() if count == max(counts.values())]
+        return leaders[0] if len(leaders) == 1 else None
     votes = {}
     for q, r in rows:
         if difflib.SequenceMatcher(None, q, n).ratio() >= 0.85:
@@ -62,11 +85,19 @@ def export():
     """data/corrections.jsonl - one line per (request, wrong, right) with how often it was given."""
     f = _db()
     with f.lock:
-        rows = f.db.execute("SELECT request, wrong, right, COUNT(*) FROM corrections GROUP BY norm, wrong, right").fetchall()
+        rows = f.db.execute("SELECT request, wrong, right FROM corrections ORDER BY ts, rowid").fetchall()
+    grouped = {}
+    for request, wrong, right in rows:
+        normalized = norm(request)
+        if not normalized or not right:
+            continue
+        item = grouped.setdefault((normalized, wrong, right),
+                                  {"request": request, "wrong": wrong, "right": right, "count": 0})
+        item["count"] += 1
     with open(EXPORT, "w", encoding="utf-8") as fh:
-        for req, wrong, right, n in rows:
-            fh.write(json.dumps({"request": req, "wrong": wrong, "right": right, "count": n}, ensure_ascii=False) + "\n")
-    return EXPORT, len(rows)
+        for item in grouped.values():
+            fh.write(json.dumps(item, ensure_ascii=False) + "\n")
+    return EXPORT, len(grouped)
 
 
 if __name__ == "__main__":
