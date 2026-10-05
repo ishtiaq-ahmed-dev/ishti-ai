@@ -394,7 +394,7 @@ def connect(service: str, client_id: str = "", client_secret: str = "", scopes=N
     supplied_credentials = bool(client_id)
     client_id = client_id or config(service)[0]
     client_secret = client_secret or config(service)[1]
-    if not client_id or (service != "microsoft" and not client_secret):
+    if not client_id or (service not in ("microsoft", "google") and not client_secret):
         return {"ok": False, "reply": f"The {service} app registration is incomplete. Configure ISHTI's app once in Connectors → Advanced setup, then sign in with the Connect button."}
     if supplied_credentials:
         set_credentials(service, client_id, client_secret)
@@ -432,12 +432,14 @@ def connect(service: str, client_id: str = "", client_secret: str = "", scopes=N
         def log_message(self, *a):
             pass
 
-    # Providers with exact registered callbacks cannot use a random port.
-    port = 0 if family(service) == "google" or service == "microsoft" else 8765
+    # Standard registered callback port is 8765; fall back to dynamic port 0 only if 8765 is occupied.
     try:
-        server = HTTPServer(("127.0.0.1", port), _Handler)
+        server = HTTPServer(("127.0.0.1", 8765), _Handler)
     except OSError:
-        return {"ok": False, "reply": "The local sign-in callback port is busy. Close the other sign-in flow and retry."}
+        try:
+            server = HTTPServer(("127.0.0.1", 0), _Handler)
+        except OSError:
+            return {"ok": False, "reply": "The local sign-in callback port is busy. Close the other sign-in flow and retry."}
     redirect = f"http://127.0.0.1:{server.server_address[1]}/"
     q = {"client_id": client_id, "response_type": "code", "redirect_uri": redirect,
          "scope": " ".join(scopes), "state": state,

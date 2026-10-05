@@ -288,7 +288,7 @@ def find_chat(name: str) -> str:
 
 
 def _stage_media(media: str, kind: str, expected_hash: str | None):
-    path = Path(media)
+    path = Path(str(media).strip('"\' '))
     if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_MEDIA:
         raise BridgeError("Attachment is unreadable or exceeds 50 MB")
     with path.open("rb") as stream:
@@ -317,7 +317,18 @@ def _stage_media(media: str, kind: str, expected_hash: str | None):
         os.replace(tmp, target)
     finally:
         tmp.unlink(missing_ok=True)
-    mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    mime = mimetypes.guess_type(path.name)[0]
+    if not mime or mime == "application/octet-stream":
+        fallbacks = {
+            ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".webp": "image/webp", ".gif": "image/gif", ".pdf": "application/pdf",
+            ".mp4": "video/mp4", ".mp3": "audio/mp3", ".ogg": "audio/ogg",
+            ".opus": "audio/ogg; codecs=opus", ".wav": "audio/wav",
+            ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ".txt": "text/plain",
+        }
+        mime = fallbacks.get(suffix) or mime or "application/octet-stream"
     return {"file": name, "sha256": digest, "kind": kind, "mimetype": mime, "name": path.name}, target
 
 

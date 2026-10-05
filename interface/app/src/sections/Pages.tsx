@@ -1935,7 +1935,8 @@ type Connector = {
   has_credentials: boolean; one_click?: boolean; connected: boolean; account: string;
   has_refresh: boolean; expires_at: number; connected_at: number;
   state: "connected" | "ready" | "empty" | "reconnect";
-  setup: { console?: string; steps?: string; note?: string };
+  setup: { console?: string; steps?: string; note?: string; callback_url?: string };
+  callback_url?: string;
   status_text: string;
   progress: { state?: string; reply?: string; at?: number };
 };
@@ -2119,14 +2120,26 @@ export function Connectors({ onToggleNav }: { onToggleNav?: () => void }) {
 
         <div className="mt-3 flex flex-wrap gap-1.5">
           {!c.connected && c.kind === "oauth" && (
-            <button type="button" disabled={busy === c.service || waiting}
-              onClick={() => (c.has_credentials ? connect(c.service)
-                : (setEditing(c.service), setCid(""), setCsec("")))}
-              className={cn("rounded-lg px-2.5 py-1 text-[11px] font-medium cursor-pointer",
-                c.has_credentials ? "bg-accent text-white" : "border border-border bg-card hover:border-accent/40",
-                (busy === c.service || waiting) && "opacity-60")}>
-              {waiting ? "Waiting for consent…" : c.has_credentials ? (c.service === "google" ? "Sign in with Google" : c.family === "google" ? "Connect to Google" : `Connect to ${FAMILY_LABEL[c.family] || c.name}`) : (c.service === "google" ? "Configure Google Sign-In" : "Advanced setup")}
-            </button>
+            <>
+              {c.service === "google" && !c.has_credentials && (
+                <a
+                  href={c.website || "https://accounts.google.com"}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-lg border border-accent bg-accent/10 px-2.5 py-1 text-[11px] font-medium text-accent hover:bg-accent/20 cursor-pointer"
+                >
+                  Continue with Google (Web)
+                </a>
+              )}
+              <button type="button" disabled={busy === c.service || waiting}
+                onClick={() => (c.has_credentials ? connect(c.service)
+                  : (setEditing(c.service), setCid(""), setCsec("")))}
+                className={cn("rounded-lg px-2.5 py-1 text-[11px] font-medium cursor-pointer",
+                  c.has_credentials ? "bg-accent text-white" : "border border-border bg-card hover:border-accent/40",
+                  (busy === c.service || waiting) && "opacity-60")}>
+                {waiting ? "Waiting for consent…" : c.has_credentials ? (c.service === "google" ? "Continue with Google" : c.family === "google" ? "Connect to Google" : `Connect to ${FAMILY_LABEL[c.family] || c.name}`) : (c.service === "google" ? "Configure API Client" : "Advanced setup")}
+              </button>
+            </>
           )}
           {c.kind === "token" && (
             <a href="#settings" className="rounded-lg border border-border bg-card px-2.5 py-1 text-[11px] hover:border-accent/40">Remote channel settings</a>
@@ -2147,14 +2160,38 @@ export function Connectors({ onToggleNav }: { onToggleNav?: () => void }) {
 
         {editing === c.service && (
           <div className="mt-3 space-y-2 rounded-lg border border-border bg-background p-2.5">
-            <input value={cid} onChange={(e) => setCid(e.target.value)} placeholder="Client ID" aria-label={`${c.name} client ID`}
+            <div className="rounded border border-accent/20 bg-accent/5 p-2 text-[11px] space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-foreground">Callback / Redirect URI:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(c.setup?.callback_url || "http://127.0.0.1:8765/");
+                    setNotice(`Callback URL copied: ${c.setup?.callback_url || "http://127.0.0.1:8765/"}`);
+                  }}
+                  className="rounded border border-border bg-card px-2 py-0.5 text-[10px] font-medium hover:bg-muted cursor-pointer"
+                >
+                  Copy Callback URL
+                </button>
+              </div>
+              <code className="block select-all rounded bg-card px-2 py-1 font-mono text-[10.5px] text-foreground border border-border">
+                {c.setup?.callback_url || "http://127.0.0.1:8765/"}
+              </code>
+              <div className="text-[10px] text-muted-foreground leading-normal">
+                {c.family === "google"
+                  ? "In Google Cloud Console, choose Application type: Desktop app (no callback URL needed in console) OR Web application with this exact redirect URI."
+                  : "Paste this exact redirect URL into your provider app registration settings."}
+              </div>
+            </div>
+
+            <input value={cid} onChange={(e) => setCid(e.target.value)} placeholder={c.family === "google" ? "Client ID (from Google Cloud Console)" : "Client ID"} aria-label={`${c.name} client ID`}
               className="w-full rounded-md border border-border bg-card px-2 py-1 text-[11px]" />
-            <input value={csec} onChange={(e) => setCsec(e.target.value)} placeholder={c.service === "microsoft" ? "Client secret (optional for desktop apps)" : "Client secret"} aria-label={`${c.name} client secret`}
+            <input value={csec} onChange={(e) => setCsec(e.target.value)} placeholder={c.service === "microsoft" || c.family === "google" ? "Client secret (optional for desktop apps)" : "Client secret"} aria-label={`${c.name} client secret`}
               type="password" className="w-full rounded-md border border-border bg-card px-2 py-1 text-[11px]" />
             <div className="flex gap-1.5">
               <button type="button" disabled={busy === c.service || !cid.trim()} onClick={() => saveCreds(c.service)}
                 className="rounded-md bg-accent px-2.5 py-1 text-[11px] text-white disabled:opacity-50 cursor-pointer">
-                Save
+                Save &amp; Connect
               </button>
               <button type="button" onClick={() => setEditing(null)}
                 className="rounded-md border border-border px-2.5 py-1 text-[11px] cursor-pointer">

@@ -19,7 +19,8 @@ SETUP = {
         "steps": "Cloud Console -> pick a project -> APIs & Services -> Credentials -> Create credentials "
                  "-> OAuth client ID -> Application type **Desktop app**. Then enable the API you want "
                  "(Gmail API, Drive API, Calendar API, Sheets API, People API) on the same project.",
-        "note": "One Client ID/Secret works for gmail, drive, sheets, docs, calendar, people and youtube.",
+        "note": "One Client ID/Secret works for gmail, drive, sheets, docs, calendar, people and youtube. Choose Desktop app (no callback URL required in console) OR add http://127.0.0.1:8765/ as Authorized redirect URI.",
+        "callback_url": "http://127.0.0.1:8765/",
     },
     "microsoft": {
         "console": "https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
@@ -27,12 +28,14 @@ SETUP = {
                  "Personal accounts (so a personal Outlook works) -> add a **Mobile and desktop "
                  "application** redirect of http://127.0.0.1 (any port) -> copy the Application (client) ID.",
         "note": "Use a public desktop application with PKCE. A client secret is not required.",
+        "callback_url": "http://127.0.0.1:8765/",
     },
     "github": {
         "console": "https://github.com/settings/developers",
         "steps": "GitHub -> Settings -> Developer settings -> OAuth Apps -> New OAuth App -> "
                  "Authorization callback URL: http://127.0.0.1:8765/.",
         "note": "Works with a fine-grained PAT too, but this section uses the OAuth app.",
+        "callback_url": "http://127.0.0.1:8765/",
     },
     "meta": {
         "console": "https://developers.facebook.com/apps/",
@@ -40,17 +43,20 @@ SETUP = {
                  "Settings -> Valid OAuth redirect URIs: http://127.0.0.1:8765/. Live mode needs an "
                  "App Review before other people can use it.",
         "note": "Instagram uses the same Meta app - add the Instagram product to it.",
+        "callback_url": "http://127.0.0.1:8765/",
     },
     "linkedin": {
         "console": "https://www.linkedin.com/developers/apps",
         "steps": "LinkedIn -> Developers -> My apps -> Create app -> Products -> **Sign In with LinkedIn** "
                  "-> add http://127.0.0.1:8765/ to the redirect URLs.",
         "note": "Enable Sign In with LinkedIn using OpenID Connect and Share on LinkedIn. The API does not expose personal inbox messages or profile viewers; those requests use Chrome.",
+        "callback_url": "http://127.0.0.1:8765/",
     },
     "telegram": {
         "console": "https://t.me/BotFather",
         "steps": "Message **@BotFather** -> /newbot -> copy the bot token it gives you.",
         "note": "A bot token, not an OAuth grant - ISHTI talks to the Bot API as the bot.",
+        "callback_url": "",
     },
 }
 
@@ -287,6 +293,7 @@ def entry(service: str) -> dict:
         "connected_at": data.get("created") or 0,
         "state": "connected" if conn else ("reconnect" if data.get("auth_error") else "ready" if has else "empty"),
         "setup": SETUP.get(fam, {}),
+        "callback_url": SETUP.get(fam, {}).get("callback_url", "http://127.0.0.1:8765/"),
         "status_text": _safe_status(oauth, service),
         "progress": progress(service),
     }
