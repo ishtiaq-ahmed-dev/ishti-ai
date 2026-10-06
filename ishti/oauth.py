@@ -95,7 +95,8 @@ GMAIL_SCOPES = [
 
 def _dir() -> str:
     from ishti import ROOT
-    path = os.path.join(ROOT, "data", "oauth")
+    from ishti.test_mode import scratch_path
+    path = scratch_path(os.path.join(ROOT, "data", "oauth"))
     os.makedirs(path, exist_ok=True)
     return path
 

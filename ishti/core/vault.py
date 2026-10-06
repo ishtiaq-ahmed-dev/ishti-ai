@@ -36,6 +36,7 @@ import time
 import zipfile
 
 from ishti import ROOT
+from ishti.test_mode import scratch_path
 
 try:  # best-effort failure log (never breaks the module if logging is unavailable)
     from ishti.core.logutil import swallowed
@@ -46,7 +47,7 @@ except Exception:  # pragma: no cover
 
 KEY_SERVICE = "ishti"
 KEY_NAME = "memory_key"
-KEY_DIR = os.path.join(ROOT, "data", "keys")
+KEY_DIR = scratch_path(os.path.join(ROOT, "data", "keys"))
 ENC_PREFIX = "enc1:"
 
 _lock = threading.RLock()
@@ -203,9 +204,9 @@ def set_enabled(on: bool) -> dict:
 def backup(db_path: str | None = None, out_path: str | None = None) -> str:
     """Consistent online copy of one SQLite DB (sqlite3's backup API, WAL-safe).
     Default: data/backups/<name>-<stamp>.db. Returns the backup path."""
-    src = db_path or os.path.join(ROOT, "data", "arch2_memory.db")
-    out = out_path or os.path.join(
-        ROOT, "data", "backups", f"{os.path.splitext(os.path.basename(src))[0]}-{time.strftime('%Y%m%d_%H%M')}.db")
+    src = db_path or scratch_path(os.path.join(ROOT, "data", "arch2_memory.db"))
+    out = out_path or scratch_path(os.path.join(
+        ROOT, "data", "backups", f"{os.path.splitext(os.path.basename(src))[0]}-{time.strftime('%Y%m%d_%H%M')}.db"))
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with _lock:
         src_conn = sqlite3.connect(src)

@@ -9,7 +9,12 @@ session history and re-entered every later prompt. One builder, one persona, one
 Depth controls length. It is decided by IntentDetector, never by the model.
 """
 
+import contextvars
 from typing import List, Optional
+
+# The chat's profile for the current run (set by ishti/run_executor.py). Falls back to the owner's
+# globally active profile, so voice/remote requests still get a profile layer.
+CURRENT_PROFILE: contextvars.ContextVar = contextvars.ContextVar("ishti_profile", default="")
 
 DEPTH_RULES = {
     "SIMPLE": (
@@ -27,6 +32,25 @@ DEPTH_RULES = {
         "do not pad or invent completeness."
     ),
 }
+
+PROTOCOL = """Operating protocol (follow on every request; long and strict on purpose):
+1. UNDERSTAND: restate the goal to yourself in one line. List every sub-task. Pull in only the memory and context that
+   bears on it. If a reference ("him", "that file", "the last one") is resolvable from this conversation, resolve it.
+2. CHOOSE TOOLS DELIBERATELY: if a skill/tool exists for the job (weather, web search, files, reminders, WhatsApp,
+   calendar, markets, notes, browser, deep research...), use it instead of answering from memory. Pick the narrowest
+   tool that fully does the job; chain tools in dependency order; run independent ones together. For anything current,
+   local, personal or changeable, never guess: look it up. For timeless knowledge, answer directly.
+3. EXECUTE, THEN VERIFY: read each tool result before using it. Check arithmetic, dates, names and units. Cross-check
+   looked-up facts against a second source when stakes are real. If a tool fails or returns nothing, try a different
+   way (other query, other tool, other source) before concluding; keep going until the task is truly done or you can
+   state precisely what was tried and what blocks it. Never stop at the first partial result.
+4. REPORT HONESTLY: say what was done, what was only drafted, what was not done, and why. Cite sources actually used.
+   Never claim a send, save, delete, booking or purchase without returned proof. Consequential actions (send, delete,
+   upload, install, spend, control the PC) require the owner's explicit yes through the app's gate.
+5. FINISH WELL: give the answer or outcome first, then only the detail that helps. Offer the single most useful next
+   step when one exists. Match the owner's language (English, Urdu, Pashto).
+6. LEARN: treat corrections and thumbs-down as binding for the rest of the conversation; acknowledge the specific
+   mistake, fix it, and do not repeat it. Remember stable owner preferences only when the owner states them."""
 
 BASE = """You are ISHTI, Ishtiaq Ahmed's personal AI assistant. You run locally on the owner's PC.
 
@@ -76,7 +100,13 @@ def build_system_prompt(
     tools_used: Optional[List[str]] = None,
     evidence_is_live: bool = False,
 ) -> str:
-    parts = [BASE]
+    parts = [BASE, PROTOCOL]
+    try:
+        from ishti import profiles, prompt_compiler
+        parts.append(prompt_compiler.profile_layer(CURRENT_PROFILE.get() or profiles.load_active()))
+    except Exception as exc:  # the profile layer must never break answering
+        from ishti.core.logutil import swallowed
+        swallowed("orchestrator/persona.py:profile_layer", exc)
 
     if memory_block:
         parts.append(memory_block.strip())

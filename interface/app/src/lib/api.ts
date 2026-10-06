@@ -80,16 +80,25 @@ async function checkResponse(r: Response) {
   return r.json();
 }
 
+// Every failed write is announced once (App.tsx renders the toast), so a rejected click never looks like nothing happened.
+// Callers still receive the rejection and may handle it themselves too.
+let lastToast = { msg: "", at: 0 };
+const mutate = <T,>(url: string, init: RequestInit): Promise<T> =>
+  fetch(url, init).then(checkResponse).catch((e: unknown) => {
+    const msg = e instanceof TypeError ? "Can't reach the ISHTI backend." : e instanceof Error ? e.message : String(e);
+    const now = Date.now();
+    if (!/\/api\/(events|stt)/.test(url) && (msg !== lastToast.msg || now - lastToast.at > 3000)) {
+      lastToast = { msg, at: now };
+      window.dispatchEvent(new CustomEvent("ishti-api-error", { detail: { msg, url } }));
+    }
+    throw e;
+  });
+const json = (method: string, body?: unknown): RequestInit =>
+  ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) });
+
 export const getJSON = <T,>(url: string): Promise<T> => fetch(url).then(checkResponse);
-export const postJSON = <T,>(url: string, body?: unknown): Promise<T> =>
-  fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) })
-    .then(checkResponse);
-export const del = (url: string) => fetch(url, { method: "DELETE" }).then(checkResponse);
-export const putJSON = <T,>(url: string, body?: unknown): Promise<T> =>
-  fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) })
-    .then(checkResponse);
-export const patchJSON = <T,>(url: string, body?: unknown): Promise<T> =>
-  fetch(url, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) })
-    .then(checkResponse);
-export const deleteJSON = <T,>(url: string): Promise<T> =>
-  fetch(url, { method: "DELETE" }).then(checkResponse);
+export const postJSON = <T,>(url: string, body?: unknown): Promise<T> => mutate<T>(url, json("POST", body));
+export const del = (url: string) => mutate<any>(url, { method: "DELETE" });
+export const putJSON = <T,>(url: string, body?: unknown): Promise<T> => mutate<T>(url, json("PUT", body));
+export const patchJSON = <T,>(url: string, body?: unknown): Promise<T> => mutate<T>(url, json("PATCH", body));
+export const deleteJSON = <T,>(url: string): Promise<T> => mutate<T>(url, { method: "DELETE" });

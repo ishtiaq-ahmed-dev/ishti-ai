@@ -11,6 +11,7 @@ import time
 
 from ishti import ROOT
 from ishti.skills import ask_first
+from ishti.test_mode import scratch_path
 
 try:  # best-effort failure log (never breaks the module if logging is unavailable)
     from ishti.core.logutil import swallowed
@@ -21,8 +22,8 @@ except Exception:  # pragma: no cover
 
 I = re.I
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-MACROS = os.path.join(ROOT, "data", "macros")
-CLIP_DB = os.path.join(ROOT, "data", "clipboard.db")
+MACROS = scratch_path(os.path.join(ROOT, "data", "macros"))
+CLIP_DB = scratch_path(os.path.join(ROOT, "data", "clipboard.db"))
 CLIP_KEEP = 100
 
 OPS = [

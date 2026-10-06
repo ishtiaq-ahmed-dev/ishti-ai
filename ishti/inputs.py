@@ -15,8 +15,9 @@ import os
 
 def _read(rel: str, default=None):
     from ishti import ROOT
+    from ishti.test_mode import scratch_path
     try:
-        with open(os.path.join(ROOT, rel), encoding="utf-8") as f:
+        with open(scratch_path(os.path.join(ROOT, rel)), encoding="utf-8") as f:
             return json.load(f)
     except Exception:  # noqa: BLE001 - a missing state file just means "unknown"
         return default

@@ -21,7 +21,10 @@ def needs_path():
     """Where runtime gaps and errors are logged: data/needs_runtime.md (ISHTI's own data, never a repo document).
     ISHTI_NEEDS_LOG overrides it (tests point it at a scratch file). Every reader (the meta skill, the
     lifecycle's gap discovery) goes through this one function."""
-    return os.environ.get("ISHTI_NEEDS_LOG") or os.path.join(ROOT_DIR, "data", "needs_runtime.md")
+    if os.environ.get("ISHTI_NEEDS_LOG"):
+        return os.environ["ISHTI_NEEDS_LOG"]
+    from ishti.test_mode import scratch_path
+    return scratch_path(os.path.join(ROOT_DIR, "data", "needs_runtime.md"))
 
 
 # import name -> pip package, where they differ (manifests list import names)

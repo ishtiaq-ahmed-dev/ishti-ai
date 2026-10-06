@@ -32,11 +32,12 @@ import threading
 import time
 
 from ishti import CONFIG, ROOT
+from ishti.test_mode import scratch_path
 
 PROFILE = os.path.join(ROOT, "owner_profile.yaml")
 # The owner confirms the details in chat ("confirm my profile"): the answer is stored here, in data/, because the meta skill
 # may only write there - owner_profile.yaml itself stays exactly as the owner edited it.
-CONFIRM = os.path.join(ROOT, "data", "owner_profile_confirmed.json")
+CONFIRM = scratch_path(os.path.join(ROOT, "data", "owner_profile_confirmed.json"))
 TTL_S = 30          # cheap probes (hardware)
 FULL_TTL_S = 300    # expensive probes (models + skill registry)
 BUDGET_CHARS = 1200

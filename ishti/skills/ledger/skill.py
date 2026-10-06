@@ -8,9 +8,10 @@ import sqlite3
 
 from ishti import ROOT
 from ishti.skills import trace
+from ishti.test_mode import scratch_path
 
 I = re.I
-DB = os.path.join(ROOT, "data", "ledger.db")
+DB = scratch_path(os.path.join(ROOT, "data", "ledger.db"))
 CATS = {"food": r"grocer|food|restaurant|lunch|dinner|breakfast|meal|pizza|burger|snack|tea|coffee|fruit|vegetable|bakery|khana",
         "transport": r"fuel|petrol|diesel|uber|careem|bykea|taxi|rickshaw|bus|metro|parking|car\b|bike|toll|fare",
         "bills": r"bill|electric|gas\b|water\b|internet|wifi|mobile\s+package|recharge|rent|load|sui",

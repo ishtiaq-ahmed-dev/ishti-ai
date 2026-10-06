@@ -16,7 +16,7 @@ DB = os.path.join(os.path.dirname(CONFIG["memory"]["db_path"]), "notes.db")
 _lock = threading.Lock()
 
 I = re.I
-ADD = re.compile(r"^(?:please\s+)?(?:make\s+a\s+note|new\s+note|save\s+a\s+note)\s*(?:that\s+)?[:,]?\s*(?P<body>.+)$|^note\s*:\s*(?P<body2>.+)$|^note\s+(?!that)(?P<body3>.+)$", I)
+ADD = re.compile(r"^(?:please\s+)?(?:make\s+a\s+note|new\s+note|save\s+a\s+note)\s*(?:that\s+)?[:,]?\s*(?P<body>.+)$|^note\s*:\s*(?P<body2>.+)$|^note\s+(?!that\b)(?P<body3>.+)$", I)
 LIST = re.compile(r"^(?:show|list|what\s+are)\s+(?:my\s+|the\s+)?notes\b|^(?:do\s+i\s+have\s+)?any\s+notes\??$", I)
 FIND = re.compile(r"^(?:find|search|look\s+(?:up|for)|what\s+(?:was|is)\s+the\s+note\s+(?:about|for))\s+(?:the\s+)?(?:my\s+)?note\s*(?:about|for|on)?\s*(?P<q>.+)$|^(?:find|search)\s+(?:my\s+)?notes?\s+(?:for\s+)?(?P<q2>.+)$", I)
 DELETE = re.compile(r"^(?:delete|remove)\s+(?:the\s+|my\s+)?note\s*(?:about|for|on)?\s*(?P<q>.+)$", I)

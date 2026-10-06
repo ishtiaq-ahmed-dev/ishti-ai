@@ -84,13 +84,21 @@ def find_installed(name: str) -> Optional[str]:
     apps = installed_apps()
     if not key or not apps:
         return None
-    for n, lnk in apps.items():  # whole-word containment first: "brave" -> "Brave"
-        if key == n or _re.search(rf"\b{_re.escape(key)}\b", n):
+    for n, lnk in apps.items():  # exact first, then word-separated containment: "brave" -> "Brave"
+        if key == n or _re.search(rf"(?:^|\s){_re.escape(key)}(?:\s|$)", n):
             return lnk
     close = difflib.get_close_matches(key, list(apps), n=1, cutoff=0.75)  # a typo: "brawe" -> "brave"
     if not close:
         close = [n for n in apps if difflib.SequenceMatcher(None, key, n.split()[0]).ratio() >= 0.8][:1]
-    return apps[close[0]] if close else None
+    if close:
+        cand = close[0]
+        # "notepad" is not "notepad++": a candidate that is only this key plus a product suffix is
+        # a different program, and returning it would launch the wrong app.
+        suffix = cand[len(key):]
+        if cand.startswith(key) and suffix and not suffix[0].isspace():
+            return None
+        return apps[cand]
+    return None
 
 
 def _cpu_percent_fast() -> float:

@@ -148,5 +148,47 @@ def route(text, skills, exclude=()):
         except Exception as exc:
             extra = {"laya_error": f"{type(exc).__name__}: {exc}"}
 
+    if not r and live:  # Laya checkpoint not installed: let the pinned planner model pick, never fall to plain chat blindly
+        picked = _llm_pick(text, live)
+        if picked:
+            return done(picked, 0.6, "llm", **extra)
+
     default = _cfg["default_skill"]
     return done(default if default in live else None, 0.0, "default", **extra)
+
+
+_LLM_PICKS: dict[str, str | None] = {}
+_SMALLTALK = re.compile(r"^\W*(hi|hello|hey|thanks?|thank you|ok(ay)?|good (morning|evening|night)|salam|bye)\b", re.I)
+
+
+def _llm_pick(text, candidates):
+    """One short planner-model call: which skill (or 'chat') fits this request. Cached per request text;
+    fails open (None -> default chat) on any error or a name that is not a live skill."""
+    key = " ".join(text.lower().split())[:300]
+    if key in _LLM_PICKS:
+        return _LLM_PICKS[key]
+    if len(key.split()) < 2 or _SMALLTALK.match(key):
+        return None
+    pick = None
+    try:
+        from ishti import llm
+        menu = chr(10).join(f"{n}: {str(s.manifest.get('route', ''))[:70]}" for n, s in sorted(candidates.items())
+                         if n != _cfg["default_skill"] and s.manifest.get("route"))[:12000]
+        out = llm.ask(
+            f"Request: {text[:400]}" + chr(10) * 2 + "Skills (name: what it does):" + chr(10) + menu + chr(10) * 2 +
+            ""
+            "Answer with exactly ONE skill name from the list if a skill is needed to do or look up what the request "
+            "asks (current facts, files, apps, web, reminders, money, messages, media...). Answer chat if it is plain "
+            "conversation or timeless knowledge. Output only the name.",
+            system="You route requests to tools. Output a single token: a skill name or chat.",
+            role="planner", temperature=0, max_tokens=12)
+        word = re.sub(r"[^a-z0-9_]", "", (out or "").strip().split()[0].lower()) if (out or "").strip() else ""
+        pick = word if word in candidates and word != _cfg["default_skill"] else None
+    except Exception as exc:
+        from ishti.core.logutil import swallowed
+        swallowed("ishti/router.py:_llm_pick", exc)
+        return None  # not cached: a transient failure must not stick
+    if len(_LLM_PICKS) > 500:
+        _LLM_PICKS.clear()
+    _LLM_PICKS[key] = pick
+    return pick

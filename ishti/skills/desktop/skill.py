@@ -68,7 +68,8 @@ def run(text, session):
 def _shot(session=None):
     import mss
     import mss.tools
-    folder = os.path.join(ROOT, "data", "screenshots")
+    from ishti.test_mode import scratch_path
+    folder = scratch_path(os.path.join(ROOT, "data", "screenshots"))
     os.makedirs(folder, exist_ok=True)
     path = os.path.join(folder, dt.datetime.now().strftime("screen_%Y-%m-%d_%H-%M-%S.png"))
     with getattr(mss, "MSS", mss.mss)() as s:
@@ -366,6 +367,34 @@ def op_update_app(m, text, session):
 
 
 # ---------------------------------------------------------------- power
+# A power command must wait as long as the owner asked ("restart my PC in 10 minutes") and say the
+# REAL delay in the confirmation. It used to hardcode /t 10 and always answer "in 10 seconds", so
+# "restart in 10 minutes" would have restarted the machine ten seconds later (checklist 34).
+DELAY = re.compile(r"\bin\s+(?:about\s+|around\s+)?(?P<n>\d{1,3})\s*"
+                   r"(?P<unit>seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d)\b", I)
+
+
+def _delay_seconds(text, default=60):
+    """The owner's own delay in seconds, clamped to 10 s .. 24 h; no delay -> a safe minute."""
+    m = DELAY.search(text or "")
+    if not m:
+        return default
+    unit = m.group("unit").lower()
+    mult = 1 if unit.startswith("s") else 60 if unit.startswith("m") else 3600 if unit.startswith("h") else 86400
+    return max(10, min(int(m.group("n")) * mult, 24 * 3600))
+
+
+def _delay_label(secs):
+    if secs < 60:
+        return f"{secs} second" + ("s" if secs != 1 else "")
+    if secs < 3600:
+        mins = secs // 60
+        return f"{mins} minute" + ("s" if mins != 1 else "")
+    hours, rest = secs // 3600, (secs % 3600) // 60
+    out = f"{hours} hour" + ("s" if hours != 1 else "")
+    return out + (f" {rest} minutes" if rest else "")
+
+
 def op_power(m, text, session):
     act = m.group("act").lower()
     if act.startswith("lock"):
@@ -373,9 +402,13 @@ def op_power(m, text, session):
     elif "sleep" in act:
         cmd, what = ["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"], "Put the PC to sleep"
     elif act.startswith("restart"):
-        cmd, what = ["shutdown", "/r", "/t", "10"], "Restart the PC in 10 seconds (save your work)"
+        delay = _delay_seconds(text)
+        cmd = ["shutdown", "/r", "/t", str(delay)]
+        what = f"Restart the PC in {_delay_label(delay)} (save your work)"
     else:
-        cmd, what = ["shutdown", "/s", "/t", "10"], "Shut down the PC in 10 seconds (save your work)"
+        delay = _delay_seconds(text)
+        cmd = ["shutdown", "/s", "/t", str(delay)]
+        what = f"Shut down the PC in {_delay_label(delay)} (save your work)"
     return ask_first(session, "desktop", what, lambda: (subprocess.Popen(cmd, creationflags=NO_WINDOW), "Done.")[1])
 
 

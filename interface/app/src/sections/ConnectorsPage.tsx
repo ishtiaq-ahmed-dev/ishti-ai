@@ -296,6 +296,12 @@ function PolicyEditor() {
     sensitive_output: { client_data: "redact", finance: "redact" },
   });
   const [saved, setSaved] = useState(false);
+  useEffect(() => {  // show what is actually stored, not hard-coded defaults
+    getJSON<{ policy?: { quiet_hours?: string; max_per_minute?: number } }>("/api/connectors/whatsapp/status")
+      .then((s) => s.policy && setPolicy((p) => ({ ...p, quiet_hours: s.policy!.quiet_hours ?? p.quiet_hours,
+                                                   max_per_minute: s.policy!.max_per_minute ?? p.max_per_minute })))
+      .catch(() => {});
+  }, []);
   return (
     <div className="rounded-xl border border-border bg-card p-4" data-testid="remote-policy">
       <div className="flex items-center gap-2">
@@ -306,8 +312,7 @@ function PolicyEditor() {
         What remote commands may do. Editable only on this PC — never via a remote message.
       </p>
       <label className="mt-2 flex items-center gap-2 text-xs">
-        <input type="checkbox" checked={policy.t2_stepup} data-testid="policy-t2"
-               onChange={(e) => setPolicy({ ...policy, t2_stepup: e.target.checked })} />
+        <input type="checkbox" checked disabled data-testid="policy-t2" title="Always required" readOnly />
         Require step-up code for risky (T2) remote actions
       </label>
       <label className="mt-1.5 flex items-center gap-2 text-xs">
@@ -316,7 +321,7 @@ function PolicyEditor() {
                className="w-24 rounded-md border border-border bg-background px-1.5 py-0.5 text-xs" />
       </label>
       <button
-        onClick={() => { void putJSON("/api/connectors/whatsapp/config", { policy }); setSaved(true); setTimeout(() => setSaved(false), 1500); }}
+        onClick={async () => { try { await putJSON("/api/connectors/whatsapp/config", { policy }); setSaved(true); setTimeout(() => setSaved(false), 1500); } catch { setSaved(false); } }}
         className="mt-2 rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-foreground" data-testid="policy-save">
         {saved ? "Saved ✓" : "Save policy"}
       </button>

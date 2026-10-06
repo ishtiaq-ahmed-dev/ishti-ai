@@ -25,7 +25,11 @@ import uuid
 
 ROOT = Path(__file__).resolve().parent.parent
 BRIDGE_DIR = str(ROOT / "tools" / "wa_bridge")
-DATA = str(ROOT / "data" / "wa_bridge")
+try:  # also importable as a standalone script (no package context)
+    from ishti.test_mode import scratch_path
+    DATA = scratch_path(str(ROOT / "data" / "wa_bridge"))
+except Exception:  # pragma: no cover
+    DATA = str(ROOT / "data" / "wa_bridge")
 BASE = f"http://127.0.0.1:{int(os.environ.get('WA_BRIDGE_PORT', '8788'))}"
 MAX_MEDIA = 50 * 1024 * 1024
 _lock = threading.RLock()

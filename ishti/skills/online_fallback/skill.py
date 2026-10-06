@@ -16,11 +16,12 @@ import urllib.parse
 import urllib.request
 
 from ishti import ROOT
+from ishti.test_mode import scratch_path
 from ishti.facts import get_facts
 from ishti.skills import ask_first, trace
 from ishti.skills.browser import skill as browser
 
-OUT = os.path.join(ROOT, "data", "online")
+OUT = scratch_path(os.path.join(ROOT, "data", "online"))
 REGISTRY = "online_fallbacks_used"
 TRIGGER = re.compile(r"\b(?:online|web(?:site)?|free)\s+(?:tool|service|converter|app|site|website)s?\b|"
                      r"\b(?:use|with|using|try|find)\s+(?:an?\s+|some\s+)?(?:free\s+)?(?:online|website)\b|"

@@ -175,7 +175,13 @@ def test_log_need_writes_to_the_runtime_log_once(tmp_path, monkeypatch):
     body = log.read_text(encoding="utf-8")
     assert body.count("[gap] demo: no skill can do it") == 1 and 'asked: "do the thing"' in body
     monkeypatch.delenv("ISHTI_NEEDS_LOG")
-    assert skills.needs_path() == os.path.join(ROOT, "data", "needs_runtime.md")
+    # Scratch mode (P9 isolation fix) moves the runtime log into the scratch dir - still the runtime
+    # log, never a repo document; production (scratch off) keeps the real data/ path.
+    from ishti import test_mode
+    expected = os.path.join(ROOT, "data", "needs_runtime.md")
+    if test_mode.scratch_dir():
+        expected = os.path.join(test_mode.scratch_dir(), "needs_runtime.md")
+    assert skills.needs_path() == expected
 
 
 def test_meta_needs_op_reads_the_same_log(tmp_path, monkeypatch):

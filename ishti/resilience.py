@@ -15,6 +15,7 @@ import threading
 import time
 
 from ishti import ROOT
+from ishti.test_mode import scratch_path
 
 try:  # best-effort failure log (never breaks the module if logging is unavailable)
     from ishti.core.logutil import swallowed
@@ -23,7 +24,7 @@ except Exception:  # pragma: no cover
         return None
 
 
-CHECKPOINT_DIR = os.path.join(ROOT, "data", "checkpoints")
+CHECKPOINT_DIR = scratch_path(os.path.join(ROOT, "data", "checkpoints"))
 
 TRANSIENT = ("timeout", "timed out", "connection reset", "connection refused", "temporarily",
              "rate limit", "429", "503", "502", "504", "eof", "broken pipe", "read timed out")

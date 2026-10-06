@@ -69,6 +69,29 @@ def test_api_list_and_mark_read(store):
     assert client.get("/api/notifications").json()["unread"] == 0
 
 
+def test_system_skill_reports_what_fired_and_is_honest_when_empty(store):
+    """Checklist #195/#196: the dialogue path reads the real store - and says "nothing" when empty."""
+    from ishti.skills.system import skill as sys_skill
+    assert sys_skill.match("What notifications did I miss in the last hour?")
+    assert sys_skill.match("Tell me the alert now")
+    assert not sys_skill.wants_notifications("Turn off notifications for an hour")
+    assert not sys_skill.wants_notifications("Set an alert for 5pm")
+    assert not sys_skill.wants_notifications("Check my Facebook notifications")
+    empty = sys_skill.run("What notifications did I miss in the last hour?", {})
+    assert "no notifications" in empty["reply"].lower() and "last hour" in empty["reply"].lower()
+    notifications.add("reminder", "Reminder: call Ali", body="14:20")
+    got = sys_skill.run("What notifications did I miss in the last hour?", {})
+    assert "call ali" in got["reply"].lower() and "14:20" in got["reply"]
+    assert "1 unread" in got["reply"]
+
+
+def test_notification_questions_are_not_chat_digest_questions(store):
+    """The digest's "what did I miss" branch must stand down for the bell (it used to steal #195)."""
+    from ishti.skills.chat_digest import skill as digest
+    assert not digest.match("What notifications did I miss in the last hour?")
+    assert digest.match("what did I miss in my group chats")
+
+
 if __name__ == "__main__":
     import tempfile
 

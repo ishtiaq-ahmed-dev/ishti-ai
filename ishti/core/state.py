@@ -287,12 +287,13 @@ class SQLiteStore:
 def default_db_path() -> str:
     if os.environ.get("ISHTI_STATE_DB"):
         return os.environ["ISHTI_STATE_DB"]
+    from ishti.test_mode import scratch_path
     try:
         from orchestrator.memory.conversation import SESSIONS_DIR
-        return os.path.join(os.path.dirname(SESSIONS_DIR), "convo_state.db")
+        return scratch_path(os.path.join(os.path.dirname(SESSIONS_DIR), "convo_state.db"))
     except Exception:
         root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        return os.path.join(root, "data", "convo_state.db")
+        return scratch_path(os.path.join(root, "data", "convo_state.db"))
 
 
 # ----------------------------------------------------------------------------- manager

@@ -34,6 +34,12 @@ from ishti.web_security import authorized as dashboard_authorized, request_origi
 from ishti.core.logutil import swallowed
 
 app = FastAPI(title="ISHTI Personal AI Assistant")
+
+
+@app.exception_handler(json.JSONDecodeError)
+async def _bad_json_body(_req, _exc):
+    # One guard for every handler that does `await req.json()`: a malformed body is the caller's error.
+    return JSONResponse({"error": "Request body must be valid JSON."}, status_code=400)
 app.include_router(ishti_api)  # /api/chat, /api/skills, /api/facts (the dispatcher)
 
 app.add_middleware(SelectiveGZipMiddleware)  # 1.02 MB JS -> ~290 KB, 107 KB CSS -> ~16 KB on the wire
@@ -308,8 +314,13 @@ async def health_endpoint():
 # The consent flow runs on a worker thread (it waits on a loopback redirect), so the page polls progress.
 @app.get("/api/connectors")
 def connectors_list():
-    from ishti import connectors
-    return connectors.summary()
+    from ishti import connectors, contract_api
+    out = connectors.summary()
+    # one list for the UI: legacy OAuth rows + the id/kind/status/configured view + WhatsApp/Telegram channel rows
+    extra = {r["id"]: r for r in contract_api._connector_rows()}
+    rows = [{**r, **{k: v for k, v in extra.pop(r.get("service"), {}).items() if k != "detail"}} for r in out["connectors"]]
+    out["connectors"] = rows + list(extra.values())
+    return out
 
 
 @app.get("/api/connectors/{service}/progress")
@@ -337,16 +348,20 @@ async def connectors_credentials(service: str, req: Request):
 
 
 @app.post("/api/connectors/{service}/connect")
-def connectors_connect(service: str):
+async def connectors_connect(service: str):
     """Open the consent page and return at once; the page polls /progress until it lands."""
-    from ishti import connectors
+    from ishti import connectors, contract_api
+    if service in ("whatsapp", "telegram"):  # channel connectors live in contract_api (this route is registered first)
+        return await contract_api.connector_connect(service)
     res = connectors.start(service)
     return JSONResponse(res, status_code=200 if res.get("ok") else 400)
 
 
 @app.post("/api/connectors/{service}/disconnect")
-def connectors_disconnect(service: str):
-    from ishti import connectors
+async def connectors_disconnect(service: str):
+    from ishti import connectors, contract_api
+    if service in ("whatsapp", "telegram"):
+        return await contract_api.connector_disconnect(service)
     res = connectors.disconnect(service)
     return JSONResponse(res, status_code=200 if res.get("ok") else 400)
 
@@ -381,19 +396,22 @@ async def inputs_wa_start():
 async def inputs_clipboard_test():
     try:
         import pyperclip
-        text = pyperclip.paste()
+        text = await asyncio.to_thread(pyperclip.paste)
         preview = (text[:120] + "...") if len(text) > 120 else text
         return JSONResponse({"ok": True, "preview": preview or "(Clipboard is empty)", "length": len(text)})
     except Exception as exc:
-        return JSONResponse({"ok": False, "error": str(exc), "preview": "Clipboard access ready"})
+        return JSONResponse({"ok": False, "error": f"Clipboard unavailable: {exc}"}, status_code=503)
 
 
 @app.get("/api/inputs/screen")
 async def inputs_screen_test():
+    """A real capture test (size only; the image is discarded, never stored or sent)."""
     try:
-        return JSONResponse({"ok": True, "available": True, "detail": "Desktop screen perception active via Chrome & OS"})
+        from PIL import ImageGrab
+        img = await asyncio.to_thread(lambda: ImageGrab.grab(all_screens=True))
+        return JSONResponse({"ok": True, "available": True, "detail": f"Screen capture works ({img.width}x{img.height}, all monitors)"})
     except Exception as exc:
-        return JSONResponse({"ok": False, "error": str(exc)})
+        return JSONResponse({"ok": False, "available": False, "error": f"Screen capture unavailable: {exc}"}, status_code=503)
 
 
 @app.get("/api/status")
@@ -1793,8 +1811,11 @@ async def agents_overview():
     """Agent roster + live performance (C2/C8)."""
     try:
         import ishti.agents as A
-        return {"agents": {k: {"goal": v["goal"], "skills": v["skills"]} for k, v in A.AGENTS.items()},
-                "perf": A.perf(), "budget": A._budget()}
+        from ishti import runs
+        roster = [{"id": k, "goal": v["goal"], "skills": v["skills"],
+                   "state": runs.AGENT_STATE.get(k, {}).get("state", "idle"),
+                   "detail": runs.AGENT_STATE.get(k, {}).get("detail", "")} for k, v in A.AGENTS.items()]
+        return {"agents": roster, "perf": A.perf(), "budget": A._budget()}  # a LIST: the contract and both panels expect it
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
 

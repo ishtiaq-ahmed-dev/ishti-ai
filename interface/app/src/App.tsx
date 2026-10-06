@@ -101,6 +101,17 @@ export default function App() {
   const [shutdownProgress, setShutdownProgress] = useState<ShutdownProgress | null>(null);
   const [vram, setVram] = useState<VramData | null>(null);
   const [modelSwitchToast, setModelSwitchToast] = useState<ModelSwitchToast | null>(null);
+  const [apiError, setApiError] = useState("");
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout>;
+    const on = (e: Event) => {
+      setApiError(String((e as CustomEvent).detail?.msg || "Request failed"));
+      clearTimeout(t);
+      t = setTimeout(() => setApiError(""), 6000);
+    };
+    window.addEventListener("ishti-api-error", on);
+    return () => { window.removeEventListener("ishti-api-error", on); clearTimeout(t); };
+  }, []);
   const [rememberExitChoice, setRememberExitChoice] = useState(false);
 
   const toggleNav = useCallback(() => {
@@ -686,6 +697,15 @@ export default function App() {
               Everything is saved — see you soon!
             </div>
           </div>
+        </div>
+      )}
+
+      {apiError && (
+        <div role="alert" data-testid="api-error-toast"
+          className="fixed bottom-5 right-5 z-50 flex max-w-sm items-start gap-2 rounded-2xl border border-destructive/40 bg-background/95 px-4 py-3 text-xs shadow-xl backdrop-blur-md">
+          <span className="min-w-0 flex-1 break-words text-foreground">{apiError}</span>
+          <button type="button" aria-label="Dismiss" onClick={() => setApiError("")}
+            className="rounded-lg p-0.5 text-muted-foreground hover:text-foreground cursor-pointer"><X className="h-3.5 w-3.5" /></button>
         </div>
       )}
 

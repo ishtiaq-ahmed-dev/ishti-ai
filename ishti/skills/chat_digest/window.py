@@ -13,6 +13,7 @@ import json
 import os
 
 from ishti import ROOT
+from ishti.test_mode import scratch_path
 
 try:  # best-effort failure log (never breaks the module if logging is unavailable)
     from ishti.core.logutil import swallowed
@@ -21,7 +22,7 @@ except Exception:  # pragma: no cover
         return None
 
 
-CONFIG_PATH = os.path.join(ROOT, "data", "chat_digest_config.json")
+CONFIG_PATH = scratch_path(os.path.join(ROOT, "data", "chat_digest_config.json"))
 DEFAULTS = {
     "hours": 24,
     "timezone": "",              # "" = system local timezone

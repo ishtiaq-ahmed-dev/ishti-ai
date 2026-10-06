@@ -34,10 +34,11 @@ import threading
 import time
 
 from ishti import ROOT
+from ishti.test_mode import scratch_path
 
 DATA = os.path.join(ROOT, "data")
-SETTINGS_PATH = os.path.join(DATA, "privacy.json")
-LEDGER_PATH = os.path.join(DATA, "outbound.log")
+SETTINGS_PATH = scratch_path(os.path.join(DATA, "privacy.json"))
+LEDGER_PATH = scratch_path(os.path.join(DATA, "outbound.log"))
 LEDGER_MAX = 1_000_000
 
 # ---------------------------------------------------------------- hardening (environment)

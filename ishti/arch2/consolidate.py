@@ -366,7 +366,10 @@ def handle_command(text: str, session=None) -> str | None:  # noqa: C901
                 forgotten = memory.forget(w)
                 if forgotten:
                     return f"Forgot your preference about {w} ({forgotten} memory item(s) cleared)."
-            return "Cleared that preference from memory."
+            # Nothing matched by word. The old fallback answered "Cleared that preference from
+            # memory." while deleting nothing - the exact UI-vs-storage mismatch the live-UI run
+            # exists to catch (checklist 91/233). An unmatched forget must be an honest no-op.
+            return "I could not find that preference in memory, so nothing was removed - tell me what it was about."
 
         # 'forget everything about X' / 'forget X': the person's entity + their memories
         target = re.sub(r"^(?:everything\s+)?about\s+", "", what, flags=re.I).strip()

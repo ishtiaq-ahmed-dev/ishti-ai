@@ -11,6 +11,7 @@ import time
 
 from ishti import ROOT
 from ishti.skills import needs_path, trace
+from ishti.test_mode import scratch_path
 
 I = re.I
 OPS = [
@@ -68,7 +69,7 @@ def run(text, session):
 
 
 _health_cache = {}   # mtime-sum -> (ts, reply); FIX-10: 72 s per call, no cache, re-run 4x per suite
-_HEALTH_DISK = os.path.join(ROOT, "data", "cache", "meta_health.json")  # Cycle 4: survives a restart
+_HEALTH_DISK = scratch_path(os.path.join(ROOT, "data", "cache", "meta_health.json"))  # Cycle 4: survives a restart
 
 
 def _health_key():

@@ -10,8 +10,9 @@ import time
 from ishti import ROOT
 from ishti.skills import trace
 from ishti.skills.browser import skill as browser
+from ishti.test_mode import scratch_path
 
-OUT = os.path.join(ROOT, "data", "generated")
+OUT = scratch_path(os.path.join(ROOT, "data", "generated"))
 URL = "https://gemini.google.com/app"
 MEDIA = r"(?:image|picture|pic|photo|illustration|drawing|painting|sketch|logo|icon|wallpaper|poster|artwork|art|" \
         r"video|clip|animation)"

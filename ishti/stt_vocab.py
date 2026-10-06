@@ -18,7 +18,13 @@ import os
 import re
 import threading
 
-DATA = os.path.join("data", "stt_vocabulary.json")
+_DATA_DEFAULT = os.path.join("data", "stt_vocabulary.json")
+try:  # scratch mode moves the owner-editable vocabulary with the other test stores
+    from ishti.test_mode import scratch_path
+    DATA = scratch_path(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                     "data", "stt_vocabulary.json"))
+except Exception:  # pragma: no cover - never break transcription over a path
+    DATA = _DATA_DEFAULT
 
 # Starter list: only things Whisper demonstrably mangles (structure: canonical -> mishearings).
 STARTER: dict[str, list[str]] = {

@@ -19,9 +19,14 @@ def match(text: str) -> bool:
         return False
     has_task_ctrl = bool(re.search(r"\b(?:background\s+)?tasks?\b", t)
                          and re.search(r"\b(?:running|list|show|what|which|cancel|stop|pause|resume|kill|doing|active)\b", t))
-    # "cancel everything you are doing in the background" - no "tasks" word but clearly about background work
-    has_bg_cancel = bool(re.search(r"\b(?:cancel|stop|pause)\b.*\b(?:background|in\s+the\s+background|everything\s+you\s+are\s+doing)\b|"
-                                 r"\b(?:everything\s+you\s+are\s+doing|what\s+you\s+are\s+doing)\b.*\b(?:background|stop|cancel|pause)\b", t))
+    # "cancel everything you are doing in the background" - no "tasks" word but clearly about background work.
+    # "pause what you're working on, I need you for something urgent" (checklist #74) is the same shape: acting
+    # on the current background work. Answering it from chat let a reply claim it paused everything when no
+    # pause had happened; the manager's handle_command returns None here and this skill says nothing is running.
+    bg_target = (r"background|in\s+the\s+background|everything\s+you\s+are\s+doing|everything\s+you're\s+doing|"
+                 r"what\s+you\s+are\s+doing|what\s+you're\s+doing|what\s+you\s+are\s+working\s+on|what\s+you're\s+working\s+on")
+    has_bg_cancel = bool(re.search(rf"\b(?:cancel|stop|pause)\b.*\b(?:{bg_target})\b|"
+                                 rf"\b(?:{bg_target})\b.*\b(?:background|stop|cancel|pause)\b", t))
     # "what is happening with that research I asked for earlier" - status check on a prior task
     has_status = bool(re.search(r"\b(?:what|how)\b.*\b(?:happening|going\s+on|status|progress|doing|coming\s+along)\b", t)
                       and re.search(r"\b(?:task|research|job|work|thing|project)\b", t))

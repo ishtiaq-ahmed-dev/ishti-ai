@@ -38,6 +38,20 @@ def _relocate(node, home=r"D:\ISHTI"):
 if os.path.normcase(ROOT) != os.path.normcase(r"D:\ISHTI"):
     CONFIG = _relocate(CONFIG)
 
+# Scratch/test mode (ISHTI_TEST_MODE=1 + ISHTI_SCRATCH=1): move the writable stores out of the real
+# data/ dir BEFORE any module binds a path from CONFIG (privacy, models, notes, vram, self_heal ...
+# all read it at import time). One redirect here covers every dirname(CONFIG["memory"]["db_path"])
+# consumer; modules with their own hard-coded data paths call test_mode.scratch_path() themselves.
+from ishti import test_mode as _test_mode  # noqa: E402
+
+if _test_mode.enabled() and os.environ.get("ISHTI_SCRATCH") == "1":
+    _scratch = _test_mode.scratch_dir()
+    _mem = CONFIG.setdefault("memory", {})
+    _db = _mem.get("db_path") or os.path.join(ROOT, "data", "ishti.db")
+    _mem["db_path"] = _test_mode.scratch_path(_db)
+    _mem["chroma_dir"] = os.path.join(_scratch, os.path.basename(str(_mem.get("chroma_dir") or "chroma")))
+    del _scratch, _mem, _db
+
 # Privacy: no telemetry, offline model hubs, no update pings - set before anything heavy is imported (docs/SAFETY.md).
 from ishti import privacy as _privacy  # noqa: E402
 _privacy.harden()

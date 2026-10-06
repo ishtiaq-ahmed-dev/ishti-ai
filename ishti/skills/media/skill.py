@@ -15,9 +15,10 @@ import time
 
 from ishti import ROOT
 from ishti.skills import log_need, trace
+from ishti.test_mode import scratch_path
 
 I = re.I
-OUT = os.path.join(ROOT, "data", "media_output")
+OUT = scratch_path(os.path.join(ROOT, "data", "media_output"))
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 AUDIO = (".mp3", ".wav", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".wma")
 VIDEO = (".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v", ".wmv")

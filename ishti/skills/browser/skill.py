@@ -477,7 +477,8 @@ def screenshot(name):
     """Screenshot of the current page -> its absolute path, or None. A bare filename is saved relative to the MCP
     server's working folder (the repo root), so it's given a full path under data/screenshots."""
     from ishti import ROOT
-    path = os.path.join(ROOT, "data", "screenshots", name)
+    from ishti.test_mode import scratch_path
+    path = scratch_path(os.path.join(ROOT, "data", "screenshots", name))
     os.makedirs(os.path.dirname(path), exist_ok=True)
     _call("browser_take_screenshot", {"filename": path})
     return path if os.path.isfile(path) else None
@@ -659,7 +660,14 @@ def _loop(session, msgs, log, steps_left):
                              "Go ahead? (yes/no)", "sources": []}
         else:
             trace(session, name, label, status="start")
-            out = _call(name, args)
+            try:
+                out = _call(name, args)
+            except BrowserToolError as exc:
+                # A failed tool is a result the model must see and adapt to, never a crash out of
+                # run(): the edge-case rows (“open example.com…???!!!”) otherwise raised out of the loop.
+                out = f"ERROR: {exc}"
+            except Exception as exc:  # noqa: BLE001 - MCP transport trouble is a step result too
+                out = f"ERROR: {type(exc).__name__}: {exc}"
             url = re.search(r"Page URL: (\S+)", out)
             trace(session, name, label, status="error" if out.startswith("ERROR") else "done",
                   url=url.group(1) if url else None)

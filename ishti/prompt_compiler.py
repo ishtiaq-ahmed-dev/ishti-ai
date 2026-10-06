@@ -44,6 +44,11 @@ _PROFILE_LAYER = {
 }
 
 
+def profile_layer(profile: str | None = None) -> str:
+    """The text appended to the live system prompt (orchestrator/persona.py) for this profile."""
+    return _PROFILE_LAYER[profiles.valid(profile)]
+
+
 def core_digest() -> str:
     return hashlib.sha256(CORE.encode("utf-8")).hexdigest()[:12]
 

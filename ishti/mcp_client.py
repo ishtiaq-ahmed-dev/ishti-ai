@@ -163,6 +163,23 @@ def get_hub() -> MCPHub:
     return _hub
 
 
+def status() -> dict:
+    """Read-only surface for the UI's MCP card (never spawns a server): which servers are
+    configured, whether the extension token is pasted, and which are live right now."""
+    out = []
+    try:
+        hub = _hub if _hub is not None else MCPHub(servers={})
+    except Exception as exc:
+        return {"servers": out, "error": str(exc)[:200]}
+    for name, cfg in (CONFIG.get("mcp_servers", {}) or {}).items():
+        tok = bool(cfg.get("token_key") and load_tokens().get(cfg["token_key"]))
+        out.append({"name": name, "command": cfg.get("command", ""),
+                    "extension": bool(cfg.get("token_key")), "token_stored": tok,
+                    "live": name in (_hub.live if _hub else {}),
+                    "resolved": hub.resolve(name) or ""})
+    return {"servers": out}
+
+
 if __name__ == "__main__":
     import time
     hub = get_hub()

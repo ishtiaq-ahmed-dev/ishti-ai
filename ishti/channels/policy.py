@@ -21,8 +21,10 @@ DEFAULTS = {
     "telegram_enabled": False,          # master switch; pairing still required
     "whatsapp_enabled": False,          # default OFF (R2: automation risk, honest warning in the UI)
     "allowed_telegram_ids": [],         # numeric Telegram user IDs (pairing fills this)
+    "whatsapp_control_numbers": [],     # E.164 WhatsApp control numbers (desktop UI; empty = linked self-chat)
     "stale_command_max_age_s": 300,     # messages queued while the PC was off: expire, don't execute
     "approval_ttl_s": 120,              # T2 step-up approvals expire after this
+    "quiet_hours": "",                  # e.g. "22:00-07:00": non-urgent pushes wait (owner-set in Connectors)
     "rate_limit_per_min": 20,           # authenticated owner messages per minute
     "unknown_alert_per_hour": 3,        # alert cap for unknown-sender attempts
     "local_pin_required": False,        # optional second factor for T2 approvals

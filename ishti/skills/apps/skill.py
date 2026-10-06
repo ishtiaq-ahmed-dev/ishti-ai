@@ -148,6 +148,9 @@ def run(text, session):
     app = prefs.app_for(app) or app  # "open music" -> the app the owner said to always use for music (Learning > About you)
     prefs.note_use("apps", app)
     if not re.search(r"switch\s+to|focus", text, re.I):
+        from ishti import test_mode
+        if test_mode.enabled():   # never launch a real app in test mode, and never claim it either
+            return {"reply": f"(test mode) Would open {app}.", "sources": [], "test_mode_dry": True}
         res = agent.launch_app(app)
         if isinstance(res, dict) and res.get("status") == "success":
             return {"reply": f"Opened {app}.", "sources": []}

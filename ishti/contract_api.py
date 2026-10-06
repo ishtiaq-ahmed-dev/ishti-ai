@@ -5,6 +5,7 @@ ishti/agents.py and ishti/connectors.py. No business logic here beyond shaping a
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 
@@ -14,6 +15,7 @@ from fastapi.responses import JSONResponse
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ishti import runs
+from ishti.core.logutil import swallowed
 
 router = APIRouter()
 
@@ -172,6 +174,11 @@ async def feedback_post(req: Request):
                                 correction=str(body.get("correction") or ""))
     except (ValueError, TypeError) as exc:
         return _bad(str(exc))
+    if out.get("state") == "stored" and int(body.get("rating", 0)) != 0:  # reach lessons/rewards + revision loop
+        from ishti import feedback_bridge
+        feedback_bridge.record_async(body.get("message_id"), body.get("run_id"), int(body["rating"]),
+                                     reasons=body.get("reasons") or [], comment=str(body.get("comment") or ""),
+                                     correction=str(body.get("correction") or ""))
     return out
 
 
@@ -215,10 +222,24 @@ def _connector_rows() -> list[dict]:
     except Exception as exc:  # catalog must never take the API down
         rows.append({"id": "catalog_error", "kind": "api", "status": "error",
                      "configured": False, "detail": str(exc)[:200]})
-    rows.append({"id": "whatsapp", "kind": "channel", "status": "disconnected",
-                 "configured": False, "detail": "QR link flow (WP8)"})
-    rows.append({"id": "telegram", "kind": "channel", "status": "disconnected",
-                 "configured": False, "detail": "bot token + pairing (WP8)"})
+    wa_connected, tg = False, {}
+    try:
+        from ishti import wa_bridge
+        wa_connected = bool(wa_bridge.connected())
+    except Exception as exc:
+        swallowed("ishti/contract_api.py:wa_status", exc)
+    try:
+        from ishti.channels import service
+        tg = service.get().health().get("telegram", {})
+    except Exception as exc:
+        swallowed("ishti/contract_api.py:tg_status", exc)
+    rows.append({"id": "whatsapp", "kind": "channel", "status": "connected" if wa_connected else "disconnected",
+                 "configured": wa_connected, "detail": "linked via QR" if wa_connected else "QR link flow"})
+    tg_on = bool(tg.get("running"))
+    rows.append({"id": "telegram", "kind": "channel",
+                 "status": "connected" if tg_on else "disconnected",
+                 "configured": bool(tg.get("token_stored")),
+                 "detail": "polling" if tg_on else ("token stored - press Pair" if tg.get("token_stored") else "bot token + pairing")})
     return rows
 
 
@@ -239,7 +260,8 @@ async def connector_status(cid: str):
               "telegram": {"paired": bool(pol.get("telegram_enabled")),
                            "detail": "bot token + pairing"}}.get(cid, {})
     return {"id": cid, "status": row["status"], "configured": row["configured"],
-            "detail": row["detail"], **detail}
+            "detail": row["detail"], **detail,
+            "policy": {"quiet_hours": pol.get("quiet_hours", ""), "max_per_minute": pol.get("rate_limit_per_min", 20)}}
 
 
 @router.post("/api/connectors/{cid}/connect")
@@ -248,8 +270,13 @@ async def connector_connect(cid: str):
         return _bad("connect is available for whatsapp|telegram only")
     from ishti.channels import service
     svc = service.get()
-    if cid == "whatsapp":
-        return {"ok": True, "detail": "QR flow: use /api/inputs/wa-start then GET /api/inputs/wa-qr"}
+    if cid == "whatsapp":  # start the local QR bridge; the UI polls /status and the QR endpoint
+        from ishti import wa_bridge
+        try:
+            started = await asyncio.to_thread(wa_bridge.start)
+        except Exception as exc:  # no Node, test mode, ... : say so instead of a 500
+            return {"ok": False, "detail": str(exc)[:200]}
+        return {"ok": True, "detail": "QR link started", "running": bool((started or {}).get("running"))}
     ok = svc.start()
     return {"ok": bool(ok), "detail": "telegram poller start requested"}
 
@@ -269,8 +296,12 @@ async def connector_disconnect(cid: str):
 
 @router.post("/api/connectors/{cid}/test")
 async def connector_test(cid: str):
-    if cid != "telegram":
-        return _bad("test send is telegram-only (self-chat test for whatsapp is owner-authorized)")
+    if cid not in ("whatsapp", "telegram"):
+        return _bad("test is available for whatsapp|telegram only")
+    if cid == "whatsapp":  # dry run: never sends a real message (AGENTS.md); proves the link is live
+        from ishti import wa_bridge
+        ok = bool(wa_bridge.connected())
+        return {"ok": ok, "detail": "linked and reachable (dry run, nothing sent)" if ok else "not linked - scan the QR first"}
     from ishti.channels import service
     ok = service.get().push("test", "ISHTI connector test", urgent=True)
     return {"ok": bool(ok), "detail": "sent to the paired chat" if ok else "not connected"}
@@ -297,7 +328,11 @@ async def connector_config(cid: str, req: Request):
         else:
             upd["allowed_telegram_ids"] = nums
     if isinstance(body.get("policy"), dict):
-        upd.update({k: v for k, v in body["policy"].items() if k in policy.DEFAULTS})
+        pol_in = dict(body["policy"])
+        if "max_per_minute" in pol_in:  # UI name -> policy key
+            pol_in["rate_limit_per_min"] = pol_in.pop("max_per_minute")
+        pol_in.pop("t2_stepup", None)  # T2 approvals are always required (safety invariant); not switchable
+        upd.update({k: v for k, v in pol_in.items() if k in policy.DEFAULTS})
     if upd:
         policy.save(upd)
     pol = policy.load()
@@ -381,6 +416,9 @@ async def proposal_action(pid: str, action: str):
         p = runs.resolve_proposal(pid, approve=(action == "approve"))
     except ValueError as exc:
         return _bad(str(exc), 404)
+    if p["status"] == "approved" and not os.environ.get("ISHTI_TEST_MODE"):
+        from ishti import feedback_bridge
+        feedback_bridge.build_from_proposal(pid)  # drafts the skill DISABLED; enabling stays a separate owner yes
     return {"id": pid, "status": p["status"]}
 
 

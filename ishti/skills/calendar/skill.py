@@ -10,6 +10,7 @@ import uuid
 
 from ishti import ROOT, llm
 from ishti.skills import ask_first, trace
+from ishti.test_mode import scratch_path
 
 try:  # best-effort failure log (never breaks the module if logging is unavailable)
     from ishti.core.logutil import swallowed
@@ -19,7 +20,7 @@ except Exception:  # pragma: no cover
 
 
 I = re.I
-DB = os.path.join(ROOT, "data", "calendar.db")
+DB = scratch_path(os.path.join(ROOT, "data", "calendar.db"))
 OPS = [
     ("export", re.compile(r"\bexport\s+(?:my\s+)?calendar\b|\bcalendar\s+(?:to|as)\s+(?:ics|google|outlook)\b|\.ics\b", I)),
     ("free", re.compile(r"\b(?:when\s+am\s+i\s+free|free\s+(?:time|slots?)|am\s+i\s+(?:free|busy))\b", I)),

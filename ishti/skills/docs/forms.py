@@ -10,9 +10,10 @@ import os
 import re
 
 from ishti import ROOT
+from ishti.test_mode import scratch_path
 
 I = re.I
-INVOICES = os.path.join(ROOT, "data", "invoices")
+INVOICES = scratch_path(os.path.join(ROOT, "data", "invoices"))
 # owner fact -> field-name words it fills
 FACT_FIELDS = {"name": ("name", "full name", "applicant", "student name"), "email": ("email", "e-mail"),
                "phone": ("phone", "mobile", "contact", "cell"), "city": ("city", "town"), "country": ("country", "nationality"),

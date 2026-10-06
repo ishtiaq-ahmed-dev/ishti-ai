@@ -200,6 +200,9 @@ def _data_dir() -> str:
         return env
     try:
         from ishti import ROOT
+        from ishti.test_mode import scratch_dir
+        if scratch := scratch_dir():  # scratch mode: settings live with the rest of the test data
+            return scratch
         return os.path.join(ROOT, "data")
     except Exception:
         return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")

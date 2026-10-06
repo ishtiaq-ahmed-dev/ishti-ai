@@ -40,7 +40,10 @@ from PIL import Image, ImageDraw, ImageFont
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
-DATA_DIR = os.path.join(ROOT_DIR, "data")
+
+from ishti.test_mode import scratch_path  # noqa: E402  (after the sys.path bootstrap)
+
+DATA_DIR = scratch_path(os.path.join(ROOT_DIR, "data"))
 SCREENSHOTS_DIR = os.path.join(DATA_DIR, "screenshots", "multiscreen")
 os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
 

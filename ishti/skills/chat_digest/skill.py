@@ -20,6 +20,7 @@ from ishti import ROOT, audit
 from ishti.skills.chat_digest import analyze, export, report
 from ishti.skills.chat_digest import store
 from ishti.skills.chat_digest import window as win_mod
+from ishti.test_mode import scratch_path
 
 DIGEST = re.compile(
     r"\b(?:chat|whatsapp)\s+digest\b"
@@ -37,14 +38,21 @@ WANT_MD = re.compile(r"\b(?:markdown|md file|\.md)\b", re.I)
 DRAFTS = re.compile(r"\b(?:draft|suggest)\b[^.?!]{0,24}\b(?:repl(?:y|ies)?|answer|response|message)s?\b"
                     r"|\bwhat should i (?:reply|say)\b", re.I)
 INGEST = re.compile(r"\b(?:import|read from|use)\b[^.?!]{0,24}\bexport\b|\b(?:whatsapp|wa)\s+export\b", re.I)
-LAST_MD = os.path.join(ROOT, "data", "chat_digest_last.md")
+LAST_MD = scratch_path(os.path.join(ROOT, "data", "chat_digest_last.md"))
+NOTIF_Q = re.compile(r"\b(?:notifications?|alerts?)\b", re.I)
+CHAT_TOPIC = re.compile(r"\b(?:chats?|whatsapp|groups?|communit\w*|messages?|dms?)\b", re.I)
 
 
 def match(text):
     """Deliberately specific: the plain 'check my whatsapp' request still belongs to the whatsapp skill
     (priority 16 runs first), and nothing here fires on the labelled requests of other skills -
     tools/check_skills.py replays those and fails on a matcher that steals one."""
-    return bool(DIGEST.search(text or ""))
+    t = text or ""
+    # "What notifications did I miss?" / "tell me the alert" are the notifications bell, not the chats
+    # (the digest's "what did i miss" branch used to steal them - checklist #195).
+    if NOTIF_Q.search(t) and not CHAT_TOPIC.search(t):
+        return False
+    return bool(DIGEST.search(t))
 
 
 def _hours(text, cfg):
@@ -141,6 +149,8 @@ if __name__ == "__main__":
             {"msg_id": "m2", "ts": now - 60, "sender": "Ali", "text": "سب ٹھیک ہے؟ 🎯"}]}]})
     assert match("open agent and check the last 24 hours of all chats, groups and communities and give me a report")
     assert match("chat digest please") and match("what did I miss")
+    assert not match("What notifications did I miss in the last hour?")   # the bell, not the chats
+    assert match("what did I miss in my group chats")                     # a chat question stays here
     assert not match("check my whatsap and let me know which chat is unread")     # whatsapp's request
     assert not match("give me my brief") and not match("what's the weather")
     assert not match("summarize https://example.com for me")

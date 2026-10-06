@@ -12,8 +12,9 @@ import threading
 import time
 
 from ishti import ROOT
+from ishti.test_mode import scratch_path
 
-DB = os.path.join(ROOT, "data", "leads.db")
+DB = scratch_path(os.path.join(ROOT, "data", "leads.db"))
 _lock = threading.RLock()
 _conn = None
 
@@ -138,7 +139,7 @@ def export(path: str | None = None, query: str = "", fmt: str = "csv") -> str:
     """CSV (default) or XLSX (when openpyxl is present) of the current lead set."""
     rows_ = rows(query, limit=5000)
     stamp = time.strftime("%Y%m%d_%H%M")
-    out = path or os.path.join(ROOT, "data", "exports", f"leads-{stamp}.{fmt}")
+    out = path or scratch_path(os.path.join(ROOT, "data", "exports", f"leads-{stamp}.{fmt}"))
     os.makedirs(os.path.dirname(out), exist_ok=True)
     cols = ["name", "company", "role", "website", "email", "phone", "location", "industry",
             "source_url", "relevance", "verified", "notes", "date_found"]

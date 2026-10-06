@@ -13,6 +13,7 @@ import zipfile
 
 from ishti import ROOT
 from ishti.skills import ask_first, trace
+from ishti.test_mode import scratch_path
 
 try:  # best-effort failure log (never breaks the module if logging is unavailable)
     from ishti.core.logutil import swallowed
@@ -332,7 +333,7 @@ def op_compare(m, text, session):
 
 
 def _tags():
-    db = sqlite3.connect(os.path.join(ROOT, "data", "tags.db"))
+    db = sqlite3.connect(scratch_path(os.path.join(ROOT, "data", "tags.db")))
     db.execute("CREATE TABLE IF NOT EXISTS tags(path TEXT, tag TEXT, UNIQUE(path, tag))")
     return db
 

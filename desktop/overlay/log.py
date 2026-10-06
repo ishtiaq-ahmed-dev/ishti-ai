@@ -22,7 +22,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-LOG_FILE = os.path.join(ROOT, "data", "overlay.log")
+from ishti.test_mode import scratch_path  # noqa: E402  (after the sys.path bootstrap)
+
+LOG_FILE = scratch_path(os.path.join(ROOT, "data", "overlay.log"))
 MAX_BYTES = 1024 * 1024          # coucou's <1 MB cap
 KEEP = 3                         # rotated generations kept: .1 .. .KEEP-1 (+ current)
 

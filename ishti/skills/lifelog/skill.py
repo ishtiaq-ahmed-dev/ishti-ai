@@ -11,9 +11,10 @@ import time
 
 from ishti import ROOT
 from ishti.skills import trace
+from ishti.test_mode import scratch_path
 
 I = re.I
-DB = os.path.join(ROOT, "data", "lifelog.db")
+DB = scratch_path(os.path.join(ROOT, "data", "lifelog.db"))
 SAMPLE_S = 60
 LOG = [
     ("water", re.compile(r"\b(?:drank|had|drink)\s+(?P<n>\d+(?:\.\d+)?)\s*(?P<u>glass(?:es)?|cups?|liters?|litres?|l|ml|bottles?)\s+(?:of\s+)?water\b", I)),

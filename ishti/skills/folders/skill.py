@@ -16,6 +16,7 @@ import time
 
 from ishti import ROOT
 from ishti.skills import answer_of, trace
+from ishti.test_mode import scratch_path
 
 I = re.I
 TYPES = {"PDFs": {"pdf"}, "Documents": {"doc", "docx", "txt", "md", "rtf", "odt"},
@@ -40,7 +41,7 @@ ASK = re.compile(r"\b(?:how\s+many|count|list|show|what(?:'s|\s+is|\s+are)|large
                  r"oldest|recent)\b", I)
 VIDEO_EDIT = re.compile(r"\b(?:edit|trim|cut|compress|caption|subtitle|overlay|title|reframe)\b.*\bvideos?\b|"
                         r"\bvideos?\b.*\b(?:edit|trim|cut|compress|caption|subtitle|overlay|reframe)\b", I)
-UNDO_DIR = os.path.join(ROOT, "data", "undo")
+UNDO_DIR = scratch_path(os.path.join(ROOT, "data", "undo"))
 
 
 VERBS = ("open", "delete", "remove", "copy", "move", "list", "show", "what", "whats", "what's", "which", "how",

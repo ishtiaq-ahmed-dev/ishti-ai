@@ -49,6 +49,8 @@ def _execute(run_id: str) -> None:
 def _run_one(run_id: str, run: dict, cancelled: threading.Event, t0: float) -> None:
     from ishti import runs
 
+    used: list[str] = []  # skills used this run, in order (trajectory mining -> skill proposals)
+
     def on_event(ev: dict) -> None:
         kind = ev.get("type")
         if kind == "tool":
@@ -62,6 +64,7 @@ def _run_one(run_id: str, run: dict, cancelled: threading.Event, t0: float) -> N
         elif kind == "route":  # restore the "what I decided" line the old Thinking panel showed
             runs.run_step(run_id, "tool", "Routing: " + str(ev.get("why") or ev.get("skill") or "choosing a skill")[:200])
         elif kind == "step" and ev.get("status") == "start":
+            used.append(str(ev.get("skill") or ""))
             runs.run_step(run_id, "tool", f"Using {ev.get('skill') or 'skill'}")
         elif kind == "escalate":
             runs.run_step(run_id, "research", str(ev.get("why") or "Trying another way"))
@@ -81,6 +84,8 @@ def _run_one(run_id: str, run: dict, cancelled: threading.Event, t0: float) -> N
     states: set[str] = set()
     try:
         from ishti import dispatcher
+        from orchestrator import persona
+        persona.CURRENT_PROFILE.set(runs.chat_profile(run["chat_id"]))  # this chat's profile layer, not the global one
         res = dispatcher.handle(_text_of(run), run["chat_id"],
                                 channel="text", on_token=on_token, on_event=on_event)
         if cancelled.is_set() or runs.run_state(run_id) == "cancelled":
@@ -96,6 +101,8 @@ def _run_one(run_id: str, run: dict, cancelled: threading.Event, t0: float) -> N
                       ". What is missing: independent confirmation of the remaining claims.")
             runs.run_step(run_id, "verify", "research did not reach COMPLET; answer marked unverified")
         runs.finish_run(run_id, answer)
+        from ishti import feedback_bridge
+        feedback_bridge.trajectory(_text_of(run), used)
     except BaseException as exc:  # dispatcher reports its own Exceptions; this is the belt
         if type(exc).__name__ == "Cancelled":
             runs.cancel_run(run_id)

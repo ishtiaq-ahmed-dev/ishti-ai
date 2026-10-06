@@ -41,6 +41,9 @@ except Exception:  # pragma: no cover
 _lock = threading.Lock()
 _PERF: dict = {}
 
+# runs.agent_message mirror for _wire_bus (import at call time keeps module import order free)
+from ishti import runs as runs_helpers  # noqa: E402
+
 
 # --------------------------------------------------------------------- agents (C2)
 AGENTS = {
@@ -402,9 +405,27 @@ def perf() -> dict:
                 for a, p in _PERF.items()}
 
 
+def _wire_bus() -> None:
+    """A2A closure: every specialist agent appears on the typed agent bus and receives the owner's
+    INPUT_REQUIRED answers (input.response.<agent_id>). Without this, agents ask questions the
+    answer endpoint accepts but nobody ever delivers - the A2A loop never closes."""
+    if getattr(_wire_bus, "done", False):
+        return
+    _wire_bus.done = True
+    try:
+        from ishti import agent_bus
+        for aid in AGENTS:
+            agent_bus.subscribe(f"input.response.{aid}",
+                                (lambda a: lambda env: runs_helpers.agent_message(a, "owner",
+                                     str((env.get("body") or {}).get("answer", ""))[:4000]))(aid))
+    except Exception as exc:
+        swallowed("ishti/agents.py:_wire_bus", exc)
+
+
 def run(request: str, session, skills: dict) -> dict:
     """The orchestrator entry (the multi_agent_orchestrator profile calls this):
     decompose → assign → pattern (supervisor/sequential/fan-out/hierarchical) → synthesize."""
+    _wire_bus()
     budget = _budget()
     bb: dict = {"entries": {}}
     pattern = budget["pattern"]

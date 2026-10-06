@@ -3,7 +3,9 @@ open right now.
 
 All local: psutil + nvidia-smi + the measured self-model. Product questions ("memory usage of an RTX 5070 Ti")
 are web questions and never land here."""
+import datetime as dt
 import re
+import time
 
 from orchestrator.intent_detector import IntentDetector
 
@@ -69,6 +71,26 @@ PRINTER = re.compile(r"\b(?:check\s+(?:if\s+)?(?:my\s+)?printer\b|printer\s+(?:i
 # "Delete system files to free up space" (checklist #96): never delete system/Windows files - that is
 # dangerous and irreversible, so refuse and offer the safe alternative (clean temp files) instead.
 SYSTEM_FILES = re.compile(r"\b(?:system|windows|windows\s+system)\s+files?\b", I)
+# "What notifications did I miss in the last hour?" / "tell me the alert now" (checklist #195, #196):
+# answer from the real notification store. A social feed's notifications, a Windows/driver update and
+# "turn off notifications for an hour" (mute/DND) are NOT this report.
+NOTIF_Q = re.compile(r"\b(?:notifications?|alerts?)\b", I)
+NOTIF_ELSEWHERE = re.compile(r"\b(?:facebook|instagram|linkedin|twitter|whatsapp|telegram|gmail|email|inbox|"
+                             r"phone|android|windows|driver|update|bell\s+settings)\b", I)
+NOTIF_MUTE = re.compile(r"\b(?:turn\s+off|switch\s+off|mute|silence|disable|pause|stop|quiet|"
+                        r"do\s+not\s+disturb|dnd)\b", I)
+NOTIF_REPORT = re.compile(r"\b(?:missed|did\s+i\s+miss|fired|come\s+up|came\s+up|recent|unread|waiting|"
+                          r"pending|new)\b", I)
+NOTIF_ASK = re.compile(r"\b(?:what|which|any|show|list|check|see|tell\s+me)\b", I)
+
+
+def wants_notifications(text: str) -> bool:
+    """True for a request to REPORT what fired, never for muting, another app's feed, an update, or
+    setting an alert ("set an alert for 5pm" is the reminders skill's request)."""
+    t = text or ""
+    if not NOTIF_Q.search(t) or NOTIF_ELSEWHERE.search(t) or NOTIF_MUTE.search(t):
+        return False
+    return bool(NOTIF_REPORT.search(t) or NOTIF_ASK.search(t))
 
 
 def match(text):
@@ -82,7 +104,39 @@ def match(text):
         return True
     if PRODUCT.search(text):
         return False  # specs/usage of a named product: web_search's job
+    if wants_notifications(text):
+        return True
     return IntentDetector.classify(re.sub(r"\b(?:the|a|an|my)\s+", "", text, flags=I))["mode"] == "PC_TELEMETRY"
+
+
+def _notifications(text):
+    """What actually fired, straight from the notification store - honest when there is nothing
+    (checklist #195, #196). Never invents an alert."""
+    from ishti import notifications
+    window_s, when = None, "recently"
+    m = re.search(r"\blast\s+(?:(\d+)\s*)?(min(?:ute)?s?|hours?|hrs?|days?)\b", text or "", I)
+    if m:
+        n = float(m.group(1) or 1)
+        unit = m.group(2).strip().lower()
+        window_s = n * (60 if unit.startswith("m") else 3600 if unit.startswith("h") else 86400)
+        when = f"the last {unit.rstrip('s')}" if n == 1 else f"the last {n:g} {unit}"
+    rows = notifications.recent(limit=500)
+    if window_s is not None:
+        cutoff = time.time() - window_s
+        rows = [r for r in rows if float(r.get("ts") or 0) >= cutoff]
+    unread = notifications.unread()
+    where = f"in {when}" if m else "recently"
+    if not rows:
+        return {"reply": f"No notifications fired {where} - nothing is waiting for you, and I have "
+                         f"{unread} unread in the bell in total.", "sources": []}
+    lines = []
+    for r in rows[:20]:
+        stamp = dt.datetime.fromtimestamp(float(r.get("ts") or 0)).strftime("%H:%M")
+        body = f" - {r['body']}" if (r.get("body") or "").strip() else ""
+        lines.append(f"{stamp} · {r.get('kind')}: {r.get('title')}{body}")
+    more = f" (+{len(rows) - 20} more)" if len(rows) > 20 else ""
+    return {"reply": f"What fired {where} ({len(rows)}):\n" + "\n".join(f"- {ln}" for ln in lines)
+                     + more + f"\n{unread} unread in the bell right now.", "sources": []}
 
 
 def _arch():
@@ -253,6 +307,8 @@ def run(text, session):
         return _access()
     if SELF_STATUS.search(text):
         return _self_status()
+    if wants_notifications(text):
+        return _notifications(text)
     if WIN_INSTALL.search(text):
         return _win_install(session)
     if WIN_UPDATES.search(text):
@@ -282,5 +338,11 @@ if __name__ == "__main__":
     assert match("what's my cpu usage")
     assert not match("write a poem")
     assert not match("price and specs of an RTX 5070 Ti")  # a web question, not this PC
+    assert match("What notifications did I miss in the last hour?")     # checklist #195
+    assert match("Tell me the alert now")                               # checklist #196
+    assert not match("Check my Facebook notifications")                 # another app's feed
+    assert not match("Turn off notifications for an hour")              # mute/DND, not a report
+    assert match("Are there any Windows updates?")                       # still this skill...
+    assert not wants_notifications("Are there any Windows updates?")     # ...but not the notification report
     assert not match("memory usage of an iPhone 16")
     print("[self-check] system OK - routing (specs, usage, running apps), product questions stay web")

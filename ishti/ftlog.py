@@ -145,7 +145,7 @@ def export(path=None, limit=5000):
         rows = [dict(r) for r in c.execute("SELECT * FROM ftlog WHERE channel != 'scheduled' "
                                            "ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()]
     data = curate(rows)
-    out_path = path or os.path.join(ROOT, "data", "finetune", f"dataset_{time.strftime('%Y%m%d')}.jsonl")
+    out_path = path or scratch_path(os.path.join(ROOT, "data", "finetune", f"dataset_{time.strftime('%Y%m%d')}.jsonl"))
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     import io
     n = 0

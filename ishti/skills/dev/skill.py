@@ -12,11 +12,12 @@ import requests
 
 from ishti import ROOT
 from ishti.skills import ask_first, trace
+from ishti.test_mode import scratch_path
 
 from ishti.skills.dev import scaffold
 I = re.I
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-SANDBOX = os.path.join(ROOT, "data", "sandbox")
+SANDBOX = scratch_path(os.path.join(ROOT, "data", "sandbox"))
 CODE = re.compile(r"```(?:python|py)?\s*\n(?P<code>.+?)```", I | re.S)
 OPS = [
     ("scaffold", scaffold.SCAFFOLD),
@@ -295,8 +296,19 @@ def op_pip_install(m, text, session):
     if pkg:
         name = pkg.group(1).rstrip(".,;:")
     else:
-        m2 = re.search(r"install\s+(?:this\s+|the\s+)?(?:python\s+)?(?:package|library|module|package\s+named)\s+(?:for\s+me\s+)?(?::\s*)?(?P<pkg>[a-zA-Z][a-zA-Z0-9._-]{1,40})\b", text, I)
-        name = m2.group("pkg") if m2 else re.search(r"add\s+([a-zA-Z][a-zA-Z0-9._-]{1,40})\s+to", text, I).group(1)
+        # "package for me: requests" - the old pattern required whitespace after "me", so the colon in
+        # "for me: requests" made the capture fall through to the word "for" and the gate asked to
+        # "pip install for" (checklist 36). The tail is now optional-spaces and the name is screened
+        # against filler words, so a bad capture asks which package instead of gating a nonsense install.
+        m2 = re.search(r"install\s+(?:this\s+|the\s+)?(?:python\s+)?(?:package|library|module|package\s+named)\s*"
+                       r"(?:for\s+me\s*)?(?::\s*)?(?P<pkg>[a-zA-Z][a-zA-Z0-9._-]{1,40})\b", text, I)
+        if m2:
+            name = m2.group("pkg")
+        else:
+            m3 = re.search(r"add\s+([a-zA-Z][a-zA-Z0-9._-]{1,40})\s+to", text, I)
+            name = m3.group(1) if m3 else ""
+        if name.lower() in {"for", "to", "it", "me", "the", "this", "that", "my", "a", "an"}:
+            name = ""
     if not name:
         return "Which package?"
     name = name.strip().strip("'[]")
@@ -312,7 +324,7 @@ def op_pip_install(m, text, session):
 
 def op_log_check(m, text, session):
     path = re.search(r"[A-Za-z]:\\[^\s\"']+", text)
-    path = path.group(0) if path else os.path.join(ROOT, "data", "logs", "error_records.md")
+    path = path.group(0) if path else scratch_path(os.path.join(ROOT, "data", "logs", "error_records.md"))
     if not os.path.isfile(path):
         return f"{path} doesn't exist."
     with open(path, encoding="utf-8", errors="replace") as f:

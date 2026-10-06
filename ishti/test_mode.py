@@ -56,12 +56,30 @@ def enabled() -> bool:
     return os.environ.get(_ENV) == "1"
 
 
-def scratch_path(default_path: str) -> str:
+def scratch_dir() -> str:
+    """The one writable data dir in scratch mode, or "" when scratch is off.
+
+    Tests get their own per-pid dir (``_work/scratch/<pid>/data``); a harness that needs several
+    processes (server + seeder + verifier) to share ONE store sets ISHTI_SCRATCH_DIR, so every
+    process lands in the same place. Creating the dir is part of the contract: a caller about to
+    bind a store path must be able to rely on the parent existing."""
     if not enabled() or os.environ.get("ISHTI_SCRATCH") != "1":
-        return default_path
-    from ishti import ROOT
-    folder = os.path.join(ROOT, "_work", "scratch", str(os.getpid()), "data")
+        return ""
+    pinned = os.environ.get("ISHTI_SCRATCH_DIR")
+    if pinned:
+        folder = os.path.abspath(pinned)
+    else:
+        from ishti import ROOT
+        folder = os.path.join(ROOT, "_work", "scratch", str(os.getpid()), "data")
     os.makedirs(folder, exist_ok=True)
+    return folder
+
+
+def scratch_path(default_path: str) -> str:
+    """default_path, or its scratch-dir twin when scratch mode is on (same basename)."""
+    folder = scratch_dir()
+    if not folder:
+        return default_path
     return os.path.join(folder, os.path.basename(default_path))
 
 
