@@ -31,6 +31,19 @@ def publish(type_, data):
     return msg
 
 
+def publish_raw(msg):
+    """Fan out a pre-built envelope (e.g. the durable run-event log with its global seq) untouched:
+    no re-wrap, no replay cache. Contract v2 §14.3 live path."""
+    with _lock:
+        subs = list(_subs)
+    for fn in subs:
+        try:
+            fn(msg)
+        except Exception as _exc:
+            swallowed('ishti/events.py:publish_raw', _exc)
+    return msg
+
+
 def subscribe(fn):
     with _lock:
         _subs.append(fn)

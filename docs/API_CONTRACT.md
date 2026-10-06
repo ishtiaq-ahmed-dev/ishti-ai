@@ -644,3 +644,46 @@ These additions describe current code; see docs/audit/TEST_RESULTS.md for what h
 | GET /api/crm/clients | optional status | clients with id/name aliases for contract CRM rows plus read-only chat CRM profiles. partial_error says when chat profiles could not load. |
 | POST /api/crm/delete/prepare | exact client_id | Returns the current client name and a random approval token valid for 120 seconds; no deletion occurs. |
 | POST /api/crm/delete | exact client_id, confirm_name, approval_token | Consumes one approval; expired/replayed tokens or changed records return 409. Exact identity is required. Bulk purge returns 501. |
+
+## 14. Contract v2 additions (2026-10-06, WP1-WP8)
+
+Runs are durable and server-side: the user message is persisted BEFORE generation; runs survive navigation, WS drops and backend restart. Every event carries a monotonically increasing global `seq` in an append-only log; `/ws/events?since_seq=N` replays from N (absent = legacy behavior, unchanged).
+
+### 14.1 Chats & messages
+| Endpoint | Body/Query | Response |
+|---|---|---|
+| POST /api/chats | `{}` (optional `{profile}`) | `{chat_id, profile}` |
+| GET /api/chats | — | `{chats:[{chat_id, title, profile, created_at, updated_at}]}` |
+| GET /api/chats/{id}/messages | `?after_seq=` (default 0) | `{chat_id, messages:[{seq,message_id,role,text,run_id,ts}]}` |
+| POST /api/chats/{id}/messages | `{client_msg_id, text, attachments?, profile?}` | `{message_id, run_id}` — idempotent on `(chat_id, client_msg_id)` |
+
+### 14.2 Runs
+| Endpoint | Response |
+|---|---|
+| GET /api/runs/{id} | `{run_id, chat_id, state: queued\|running\|done\|failed\|cancelled, text, steps:[run_step...], seq}` |
+| POST /api/runs/{id}/cancel | `{run_id, cancelled}` |
+| GET /api/runs?chat_id= | `{runs:[...]}` (recoverable list) |
+
+### 14.3 Run events (WS `/ws/events?since_seq=N`, replay from N)
+`message_created`, `run_started`, `run_delta {text}`, `run_step {kind: research|tool|verify, label, n, sources}`, `run_finished {text}`, `run_failed {error}`, `profile_changed`, `connector_qr {connector_id, qr}`, `connector_status {connector_id, status, detail}`, `agent_message {agent_id, text}`, `agent_status {agent_id, state, detail}`, `learning_update {kind, detail}`. Every envelope: `{seq, type, data, ts}`.
+
+### 14.4 Feedback / profiles / connectors / agents / learning / prompt layers
+| Endpoint | Contract |
+|---|---|
+| POST /api/feedback | `{message_id, run_id, rating:-1\|0\|1, reasons[], comment, correction}` -> `{feedback_id, state}`; idempotent per `(message_id, run_id, rating)` |
+| GET /api/feedback/stats | `{total, pos, neg, neutral, by_reason:{...}}` |
+| GET /api/profile | `{active:"personal"\|"business"}` |
+| PUT /api/profile | body `{active}` -> `{active}` (emits `profile_changed`) |
+| GET /api/connectors | `{connectors:[{id,kind,status,configured}]}` — whatsapp, telegram, mcp, a2a, api |
+| POST /api/connectors/{id}/connect · disconnect · test | `{ok, detail}` |
+| GET /api/connectors/{id}/status | `{id, status, detail, paired}` |
+| PUT /api/connectors/{id}/config | `{control_numbers[], policy, ...}` -> `{saved:true}` |
+| GET /api/agents | `{agents:[{id, skills, goal, state}]}` |
+| GET /api/agents/{id}/messages | `{agent_id, messages:[{ts, from, text}]}` |
+| GET /api/learning/status | `{mode, lessons, proposals_open, dataset_rows}` |
+| GET /api/skills/proposals | `{proposals:[{id, title, skill, status, origin}]}` |
+| POST /api/skills/proposals/{id}/approve · reject | `{id, status}` (approve = owner T2 yes) |
+| PUT /api/learning/mode | `{mode:"off"\|"propose"\|"auto_t0"}` -> `{mode}` |
+| GET /api/prompt/layers | `{layers:[{name, chars, preview}], total_chars}` (read-only) |
+
+Safety: v2 endpoints add no new T2/T3 capability; remote send stays T2 behind `ishti/channels/gate.py`; feedback/profile/learning-mode writes are audited. Learning mode can never raise autonomy above `auto_t0` (read-only skills only).
