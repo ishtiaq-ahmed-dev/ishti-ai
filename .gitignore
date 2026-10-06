@@ -77,3 +77,7 @@ window.json
 
 # old runtime-gap log (now data/needs_runtime.md)
 md files/
+
+# regenerable
+tools/flowise/node_modules/
+_work/
