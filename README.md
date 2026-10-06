@@ -100,11 +100,19 @@ in this folder. To remove them too, uninstall Ollama from Windows Settings -> Ap
 | [docs/SAFETY.md](docs/SAFETY.md) | How ISHTI asks permission, limits itself, and keeps a record of what it did |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How ISHTI is built, for developers |
 | [docs/SKILLS.md](docs/SKILLS.md) | Everything ISHTI can do, and how to add a new ability |
-| [docs/PC_VERIFY.md](docs/PC_VERIFY.md) | What was just checked on this PC after the latest update (every safety change re-tested, live proofs, results) |
+| [docs/API_CONTRACT.md](docs/API_CONTRACT.md) | The HTTP/WebSocket contract the app and backend share |
 
-Latest update (October 2026): every safety change from the code review was re-tested on this PC — 125/125 skills load,
-the AI stays fully on the graphics card, asking permission before deleting anything works, and the full offline test
-suite passes. Details and evidence in [docs/PC_VERIFY.md](docs/PC_VERIFY.md).
+## Personal and Business
+
+When ISHTI starts it asks whether you want to go to **Personal** or **Business**. You can switch any time from the top of the sidebar. Each profile has its own chats, memory and instructions: Personal chats never show up in Business and the other way round. Business works as a proper business assistant (formal, client-focused, drafts only until you approve a send).
+
+## How ISHTI learns
+
+Every thumbs-up or thumbs-down is stored with the reason you pick. A thumbs-down also makes ISHTI write a corrected answer straight into the chat; rate it again and it keeps correcting until you are happy. Corrections become lessons that change how it picks tools next time. When you repeat the same multi-step job three times, ISHTI proposes turning it into a skill; it is built switched off and only runs after you say yes.
+
+## Branches (for developers)
+
+`main` is the verified branch (tested on the Windows PC). `mac` is where the Mac pushes. The PC pulls `mac`, tests and fixes it, then merges into `main`. No other long-lived branches.
 
 For developers: `start.bat doctor` checks the system, `start.bat test` runs the offline tests, and
 `start.bat server` runs only the backend. Third-party software and licences are listed in
