@@ -90,6 +90,7 @@ app.mount("/static", CachedStaticFiles(directory=STATIC_DIR, max_age=300), name=
 model_router = ModelRouter()
 active_websockets: List[WebSocket] = []
 _websocket_send_locks: Dict[int, asyncio.Lock] = {}
+WS_SEND_TIMEOUT_S = 5.0
 last_execution_state: Dict[str, Any] = {}
 last_research_state: Dict[str, Any] = {}
 MAIN_LOOP: asyncio.AbstractEventLoop = None  # set at startup; worker threads have no loop of their own
@@ -159,7 +160,7 @@ async def _send_websocket(ws: WebSocket, message: str):
     """Serialize writes so event broadcasts and the endpoint loop cannot corrupt each other's frames."""
     lock = _websocket_send_locks.setdefault(id(ws), asyncio.Lock())
     async with lock:
-        await ws.send_text(message)
+        await asyncio.wait_for(ws.send_text(message), timeout=WS_SEND_TIMEOUT_S)
 
 
 def sync_event_callback(event_type: str, data: Dict[str, Any]):
@@ -1856,6 +1857,27 @@ from ishti import files_api  # /api/upload, /api/reveal
 files_api.attach(app)
 
 # ---------------------------------------------------------------- Media Vault & CRM Endpoints
+_VAULT_APPROVALS = {}
+
+
+def _vault_target(body):
+    target = body.get("chat_id") if isinstance(body, dict) else None
+    return str(target).strip() if target is not None and str(target).strip() else "all"
+
+
+def _vault_prepare(target):
+    token = secrets.token_urlsafe(24)
+    _VAULT_APPROVALS[token] = {"target": target, "expires": time.monotonic() + 120.0}
+    return {"approval_token": token, "target": target, "expires_in_s": 120}
+
+
+def _vault_consume(target, token):
+    row = _VAULT_APPROVALS.pop(str(token or ""), None)
+    if not row or row["target"] != target or row["expires"] < time.monotonic():
+        return False
+    return True
+
+
 @app.get("/api/vault/status")
 async def vault_status():
     """Encrypted-at-rest media vault metrics and retention policy."""
@@ -1866,15 +1888,26 @@ async def vault_status():
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
+@app.post("/api/vault/purge/prepare")
+async def vault_purge_prepare(req: Request):
+    try:
+        body = await req.json()
+        return _vault_prepare(_vault_target(body))
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
 @app.post("/api/vault/purge")
 async def vault_purge(req: Request):
     """Purge media files from the encrypted vault."""
     try:
         body = await req.json() if req.headers.get("content-type") == "application/json" else {}
-        chat_id = body.get("chat_id")
+        target = _vault_target(body)
+        if not _vault_consume(target, body.get("approval_token")):
+            return JSONResponse({"error": "exact vault purge approval required or expired"}, status_code=409)
         from ishti.security import media_vault
-        if chat_id:
-            count = media_vault.purge_chat_media(str(chat_id))
+        if target != "all":
+            count = media_vault.purge_chat_media(target)
         else:
             count = media_vault.purge_all_media()
         return {"ok": True, "purged": count}

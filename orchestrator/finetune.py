@@ -30,6 +30,10 @@ CURRENT = os.path.join(ADAPTERS, "current")
 EVAL_SET = os.path.join(FT_DIR, "eval_set.json")
 MIN_EXAMPLES = 300   # don't fine-tune on crumbs
 MIN_EVAL_SCORE = 0.8  # candidate must match/beat this on the eval set
+
+
+class AdapterEvaluationUnavailable(RuntimeError):
+    """The serving path cannot prove that an adapter was loaded for evaluation."""
 # QLoRA settings sized for a 16 GB card (RTX 5070 Ti) and a 14B Q4 base:
 LORA = {"r": 16, "lora_alpha": 16, "lora_dropout": 0.05,
         "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
@@ -52,7 +56,8 @@ def deps():
     """(missing, notes): what a real training run needs beyond ISHTI's base venv."""
     missing = []
     for mod, pip in (("torch", "torch (CUDA build)"), ("peft", "peft"), ("transformers", "transformers"),
-                     ("datasets", "datasets"), ("bitsandbytes", "bitsandbytes")):
+                     ("datasets", "datasets"), ("bitsandbytes", "bitsandbytes"),
+                     ("unsloth", "unsloth"), ("trl", "trl")):
         try:
             __import__(mod)
         except ImportError:
@@ -147,6 +152,17 @@ def base_model_name():
     return CONFIG["llm"]["models"].get("planner", "qwen2.5:14b")
 
 
+def training_base_model():
+    """Return an owner-configured local training base; custom Ollama tags are not HF IDs."""
+    from ishti import CONFIG
+    value = os.environ.get("ISHTI_TRAINING_BASE_MODEL")
+    value = value or (CONFIG.get("finetune", {}) or {}).get("training_base_model")
+    if not value:
+        return None
+    path = os.path.abspath(os.path.expanduser(str(value)))
+    return path if os.path.isdir(path) else None
+
+
 def ensure_eval_set():
     os.makedirs(FT_DIR, exist_ok=True)
     if not os.path.isfile(EVAL_SET):
@@ -160,9 +176,10 @@ def _answer_with(model_name, adapter, request):
     """Answer one eval request with the Ollama-hosted model (+ optional adapter when
     Ollama supports it), so the eval gate measures the SERVING stack, not a side copy."""
     import requests
-    payload = {"model": model_name, "prompt": request, "stream": False, "options": {"temperature": 0}}
     if adapter:
-        payload["options"]["num_thread"] = 8
+        raise AdapterEvaluationUnavailable(
+            "Ollama adapter serving is not configured; refusing to score an unevaluated adapter.")
+    payload = {"model": model_name, "prompt": request, "stream": False, "options": {"temperature": 0}}
     r = requests.post("http://127.0.0.1:11434/api/generate", json=payload, timeout=120)
     return r.json().get("response", "")
 
@@ -176,6 +193,8 @@ def run_eval(adapter_dir=None, model=None):
     for item in eval_set:
         try:
             out = _answer_with(model, adapter_dir, item["request"]).lower()
+        except AdapterEvaluationUnavailable:
+            raise
         except Exception as exc:
             results.append({"request": item["request"], "ok": False, "error": f"{type(exc).__name__}: {str(exc)[:80]}"})
             continue
@@ -204,9 +223,10 @@ def train(epochs=None, out_stamp=None):
     stamp = out_stamp or time.strftime("%Y%m%d_%H%M")
     out_dir = os.path.join(ADAPTERS, stamp)
     os.makedirs(out_dir, exist_ok=True)
-    base = base_model_name().split(":")[0]  # the HF family name for training weights
-    # Ollama serves GGUF; training pulls the HF weights of the same family
-    hf_base = f"unsloth/{base}-bnb-4bit" if base.startswith("qwen") else f"meta-llama/{base}"
+    hf_base = training_base_model()
+    if not hf_base:
+        return None, ("training base is not configured as an existing local directory; "
+                      "set ISHTI_TRAINING_BASE_MODEL or finetune.training_base_model")
     model, tok = FastLanguageModel.from_pretrained(hf_base, max_seq_length=LORA["max_seq_length"], load_in_4bit=True)
     model = FastLanguageModel.get_peft_model(model, r=LORA["r"], lora_alpha=LORA["lora_alpha"],
                                              lora_dropout=LORA["lora_dropout"], target_modules=LORA["target_modules"])
@@ -229,10 +249,16 @@ def promote(adapter_dir):
     current production score. Never auto-promotes a regression."""
     if not os.path.isdir(adapter_dir):
         return False, f"no adapter at {adapter_dir}"
-    cand_score, cand_detail = run_eval(adapter_dir)
+    try:
+        cand_score, cand_detail = run_eval(adapter_dir)
+    except AdapterEvaluationUnavailable as exc:
+        return False, f"candidate refused: {exc}"
     cur_score = None
     if os.path.isdir(CURRENT):
-        cur_score, _ = run_eval(CURRENT)
+        try:
+            cur_score, _ = run_eval(CURRENT)
+        except AdapterEvaluationUnavailable as exc:
+            return False, f"current adapter refused: {exc}"
     if cand_score < MIN_EVAL_SCORE:
         return False, f"candidate scored {cand_score:.0%} < {MIN_EVAL_SCORE:.0%} gate - not promoted"
     if cur_score is not None and cand_score < cur_score:

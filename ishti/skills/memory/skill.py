@@ -15,7 +15,7 @@ from collections import deque
 
 from ishti import CONFIG, llm
 from ishti.facts import get_facts, norm
-from ishti.skills import trace
+from ishti.skills import ask_first, trace
 
 try:  # best-effort failure log (never breaks the module if logging is unavailable)
     from ishti.core.logutil import swallowed
@@ -266,6 +266,10 @@ def _really_delete(name, session):
              f"hidden. The deletion event itself is logged - without the deleted content.")
 
 
+def _gate_delete(session, name, action):
+    return ask_first(session, "memory", f"Delete every saved memory and relationship about {name.title()}?", action)
+
+
 def _delete_all(t, session):
     m = DELETE_ALL.match(t)
     cands = _person_desc_matches(m["target"])
@@ -277,17 +281,19 @@ def _delete_all(t, session):
         listing = "\n".join(f"{i}. {n}" for i, n in enumerate(cands, 1))
         return R(f"That could be more than one person:\n{listing}\nWhich one? (number) - nothing has been "
                  f"deleted yet.")
-    return _really_delete(cands[0], session)
+    name = cands[0]
+    return _gate_delete(session, name, lambda: _really_delete(name, session))
 
 
 def _pending(t, p, session):
     if p.get("delete_all"):
         low, cd = t.lower().strip(" .!"), p["delete_all"]
         if low.isdigit() and 1 <= int(low) <= len(cd):
-            return _really_delete(cd[int(low) - 1], session)
+            name = cd[int(low) - 1]
+            return _gate_delete(session, name, lambda: _really_delete(name, session))
         for n in cd:
             if low and (low in n.lower() or n.lower() in low):
-                return _really_delete(n, session)
+                return _gate_delete(session, n, lambda: _really_delete(n, session))
         return None
     low, c = t.lower().strip(" .!"), p["candidates"]
     if low in YES:
@@ -333,7 +339,9 @@ def run(text, session):
         if out := _forget_person(t, session):  # a relationship, deleted where it lives
             return out
         e = _resolve(m["e"], session)
-        return R(f"Forgot {e}." if facts.forget(e) else f"Nothing saved for {e}.")
+        def forget():
+            return R(f"Forgot {e}." if facts.forget(e) else f"Nothing saved for {e}.")
+        return ask_first(session, "memory", f"Forget the saved fact about {e}?", forget)
     path = extract_path(t)
     if path:
         for k in ("move", "moved_passive", "at"):

@@ -134,7 +134,8 @@ def _rule_tool(request: str, skills: dict):
 
 
 def _usable(skills: dict) -> dict:
-    return {n: s for n, s in sorted(skills.items()) if s.status != "broken"}
+    from ishti.skill_execution import available
+    return available(dict(sorted(skills.items())))
 
 
 def _route_decision(request: str, usable: dict) -> dict:
@@ -194,8 +195,11 @@ def _needs_confirmation(text: str) -> bool:
 
 def _run_tool(skills, name, text, session, tool_log):
     try:
-        return skills[name].run(text, session) or {"reply": f"The {name} skill had nothing to do for this."}
+        from ishti.skill_execution import execute
+        return execute(skills, name, text, session)
     except Exception as exc:  # same containment as the dispatcher: the turn carries on
+        if type(exc).__name__ == "Cancelled":
+            raise
         return {"reply": f"The {name} skill failed: {type(exc).__name__}: {str(exc)[:140]}"}
 
 
@@ -235,7 +239,14 @@ def run(request: str, session, skills: dict) -> dict:
     Returns {"reply", "sources"} like any skill."""
     from ishti import llm  # openai import lives here; arch2 must load without it
 
-    context = retrieval.assemble_context(request)
+    session["_applied_lesson_ids"] = []
+    try:
+        context = retrieval.assemble_context(request, session_id=session.get("id"),
+                                             capture=session["_applied_lesson_ids"])
+    except TypeError as exc:
+        if "unexpected keyword argument" not in str(exc):
+            raise
+        context = retrieval.assemble_context(request)
     # D3: the conversation-state summary (active topic / task / constraints) is pinned
     # into the context block - the brain never sees only the raw latest message.
     state_summary = session.get("state_summary") or ""
@@ -267,7 +278,7 @@ def run(request: str, session, skills: dict) -> dict:
                 continue
             return {"reply": clean, "sources": sources, "mode": "ARCH2"}
         name, tool_input = call["tool"], call["input"]
-        if name not in skills or skills[name].status == "broken":
+        if name not in _usable(skills):
             trace(session, "tool", f"model asked for unknown tool '{name}'", status="error")
             msgs += [{"role": "assistant", "content": reply},
                      {"role": "user", "content": f"'{name}' is not an available tool. Available: "
@@ -276,16 +287,10 @@ def run(request: str, session, skills: dict) -> dict:
             continue
         trace(session, "tool", f"{name}: {tool_input[:80]}", status="start")
 
-        # spec 24: high-impact action -> the standard T2 gate, memory never authorizes
-        if _needs_confirmation(tool_input) and skills[name].manifest.get("tier", "T1") == "T2" \
-                and (session.get("route") or {}).get("source") != "pending":
-            from ishti.skills import ask_first
-            out = ask_first(session, name, f"Run {name} for: {tool_input[:120]}",
-                            lambda n=name, t=tool_input: _run_tool(skills, n, t, session, tool_log))
-            trace(session, "tool", "waiting for the owner's yes", status="done")
-            return {**out, "sources": sources, "mode": "ARCH2"}
-
         result = _run_tool(skills, name, tool_input, session, tool_log)
+        if result.get("confirm_required") or result.get("execution_blocked"):
+            # Never ask the validation/final model to rewrite an approval recap.
+            return {**result, "sources": sources, "mode": "ARCH2"}
         sources += result.get("sources", []) if isinstance(result, dict) else []
         result_text = str(result.get("reply", result))[:1500] if isinstance(result, dict) else str(result)[:1500]
         trace(session, "tool", f"{name} done: {result_text[:80]}", status="done")

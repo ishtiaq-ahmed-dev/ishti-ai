@@ -199,7 +199,7 @@ KIN = {"brother", "sister", "mother", "father", "son", "daughter", "spouse", "pa
        "uncle", "aunt", "cousin", "grandfather", "grandmother", "grandchild", "family"}
 
 
-def handle_command(text: str) -> str | None:  # noqa: C901
+def handle_command(text: str, session=None) -> str | None:  # noqa: C901
     """The spec-18 command set: 'what do you remember about me', 'remember that I ...',
     'forget that', 'forget everything about Ahmed', 'who is Ahmed', 'what do you know
     about my family', 'what have you learned from my behavior', 'don't remember this
@@ -221,11 +221,18 @@ def handle_command(text: str) -> str | None:  # noqa: C901
             return (f"That could be more than one person - {names}. Tell me the exact name and I'll "
                     f"delete only them; nothing has been removed yet.")
         who = cands[0].get("display") or cands[0]["name"]
-        res = memory.forget_hard(cands[0]["name"])
-        return (f"Deleted everything about {who} for good: {res['memories']} memory item(s), "
+        target = cands[0]["name"]
+        def delete_target():
+            res = memory.forget_hard(target)
+            return (f"Deleted everything about {who} for good: {res['memories']} memory item(s), "
                 f"{res['entities']} entity record(s), {res['edges']} relationship edge(s), plus any stored "
                 f"conversation snippet that mentioned them - a real removal from every store (memory, "
                 f"entity table and relationship graph), not just hidden. (audit #{res['audit_id']})")
+        if session is not None:
+            from ishti.skills import ask_first
+            return ask_first(session, "memory_manager", f"Delete every saved memory and relationship about {who}?",
+                             delete_target)
+        return delete_target()
     if INCOG_ON_RE.search(t):
         incognito.set_enabled(True)
         return "Incognito mode ON for this conversation - nothing from it is being written to memory."

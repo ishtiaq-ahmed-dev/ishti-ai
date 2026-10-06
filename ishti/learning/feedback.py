@@ -164,7 +164,12 @@ def apply_answer_rating(session_id: str, message_id: str, rating: str) -> bool:
         iid = row["id"]
         observe.end(iid, reward=target_reward)
         if row["skill"] in lessons.CONTEXT_INJECTING_SKILLS:
-            applied = [item["lesson_id"] for item in lessons.guidance_for(row["request"], limit=6)]
+            stored = store.js(row.get("decision"), {}) or {}
+            applied = [str(i) for i in stored.get("applied_lesson_ids", []) if isinstance(i, str)]
+            # Compatibility for callers that predate exact lesson snapshots; live dispatcher turns
+            # always persist applied_lesson_ids before feedback can arrive.
+            if "applied_lesson_ids" not in stored and not stored:
+                applied = [item["lesson_id"] for item in lessons.guidance_for(row["request"], limit=6)]
             if applied:
                 lessons.apply_turn_outcome(iid, target_reward, applied, reason="owner-rated exact answer")
         return True
@@ -189,4 +194,3 @@ if __name__ == "__main__":
     assert res["lesson"] and res["lesson"]["correct"] == "chrome"
     
     print("[self-check] learning.feedback OK - detection, taxonomy attribution, reward table, lesson creation")
-

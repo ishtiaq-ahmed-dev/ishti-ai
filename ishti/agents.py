@@ -90,8 +90,15 @@ def _skill_run(skills: dict, name: str, text: str, session) -> dict:
     br = resilience.breaker(f"skill:{name}")
 
     def _call():
-        return skills[name].run(text, session) or {"reply": f"{name} had nothing.", "sources": []}
-    out = br.run(_call, fallback=lambda e: {"reply": f"{name} unavailable ({type(e).__name__})", "sources": []})
+        from ishti.skill_execution import execute
+        return execute(skills, name, text, session)
+
+    def _fallback(exc):
+        if type(exc).__name__ == "Cancelled":
+            raise exc
+        return {"reply": f"{name} unavailable ({type(exc).__name__})", "sources": []}
+
+    out = br.run(_call, fallback=_fallback)
     return out if isinstance(out, dict) else {"reply": str(out), "sources": []}
 
 
@@ -192,7 +199,9 @@ def _run_agent(agent: str, task: str, skills: dict, session, bb: dict, budget: d
         ctx = ""
     context = "\n".join(x for x in (state_summary, ctx) if x)
 
-    usable = [s for s in spec["skills"] if s in skills and skills[s].status != "broken"]
+    from ishti.skill_execution import available
+    allowed = available(skills)
+    usable = [s for s in spec["skills"] if s in allowed]
     if not usable:
         return {"reply": f"no usable skill for agent '{agent}'", "sources": []}
     skill_idx = 0
@@ -210,6 +219,8 @@ def _run_agent(agent: str, task: str, skills: dict, session, bb: dict, budget: d
         tool_calls += 1
         out = _skill_run(skills, chosen, prompt, session)
         trace(session, "agent", f"{agent} done via {chosen}", status="done")
+        if out.get("confirm_required") or out.get("execution_blocked"):
+            return {**out, "agent": agent}
         ok, why = _verify(out, task, skills)
         if ok:
             _perf(agent, True, time.time() - t0)
@@ -241,29 +252,58 @@ def _verify(out: dict, task: str, skills: dict) -> tuple[bool, str]:
 
 def _fan_out(subtasks: list, skills: dict, session, bb: dict, budget: dict, depth: int) -> list[dict]:
     """Parallel fan-out over the task manager (D1/D2 apply), fan-in by wait_all."""
+    # The conversational UI has one pending owner question. Keep mutating
+    # specialist work in that session, ordered, so workers cannot lose or
+    # overwrite each other's confirmations. Read-only T0 work remains parallel.
+    if any(skills[name].manifest.get("tier", "T1") != "T0"
+           for st in subtasks for name in AGENTS[st["agent"]]["skills"] if name in skills):
+        return _sequential(subtasks, skills, session, bb, budget)
     parent = taskmgr.submit(lambda t: "orchestrator umbrella", goal="multi-agent fan-out",
                             sid=str(session.get("id", "")), timeout_s=budget["timeout_s"])
     ids = []
-    for st in subtasks:
-        def _one(t, st=st):
+    pending_sessions, pending_lock = {}, threading.Lock()
+    for index, st in enumerate(subtasks):
+        def _one(t, st=st, index=index):
             taskmgr.coop(t)
             with taskmgr.gpu_slot():          # D2: heavy LLM jobs serialize
-                return _run_agent(st["agent"], st["task"], skills,
-                                  {**session, "id": session.get("id", "")}, bb, budget, depth)
+                child_session = {**session, "id": session.get("id", "")}
+                result = _run_agent(st["agent"], st["task"], skills, child_session, bb, budget, depth)
+                if result.get("confirm_required") and child_session.get("pending"):
+                    with pending_lock:
+                        pending_sessions[index] = child_session
+                return result
         rec = taskmgr.child(parent, _one, goal=st["task"][:120],
                             priority="high" if len(subtasks) <= 2 else "normal",
                             timeout_s=budget["timeout_s"] + 30)
         ids.append(rec["id"])
     done = taskmgr.wait_all(ids, timeout=budget["timeout_s"] + 60)
     results = []
-    for st, rec in zip(subtasks, done):
+    for index, (st, rec) in enumerate(zip(subtasks, done)):
         if rec["status"] == "done":
             results.append(rec["result"] if isinstance(rec["result"], dict) else {"reply": str(rec["result"])})
+            if index in pending_sessions and not session.get("pending"):
+                _adopt_pending(pending_sessions[index], session)
         else:
             results.append({"reply": f"subtask failed ({rec['status']}): {rec['error'][:120]}",
                             "sources": [], "escalated": rec["status"] == "failed"})
     taskmgr.cancel(parent["id"])  # the umbrella is finished; children already reaped
     return results
+
+
+def _adopt_pending(child, session):
+    """Return a worker's exact question to the owner, including follow-up gates."""
+    pending = child.pop("pending", None)
+    if not pending or not callable(pending.get("action")):
+        return
+    callback = pending["action"]
+
+    def confirmed():
+        result = callback()
+        if child.get("pending"):
+            _adopt_pending(child, session)
+        return result
+
+    session["pending"] = {**pending, "action": confirmed}
 
 
 def _sequential(subtasks: list, skills: dict, session, bb: dict, budget: dict) -> list[dict]:
@@ -274,6 +314,8 @@ def _sequential(subtasks: list, skills: dict, session, bb: dict, budget: dict) -
         r = _run_agent(st["agent"], task_text, skills, session, bb, budget)
         blackboard_put(bb, f"result:{len(out)}", r.get("reply", ""), who=st["agent"])
         out.append(r)
+        if r.get("confirm_required") or r.get("execution_blocked"):
+            break
         prev = str(r.get("reply", ""))[:400]
     return out
 
@@ -282,8 +324,13 @@ def _hierarchical(subtasks: list, skills: dict, session, bb: dict, budget: dict,
     """C3: each specialist may spawn one nested level (depth+1) for its own subtask."""
     if depth >= 1:
         return _fan_out(subtasks, skills, session, bb, budget, depth)
-    return [_run_agent(st["agent"], st["task"], skills, session, bb, budget, depth + 1)
-            for st in subtasks]
+    results = []
+    for st in subtasks:
+        result = _run_agent(st["agent"], st["task"], skills, session, bb, budget, depth + 1)
+        results.append(result)
+        if result.get("confirm_required") or result.get("execution_blocked"):
+            break
+    return results
 
 
 def _resolve_conflicts(results: list[dict]) -> list[dict]:
@@ -378,6 +425,9 @@ def run(request: str, session, skills: dict) -> dict:
     else:  # supervisor/worker (default): workers in parallel, supervisor synthesizes
         results = _fan_out(subs, skills, session, bb, budget, 0)
     results = _resolve_conflicts(results)
+    for result in results:
+        if result.get("confirm_required") or result.get("execution_blocked"):
+            return {**result, "mode": "MULTI_AGENT"}
     return synthesize(request, results, skills, session)
 
 
