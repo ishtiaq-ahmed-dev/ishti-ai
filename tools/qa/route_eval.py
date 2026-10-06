@@ -1,5 +1,5 @@
 """Routing accuracy: the in-sample LABELLED set from ishti/check.py plus a HELD_OUT paraphrase set never used to tune rules.
-Run: set ISHTI_TEST_MODE=1 ISHTI_SCRATCH=1; venv\Scripts\python.exe tools\qa\route_eval.py   (needs the local planner model for LLM fallback)"""
+Run with ISHTI_TEST_MODE=1 and ISHTI_SCRATCH=1: venv/Scripts/python.exe tools/qa/route_eval.py (needs the local planner model for the LLM fallback)."""
 import ast
 import json
 import os

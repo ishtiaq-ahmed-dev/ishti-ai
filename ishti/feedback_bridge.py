@@ -71,7 +71,12 @@ def record(message_id: str, run_id: str, rating: int, reasons=None, comment: str
 def _revise(chat_id: str, run_id: str, answer: dict, request: str, context: list, reason: str) -> bool:
     from ishti import answer_feedback, runs
     try:
-        issue, revised = answer_feedback._review(request, {"content": answer["text"]}, context, reason)
+        run = runs.get_run(run_id) or {}
+        steps = run.get("steps") or []
+        evidence = {"content": answer["text"], "sources": [u for st in steps for u in (st.get("sources") or [])][:6]}
+        if steps:  # what the tools actually did for this answer: the review may rely on it, nothing else
+            context = context + [{"role": "tool_trace", "content": "; ".join(str(st.get("label")) for st in steps)[:1200]}]
+        issue, revised = answer_feedback._review(request, evidence, context, reason)
     except Exception as exc:  # honest: no fabricated revision when the local model cannot produce one
         swallowed("ishti/feedback_bridge.py:_revise", exc)
         return False
