@@ -100,6 +100,11 @@ in this folder. To remove them too, uninstall Ollama from Windows Settings -> Ap
 | [docs/SAFETY.md](docs/SAFETY.md) | How ISHTI asks permission, limits itself, and keeps a record of what it did |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How ISHTI is built, for developers |
 | [docs/SKILLS.md](docs/SKILLS.md) | Everything ISHTI can do, and how to add a new ability |
+| [docs/PC_VERIFY.md](docs/PC_VERIFY.md) | What was just checked on this PC after the latest update (every safety change re-tested, live proofs, results) |
+
+Latest update (October 2026): every safety change from the code review was re-tested on this PC — 125/125 skills load,
+the AI stays fully on the graphics card, asking permission before deleting anything works, and the full offline test
+suite passes. Details and evidence in [docs/PC_VERIFY.md](docs/PC_VERIFY.md).
 
 For developers: `start.bat doctor` checks the system, `start.bat test` runs the offline tests, and
 `start.bat server` runs only the backend. Third-party software and licences are listed in

@@ -94,8 +94,10 @@ def _remove_record(index, media_id):
     path = _media_path(media_id, index[media_id])
     try:
         os.remove(path)
-    except FileNotFoundError:
-        pass
+    except FileNotFoundError as exc:
+        # Ciphertext already gone (crash between index write and unlink, or manual cleanup):
+        # dropping the index row below is right, but the index/file mismatch must be visible.
+        swallowed("media_vault:remove_record:missing_ciphertext", exc)
     except OSError as exc:
         swallowed("media_vault:remove_record", exc)
         return False
@@ -189,7 +191,10 @@ def get_media(chat_id: str, media_id: str) -> Optional[bytes]:
         aesgcm = AESGCM(key)
         aad = f"{record['chat_id']}:{record['filename']}".encode("utf-8")
         return aesgcm.decrypt(nonce, ciphertext, aad)
-    except Exception:
+    except Exception as exc:
+        # A media row that can no longer be decrypted is reported as missing, never raised -
+        # but the loss must be visible in the runtime log, not silent.
+        swallowed("ishti/security/media_vault.py:get_media:decrypt", exc)
         return None
 
 

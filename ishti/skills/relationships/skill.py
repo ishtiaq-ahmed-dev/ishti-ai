@@ -216,11 +216,33 @@ REL_DROP = re.compile(r"^\s*my\s+" + ELDER + r"(?P<rel>" + KIN_ALT + r")(?:'s|s)
 REL_DROP_REV = re.compile(r"^\s*(?P<name>" + NAME + r")\s+(?:is|are|'s)\s+no\s+longer\s+my\s+" + ELDER
                           + r"(?P<rel>" + KIN_ALT + r")\b[^.!?]*$", I)
 DEL_NAME = r"(?:(?:Dr|Prof|Mr|Mrs|Ms|Engr)\.?\s+)?[A-Za-z][\w'-]*(?:\s+(?!(?:in|at|from|he|she|they|who|is|are|not)\b)[A-Za-z][\w'-]*)*"
+# A delete/remove request whose object is not a person belongs to the skill that owns that object
+# (reminders, files, tasks, notes...). Modifiers are allowed before the noun so that phrasings like
+# "Delete that file" (checklist 79), "Delete my old project folder" (checklist 84) and "Delete system
+# files to free up space" (checklist 96 - system's refusal owns it) are not read as a person's name.
+NON_PERSON_OBJ = (
+    r"(?:(?:all|any|every|my|your|the|these|those|that|this|old|new|current|system|windows|"
+    r"temp|temporary|project|projects?|repo|repos?|downloads?)\s+)*"
+    r"(?:reminders?|tasks?|to-?dos?|files?|folders?|director(?:y|ies)|notes?|memos?|memory|memories|data|"
+    r"history|chats?|conversations?|messages?|emails?|mails?|events?|alarms?|timers?|bookmarks?|downloads?|"
+    r"uploads?|screenshots?|recordings?|logs?|everything|anything|nothing|things?)\b"
+)
+# "...<words> <non-person noun>" IS the object: "delete the IMSciences bookmark" is the browser's
+# request, not a person record - DEL_NAME would otherwise swallow "IMSciences bookmark" as a name.
+NON_PERSON_TAIL = r"(?!(?:[\w'-]+\s+){1,4}" + NON_PERSON_OBJ + r"\s*[.!]?$)"
+# File/organize commands start with these verbs; they belong to fileops/folders, never here.
+FILE_VERB = re.compile(r"^\s*(?:rename|move|copy|organi[sz]e|tidy|sort|compress|convert|resize|"
+                       r"extract|zip|unzip|merge\s+pdf)\b", I)
 # "delete the bilal he is not my brother" / "delete bilal" / "bilal is not my brother" / "remove bilal from my brothers"
 REL_DELETE = re.compile(
     r"^\s*(?:please\s+)?"
     r"(?:"
-    r"(?:delete|remove|drop|erase)\s+(?:the\s+)?(?P<name>" + DEL_NAME + r")(?:\s+(?:from|in)\s+(?:my\s+)?(?P<rel_from>" + KIN_PLURALS + r"))?"
+    # 'delete/remove/drop/erase' is shared with every other skill (reminders, files, tasks, notes...).
+    # A non-person object is not a relationship edit: this rule stands down so that skill can match.
+    # It used to claim "delete all my reminders", name the object as the person "All My Reminders",
+    # write a memory row and answer "Removed **All My Reminders**." while nothing was removed (checklist 17).
+    r"(?:delete|remove|drop|erase)\s+(?:the\s+)?(?!" + NON_PERSON_OBJ + r")" + NON_PERSON_TAIL +
+    r"(?P<name>" + DEL_NAME + r")(?:\s+(?:from|in)\s+(?:my\s+)?(?P<rel_from>" + KIN_PLURALS + r"))?"
     r"(?:\s*[,;]?\s*(?:he|she|they|who)?\s*(?:is|are)\s+not\s+(?:my\s+)?(?P<rel_not>" + KIN_PLURALS + r"))?"
     r"|(?P<name2>" + DEL_NAME + r")\s+(?:is|are)\s+not\s+(?:my\s+)?(?P<rel2>" + KIN_PLURALS + r")"
     r"|(?:he|she|they)\s+(?:is|are)\s+not\s+my\s+(?P<rel3>" + KIN_PLURALS + r")"
@@ -404,7 +426,14 @@ def _rel_drop(rgraph, rel, ctx, name, session, _confirmed=False):
 
 
 def _rel_delete(rgraph, name, rel, session, _confirmed=False):
-    """Delete a relationship or remove a person node from confirmed relationships."""
+    """Delete a relationship or remove a person node from confirmed relationships.
+
+    This is the PERSON-deletion path: it must never claim a deletion that did not happen. The
+    live-UI run (checklist 79/84/96) caught it answering "Removed **Old Project Folder**." for
+    "delete my old project folder" - naming a filesystem object as a person, writing a memory row
+    about the removal, and deleting nothing. A named target that exists nowhere in the graph and
+    is not a filesystem path now gets an honest no-op instead of a fabricated success.
+    """
     name_clean = _clean_name(name).strip()
     if not name_clean:
         name_clean = session.get("rel_last") or ""
@@ -417,6 +446,17 @@ def _rel_delete(rgraph, name, rel, session, _confirmed=False):
                          lambda: _rel_delete(rgraph, name_clean, rel, session, True))
 
     rel_clean = (rel or "").lower().strip()
+    # Test doubles and minimal graph shims may not expose get_node; the honesty check below only
+    # refines an unknown-target refusal, so an absent lookup must not break the confirmed path.
+    target = rgraph.get_node(name_clean.lower()) if hasattr(rgraph, "get_node") else None
+    looks_like_path = os.path.isabs(name_clean) or name_clean.startswith("~")
+    lower = name_clean.lower()
+    multiword_object = len(lower.split()) > 3 or any(
+        w in lower for w in ("file", "folder", "directory", "everything", "system files", "all data"))
+    if target is None and not looks_like_path and (multiword_object or " " in name_clean):
+        return {"reply": f"I don't have a person named '{name_clean}' in your relationship records, so "
+                         f"nothing was removed. If this is a file or folder, tell me the exact path; "
+                         f"if it's a person, give me their name.", "sources": []}
     if rel_clean in ("bro", "bhai", "bhaiya"):
         rel_clean = "brother"
     elif rel_clean in ("sis", "behan", "baji"):
@@ -443,12 +483,14 @@ def _rel_delete(rgraph, name, rel, session, _confirmed=False):
     except Exception:
         swallowed('ishti/skills/relationships/skill.py:_rel_delete:433')
 
-    # 3. Mirror in arch2
-    try:
-        from ishti.arch2 import memory as a2_mem
-        a2_mem.semantic(f"Removed {name_clean.title()} from {rel_clean or 'records'}.")
-    except Exception:
-        swallowed('ishti/skills/relationships/skill.py:_rel_delete:440')
+    # 3. Mirror in arch2 - ONLY when a person was really deleted. The unconditional write used to
+    #    leave "Removed <nobody> from records." rows in the memory store (checklist 89/187).
+    if target is not None:
+        try:
+            from ishti.arch2 import memory as a2_mem
+            a2_mem.semantic(f"Removed {name_clean.title()} from {rel_clean or 'records'}.")
+        except Exception:
+            swallowed('ishti/skills/relationships/skill.py:_rel_delete:440')
 
     # 4. Dispatch WebSocket events for UI
     try:
@@ -709,6 +751,10 @@ def match(text):
     # "my friend" trips KIN_DECLARE, so the guard must come first: nothing about a person is being stored.
     if re.search(r"\b(?:forwarded|forwarding|asking\s+you|asked\s+you|on\s+my\s+behalf|told\s+you\s+to)\b", t, I) \
             and re.search(r"\b(?:bank|account|password|card|details?|credentials?|otp|pin|transfer|money|payment)\b", t, I):
+        return False
+    # A file command is never a relationship record: "rename the photos in downloads to trip" was
+    # answered as "Photos In Downloads is now recorded as Trip in your family records" - a false claim.
+    if FILE_VERB.match(t):
         return False
     if REL_DELETE.match(t):
         return True

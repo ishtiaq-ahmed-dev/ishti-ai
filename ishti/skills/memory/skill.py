@@ -339,6 +339,11 @@ def run(text, session):
         if out := _forget_person(t, session):  # a relationship, deleted where it lives
             return out
         e = _resolve(m["e"], session)
+        if e.lower() in PRONOUNS and not session.get("last_entity"):
+            # "Forget that" with nothing in this conversation to point at (checklist 91/233): the old
+            # code fell through to a fuzzy facts lookup and answered "Cleared that preference from
+            # memory." while deleting nothing. An unresolvable pronoun must be an honest no-op.
+            return R("There is nothing from this conversation for me to forget - name what you mean.")
         def forget():
             return R(f"Forgot {e}." if facts.forget(e) else f"Nothing saved for {e}.")
         return ask_first(session, "memory", f"Forget the saved fact about {e}?", forget)

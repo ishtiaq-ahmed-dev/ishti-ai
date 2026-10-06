@@ -1,32 +1,37 @@
-# React + TypeScript + Vite
+# ISHTI dashboard (React + TypeScript + Vite)
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+The desktop/web UI for ISHTI: chat, working-status view, connectors (WhatsApp/Telegram), profiles,
+learning and privacy panels. Talks to the FastAPI backend (`interface/web_ui/server.py`, started by
+`start.bat` / `python -m ishti`).
 
-Currently, two official plugins are available:
+## Commands
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install            # once
+npm run dev            # dev server with HMR (proxies to the backend)
+npm run build          # production build into dist/ (served by the backend at /)
+npm run preview        # serve the built dist locally
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+The backend serves `dist/` at `http://127.0.0.1:8888/`. After a rebuild, restart the backend
+(it caches `index.html` for 24 h).
+
+## Layout
+
+- `src/lib/chat-store.ts` — app-level store: chats, messages, runs, drafts, unread badges, event
+  polling with backoff and gap resync. Chat is **store-driven** per CONTRACT v2: one event stream,
+  idempotent sends (`client_msg_id`), optimistic UI, deterministic replay on start.
+- `src/sections/Chat.tsx` — chat: working-status card (steps, elapsed, Stop, streamed draft),
+  feedback panel, sidebar (search, select, rename, delete+undo, share, drafts), Personal/Business
+  groups. Each chat pins its profile at creation; namespaces never mix.
+- `src/components/` — RunStatusCard, FeedbackPanel, ProfileSwitcher, ConnectorsPage, AgentsPanel,
+  LearningPanel.
+- `frontend/mock/server.py` — stdlib mock backend implementing CONTRACT v2 for UI work without the
+  real engine (`python frontend/mock/server.py 8901`; checks: `python frontend/mock/test_mock.py`).
+
+## Notes
+
+- Against the real backend, the chat needs the CONTRACT v2 endpoints (`/api/chats`, `/api/runs`,
+  `/api/events`) — currently on branch `agent/backend`. Until that merge, the mock covers UI work.
+- Type check: `npx tsc --noEmit`. Keep it clean before committing.
+- No secrets are ever rendered; page text and web content are treated as untrusted data.

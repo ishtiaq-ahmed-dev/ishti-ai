@@ -81,7 +81,7 @@ def test_cli_roundtrip_and_existing_outputs_are_preserved(tmp_path):
     assert evaluator.main(["--example", "--output", str(source)]) == 0
     original = source.read_bytes()
     assert evaluator.main(["--bundle", str(source), "--output", str(output)]) == 0
-    assert json.loads(output.read_text())["promotion_authorized"] is False
+    assert json.loads(output.read_text(encoding="utf-8"))["promotion_authorized"] is False
     with pytest.raises(SystemExit) as caught:
         evaluator.main(["--bundle", str(source), "--output", str(source)])
     assert caught.value.code == 2
