@@ -33,6 +33,7 @@ def app_client(tmp_path, monkeypatch):
     runs._conn = None
     runs.set_listener(None)
     profiles.set_active("personal")
+    _allow_testclient_ws(monkeypatch)
     app = FastAPI()
     contract_api.attach(app)
     lifecycle_api.attach(app)  # wires runs.set_listener -> events.publish_raw (live path)
@@ -52,7 +53,20 @@ def test_events_replay_over_http_twin(app_client):
     assert [e["seq"] for e in tail] == list(range(cut + 1, full["last_seq"] + 1))
 
 
-def test_ws_since_seq_replay_matches_log(app_client):
+def _allow_testclient_ws(monkeypatch):
+    """ws_events enforces the production auth (loopback/token) whenever interface.web_ui.server is
+    imported in the process (i.e. in full-suite runs, but not standalone). TestClient reports a
+    client host of "testclient", not loopback, so the production loopback trust cannot see it.
+    Replay is the subject here - auth itself has dedicated security tests - so stub it explicitly
+    instead of depending on which modules another test happened to import."""
+    try:
+        from interface.web_ui import server as ui_server
+    except Exception:
+        return
+    monkeypatch.setattr(ui_server, "authorized", lambda conn: True)
+
+
+def test_ws_since_seq_replay_matches_log(app_client, monkeypatch):
     """True websocket replay: connect with since_seq, receive exactly the suffix."""
     app = FastAPI()
     lifecycle_api.attach(app)

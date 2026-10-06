@@ -89,7 +89,6 @@ app.mount("/static", CachedStaticFiles(directory=STATIC_DIR, max_age=300), name=
 # Shared state
 model_router = ModelRouter()
 active_websockets: List[WebSocket] = []
-_websocket_send_locks: Dict[int, asyncio.Lock] = {}
 WS_SEND_TIMEOUT_S = 5.0
 last_execution_state: Dict[str, Any] = {}
 last_research_state: Dict[str, Any] = {}
@@ -153,12 +152,21 @@ async def broadcast_event(event_type: str, data: Dict[str, Any]):
     for ws in disconnected:
         if ws in active_websockets:
             active_websockets.remove(ws)
-        _websocket_send_locks.pop(id(ws), None)
 
 
 async def _send_websocket(ws: WebSocket, message: str):
-    """Serialize writes so event broadcasts and the endpoint loop cannot corrupt each other's frames."""
-    lock = _websocket_send_locks.setdefault(id(ws), asyncio.Lock())
+    """Serialize writes so event broadcasts and the endpoint loop cannot corrupt each other's frames.
+
+    The lock lives on the socket object itself, so a closed connection's lock dies with it. A global
+    id()-keyed map leaked locks bound to dead event loops, and CPython id() reuse could then hand a
+    new connection a lock from a loop that no longer exists (send raises, connection drops)."""
+    lock = getattr(ws, "_ishti_send_lock", None)
+    if lock is None:
+        lock = asyncio.Lock()
+        try:
+            ws._ishti_send_lock = lock
+        except AttributeError:
+            pass  # exotic socket double without settable attrs: fall back to unserialized sends
     async with lock:
         await asyncio.wait_for(ws.send_text(message), timeout=WS_SEND_TIMEOUT_S)
 
@@ -928,7 +936,6 @@ async def websocket_endpoint(websocket: WebSocket):
         return
     await websocket.accept()
     active_websockets.append(websocket)
-    _websocket_send_locks[id(websocket)] = asyncio.Lock()
     from ishti import events
     loop = asyncio.get_running_loop()
     q = asyncio.Queue(maxsize=500)
@@ -996,7 +1003,6 @@ async def websocket_endpoint(websocket: WebSocket):
         events.unsubscribe(push)
         if websocket in active_websockets:
             active_websockets.remove(websocket)
-        _websocket_send_locks.pop(id(websocket), None)
 
 
 

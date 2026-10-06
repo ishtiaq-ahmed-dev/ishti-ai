@@ -52,3 +52,17 @@ Real WhatsApp/Telegram accounts, Google OAuth, Chrome Profile 9, tunnel, live au
 ## Blockers
 
 None Critical/High. `docs/PC_BLOCKERS.md` not needed this round.
+
+## Addendum — completion round (same day): agent/backend merged, everything re-verified
+
+Owner asked for completion of all remaining work. `agent/backend` (Contract v2 + WP1 durable run engine + WP2 research gate + WP3 decision loop + WP7 agent bus) is now merged into `feat/repo-integration` (commit `ddbe189`). Nothing was deleted; merge conflicts were confined to the two append-log files (PROGRESS.md, TEST_RESULTS.md) and both sides were kept.
+
+| ID | Item | Result | Evidence (PC) |
+|---|---|---|---|
+| V2 | Contract v2 backend merged + live | PASS | `POST /api/chats` → chat with pinned profile; `/api/events` gapless log; live send → `run_finished` → answer 42; multi-turn 391 → 23; resend `duplicate:true`; per-run `profile=personal/business` rows prove namespace separation |
+| V2 | UI on served build | PASS | browser probes on `:8888` (PERSONAL/BUSINESS groups, search filter + honest empty state, unread badge cleared on open, feedback buttons, working-status card cleared cleanly after finish); `tsc --noEmit` + `vite build` from merged source |
+| B1 | Order-dependent WS failure (full suite) | FIXED | root cause 1: `_websocket_send_locks` global keyed by `id(ws)` leaked locks bound to dead event loops and `id()` reuse could hand a new connection a dead-loop lock — lock now lives on the socket object (`interface/web_ui/server.py`); root cause 2: `tests/backend/test_ws_replay.py` only passed standalone because `interface.web_ui.server` was unimported (auth skipped) — auth now explicitly stubbed with rationale; pair green both orders ×2; full suite exit 0 (0 failures) |
+| S1 | SearxNG / web_search | PASS | `ishti-searxng` container up (auto-starts with Docker Desktop, `--restart unless-stopped`); live `web_search` returned a real summarized answer; `/api/health` search check green (previously degraded) |
+| R2 | Regression after fixes | PASS | full offline suite exit 0 with SearxNG up and backend live; ruff clean (ishti tests tools interface); WS replay over live `:8888` from `since_seq=0` returns the full gapless log |
+
+The "contract-v2 chat end-to-end" item in the owner-dependent list above is superseded by V2 and resolved in NEEDS.md. Remaining owner-dependent items: real WhatsApp/Telegram/Google accounts, live voice loop with a human speaker, GPU fine-tune staged eval, true-offline router drill, slow-WS client observation.

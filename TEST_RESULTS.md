@@ -54,3 +54,21 @@ Not run (needs live services / owner): real WhatsApp/Telegram smoke, GPU A/B eva
 | Agent bus self-check | `python -m ishti.agent_bus` | PASS |
 | Profile separation + hydrate merge fix (this checkout, post-merge re-verification below) | — | see section above |
 
+
+## PC completion round: agent/backend merged + all features verified (2026-10-06)
+
+| Check | Result | Evidence |
+|---|---|---|
+| Merge agent/backend -> feat/repo-integration | PASS | commit ddbe189; conflicts only in PROGRESS/TEST_RESULTS append-logs (both sides kept); zero dirty-file damage (local WIP preserved uncommitted) |
+| tests/backend on merged tree | PASS | exit 0 (`ISHTI_TEST_MODE=1 ISHTI_SCRATCH=1`, venv python) |
+| Full offline suite (final merged tree) | PASS | run 5: exit 0, 0 failures. Earlier runs 3/4 exposed a REAL order-dependent WS bug, fixed (below) |
+| ruff (ishti tests tools interface) | PASS | "All checks passed!" |
+| tsc --noEmit + vite build | PASS | rebuilt from merged source (253 ms) |
+| Live: v2 send -> run_finished -> answer | PASS | "21x2" -> 42 on fresh scratch DB; event log gapless (26 events across probes) |
+| Live: multi-turn | PASS | 391 -> 23 in one chat (context carried) |
+| Live: profile separation | PASS | personal run profile=personal, business chat run profile=business, per-run rows in /api/runs |
+| Live: idempotent resend | PASS | same client_msg_id -> duplicate:true, no second run |
+| Live: WS replay with since_seq (fixed code) | PASS | full log from seq 0 over live /ws/events; run events intact |
+| Live: SearxNG web_search | PASS | `ishti-searxng` container up (auto-starts with Docker Desktop); "search the web: what is SearXNG?" -> real summarized answer, skill=web_search; /api/health search check green |
+| UI: served build render + sidebar groups + search + unread + feedback buttons | PASS | in-browser probes on served :8888 build (working-status card cleared cleanly after finish) |
+| Order-dependent WS failure (found by full suite) | FIXED | two causes: (1) global `_websocket_send_locks` keyed by id(ws) leaked locks bound to dead event loops (id reuse risk) -> lock now lives on the socket object (interface/web_ui/server.py); (2) tests/backend/test_ws_replay.py passed standalone only because server module was unimported (auth skipped) -> auth now explicitly stubbed in the test with rationale; pair green in both orders x2, full suite exit 0 |
