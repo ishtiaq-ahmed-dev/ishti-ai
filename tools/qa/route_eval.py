@@ -8,6 +8,7 @@ import time
 
 os.environ.setdefault("ISHTI_TEST_MODE", "1")
 os.environ.setdefault("ISHTI_SCRATCH", "1")
+os.environ["ISHTI_ROUTE_LLM"] = "1"  # test mode skips the LLM routing fallback unless asked
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 HELD_OUT = [

@@ -148,7 +148,7 @@ def route(text, skills, exclude=()):
         except Exception as exc:
             extra = {"laya_error": f"{type(exc).__name__}: {exc}"}
 
-    if not r and live:  # Laya checkpoint not installed: let the pinned planner model pick, never fall to plain chat blindly
+    if not r and live and (not os.environ.get("ISHTI_TEST_MODE") or os.environ.get("ISHTI_ROUTE_LLM")):  # Laya checkpoint not installed: let the pinned planner model pick, never fall to plain chat blindly
         picked = _llm_pick(text, live)
         if picked:
             return done(picked, 0.6, "llm", **extra)
