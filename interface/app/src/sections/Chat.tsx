@@ -1,8 +1,8 @@
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUp, AudioLines, Check, Copy, FolderOpen, Maximize2, MessageSquare, Mic, Minimize2, Network, PanelLeft, PanelLeftClose, Paperclip, Pencil, Plus, Square, Trash2, X } from "lucide-react";
+import { ArrowUp, AudioLines, Briefcase, Check, Copy, FolderOpen, Heart, Maximize2, MessageSquare, Mic, Minimize2, Network, PanelLeft, PanelLeftClose, Paperclip, Pencil, Plus, Square, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AgentOrb } from "@/components/AgentOrb";
-import { ActivityGraph, type Turn } from "@/components/ActivityGraph";
+import { ActivityGraph, ConversationGraph, type Turn } from "@/components/ActivityGraph";
 import { Thinking } from "@/components/Thinking";
 import BorderBeam from "border-beam";
 import VoiceBeam from "voice-glow";
@@ -12,7 +12,7 @@ import { MediaPreview } from "@/components/MediaPreview";
 import { LiveMode } from "@/components/LiveMode";
 import { cn } from "@/lib/utils";
 import { useBootState } from "@/lib/boot";
-import { chatStore, type StoreMessage, type StoreRun } from "@/lib/chat-store";
+import { chatStore, type StoreChat, type StoreMessage, type StoreRun } from "@/lib/chat-store";
 import { RunStatusCard, StreamedDraftBanner, UnverifiedBanner, runUnverified } from "@/components/RunStatusCard";
 import { FeedbackPanel } from "@/components/FeedbackPanel";
 
@@ -95,8 +95,9 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   const [shareName, setShareName] = useState(`ishti-chats-${new Date().toISOString().slice(0, 10)}.md`);
   const [shareResult, setShareResult] = useState<{ path: string; copied?: boolean } | null>(null);
   const [shareError, setShareError] = useState("");
-  // Activity graph (per-answer trace) + live draft state for the orb/AgentOrb header
+  // Activity graph (per-answer trace + whole-chat turns) + live draft state for the orb/AgentOrb header
   const [graphFor, setGraphFor] = useState<string | null>(null); // message_id or "run:{run_id}"
+  const [graphView, setGraphView] = useState<"answer" | "chat">("answer");
   const [fullGraph, setFullGraph] = useState(false);
 
   useEffect(() => {
@@ -202,6 +203,15 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   // ---------------- derived selectors ----------------
   const q = search.trim().toLowerCase();
   const visibleChats = (q ? chats.filter((c) => (c.title || "").toLowerCase().includes(q)) : chats);
+  // Profiles never merge: each chat keeps the profile it was created with (runs, prompt layers
+  // and memory namespace follow the chat), and the sidebar shows the two namespaces apart.
+  const personalChats = visibleChats.filter((c) => (c.profile || "personal") === "personal");
+  const businessChats = visibleChats.filter((c) => (c.profile || "personal") === "business");
+  const grouped = businessChats.length > 0;
+  const chatGroupSections = [
+    { label: "Personal", icon: "personal", items: personalChats },
+    { label: "Business", icon: "business", items: businessChats },
+  ].filter((g) => g.items.length > 0);
   const allSelected = visibleChats.length > 0 && visibleChats.every((c) => selected.has(c.chat_id));
   const toggleSelected = useCallback((id: string) => {
     setSelected((cur) => {
@@ -216,13 +226,17 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     const msg = storeMsgs.find((m) => m.message_id === graphFor);
     return msg ? (chatStore.runs.get(msg.run_id) || null) : null;
   })();
-  const turns: Turn[] = storeMsgs
-    .filter((m) => m.role === "assistant")
-    .map((m) => {
+  const turns: Turn[] = (() => {
+    const out: Turn[] = [];
+    let lastQuestion = "";
+    for (const m of storeMsgs) {
+      if (m.role === "user") { lastQuestion = m.text; continue; }
       const r = chatStore.runs.get(m.run_id);
       const stepLabels = (r?.steps || []).map((s) => s.kind);
-      return { question: "", skill: stepLabels.includes("research") ? "research" : stepLabels[0] || null, ms: undefined };
-    });
+      out.push({ question: lastQuestion, skill: stepLabels.includes("research") ? "research" : stepLabels[0] || null, ms: undefined });
+    }
+    return out;
+  })();
 
   useEffect(() => { // persist scroll position per chat (restored on return)
     const el = scrollContainer.current;
@@ -519,6 +533,86 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     </motion.div>
   );
 
+  const renderChatRow = (c: StoreChat) => {
+    const isSelected = activeChatId === c.chat_id;
+    const isBusiness = (c.profile || "personal") === "business";
+    return (
+      <div
+        key={c.chat_id}
+        onClick={() => (selecting ? toggleSelected(c.chat_id) : chatStore.setActiveChat(c.chat_id))}
+        onDoubleClick={(e) => { if (!selecting) { e.stopPropagation(); setRenaming(c.chat_id); setRenameDraft(c.title || ""); } }}
+        className={cn(
+          "group relative flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm transition-colors duration-150",
+          isSelected
+            ? "border-accent/70 bg-gradient-to-r from-accent/15 via-accent/8 to-transparent text-foreground font-semibold shadow-[0_2px_12px_rgba(110,86,207,0.12)] dark:shadow-[0_2px_12px_rgba(139,117,255,0.18)]"
+            : "border-border/60 dark:border-white/10 bg-card/40 dark:bg-card/20 text-muted-foreground hover:border-accent/40 hover:bg-card/80 dark:hover:bg-card/45 hover:text-foreground",
+        )}
+      >
+        {isSelected && (
+          <div className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-accent shadow-[0_0_10px_var(--color-accent)]" />
+        )}
+        {selecting && (
+          <span className={cn("grid h-4 w-4 shrink-0 place-items-center rounded border transition-colors",
+            selected.has(c.chat_id) ? "border-accent bg-accent text-white" : "border-border")}>
+            {selected.has(c.chat_id) && <Check className="h-3 w-3" />}
+          </span>
+        )}
+        <MessageSquare
+          className={cn(
+            "h-4 w-4 shrink-0 transition-colors",
+            isSelected ? "text-accent" : "text-muted-foreground/60 group-hover:text-muted-foreground"
+          )}
+        />
+        {renaming === c.chat_id ? (
+          <input autoFocus value={renameDraft} onClick={(e) => e.stopPropagation()}
+            onChange={(e) => setRenameDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); saveRename(c.chat_id); }
+              if (e.key === "Escape") { e.preventDefault(); setRenaming(null); }
+            }}
+            onBlur={() => saveRename(c.chat_id)}
+            className="min-w-0 flex-1 rounded-md border border-accent/60 bg-background px-1.5 py-0.5 text-[13px] text-foreground outline-none"
+          />
+        ) : (
+          <span className={cn("min-w-0 flex-1 truncate text-[13.5px] leading-snug",
+            isSelected ? "text-foreground font-semibold" : "text-foreground/80 group-hover:text-foreground font-medium")}>
+            {c.title || "New chat"}
+          </span>
+        )}
+        {isBusiness && (
+          <span title="Business chat — separate profile, prompt layers and memory namespace"
+            data-testid="chat-badge-business"
+            className="shrink-0 inline-flex items-center rounded-full border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-sky-600 dark:text-sky-300">
+            <Briefcase className="h-2.5 w-2.5" aria-hidden />
+          </span>
+        )}
+        {c.unread > 0 && (
+          <span data-testid="chat-unread" className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold text-accent-foreground">
+            {c.unread}
+          </span>
+        )}
+        <div className="shrink-0 relative flex items-center justify-end h-5 min-w-[50px] ml-1">
+          <span className={cn("text-[10.5px] tabular-nums transition-opacity duration-150 group-hover:opacity-0",
+            isSelected ? "rounded-md bg-accent/20 px-1.5 py-0.5 text-accent font-semibold text-[10px]" : "text-muted-foreground/60")}>
+            {ago(c.updated_at)}
+          </span>
+          <div className="absolute right-0 flex items-center gap-0.5 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150">
+            <button type="button" title="Rename chat"
+              onClick={(e) => { e.stopPropagation(); setRenaming(c.chat_id); setRenameDraft(c.title || ""); }}
+              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer">
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <button type="button" title="Delete chat"
+              onClick={(e) => { e.stopPropagation(); setDeleteTarget({ id: c.chat_id, title: c.title || "" }); }}
+              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger cursor-pointer">
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="relative flex h-full min-h-0 w-full overflow-hidden">
       {/* Side Recent Chats panel: the v2 chat list (CONTRACT §14 GET /api/chats) */}
@@ -581,77 +675,20 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               </div>
               <div className="scroll-thin flex-1 min-h-0 space-y-1.5 overflow-y-auto p-2.5">
                 {visibleChats.length ? (
-                  visibleChats.map((c) => {
-                    const isSelected = activeChatId === c.chat_id;
-                    return (
-                      <div
-                        key={c.chat_id}
-                        onClick={() => (selecting ? toggleSelected(c.chat_id) : chatStore.setActiveChat(c.chat_id))}
-                        onDoubleClick={(e) => { if (!selecting) { e.stopPropagation(); setRenaming(c.chat_id); setRenameDraft(c.title || ""); } }}
-                        className={cn(
-                          "group relative flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm transition-colors duration-150",
-                          isSelected
-                            ? "border-accent/70 bg-gradient-to-r from-accent/15 via-accent/8 to-transparent text-foreground font-semibold shadow-[0_2px_12px_rgba(110,86,207,0.12)] dark:shadow-[0_2px_12px_rgba(139,117,255,0.18)]"
-                            : "border-border/60 dark:border-white/10 bg-card/40 dark:bg-card/20 text-muted-foreground hover:border-accent/40 hover:bg-card/80 dark:hover:bg-card/45 hover:text-foreground",
-                        )}
-                      >
-                        {isSelected && (
-                          <div className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-accent shadow-[0_0_10px_var(--color-accent)]" />
-                        )}
-                        {selecting && (
-                          <span className={cn("grid h-4 w-4 shrink-0 place-items-center rounded border transition-colors",
-                            selected.has(c.chat_id) ? "border-accent bg-accent text-white" : "border-border")}>
-                            {selected.has(c.chat_id) && <Check className="h-3 w-3" />}
-                          </span>
-                        )}
-                        <MessageSquare
-                          className={cn(
-                            "h-4 w-4 shrink-0 transition-colors",
-                            isSelected ? "text-accent" : "text-muted-foreground/60 group-hover:text-muted-foreground"
-                          )}
-                        />
-                        {renaming === c.chat_id ? (
-                          <input autoFocus value={renameDraft} onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => setRenameDraft(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") { e.preventDefault(); saveRename(c.chat_id); }
-                              if (e.key === "Escape") { e.preventDefault(); setRenaming(null); }
-                            }}
-                            onBlur={() => saveRename(c.chat_id)}
-                            className="min-w-0 flex-1 rounded-md border border-accent/60 bg-background px-1.5 py-0.5 text-[13px] text-foreground outline-none"
-                          />
-                        ) : (
-                          <span className={cn("min-w-0 flex-1 truncate text-[13.5px] leading-snug",
-                            isSelected ? "text-foreground font-semibold" : "text-foreground/80 group-hover:text-foreground font-medium")}>
-                            {c.title || "New chat"}
-                          </span>
-                        )}
-                        {c.unread > 0 && (
-                          <span data-testid="chat-unread" className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold text-accent-foreground">
-                            {c.unread}
-                          </span>
-                        )}
-                        <div className="shrink-0 relative flex items-center justify-end h-5 min-w-[50px] ml-1">
-                          <span className={cn("text-[10.5px] tabular-nums transition-opacity duration-150 group-hover:opacity-0",
-                            isSelected ? "rounded-md bg-accent/20 px-1.5 py-0.5 text-accent font-semibold text-[10px]" : "text-muted-foreground/60")}>
-                            {ago(c.updated_at)}
-                          </span>
-                          <div className="absolute right-0 flex items-center gap-0.5 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150">
-                            <button type="button" title="Rename chat"
-                              onClick={(e) => { e.stopPropagation(); setRenaming(c.chat_id); setRenameDraft(c.title || ""); }}
-                              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer">
-                              <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                            <button type="button" title="Delete chat"
-                              onClick={(e) => { e.stopPropagation(); setDeleteTarget({ id: c.chat_id, title: c.title || "" }); }}
-                              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger cursor-pointer">
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
+                  grouped ? (
+                    chatGroupSections.map((g) => (
+                      <div key={g.label} className="space-y-1.5">
+                        <div className="flex items-center gap-1.5 px-1 pt-1.5">
+                          {g.icon === "business"
+                            ? <Briefcase className="h-3 w-3 shrink-0 text-sky-500" />
+                            : <Heart className="h-3 w-3 shrink-0 text-rose-400" />}
+                          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">{g.label}</span>
+                          <span className="h-px flex-1 bg-border/60" />
                         </div>
+                        {g.items.map((c) => renderChatRow(c))}
                       </div>
-                    );
-                  })
+                    ))
+                  ) : personalChats.map((c) => renderChatRow(c))
                 ) : (
                   <div className="rounded-xl border border-dashed border-border/70 p-6 text-center text-xs text-muted-foreground">
                     {chatStore.ready ? (search ? "No chats match that search." : "Your chats appear here.") : "Loading chats…"}
@@ -1079,7 +1116,14 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
             transition={{ duration: 0.28, ease: "easeOut" }}
             className="scroll-thin absolute inset-y-0 right-0 z-20 flex w-[min(480px,94%)] flex-col gap-3 overflow-y-auto border-l border-border bg-background p-4 shadow-[-12px_0_40px_rgba(29,27,46,0.12)] xl:static xl:z-auto xl:w-[480px] xl:shrink-0 xl:shadow-none">
             <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold">Activity</div>
+              <div className="flex rounded-xl bg-muted p-0.5 text-xs">
+                {(["answer", "chat"] as const).map((v) => (
+                  <button key={v} onClick={() => setGraphView(v)}
+                    className={`relative rounded-lg px-3 py-1 font-medium transition-colors ${graphView === v ? "text-foreground" : "text-muted-foreground"}`}>
+                    {v === "answer" ? "This answer" : "This chat"}
+                  </button>
+                ))}
+              </div>
               <div className="flex gap-1">
                 <button onClick={() => setFullGraph(true)} title="Expand"
                   className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted cursor-pointer"><Maximize2 className="h-4 w-4" /></button>
@@ -1087,13 +1131,22 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                   <X className="h-4 w-4" /></button>
               </div>
             </div>
-            <ActivityGraph
-              events={(graphRun.steps || []).map((s, i) => ({ t: i * 1000, type: s.kind as "tool", label: s.label, name: s.kind }))}
-              request={storeMsgs.find((m) => m.run_id === graphRun.run_id)?.text || ""}
-              live={graphRun.state === "running" || graphRun.state === "queued"}
-            />
+            <div className="truncate text-[11px] text-muted-foreground">
+              {graphView === "answer" ? (graphRun.steps[graphRun.steps.length - 1]?.label || "Run steps") : `${turns.length} question${turns.length === 1 ? "" : "s"} in this chat`}
+            </div>
+            {graphView === "answer" ? (
+              <ActivityGraph
+                events={(graphRun.steps || []).map((s, i) => ({ t: i * 1000, type: s.kind as "tool", label: s.label, name: s.kind }))}
+                request={storeMsgs.find((m) => m.run_id === graphRun.run_id)?.text || ""}
+                live={graphRun.state === "running" || graphRun.state === "queued"}
+              />
+            ) : (
+              <ConversationGraph turns={turns} />
+            )}
             <p className="text-[11px] leading-relaxed text-muted-foreground">
-              Every node is a real step from this run. Violet = running, green = done, amber = waiting for you, red = failed.
+              {graphView === "answer"
+                ? "Every node is a real step from this run. Violet = running, green = done, amber = waiting for you, red = failed."
+                : "Each question in this chat, linked to how it was handled."}
             </p>
           </motion.aside>
         )}
@@ -1106,18 +1159,22 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-base font-semibold">Activity</div>
-                <div className="text-xs text-muted-foreground">Scroll to zoom · drag to move · {graphRun.run_id}</div>
+                <div className="text-xs text-muted-foreground">Scroll to zoom · drag to move · {graphView === "answer" ? graphRun.run_id : `${turns.length} questions`}</div>
               </div>
               <button onClick={() => setFullGraph(false)} className="rounded-xl border border-border p-2 text-muted-foreground hover:bg-muted cursor-pointer">
                 <Minimize2 className="h-4 w-4" /></button>
             </div>
             <div className="min-h-0 flex-1">
-              <ActivityGraph
-                events={(graphRun.steps || []).map((s, i) => ({ t: i * 1000, type: s.kind as "tool", label: s.label, name: s.kind }))}
-                request={storeMsgs.find((m) => m.run_id === graphRun.run_id)?.text || ""}
-                live={graphRun.state === "running" || graphRun.state === "queued"}
-                full
-              />
+              {graphView === "answer" ? (
+                <ActivityGraph
+                  events={(graphRun.steps || []).map((s, i) => ({ t: i * 1000, type: s.kind as "tool", label: s.label, name: s.kind }))}
+                  request={storeMsgs.find((m) => m.run_id === graphRun.run_id)?.text || ""}
+                  live={graphRun.state === "running" || graphRun.state === "queued"}
+                  full
+                />
+              ) : (
+                <ConversationGraph turns={turns} full />
+              )}
             </div>
           </motion.div>
         )}

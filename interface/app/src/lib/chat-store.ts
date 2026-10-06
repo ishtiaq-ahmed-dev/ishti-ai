@@ -102,6 +102,11 @@ class ChatStore {
   async start() {
     if (this.started) return;
     this.started = true;
+    // Fresh store context: replay from 0. Replay is idempotent (message_created dedupes by
+    // message_id, run events converge in log order), so a full replay can never corrupt state -
+    // but a stale lastSeq CAN silently skip history (observed live), so reset it here.
+    this.lastSeq = 0;
+    this.reconciled = false;
     const gen = ++this.generation;
     try {
       const p = await getJSON<{ active: Profile }>("/api/profile");
@@ -145,7 +150,10 @@ class ChatStore {
   }
 
   async newChat(profile?: Profile): Promise<StoreChat> {
-    const c = await postJSON<{ chat_id: string; profile: Profile }>("/api/chats", profile ? { profile } : {});
+    // Pin the profile at creation: a chat keeps its profile forever (its runs, prompt layers and
+    // memory namespace follow the chat), so an in-flight global switch must not blur it.
+    const wanted = profile ?? this.activeProfile;
+    const c = await postJSON<{ chat_id: string; profile: Profile }>("/api/chats", { profile: wanted });
     const chat: StoreChat = { chat_id: c.chat_id, title: "New chat", profile: c.profile, created_at: Date.now() / 1000, updated_at: Date.now() / 1000, unread: 0 };
     this.chats.set(c.chat_id, chat);
     this.messages.set(c.chat_id, []);
@@ -158,12 +166,15 @@ class ChatStore {
   async hydrateMessages(chatId: string) {
     try {
       const d = await getJSON<{ messages: StoreMessage[] }>(`/api/chats/${chatId}/messages`);
-      const known = new Set((this.messages.get(chatId) || []).filter((m) => !m.pending).map((m) => m.message_id));
-      const merged = [...(this.messages.get(chatId) || []).filter((m) => m.pending || m.message_id.startsWith("run-"))];
-      for (const m of d.messages) {
-        if (!known.has(m.message_id)) merged.push(m);
-      }
-      merged.sort((a, b) => a.seq - b.seq);
+      const server = d.messages || [];
+      const serverIds = new Set(server.map((m) => m.message_id));
+      const local = this.messages.get(chatId) || [];
+      // Server rows are authoritative; keep local-only rows (recovered run-* answers and
+      // optimistic pending rows until the server acks them). The previous logic rebuilt the
+      // list without rows it already had, silently deleting history on every re-hydrate.
+      const acked = (m: StoreMessage) => m.pending && server.some((s) => s.role === m.role && s.text === m.text);
+      const merged = [...server, ...local.filter((m) => !serverIds.has(m.message_id) && !acked(m) && (m.pending || m.message_id.startsWith("run-")))];
+      merged.sort((a, b) => (a.seq === b.seq ? a.ts - b.ts : a.seq - b.seq));
       this.messages.set(chatId, merged);
       this.emit();
     } catch {}

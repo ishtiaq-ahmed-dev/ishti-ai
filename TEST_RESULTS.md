@@ -43,3 +43,17 @@ Date: 2026-10-04. No tests used a live WhatsApp account or changed owner data. T
 | Live: sidebar search / rename / delete+undo / select+share / unread badges / activity graph / draft restore | PASS | in-browser probes: filter empty-state, title override persisted, hide+undo restores, clipboard share, per-chat unread count clears on open, run-step graph renders 8 nodes, composer draft restored after reload |
 | Same-origin enforcement | PASS (by design) | cross-origin POST /api/chats from vite preview :4174 → 403 "foreign origin"; UI served from the backend origin (production path) |
 | NOT RUN: real WhatsApp/Telegram smoke, GPU A/B evals, full 841-test suite | — | need owner accounts / devices / live services (NEEDS.md) |
+
+## Profile separation + hydrate fix (2026-10-06, round 2)
+
+| Check | Result | Evidence |
+|---|---|---|
+| Per-chat profile pinning | PASS | `chatStore.newChat()` posts the current profile; backend keeps the chat's profile forever (`runs.py new_chat` + `start_run` uses `chat_profile(chat_id)`) |
+| Namespace isolation (no merge/conflict) | PASS | live: business chat runs kept `profile=business` after the global switch back to personal (`/api/runs` shows per-run profile); backend test `test_profile_isolation_and_prompt_layers` asserts distinct memory namespaces and byte-stable per-profile prompts |
+| Sidebar shows namespaces apart | PASS | PERSONAL / BUSINESS group headers with Heart/Briefcase icons + business badge on the row; verified in-browser |
+| "This chat" graph tab restored | PASS | ConversationGraph renders per-chat turns beside the per-answer run-step graph |
+| Hydration data loss (regression found by switch-cycle test) | FIXED | old hydrate rebuilt the list from pending/synth rows only, deleting already-known server rows (12→2, 4→0 observed); new logic: server rows authoritative + local-only rows kept + acked optimistic rows dropped |
+| Replay determinism | FIXED | `chatStore.start()` resets `lastSeq`/`reconciled` — every fresh context replays the full log idempotently (observed stale-seq skip live) |
+| Switch cycle stability | PASS | business(4 rows)→personal(12)→business(4) with UI answers correct at every step |
+| Mock contract / backend suite / tsc+build | PASS | exit 0 after the fix (mock ×4, backend ×4 overall this session) |
+| Deploy note | — | backend serves `index.html` with `Cache-Control: max-age=86400` + in-memory static cache: after a rebuild the backend must be restarted (or cache-busted) or browsers keep the old bundle — recorded for the deploy docs |
