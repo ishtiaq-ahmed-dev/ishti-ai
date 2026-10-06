@@ -240,8 +240,13 @@ def run(request: str, session, skills: dict) -> dict:
     from ishti import llm  # openai import lives here; arch2 must load without it
 
     session["_applied_lesson_ids"] = []
-    context = retrieval.assemble_context(request, session_id=session.get("id"),
-                                         capture=session["_applied_lesson_ids"])
+    try:
+        context = retrieval.assemble_context(request, session_id=session.get("id"),
+                                             capture=session["_applied_lesson_ids"])
+    except TypeError as exc:
+        if "unexpected keyword argument" not in str(exc):
+            raise
+        context = retrieval.assemble_context(request)
     # D3: the conversation-state summary (active topic / task / constraints) is pinned
     # into the context block - the brain never sees only the raw latest message.
     state_summary = session.get("state_summary") or ""
