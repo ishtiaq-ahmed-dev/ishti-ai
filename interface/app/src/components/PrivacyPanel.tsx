@@ -62,8 +62,8 @@ export function PrivacyPanel() {
     setVaultBusy(true);
     setVaultMsg("");
     try {
-      const res = await postJSON<{ ok: boolean; removed: number }>("/api/vault/cleanup", {});
-      setVaultMsg(`Cleanup complete: removed ${res.removed} expired files.`);
+      const res = await postJSON<{ ok: boolean; cleaned: number }>("/api/vault/cleanup", {});
+      setVaultMsg(`Cleanup complete: removed ${res.cleaned} expired files.`);
       load();
     } catch (e) {
       setVaultMsg(String((e as Error).message || e));
@@ -79,8 +79,11 @@ export function PrivacyPanel() {
     setVaultBusy(true);
     setVaultMsg("");
     try {
-      const res = await postJSON<{ ok: boolean; removed: number }>("/api/vault/purge", {});
-      setVaultMsg(`Vault purged: permanently removed ${res.removed} files.`);
+      const approval = await postJSON<{ approval_token: string }>("/api/vault/purge/prepare", {});
+      const res = await postJSON<{ ok: boolean; purged: number }>("/api/vault/purge", {
+        approval_token: approval.approval_token,
+      });
+      setVaultMsg(`Vault purged: permanently removed ${res.purged} files.`);
       load();
     } catch (e) {
       setVaultMsg(String((e as Error).message || e));

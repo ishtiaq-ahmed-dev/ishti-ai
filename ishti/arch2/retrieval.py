@@ -130,11 +130,11 @@ def procedures_for(query: str) -> list:
     return [m for m in memory_hits(query) if m["row"]["type"] == "procedural"]
 
 
-def assemble_context(query: str) -> str:
+def assemble_context(query: str, session_id=None, capture=None) -> str:
     """The retrieval block for the main model — assembled by core.assemble (E3/E4: one
     template, per-section budgets from Settings). Empty string when nothing is relevant."""
     from ishti.core import assemble as CA
-    return CA.arch2_block(query)
+    return CA.arch2_block(query, session_id=session_id, capture=capture)
 
 
 if __name__ == "__main__":

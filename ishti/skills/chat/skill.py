@@ -100,7 +100,7 @@ def match(text):
                 or BACKCHANNEL.search(text))
 
 
-def build_context(text, domain=""):
+def build_context(text, domain="", session=None):
     # Verified glossary first: a definition question about a local-AI term (imatrix, GGUF, LoRA...) gets
     # the sourced definition so the local model cannot invent a meaning (ishti/glossary.py).
     try:
@@ -147,7 +147,13 @@ def build_context(text, domain=""):
     # write-only - recorded, scored, displayed on the dashboard, and never read by the model.
     try:
         from ishti.learning import lessons
-        block = lessons.context_for(text, domain=domain)
+        sid = session.get("id") if isinstance(session, dict) else None
+        if isinstance(session, dict):
+            session["_applied_lesson_ids"] = []
+        block = lessons.context_for(
+            text, domain=domain, session_id=sid,
+            capture=session.get("_applied_lesson_ids") if isinstance(session, dict) else None,
+        )
         if block:
             parts.append(block)
     except Exception as _exc:
@@ -220,7 +226,7 @@ def run(text, session):
     if not isinstance(route, dict):
         route = {}
     role = "coder" if route.get("domain") == "code" else "planner"
-    ctx = build_context(text, domain=str(route.get("domain") or ""))
+    ctx = build_context(text, domain=str(route.get("domain") or ""), session=session)
     trace(session, "context", f"{ctx.count(chr(10) + '- ')} saved facts / memories in context" if ctx else "no saved context needed")
     trace(session, "model", f"thinking with {llm.model_for(role)}", status="start")
     # memory goes in the system prompt, not the owner's turn: in the user turn the model echoed the

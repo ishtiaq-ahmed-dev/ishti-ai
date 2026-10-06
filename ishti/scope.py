@@ -17,6 +17,7 @@ outside a skill (the dispatcher, the server, background loops) is not restricted
 are checked where the skill passes their output path (scope.check_write) - they can't be hooked.
 A violation raises ScopeError; the dispatcher reports it like any skill failure and the audit log records it."""
 import builtins
+import io
 import os
 import re
 import shutil
@@ -44,7 +45,10 @@ class ScopeError(PermissionError):
 
 
 def _norm(p):
-    return os.path.normcase(os.path.abspath(os.path.expanduser(str(p))))
+    # realpath resolves existing symlink/junction parents even for a new leaf.
+    # This is a best-effort Python guard, not an atomic OS sandbox: untrusted
+    # subprocesses and concurrent link replacement still require isolation.
+    return os.path.normcase(os.path.realpath(os.path.expanduser(os.fsdecode(p))))
 
 
 def _under(path, roots):
@@ -155,11 +159,20 @@ def _open(file, mode="r", *a, **k):
 
 
 def _wrap_path_fn(name, fn, argpos=(0,), what="change"):
+    argnames = ("src", "dst") if name in ("rename", "replace", "move", "copyfile", "copy2") else ("path",)
+
     def wrapped(*a, **k):
-        if current().get("skill"):
+        skill = current().get("skill")
+        if skill:
+            # A relative operand with dir_fd is not relative to cwd. There is
+            # no portable way to resolve an arbitrary directory descriptor on
+            # Windows/macOS, so require ordinary paths inside skill calls.
+            if any(k.get(key) is not None for key in ("dir_fd", "src_dir_fd", "dst_dir_fd")):
+                _deny(skill, name, "descriptor-relative mutations are not supported in a skill scope")
             for i in argpos:
-                if len(a) > i:
-                    check_write(os.fsdecode(a[i]) if isinstance(a[i], (str, bytes, os.PathLike)) else a[i], what)
+                path = a[i] if len(a) > i else k.get(argnames[i])
+                if path is not None:
+                    check_write(os.fsdecode(path) if isinstance(path, (str, bytes, os.PathLike)) else path, what)
         return fn(*a, **k)
     wrapped.__name__ = name
     return wrapped
@@ -176,6 +189,15 @@ def install():
         return
     _orig["open"] = builtins.open
     builtins.open = _open
+    # pathlib.Path.open/write_text/write_bytes use io.open, not builtins.open.
+    _orig["io.open"] = io.open
+
+    def io_open(file, mode="r", *a, **k):
+        if current().get("skill") and isinstance(file, (str, bytes, os.PathLike)) and WRITE_MODE.search(str(mode)):
+            check_write(os.fsdecode(file))
+        return _orig["io.open"](file, mode, *a, **k)
+
+    io.open = io_open
     for mod, name, pos, what in ((os, "remove", (0,), "delete"), (os, "unlink", (0,), "delete"), (os, "rmdir", (0,), "delete"),
                                  (os, "rename", (0, 1), "move"), (os, "replace", (0, 1), "move"), (os, "mkdir", (0,), "create"),
                                  (shutil, "rmtree", (0,), "delete"), (shutil, "move", (0, 1), "move"),

@@ -32,6 +32,17 @@ def load_tokens() -> dict:
         return {}
 
 
+class MCPCallTimeout(TimeoutError):
+    """A queued call was cancelled, or an already-started call has unknown outcome."""
+
+    def __init__(self, name, tool, *, started):
+        self.started = started
+        self.outcome_unknown = started
+        detail = ("already started; outcome unknown, do not automatically retry"
+                  if started else "cancelled before execution")
+        super().__init__(f"MCP {name}/{tool} timed out: {detail}")
+
+
 class MCPHub:
     def __init__(self, servers=None):
         self.cfg = servers or CONFIG.get("mcp_servers", {})
@@ -65,6 +76,10 @@ class MCPHub:
                 ready.set_result(True)
                 while (item := await q.get()) is not None:
                     tool, args, fut = item
+                    # Atomic with Future.cancel() in the caller's thread: a timed-out
+                    # queued mutation must never start after its caller has given up.
+                    if not fut.set_running_or_notify_cancel():
+                        continue
                     try:
                         fut.set_result(await session.call_tool(tool, args))
                     except Exception as exc:
@@ -120,7 +135,16 @@ class MCPHub:
         q, _ = self._ensure(name)
         fut = concurrent.futures.Future()
         self.loop.call_soon_threadsafe(q.put_nowait, (tool, args or {}, fut))
-        res = fut.result(timeout)
+        try:
+            res = fut.result(timeout)
+        except concurrent.futures.TimeoutError as exc:
+            cancelled = fut.cancel()
+            if not cancelled and fut.done():
+                # Completion raced the deadline (or the server itself raised a
+                # TimeoutError). Preserve the known result/error without a retry.
+                res = fut.result()
+            else:
+                raise MCPCallTimeout(name, tool, started=not cancelled) from exc
         text = "\n".join(c.text for c in res.content if getattr(c, "type", "") == "text")
         return f"ERROR: {text}" if res.isError else text
 

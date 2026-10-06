@@ -3,6 +3,7 @@ then the default skill. Every decision is logged (facts.route_log) so the Laya t
 checkpoint can later be fine-tuned on ISHTI's own traffic (NEEDS.md)."""
 import os
 import re
+import threading
 import time
 import warnings
 
@@ -16,6 +17,7 @@ warnings.filterwarnings("ignore", message=".*checkpoint ships invalid temperatur
 
 _cfg = CONFIG["router"]
 _laya = None
+_laya_lock = threading.Lock()
 laya_error = ""
 
 # Statuses the router must never pick (manifest `status`; "broken" also covers load failures).
@@ -45,26 +47,40 @@ def _disabled_flags() -> frozenset:
 def laya():
     """Lazy Laya Router; None (with laya_error set) when laya/torch isn't usable."""
     global _laya, laya_error
-    if _laya is None and not laya_error and _cfg["use_laya"]:
-        # Local-first: the weights are already in the Hugging Face cache, so the loader must not ask the hub anything (it sent
-        # ~6 requests to huggingface.co at every boot - a network call from a runtime that promises none, and a
-        # failure point offline). Offline first; only a machine that has never downloaded the model goes online, once.
-        for offline in ("1", "0"):
-            os.environ["HF_HUB_OFFLINE"] = offline
+    with _laya_lock:
+        if _laya is None and not laya_error and _cfg["use_laya"]:
             try:
                 from laya import Router
+                from laya.router import normalise_name
                 import torch
                 cuda = torch.cuda.is_available()
-                _laya = Router(max_loaded=1, device="cuda" if cuda else "cpu")
-                if cuda:  # fp16: same decisions, 0.9 GB instead of 1.7 GB of VRAM next to the LLM, ~35 ms
-                    _laya.load(_cfg["laya_model"]).model.half()
-                laya_error = ""
-                break
+                router = Router(max_loaded=1, device="cuda" if cuda else "cpu")
+                key = normalise_name(_cfg["laya_model"])
+                router.models[key] = _cached_checkpoint(router.models[key])
+                agent = router.load(key)  # CPU also preloads; predict never needs a hub lookup
+                if cuda:
+                    agent.model.half()
+                _laya = router  # publish only after the complete load/precision change
             except Exception as exc:
-                _laya = None
                 laya_error = f"{type(exc).__name__}: {exc}"
-        os.environ.pop("HF_HUB_OFFLINE", None)   # only for the duration of this load: other loaders keep their own behaviour
     return _laya
+
+
+def _cached_checkpoint(spec):
+    """Resolve the installed checkpoint without changing process-wide offline flags.
+
+    Laya 0.3.20 accepts local paths in Router.models. Require its bundled tokenizer
+    and encoder config too: absent directories make its Agent fetch a base model.
+    """
+    repo, subfolder = spec if isinstance(spec, (tuple, list)) else (spec, None)
+    if not os.path.isdir(repo):
+        from huggingface_hub import snapshot_download
+        repo = snapshot_download(repo_id=repo, local_files_only=True)
+    path = os.path.abspath(os.path.join(repo, subfolder) if subfolder else repo)
+    for filename in ("rl_agent_config.json", "model.safetensors", "tokenizer/tokenizer_config.json", "encoder/config.json"):
+        if not os.path.isfile(os.path.join(path, filename)):
+            raise FileNotFoundError("Laya checkpoint is incomplete in the local cache; run the installer to repair it")
+    return path
 
 
 def questions(skills):
@@ -118,11 +134,6 @@ def route(text, skills, exclude=()):
     # "laya": false = trigger-only skill (deterministic cue exists; as a Laya option it only adds confusion)
     candidates = {n: s for n, s in live.items() if s.manifest.get("laya", True)}
     if r and candidates:
-        # A request NEVER downloads a checkpoint: predict() loads the checkpoint it routed to, and with no
-        # cache that used to go to huggingface.co mid-request (crashed the app on 2026-10-02). Offline
-        # here: a missing model raises and the deterministic rules/default below answer instead.
-        _prev_offline = os.environ.get("HF_HUB_OFFLINE")
-        os.environ["HF_HUB_OFFLINE"] = "1"
         try:
             a = r.predict({"request": text}, questions(candidates), model=_cfg["laya_model"])["answers"]
             probs = a["skill"]["probabilities"]
@@ -136,11 +147,6 @@ def route(text, skills, exclude=()):
                 return done(skill, conf, "laya", **extra)
         except Exception as exc:
             extra = {"laya_error": f"{type(exc).__name__}: {exc}"}
-        finally:
-            if _prev_offline is None:
-                os.environ.pop("HF_HUB_OFFLINE", None)
-            else:
-                os.environ["HF_HUB_OFFLINE"] = _prev_offline
 
     default = _cfg["default_skill"]
     return done(default if default in live else None, 0.0, "default", **extra)

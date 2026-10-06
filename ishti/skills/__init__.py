@@ -32,16 +32,19 @@ PIP_NAME = {"PIL": "pillow", "docx": "python-docx", "pptx": "python-pptx", "cv2"
             "zxingcpp": "zxing-cpp"}
 
 
-def install_missing(skill, modules, runner=None):
+def install_missing(skill, modules, runner=None, *, approved=False):
     """pip-install the missing packages a skill's manifest declares (only those - never arbitrary names), into
     ISHTI's own Python. Returns what is still missing afterwards (reported by the caller and in the needs log)."""
     import re
     import subprocess
     import sys
     from ishti import CONFIG
-    if not CONFIG.get("auto_install", True):
+    from ishti import test_mode
+    if approved is not True or test_mode.enabled() or not CONFIG.get("auto_install", True):
         return modules
     pkgs = [PIP_NAME.get(m, m) for m in modules if re.fullmatch(r"[A-Za-z0-9_.-]{1,60}", m)]
+    if len(pkgs) != len(modules) or not pkgs:
+        return modules
     run = runner or (lambda args: subprocess.run(args, capture_output=True, text=True, timeout=900,
                                                  creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)))
     print(f"[skills] {skill}: installing missing {', '.join(pkgs)}")
@@ -153,11 +156,9 @@ class Skill:
         self.problem = ""
         missing = [m for m in self.manifest.get("needs", {}).get("python", [])
                    if importlib.util.find_spec(m) is None]
-        if missing:  # D6: install what ISHTI's own manifests declare, then look again
-            missing = install_missing(self.name, missing)
         if missing:
             fix = " ".join(PIP_NAME.get(m, m) for m in missing)
-            self.problem = (f"missing python packages: {', '.join(missing)} (auto-install failed - "
+            self.problem = (f"missing python packages: {', '.join(missing)} (owner-approved install required - "
                             f"run: venv\\Scripts\\python -m pip install {fix})")
         else:
             clean_rel = rel_dir.replace("/", ".").replace("\\", ".")

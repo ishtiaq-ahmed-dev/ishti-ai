@@ -203,8 +203,10 @@ def _learn_turn(text, reply, name, dec, sid, channel, message_id=None):
         reward = feedback.reward_of("unreviewed", fb=fb)
 
         # 2. Log interaction
+        decision = dict(dec or {}) if isinstance(dec, dict) else {}
+        decision["applied_lesson_ids"] = [str(i) for i in decision.get("applied_lesson_ids", []) if isinstance(i, str)]
         iid = observe.turn(text=text, reply=reply, skill=name or "", sid=sid,
-                           channel=channel, dec=dec, status="ok", reward=reward,
+                           channel=channel, dec=decision, status="ok", reward=reward,
                            message_id=message_id or "")
         if message_id:
             rated = get_conversation_manager().feedback_target(sid, message_id)
@@ -217,7 +219,7 @@ def _learn_turn(text, reply, name, dec, sid, channel, message_id=None):
             feedback.apply(fb, interaction={"id": iid, "skill": name, "request": text})
 
         # 4. Check for temporary instructions
-        policy.temporary_instruction(text)
+        policy.temporary_instruction(text, session={"id": sid})
 
         # 5. Close the reinforcement loop - but only for turns where the model actually read the
         #    guidance. `chat.build_context()` is currently the only place `context_for()` reaches
@@ -225,10 +227,7 @@ def _learn_turn(text, reply, name, dec, sid, channel, message_id=None):
         #    would demote a rule because of a failure it had no part in. The set is a registry, not
         #    a hard-coded rule: as more skills inject lessons, they get added here.
         if reward and (name or "") in lessons.CONTEXT_INJECTING_SKILLS:
-            # `guidance_for()` is a pure function of the request, so this returns the same lessons
-            # `build_context()` just put in front of the model.
-            domain = str((dec or {}).get("domain") or "") if isinstance(dec, dict) else ""
-            applied = [l["lesson_id"] for l in lessons.guidance_for(text, domain=domain, limit=6)]
+            applied = decision.get("applied_lesson_ids", [])
             if applied:
                 lessons.apply_turn_outcome(iid, reward, applied,
                                            reason="turn outcome attributed to the guidance in context")
@@ -1035,7 +1034,7 @@ def _handle(text, sid, conv, s, events, t0, channel):
     if not pending:
         try:
             from ishti.arch2 import consolidate as _mem_cmd
-            if (mem_reply := _mem_cmd.handle_command(text)) is not None:
+            if (mem_reply := _mem_cmd.handle_command(text, session=s)) is not None:
                 out = {"reply": mem_reply, "sources": []}
                 s["trace"](type="route", skill="memory_manager", source="rule", confidence=1.0,
                            why="a memory command against the arch2 store")
@@ -1392,7 +1391,9 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
             threading.Thread(target=_arch2_consolidate, args=(text, reply, name, channel), daemon=True).start()
     if not test_mode.enabled() and not secret and not hidden and not incog:
         threading.Thread(target=_learn, args=(text,), daemon=True).start()  # the owner's lasting facts and preferences
-        threading.Thread(target=_learn_turn, args=(text, reply, name, dec, sid, channel, message_id), daemon=True).start()
+        dec_for_learning = dict(dec or {}) if isinstance(dec, dict) else {}
+        dec_for_learning["applied_lesson_ids"] = list(s.get("_applied_lesson_ids") or [])
+        threading.Thread(target=_learn_turn, args=(text, reply, name, dec_for_learning, sid, channel, message_id), daemon=True).start()
         try:
             from ishti.monitor import inspect_turn
             threading.Thread(target=inspect_turn, args=(text, reply, name, dec, dict(s), channel), daemon=True).start()
