@@ -1035,7 +1035,7 @@ def _handle(text, sid, conv, s, events, t0, channel):
     if not pending:
         try:
             from ishti.arch2 import consolidate as _mem_cmd
-            if (mem_reply := _mem_cmd.handle_command(text)) is not None:
+            if (mem_reply := _mem_cmd.handle_command(text, session=s)) is not None:
                 out = {"reply": mem_reply, "sources": []}
                 s["trace"](type="route", skill="memory_manager", source="rule", confidence=1.0,
                            why="a memory command against the arch2 store")

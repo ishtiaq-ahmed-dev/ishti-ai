@@ -386,7 +386,7 @@ def _describe_people(rgraph, rel, ctx, tail, session):
                      + "\n".join(lines) + "\nReply with the name or the number.", "sources": []}
 
 
-def _rel_drop(rgraph, rel, ctx, name, session):
+def _rel_drop(rgraph, rel, ctx, name, session, _confirmed=False):
     """'my manager is no longer Kamran' - that link goes; the person node and everyone else stay."""
     gone = [e for e in _slot_edges(rgraph, rel, ctx) if _other_end(e) == name.lower()]
     for e in gone:
@@ -394,18 +394,27 @@ def _rel_drop(rgraph, rel, ctx, name, session):
     if not gone:
         return {"reply": f"I don't have {name.title()} stored as your {rel}, so there was nothing to "
                          f"remove.", "sources": []}
+    if not _confirmed:
+        from ishti.skills import ask_first
+        return ask_first(session, "relationships", f"Remove {name.title()} as your {rel}?",
+                         lambda: _rel_drop(rgraph, rel, ctx, name, session, True))
     trace(session, "graph", f"relationship removed: {name.lower()} is no longer {rel}")
     return {"reply": f"Removed: {name.title()} is no longer your {rel} ({len(gone)} link(s) deleted). "
                      f"Everyone else is untouched.", "sources": []}
 
 
-def _rel_delete(rgraph, name, rel, session):
+def _rel_delete(rgraph, name, rel, session, _confirmed=False):
     """Delete a relationship or remove a person node from confirmed relationships."""
     name_clean = _clean_name(name).strip()
     if not name_clean:
         name_clean = session.get("rel_last") or ""
     if not name_clean:
         return {"reply": "Which person would you like to remove from your records?", "sources": []}
+
+    if not _confirmed:
+        from ishti.skills import ask_first
+        return ask_first(session, "relationships", f"Remove {name_clean.title()} from your relationship records?",
+                         lambda: _rel_delete(rgraph, name_clean, rel, session, True))
 
     rel_clean = (rel or "").lower().strip()
     if rel_clean in ("bro", "bhai", "bhaiya"):
