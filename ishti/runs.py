@@ -210,7 +210,9 @@ def add_assistant_message(chat_id: str, text: str, run_id: str = "",
         cur = c.execute(
             "INSERT INTO messages(message_id, chat_id, role, text, run_id, client_msg_id, "
             "channel, profile, ts) VALUES(?,?,?,?,?,?,?,?,?)",
-            (uuid.uuid4().hex[:16], chat_id, "assistant", str(text or ""), run_id, "", channel,
+            # client_msg_id must be NULL, not '': UNIQUE(chat_id, client_msg_id) would reject the
+            # second assistant message of a chat and silently drop run_finished/message_created.
+            (uuid.uuid4().hex[:16], chat_id, "assistant", str(text or ""), run_id, None, channel,
              _profiles.valid(profile or chat_profile(chat_id)), now))
         c.execute("UPDATE chats SET updated_at = ? WHERE chat_id = ?", (now, chat_id))
         c.commit()

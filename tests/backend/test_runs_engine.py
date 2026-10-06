@@ -155,3 +155,20 @@ def test_profile_isolation_and_prompt_layers(fresh_runs):
     assert core in a and "CRM" in a and "warm" not in a
     lay = prompt_compiler.layers("personal")
     assert [l["name"] for l in lay["layers"]][:2] == ["core", "profile:personal"]
+
+
+def test_second_assistant_message_finishes(fresh_runs):
+    """Regression: UNIQUE(chat_id, client_msg_id) + client_msg_id='' rejected the SECOND
+    assistant row of a chat, silently dropping message_created + run_finished (state was
+    already 'done' so fail_run was a no-op). The fix stores NULL for assistant rows."""
+    ch = runs.new_chat()
+    for i, text in enumerate(("first question", "second question")):
+        msg = runs.add_user_message(ch["chat_id"], text, client_msg_id=f"c{i}")
+        run = runs.start_run(ch["chat_id"], msg["message"]["message_id"])
+        out = runs.finish_run(run["run_id"], f"answer {i}")
+        assert out["state"] == "done"
+    evs = [e["type"] for e in runs.events_since(0)]
+    assert evs.count("message_created") == 4  # 2 user + 2 assistant
+    assert evs.count("run_finished") == 2
+    msgs = runs.messages_after(ch["chat_id"], 0, limit=100)
+    assert [m["role"] for m in msgs] == ["user", "assistant", "user", "assistant"]
