@@ -21,6 +21,7 @@ API contract: `2.0.0` (unchanged)
 | M12 | Unicode correction normalization and deterministic ties (`32fa55d`) | Yes | No |
 | M13 | Client CRM grounding fenced as untrusted data (`0e43075`) | Yes | No |
 | M14 | MCP queued cancellation and bounded WebSocket sends (`641e196`, `0e43075`) | Synthetic only | Yes: live transport |
+| M14b | Preserve ARCH2 retrieval hook compatibility (`54753c0`) | Yes | No |
 | F01 | Isolated versioned correction replay report (`a0e87d8`) | Yes | No |
 
 ## Verification matrix
@@ -53,6 +54,7 @@ Expected: Ruff clean and all listed tests pass. Repeat the test command three ti
 | M12 | `ishti/corrections.py`, `tests/test_corrections_unicode.py` | `& .\venv\Scripts\python.exe -m pytest tests\test_corrections_unicode.py -q`; add English, Urdu and Pashto corrections and inspect export | Unicode-normalized corrections persist and deterministic ties abstain; punctuation-only input is ignored | Existing legacy rows are normalized on read; `git revert 32fa55d` |
 | M13 | `ishti/skills/clients/skill.py`, `tests/test_client_prompt_injection.py` | `& .\venv\Scripts\python.exe -m pytest tests\test_client_prompt_injection.py -q`; create a hostile client event and capture the draft model prompt | Client grounding is fenced and injection-like lines are removed; only the selected client context is supplied | Model still receives owner request separately; `git revert 0e43075` |
 | M14 | `ishti/mcp_client.py`, `interface/web_ui/server.py`, `tests/test_mcp_cancellation.py`, `tests/test_websocket_send_timeout.py` | `& .\venv\Scripts\python.exe -m pytest tests\test_mcp_cancellation.py tests\test_websocket_send_timeout.py -q`; stream a live UI session and unplug/slow the browser connection | Queued MCP timeout cancels before start; started calls report unknown outcome without retry; slow WS send times out and disconnects cleanly | Active remote MCP cancellation cannot be guaranteed; `git revert 641e196` and/or `git revert 0e43075` |
+| M14b | `ishti/arch2/pipeline.py` | `& .\venv\Scripts\python.exe -m pytest tests\test_executor_governance.py -q` | Existing retrieval test doubles remain compatible while production captures session lesson IDs | Compatibility fallback is limited to unexpected keyword errors; `git revert 54753c0` |
 | F01 | `tools/correction_eval.py`, `tests/test_correction_eval.py` | `& .\venv\Scripts\python.exe -m pytest tests\test_correction_eval.py -q`; run `& .\venv\Scripts\python.exe tools\correction_eval.py --help` and a fixture bundle | Versioned baseline/candidate report includes hashes, holdout and safety regressions; promotion remains unauthorized | Report never writes production routing or weights; `git revert a0e87d8` |
 
 ## Not verified on this Mac
