@@ -85,3 +85,6 @@ export const postJSON = <T,>(url: string, body?: unknown): Promise<T> =>
   fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) })
     .then(checkResponse);
 export const del = (url: string) => fetch(url, { method: "DELETE" }).then(checkResponse);
+export const putJSON = <T,>(url: string, body?: unknown): Promise<T> =>
+  fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) })
+    .then(checkResponse);

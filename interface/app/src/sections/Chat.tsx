@@ -1,12 +1,9 @@
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUp, AudioLines, Check, Copy, FolderOpen, Maximize2, MessageSquare, Mic, Minimize2, Network, PanelLeft, PanelLeftClose, Paperclip, Pencil, Plus, Square, ThumbsDown, ThumbsUp, Trash2, X } from "lucide-react";
+import { ArrowUp, AudioLines, Check, Copy, FolderOpen, Maximize2, MessageSquare, Mic, Minimize2, Network, PanelLeft, PanelLeftClose, Paperclip, Pencil, Plus, Square, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { del, getJSON, postJSON, streamChat, type Result, type Source, type TraceEvent } from "@/lib/api";
-import { ActivityGraph, ConversationGraph, type Turn } from "@/components/ActivityGraph";
-import { Thinking } from "@/components/Thinking";
-import { FolderScan } from "@/components/FolderScan";
 import { AgentOrb } from "@/components/AgentOrb";
-import { resolveAgentState } from "@/lib/agent-state";
+import { ActivityGraph, type Turn } from "@/components/ActivityGraph";
+import { Thinking } from "@/components/Thinking";
 import BorderBeam from "border-beam";
 import VoiceBeam from "voice-glow";
 import { IshtiBrand } from "@/components/IshtiBrand";
@@ -15,47 +12,25 @@ import { MediaPreview } from "@/components/MediaPreview";
 import { LiveMode } from "@/components/LiveMode";
 import { cn } from "@/lib/utils";
 import { useBootState } from "@/lib/boot";
+import { chatStore, type StoreMessage, type StoreRun } from "@/lib/chat-store";
+import { RunStatusCard, StreamedDraftBanner, UnverifiedBanner, runUnverified } from "@/components/RunStatusCard";
+import { FeedbackPanel } from "@/components/FeedbackPanel";
 
-type Msg = {
-  id: number;
-  role: "user" | "ishti";
-  text: string;
-  events: TraceEvent[];
-  live: boolean;
-  sources: Source[];
-  request?: string;
-  messageId?: string;
-  rating?: "positive" | "negative";
-  revisionOf?: string;
-};
-
-type Session = {
-  session_id: string;
-  title: string;
-  updated_at: string;
-  message_count: number;
-};
-
-let nextId = 1;
-
-function ago(iso: string) {
-  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+function ago(iso: number) {
+  const m = Math.round((Date.now() - iso * 1000) / 60000);
   return m < 1 ? "now" : m < 60 ? `${m}m` : m < 1440 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`;
 }
 
-function Sources({ sources }: { sources: Source[] }) {
-  if (!sources.length) return null;
+// Source chips under an answer: fed from the run's research steps (CONTRACT v2 run_step.sources).
+function Sources({ run }: { run?: StoreRun }) {
+  const urls = [...new Set((run?.steps || []).flatMap((s) => s.sources))];
+  if (!urls.length) return null;
   return (
     <div className="mt-2 flex flex-wrap gap-1.5">
-      {sources.slice(0, 6).map((s, i) => (
-        <a
-          key={i}
-          href={s.url}
-          target="_blank"
-          rel="noreferrer"
-          className="max-w-[220px] truncate rounded-full border border-border bg-background px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-accent hover:text-accent"
-        >
-          {s.verified ? "✓ " : ""}{s.domain || s.title || s.url}
+      {urls.slice(0, 6).map((u, i) => (
+        <a key={i} href={u} target="_blank" rel="noreferrer"
+          className="max-w-[220px] truncate rounded-full border border-border bg-background px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-accent hover:text-accent">
+          {u.replace(/^https?:\/\//, "").split("/")[0]}
         </a>
       ))}
     </div>
@@ -71,26 +46,22 @@ type Props = {
 
 export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   const boot = useBootState();
-  const [msgs, setMsgs] = useState<Msg[]>([]);
+  // The v2 store (CONTRACT §14) is the single source of truth: it lives at app level, so switching
+  // sections or reloading never unmounts a running stream. This component only subscribes to it.
+  const [, force] = useState(0);
+  useEffect(() => chatStore.subscribe(() => force((n) => n + 1)), []);
+
   const [showFeedback, setShowFeedback] = useState(() => {
     try { return localStorage.getItem("ishti-show-answer-feedback") !== "false"; } catch { return true; }
   });
-  const [feedbackBusy, setFeedbackBusy] = useState<string | null>(null);
-  const [feedbackError, setFeedbackError] = useState<{ messageId: string; text: string } | null>(null);
-  const [feedbackReasonFor, setFeedbackReasonFor] = useState<string | null>(null);
-  const [feedbackReason, setFeedbackReason] = useState("");
   const [input, setInput] = useState("");
-  const [sessionId, setSessionId] = useState<string | null>(() => {
-    if (typeof window !== "undefined") {
-      const match = window.location.hash.match(/^#chat\/(sess_[^/?#]+)/i);
-      if (match) return match[1];
-      try {
-        return localStorage.getItem("ishti-session-id");
-      } catch {}
-    }
-    return null;
-  });
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const activeChatId = chatStore.activeChatId;
+  const storeMsgs = chatStore.messagesOf(activeChatId);
+  const liveRuns = activeChatId ? chatStore.runsOfChat(activeChatId).filter((r) => r.state === "running" || r.state === "queued") : [];
+  const pendingRun = liveRuns.length ? liveRuns[liveRuns.length - 1] : null;
+  const busy = liveRuns.length > 0;
+  const chats = chatStore.chatList();
+
   const [showHistory, setShowHistory] = useState(() => {
     try {
       const saved = localStorage.getItem("ishti-chat-show-history");
@@ -109,18 +80,32 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     return 240;
   });
   const [isResizing, setIsResizing] = useState(false);
+  // Recent-chats features (restored on the v2 store): client-side search, multi-select with
+  // confirmed delete (local hide + undo), rename, and export of the selected chats.
+  const [search, setSearch] = useState("");
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [undoOpen, setUndoOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareFormat, setShareFormat] = useState<"md" | "pdf">("md");
+  const [shareName, setShareName] = useState(`ishti-chats-${new Date().toISOString().slice(0, 10)}.md`);
+  const [shareResult, setShareResult] = useState<{ path: string; copied?: boolean } | null>(null);
+  const [shareError, setShareError] = useState("");
+  // Activity graph (per-answer trace) + live draft state for the orb/AgentOrb header
+  const [graphFor, setGraphFor] = useState<string | null>(null); // message_id or "run:{run_id}"
+  const [fullGraph, setFullGraph] = useState(false);
 
   useEffect(() => {
     const handleWidthChange = (e: Event) => {
       const detail = (e as CustomEvent<number>).detail;
-      if (typeof detail === "number" && detail >= 180 && detail <= 550) {
-        setHistoryWidth(detail);
-      }
+      if (typeof detail === "number" && detail >= 180 && detail <= 550) setHistoryWidth(detail);
     };
     window.addEventListener("ishti-side-chats-width-changed", handleWidthChange);
-    return () => {
-      window.removeEventListener("ishti-side-chats-width-changed", handleWidthChange);
-    };
+    return () => window.removeEventListener("ishti-side-chats-width-changed", handleWidthChange);
   }, []);
 
   const startResizing = useCallback((e: React.PointerEvent) => {
@@ -139,50 +124,35 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
       const nextWidth = Math.max(180, Math.min(Math.round(startWidth + delta), maxWidth));
       currentW = nextWidth;
       setHistoryWidth(nextWidth);
-      try {
-        localStorage.setItem("ishti-recent-chats-width", String(nextWidth));
-      } catch {}
+      try { localStorage.setItem("ishti-recent-chats-width", String(nextWidth)); } catch {}
     };
-
     const onPointerUp = () => {
       setIsResizing(false);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
-      try {
-        window.dispatchEvent(new CustomEvent("ishti-side-chats-width-changed", { detail: currentW }));
-      } catch {}
+      try { window.dispatchEvent(new CustomEvent("ishti-side-chats-width-changed", { detail: currentW })); } catch {}
     };
-
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
   }, [historyWidth]);
-  const [graphFor, setGraphFor] = useState<number | null>(null);
-  const [focusedSkill, setFocusedSkill] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem("ishti-focused-skill");
-    } catch {
-      return null;
-    }
-  });
 
+  const [focusedSkill, setFocusedSkill] = useState<string | null>(() => {
+    try { return localStorage.getItem("ishti-focused-skill"); } catch { return null; }
+  });
   const clearFocusedSkill = useCallback(() => {
     setFocusedSkill(null);
-    try {
-      localStorage.removeItem("ishti-focused-skill");
-    } catch {}
+    try { localStorage.removeItem("ishti-focused-skill"); } catch {}
   }, []);
+
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false); // Stop pressed: the last words are being written into the box
   const [liveOpen, setLiveOpen] = useState(false);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
-  const [graphView, setGraphView] = useState<"answer" | "chat">("answer");
-  const [fullGraph, setFullGraph] = useState(false);
+  // Live voice turns are display-only: the legacy live socket has no v2 chat binding yet.
+  const [liveTurns, setLiveTurns] = useState<{ user: string; reply: string }[]>([]);
   const recorder = useRef<MediaRecorder | null>(null);
-  const sessionLoadGeneration = useRef(0);
-  const sessionLoadPending = useRef(false);
-  const msgsRef = useRef(msgs);
   const uploadInput = useRef<HTMLInputElement>(null);
   const [uploads, setUploads] = useState<{ name: string; mention: string; size: number }[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -190,25 +160,25 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   const box = useRef<HTMLTextAreaElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const scrollContainer = useRef<HTMLDivElement>(null);
-  const isInitialLoad = useRef(true);
-  const running = msgs.filter((m) => m.live).length;
-  const busy = running > 0;
-
-  useEffect(() => { msgsRef.current = msgs; }, [msgs]);
+  const wasBusy = useRef(false);
+  const creatingChat = useRef(false);
 
   useEffect(() => {
+    const transitioned = wasBusy.current && !busy;
+    wasBusy.current = busy;
     onBusy?.(busy);
-    if (!busy) {
-      try {
-        window.dispatchEvent(new CustomEvent("ishti-chat-finished"));
-      } catch {}
+    if (transitioned) {
+      try { window.dispatchEvent(new CustomEvent("ishti-chat-finished")); } catch {}
     }
   }, [busy, onBusy]);
 
-  // Up to 10 messages run at once (the server runs independent ones side by side; a follow-up waits for the
-  // answer it is about). More wait here in order. A new chat's first message runs alone so all share its session.
-  const canStart = running < 10 && (!!sessionId || running === 0);
-  const [queue, setQueue] = useState<string[]>([]);
+  // WP1: hydrate the composer from the persisted per-chat draft (after the active chat is known)
+  useEffect(() => {
+    if (activeChatId) {
+      const d = chatStore.draft(activeChatId);
+      if (d) setInput(d);
+    }
+  }, [activeChatId]);
 
   const toggleHistory = useCallback(() => {
     setShowHistory((h) => {
@@ -218,259 +188,21 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     });
   }, []);
 
-  const loadSessions = useCallback(() => {
-    getJSON<{ sessions: Session[] }>("/api/sessions")
-      .then((d) => setSessions(d.sessions.filter((x) => x.message_count > 0).slice(0, 30)));
-  }, []);
-
-  useEffect(() => { onBusy(busy); }, [busy, onBusy]);
-  useEffect(() => { loadSessions(); }, [loadSessions]);
-
   useEffect(() => {
     const el = box.current;
     if (el) { el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 220)}px`; }
   }, [input]);
 
   useEffect(() => {
-    if (isInitialLoad.current) {
-      if (msgs.length > 0) {
-        if (scrollContainer.current) {
-          scrollContainer.current.scrollTop = scrollContainer.current.scrollHeight;
-        } else {
-          bottom.current?.scrollIntoView({ behavior: "instant" });
-        }
-        requestAnimationFrame(() => {
-          isInitialLoad.current = false;
-        });
-      }
-      return;
-    }
-    // While the reply is still streaming, pin to the bottom directly: a smooth animation restarted on
-    // every single token stutters. A finished message gets the smooth scroll.
-    const last = msgs[msgs.length - 1];
-    if (last?.live) {
-      const el = scrollContainer.current;
-      if (el) el.scrollTop = el.scrollHeight;
-      else bottom.current?.scrollIntoView({ behavior: "instant", block: "end" });
-      return;
-    }
-    bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [msgs]);
+    const el = scrollContainer.current;
+    if (el) el.scrollTop = el.scrollHeight;
+    else bottom.current?.scrollIntoView({ behavior: "instant", block: "end" });
+  }, [storeMsgs.length, pendingRun?.text, pendingRun?.run_id, liveTurns.length]);
 
-  const selectSession = useCallback(async (id: string) => {
-    clearFocusedSkill();
-    const generation = ++sessionLoadGeneration.current;
-    sessionLoadPending.current = true;
-    setUploading(false);
-    setUploads([]);
-    setFeedbackBusy(null);
-    setFeedbackError(null);
-    setFeedbackReasonFor(null);
-    setQueue([]);
-    setGraphFor(null);
-    isInitialLoad.current = true;
-    try {
-    await postJSON(`/api/sessions/${id}/activate`);
-    const { messages } = await getJSON<{ messages: { id?: string; role: string; content: string; sources?: Source[]; metadata?: { events?: TraceEvent[]; feedback?: { rating?: "positive" | "negative" }; revision_of?: string; request?: string } }[] }>(`/api/sessions/${id}/messages`);
-    if (generation !== sessionLoadGeneration.current) return;
-    try {
-      localStorage.setItem("ishti-session-id", id);
-      if (window.location.hash.startsWith("#chat") || !window.location.hash) {
-        window.history.replaceState(null, "", `#chat/${id}`);
-      }
-    } catch {}
-    let last = "";
-    setMsgs(messages.map((m) => {
-      if (m.role === "user") last = m.content;
-      return m.role === "user"
-        ? { id: nextId++, role: "user", text: m.content, events: [], live: false, sources: [], messageId: m.id }
-        : { id: nextId++, role: "ishti", text: m.content, events: m.metadata?.events ?? [], live: false,
-            sources: m.sources ?? [], request: m.metadata?.request ?? last, messageId: m.id,
-            rating: m.metadata?.feedback?.rating, revisionOf: m.metadata?.revision_of };
-    }));
-    setSessionId(id);
-    requestAnimationFrame(() => {
-      if (scrollContainer.current) {
-        scrollContainer.current.scrollTop = scrollContainer.current.scrollHeight;
-      } else {
-        bottom.current?.scrollIntoView({ behavior: "instant" });
-      }
-    });
-    } catch (err) {
-      if (generation === sessionLoadGeneration.current) console.warn("[chat] session load failed:", err);
-    } finally {
-      if (generation === sessionLoadGeneration.current) sessionLoadPending.current = false;
-    }
-  }, []);
-
-  const newChat = useCallback(async () => {
-    const generation = ++sessionLoadGeneration.current;
-    sessionLoadPending.current = true;
-    setUploading(false);
-    setUploads([]);
-    setFeedbackBusy(null);
-    setFeedbackError(null);
-    setFeedbackReasonFor(null);
-    setQueue([]);
-    try {
-    const d = await postJSON<{ session_id: string }>("/api/sessions/new", { title: "New Conversation" });
-    if (generation !== sessionLoadGeneration.current) return;
-    try {
-      localStorage.setItem("ishti-session-id", d.session_id);
-      if (window.location.hash.startsWith("#chat") || !window.location.hash) {
-        window.history.replaceState(null, "", `#chat/${d.session_id}`);
-      }
-    } catch {}
-    setSessionId(d.session_id);
-    setMsgs([]);
-    setUploads([]);
-    setGraphFor(null);
-    loadSessions();
-    } catch (error) {
-      if (generation === sessionLoadGeneration.current) console.warn("[chat] new session failed:", error);
-    } finally {
-      if (generation === sessionLoadGeneration.current) sessionLoadPending.current = false;
-    }
-  }, [loadSessions]);
-
-  useEffect(() => {
-    const refresh = (event?: Event) => {
-      const detail = (event as CustomEvent<{ session_id?: string }> | undefined)?.detail;
-      const target = sessionId;
-      if (!target || (detail?.session_id && detail.session_id !== target)) return;
-      loadSessions();
-      if (msgsRef.current.some((m) => m.live)) return;
-      const generation = sessionLoadGeneration.current;
-      getJSON<{ messages: { id?: string; role: string; content: string; sources?: Source[]; metadata?: { events?: TraceEvent[]; feedback?: { rating?: "positive" | "negative" }; revision_of?: string; request?: string } }[] }>(`/api/sessions/${target}/messages`)
-        .then(({ messages }) => {
-          if (generation !== sessionLoadGeneration.current || target !== sessionId || msgsRef.current.some((m) => m.live)) return;
-          let last = "";
-          setMsgs(messages.map((m) => {
-            if (m.role === "user") last = m.content;
-            return m.role === "user"
-              ? { id: nextId++, role: "user", text: m.content, events: [], live: false, sources: [], messageId: m.id }
-              : { id: nextId++, role: "ishti", text: m.content, events: m.metadata?.events ?? [], live: false, sources: m.sources ?? [],
-                  messageId: m.id, rating: m.metadata?.feedback?.rating, revisionOf: m.metadata?.revision_of,
-                  request: m.metadata?.request ?? last };
-          }));
-        })
-        .catch((err) => console.warn("[chat] live refresh failed:", err));
-    };
-    const onFinished = () => refresh();
-    const onTask = (event: Event) => refresh(event);
-    window.addEventListener("ishti-task-completed", onTask);
-    window.addEventListener("ishti-chat-finished", onFinished);
-    return () => {
-      window.removeEventListener("ishti-task-completed", onTask);
-      window.removeEventListener("ishti-chat-finished", onFinished);
-    };
-  }, [sessionId, msgs, loadSessions]);
-
-  useEffect(() => {
-    const handleStartNewChat = (e?: Event) => {
-      const detail = (e as CustomEvent<{ focusedSkill?: string }> | undefined)?.detail;
-      if (detail?.focusedSkill) {
-        setFocusedSkill(detail.focusedSkill);
-        try {
-          localStorage.setItem("ishti-focused-skill", detail.focusedSkill);
-        } catch {}
-      } else {
-        clearFocusedSkill();
-      }
-      newChat();
-    };
-    window.addEventListener("ishti-start-new-chat", handleStartNewChat);
-    return () => {
-      window.removeEventListener("ishti-start-new-chat", handleStartNewChat);
-    };
-  }, [newChat, clearFocusedSkill]);
-
-  useEffect(() => {
-    let targetSession: string | null = null;
-    if (typeof window !== "undefined") {
-      if (window.location.hash === "#chat/new" || window.location.hash.startsWith("#chat/new")) {
-        newChat();
-        return;
-      }
-      const hashMatch = window.location.hash.match(/^#chat\/(sess_[^/?#]+)/i);
-      if (hashMatch) {
-        targetSession = hashMatch[1];
-      } else {
-        const querySession = new URLSearchParams(window.location.search).get("session");
-        if (querySession && querySession.startsWith("sess_")) {
-          targetSession = querySession;
-        } else {
-          try {
-            targetSession = localStorage.getItem("ishti-session-id");
-          } catch {}
-        }
-      }
-    }
-
-    getJSON<{ active_session_id: string }>("/api/sessions").then((d) => {
-      const idToLoad = targetSession || d.active_session_id;
-      if (idToLoad) {
-        setSessionId(idToLoad);
-        selectSession(idToLoad);
-      }
-    });
-  }, [selectSession, newChat]);
-
-  useEffect(() => {
-    const onHashChange = () => {
-      if (window.location.hash === "#chat/new" || window.location.hash.startsWith("#chat/new")) {
-        newChat();
-        return;
-      }
-      const hashMatch = window.location.hash.match(/^#chat\/(sess_[^/?#]+)/i);
-      if (hashMatch && hashMatch[1] && hashMatch[1] !== sessionId) {
-        selectSession(hashMatch[1]);
-      }
-    };
-    window.addEventListener("hashchange", onHashChange);
-    return () => window.removeEventListener("hashchange", onHashChange);
-  }, [sessionId, selectSession, newChat]);
-
-  const deleteSession = async (id: string, e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    try {
-      const d = await postJSON<{ undo_token: string; deleted: string[] }>("/api/sessions/delete", { ids: [id] });
-      setUndo({ token: d.undo_token, ids: d.deleted });
-    } catch {
-      await del(`/api/sessions/${id}`);
-    }
-    loadSessions();
-    if (sessionId === id) {
-      try { localStorage.removeItem("ishti-session-id"); } catch {}
-      newChat();
-    }
-  };
-
-  // ---------------- Recent chats: select / rename / delete-with-undo / share (all local) ----------------
-  const [selecting, setSelecting] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
-
-  useEffect(() => {
-    if (!deleteTarget) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setDeleteTarget(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [deleteTarget]);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [renaming, setRenaming] = useState<string | null>(null);
-  const [renameDraft, setRenameDraft] = useState("");
-  const [undo, setUndo] = useState<{ token: string; ids: string[] } | null>(null);
-  const [shareOpen, setShareOpen] = useState(false);
-  const [shareFormat, setShareFormat] = useState<"md" | "pdf">("md");
-  const [shareDir, setShareDir] = useState("");
-  const [shareName, setShareName] = useState("");
-  const [shareBusy, setShareBusy] = useState(false);
-  const [shareResult, setShareResult] = useState<{ path: string; copied?: boolean } | null>(null);
-  const [shareError, setShareError] = useState("");
-
+  // ---------------- derived selectors ----------------
+  const q = search.trim().toLowerCase();
+  const visibleChats = (q ? chats.filter((c) => (c.title || "").toLowerCase().includes(q)) : chats);
+  const allSelected = visibleChats.length > 0 && visibleChats.every((c) => selected.has(c.chat_id));
   const toggleSelected = useCallback((id: string) => {
     setSelected((cur) => {
       const next = new Set(cur);
@@ -478,95 +210,130 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
       return next;
     });
   }, []);
+  const graphRun = (() => {
+    if (!graphFor) return null;
+    if (graphFor.startsWith("run:")) return liveRuns.find((r) => r.run_id === graphFor.slice(4)) || null;
+    const msg = storeMsgs.find((m) => m.message_id === graphFor);
+    return msg ? (chatStore.runs.get(msg.run_id) || null) : null;
+  })();
+  const turns: Turn[] = storeMsgs
+    .filter((m) => m.role === "assistant")
+    .map((m) => {
+      const r = chatStore.runs.get(m.run_id);
+      const stepLabels = (r?.steps || []).map((s) => s.kind);
+      return { question: "", skill: stepLabels.includes("research") ? "research" : stepLabels[0] || null, ms: undefined };
+    });
 
-  const saveRename = useCallback(async (id: string) => {
+  useEffect(() => { // persist scroll position per chat (restored on return)
+    const el = scrollContainer.current;
+    if (el && activeChatId) chatStore.setScroll(activeChatId, el.scrollTop);
+  });
+
+  useEffect(() => { // keep pinned to the bottom while a run streams
+    if (pendingRun) {
+      const el = scrollContainer.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }
+  }, [pendingRun?.text]);
+  const confirmDelete = useCallback(async () => {
+    setConfirmingDelete(false);
+    const ids = [...selected];
+    if (!ids.length) return;
+    setSelecting(false);
+    setSelected(new Set());
+    chatStore.hideChats(ids);
+    setUndoOpen(true);
+    window.setTimeout(() => setUndoOpen(false), 8000);
+  }, [selected]);
+
+  const saveRename = useCallback((id: string) => {
     const title = renameDraft.trim();
     setRenaming(null);
     if (!title) return;
-    try {
-      const d = await postJSON<{ title: string }>(`/api/sessions/${id}/rename`, { title });
-      setSessions((cur) => cur.map((s) => (s.session_id === id ? { ...s, title: d.title } : s)));
-    } catch (err) {
-      console.warn("[chat] rename failed:", err);
-    }
+    chatStore.setTitle(id, title);
   }, [renameDraft]);
 
-  const deleteSelected = useCallback(async () => {
-    const ids = [...selected];
-    if (!ids.length) return;
-    setConfirmingDelete(false);
-    try {
-      const d = await postJSON<{ undo_token: string; deleted: string[] }>("/api/sessions/delete", { ids });
-      setSelecting(false);
-      setSelected(new Set());
-      setSessions((cur) => cur.filter((s) => !d.deleted.includes(s.session_id)));
-      setUndo({ token: d.undo_token, ids: d.deleted });
-      if (sessionId && d.deleted.includes(sessionId)) {
-        try { localStorage.removeItem("ishti-session-id"); } catch {}
-        newChat();
-      }
-    } catch (err) {
-      console.warn("[chat] delete failed:", err);
-    }
-  }, [selected, sessionId, newChat]);
-
-  const undoDelete = useCallback(async () => {
-    if (!undo) return;
-    try { await postJSON("/api/sessions/undo", { undo_token: undo.token }); } catch (err) { console.warn("[chat] undo failed:", err); }
-    setUndo(null);
-    loadSessions();
-  }, [undo, loadSessions]);
-
-  useEffect(() => {  // the undo window is 8 s; after that the trash folder is cleared at next startup
-    if (!undo) return;
-    const t = setTimeout(() => setUndo(null), 8000);
-    return () => clearTimeout(t);
-  }, [undo]);
-
-  const openShare = useCallback(() => {
-    setShareError("");
-    setShareResult(null);
-    setShareFormat("md");
-    setShareDir("");
-    setShareName(`ishti-chats-${new Date().toISOString().slice(0, 10)}.md`);
-    setShareOpen(true);
-  }, []);
-
   const doExport = useCallback(async () => {
-    setShareBusy(true);
     setShareError("");
     setShareResult(null);
-    try {
-      const d = await postJSON<{ path: string }>("/api/sessions/export", {
-        ids: [...selected], format: shareFormat, dir: shareDir.trim(), name: shareName.trim() || undefined,
-      });
-      setShareResult({ path: d.path });
-    } catch (err) {
-      setShareError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setShareBusy(false);
-    }
-  }, [selected, shareFormat, shareDir, shareName]);
-
-  const copySelectedAsText = useCallback(async () => {
     try {
       const parts: string[] = [];
       for (const id of selected) {
-        const d = await getJSON<{ title: string; messages: { role: string; content: string }[] }>(`/api/sessions/${id}/messages`);
-        parts.push(`## ${d.title}`, "");
-        for (const m of d.messages) parts.push(`${m.role === "user" ? "You" : "ISHTI"}: ${m.content}`);
+        const msgs = await (async () => {
+          chatStore.setActiveChat(id);
+          await chatStore.hydrateMessages(id);
+          return chatStore.messagesOf(id);
+        })();
+        parts.push(`## ${chatStore.chats.get(id)?.title || id}`, "");
+        for (const m of msgs) parts.push(`${m.role === "user" ? "You" : "ISHTI"}: ${m.text}`);
         parts.push("");
       }
+      if (shareFormat === "pdf") throw new Error("PDF export needs the desktop share service; copied as text instead.");
       await navigator.clipboard.writeText(parts.join("\n"));
-      setShareResult({ path: "", copied: true });
+      setShareResult({ path: "(clipboard)", copied: true });
     } catch (err) {
-      setShareError("Copy failed: " + (err instanceof Error ? err.message : String(err)));
+      setShareError(err instanceof Error ? err.message : String(err));
     }
-  }, [selected]);
+  }, [selected, shareFormat]);
 
-  const allSelected = sessions.length > 0 && sessions.every((s) => selected.has(s.session_id));
+  const newChat = useCallback(async () => {
+    if (creatingChat.current) return;
+    creatingChat.current = true;
+    try {
+      await chatStore.newChat();
+      setInput("");
+      setUploads([]);
+      clearFocusedSkill();
+    } finally {
+      creatingChat.current = false;
+    }
+  }, [clearFocusedSkill]);
 
-  const patch = (id: number, f: (m: Msg) => Msg) => setMsgs((all) => all.map((m) => (m.id === id ? f(m) : m)));
+  // Deep links: #chat/new starts a chat, #chat/{id} selects it once the store knows the chats.
+  // Runs on mount/ready/hashchange ONLY - never on activeChatId changes, or clicking a row would
+  // race the (still stale) URL hash and flip straight back.
+  useEffect(() => {
+    if (!chatStore.ready) return;
+    const apply = () => {
+      const m = window.location.hash.match(/^#chat\/([^/?#]+)/i);
+      if (!m) return;
+      if (m[1] === "new") {
+        void newChat();
+        return;
+      }
+      if (m[1] !== chatStore.activeChatId && chatStore.chats.has(m[1])) chatStore.setActiveChat(m[1]);
+    };
+    apply();
+    window.addEventListener("hashchange", apply);
+    return () => window.removeEventListener("hashchange", apply);
+  }, [chatStore.ready, newChat]);
+
+  // Keep the URL + the legacy localStorage key in step with the store's active chat.
+  useEffect(() => {
+    if (!activeChatId) return;
+    try {
+      localStorage.setItem("ishti-active-chat-v1", activeChatId);
+      localStorage.setItem("ishti-session-id", activeChatId);
+      if (window.location.hash.startsWith("#chat") || !window.location.hash) {
+        window.history.replaceState(null, "", `#chat/${activeChatId}`);
+      }
+    } catch {}
+  }, [activeChatId]);
+
+  useEffect(() => {
+    const handleStartNewChat = (e?: Event) => {
+      const detail = (e as CustomEvent<{ focusedSkill?: string }> | undefined)?.detail;
+      if (detail?.focusedSkill) {
+        setFocusedSkill(detail.focusedSkill);
+        try { localStorage.setItem("ishti-focused-skill", detail.focusedSkill); } catch {}
+      } else {
+        clearFocusedSkill();
+      }
+      void newChat();
+    };
+    window.addEventListener("ishti-start-new-chat", handleStartNewChat);
+    return () => window.removeEventListener("ishti-start-new-chat", handleStartNewChat);
+  }, [newChat, clearFocusedSkill]);
 
   const adjustTextareaHeight = useCallback(() => {
     if (box.current) {
@@ -577,8 +344,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   }, []);
 
   const addUploads = useCallback(async (files: FileList | null) => {
-    if (!files?.length || sessionLoadPending.current) return;
-    const generation = sessionLoadGeneration.current;
+    if (!files?.length) return;
     setUploading(true);
     setUploadError("");
     try {
@@ -591,20 +357,16 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
         form.append("file", file);
         const response = await fetch("/api/upload", { method: "POST", body: form });
         const data = await response.json().catch(() => ({}));
-        if (generation !== sessionLoadGeneration.current) return;
         if (!response.ok) throw new Error(data?.error || `Upload failed (${response.status})`);
         setUploads((current) => [...current, { name: data.name || file.name, mention: data.mention, size: data.size || file.size }]);
         totalBytes += file.size;
         totalCount += 1;
       }
     } catch (err) {
-      if (generation !== sessionLoadGeneration.current) return;
       setUploadError(err instanceof Error ? err.message : String(err));
     } finally {
-      if (generation === sessionLoadGeneration.current) {
-        setUploading(false);
-        if (uploadInput.current) uploadInput.current.value = "";
-      }
+      setUploading(false);
+      if (uploadInput.current) uploadInput.current.value = "";
     }
   }, [uploads]);
 
@@ -616,94 +378,22 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     }
   }, [addUploads]);
 
-  useEffect(() => {
-    adjustTextareaHeight();
-  }, [input, adjustTextareaHeight]);
+  useEffect(() => { adjustTextareaHeight(); }, [input, adjustTextareaHeight]);
 
   async function send(text: string) {
-    // Enter can submit a form even while the disabled send button is visible.
-    // Keep an in-flight attachment upload from being silently omitted.
-    if (uploading || sessionLoadPending.current) return;
     text = [text.trim(), ...uploads.map((f) => f.mention)].filter(Boolean).join("\n");
     if (!text) return;
     setUploads([]);
-    isInitialLoad.current = false;
     setInput("");
-    if (box.current) {
-      box.current.style.height = "40px";
-    }
-    if (!canStart) { setQueue((q) => [...q, text]); return; }
-    const generation = sessionLoadGeneration.current;
-    const targetSession = sessionId;
-    let textToSend = text;
+    if (box.current) box.current.style.height = "40px";
     if (focusedSkill && !text.toLowerCase().startsWith("[skill:") && !text.toLowerCase().startsWith("/use ") && !text.toLowerCase().startsWith("/skill ")) {
-      textToSend = `[skill:${focusedSkill}] ${text}`;
+      text = `[skill:${focusedSkill}] ${text}`;
     }
-    const reply: Msg = { id: nextId++, role: "ishti", text: "", events: [], live: true, sources: [], request: textToSend };
-    setMsgs((all) => [...all, { id: nextId++, role: "user", text: textToSend, events: [], live: false, sources: [] }, reply]);
-    setGraphFor(reply.id);
-    try {
-      const res: Result = await streamChat(textToSend, targetSession, {
-        event: (e) => { if (generation === sessionLoadGeneration.current) patch(reply.id, (m) => ({ ...m, events: [...m.events, e] })); },
-        token: (t) => { if (generation === sessionLoadGeneration.current) patch(reply.id, (m) => ({ ...m, text: m.text + t })); },
-      });
-      if (generation !== sessionLoadGeneration.current) return;
-      setSessionId(res.session_id);
-      try {
-        localStorage.setItem("ishti-session-id", res.session_id);
-        if (window.location.hash.startsWith("#chat") || !window.location.hash) {
-          window.history.replaceState(null, "", `#chat/${res.session_id}`);
-        }
-      } catch {}
-      patch(reply.id, (m) => ({ ...m, text: res.final_answer, sources: res.sources ?? [], live: false,
-        messageId: res.message_id ?? undefined }));
-      loadSessions();
-      try { window.dispatchEvent(new CustomEvent("ishti-chat-finished")); } catch {}
-    } catch (err) {
-      if (generation !== sessionLoadGeneration.current) return;
-      patch(reply.id, (m) => ({ ...m, text: `Couldn't reach ISHTI: ${(err as Error).message}`, live: false }));
-      try { window.dispatchEvent(new CustomEvent("ishti-chat-finished")); } catch {}
-    }
+    // Single v2 send path: durable, idempotent on client_msg_id (WP1). No legacy stream here.
+    let chatId = chatStore.activeChatId;
+    if (!chatId) chatId = (await chatStore.newChat()).chat_id;
+    await chatStore.send(chatId, text);
   }
-
-  async function rateAnswer(messageId: string, rating: "positive" | "negative", reason = "") {
-    if (!sessionId || feedbackBusy || sessionLoadPending.current) return;
-    const targetSession = sessionId;
-    const generation = sessionLoadGeneration.current;
-    setFeedbackBusy(messageId);
-    setFeedbackError(null);
-    try {
-      const result = await postJSON<{
-        rating: "positive" | "negative";
-        revision?: { id: string; content: string; sources?: Source[]; metadata?: { revision_of?: string; request?: string } } | null;
-        error?: string | null;
-      }>(`/api/sessions/${targetSession}/feedback`, { message_id: messageId, rating, reason });
-      if (generation !== sessionLoadGeneration.current || targetSession !== sessionId) return;
-      setMsgs((all) => {
-        const updated = all.map((m) => m.messageId === messageId ? { ...m, rating: result.rating } : m);
-        if (!result.revision || updated.some((m) => m.messageId === result.revision?.id)) return updated;
-        return [...updated, { id: nextId++, role: "ishti", text: result.revision.content,
-          events: [], live: false, sources: result.revision.sources ?? [], messageId: result.revision.id,
-          revisionOf: result.revision.metadata?.revision_of, request: result.revision.metadata?.request }];
-      });
-      setFeedbackReasonFor(null);
-      setFeedbackReason("");
-      if (result.error) setFeedbackError({ messageId, text: result.error });
-      loadSessions();
-    } catch (error) {
-      if (generation !== sessionLoadGeneration.current) return;
-      setFeedbackError({ messageId, text: error instanceof Error ? error.message : "Feedback could not be recorded" });
-    } finally {
-      if (generation === sessionLoadGeneration.current) setFeedbackBusy(null);
-    }
-  }
-
-  useEffect(() => {
-    if (!canStart || !queue.length) return;
-    const [next, ...rest] = queue;
-    setQueue(rest);
-    send(next);
-  }, [canStart, queue]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function toggleMic() {
     if (recording && recorder.current) { recorder.current.stop(); return; }
@@ -757,18 +447,81 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     }
   }
 
-  const graphMsg = msgs.find((m) => m.id === graphFor);
-  const turns: Turn[] = msgs.filter((m) => m.role === "ishti" && m.request).map((m) => ({
-    question: m.request!, skill: (m.events.findLast((e) => e.type === "done")?.skill as string | undefined)
-      ?? (m.events.find((e) => e.type === "route")?.skill as string | undefined) ?? null,
-    ms: m.events.findLast((e) => e.type === "done")?.ms,
-  }));
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
+  const renderMessage = (m: StoreMessage) => (
+    <motion.div key={m.message_id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.22, ease: "easeOut" }}
+      className={m.role === "user" ? "flex justify-end min-w-0" : "flex gap-3 min-w-0 max-w-full"}>
+      {m.role === "user" ? (
+        <div
+          className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-accent-foreground shadow-xs"
+          style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-leading)" }}
+        >
+          {(() => {
+            const skillMatch = m.text.match(/^\[skill:([a-z0-9_-]+)\]\s*(.*)$/is);
+            if (skillMatch) {
+              return (
+                <>
+                  <span className="inline-block mr-2 rounded-md bg-white/25 px-1.5 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider">
+                    {skillMatch[1]}
+                  </span>
+                  {skillMatch[2]}
+                </>
+              );
+            }
+            return m.text;
+          })()}
+        </div>
+      ) : (
+        <>
+          <IshtiBrand variant="icon" size={32} className="mt-0.5 shrink-0 shadow-xs" />
+          <div
+            className="min-w-0 flex-1 max-w-full overflow-hidden"
+            style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-leading)" }}
+          >
+            <Markdown text={m.text} />
+            <MediaPreview text={m.text} onSend={(p) => { setInput(`send "${p}" on whatsapp to `); box.current?.focus(); }} />
+            <Sources run={m.run_id ? chatStore.runs.get(m.run_id) : undefined} />
+            {/* WP6: channel tag for messages that arrived via WhatsApp/Telegram commands */}
+            {m.channel && m.channel !== "text" && (
+              <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground" data-testid={`channel-tag-${m.channel}`}>
+                via {m.channel}
+              </span>
+            )}
+            {runUnverified(chatStore.runs.get(m.run_id) || null) && (
+              <UnverifiedBanner detail={runUnverified(chatStore.runs.get(m.run_id) || null)} />
+            )}
+            <div className="mt-1 flex items-center gap-2">
+              {/* WP2: v2 feedback bound to message_id + run_id (replaces the legacy single-chat rating) */}
+              {showFeedback && <FeedbackPanel messageId={m.message_id} runId={m.run_id} />}
+              {(chatStore.runs.get(m.run_id)?.steps.length || 0) > 0 && (
+                <button onClick={() => setGraphFor(m.message_id)}
+                  className="text-[11px] text-muted-foreground transition-colors hover:text-accent cursor-pointer">
+                  View activity graph
+                </button>
+              )}
+            </div>
+            {/* T2 quick-replies: only the orchestrator asks, only the owner answers */}
+            {m.text && /\(yes\/no\)\s*$/i.test(m.text) && (
+              <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
+                className="mt-2.5 flex flex-wrap gap-2">
+                <button onClick={() => void send("yes")}
+                  className="rounded-xl bg-accent px-4 py-2 text-xs font-semibold text-white shadow-xs transition-transform active:scale-95 cursor-pointer hover:opacity-90">Go ahead</button>
+                <button onClick={() => void send("no")}
+                  className="rounded-xl border border-border px-4 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted cursor-pointer">Cancel</button>
+              </motion.div>
+            )}
+          </div>
+        </>
+      )}
+    </motion.div>
+  );
+
   return (
     <div className="relative flex h-full min-h-0 w-full overflow-hidden">
-      {/* Side Recent Chats panel for Chat Section */}
+      {/* Side Recent Chats panel: the v2 chat list (CONTRACT §14 GET /api/chats) */}
       <AnimatePresence initial={false}>
         {showHistory && (
           <motion.aside
@@ -807,31 +560,34 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                     title={selecting ? "Leave selection mode" : "Select chats"}
                     className={cn(
                       "rounded-lg border px-2 py-1 text-xs font-medium transition-colors cursor-pointer",
-                      selecting
-                        ? "border-accent bg-accent-soft text-accent"
-                        : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+                      selecting ? "border-accent bg-accent-soft text-accent" : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
                     )}
                   >
                     {selecting ? "Cancel" : "Select"}
                   </button>
                   <button
                     type="button"
-                    onClick={newChat}
+                    onClick={() => void newChat()}
                     className="flex items-center gap-1 rounded-lg bg-accent-soft px-2 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent hover:text-white cursor-pointer"
                   >
                     <Plus className="h-3.5 w-3.5" /> New
                   </button>
                 </div>
               </div>
+              <div className="border-b border-border px-2.5 pb-2.5 pt-1">
+                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search chats…"
+                  aria-label="Search chats" spellCheck={false}
+                  className="w-full rounded-lg border border-border bg-muted/30 px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-accent" />
+              </div>
               <div className="scroll-thin flex-1 min-h-0 space-y-1.5 overflow-y-auto p-2.5">
-                {sessions.length ? (
-                  sessions.map((x) => {
-                    const isSelected = sessionId === x.session_id;
+                {visibleChats.length ? (
+                  visibleChats.map((c) => {
+                    const isSelected = activeChatId === c.chat_id;
                     return (
                       <div
-                        key={x.session_id}
-                        onClick={() => (selecting ? toggleSelected(x.session_id) : selectSession(x.session_id))}
-                        onDoubleClick={(e) => { if (!selecting) { e.stopPropagation(); setRenaming(x.session_id); setRenameDraft(x.title); } }}
+                        key={c.chat_id}
+                        onClick={() => (selecting ? toggleSelected(c.chat_id) : chatStore.setActiveChat(c.chat_id))}
+                        onDoubleClick={(e) => { if (!selecting) { e.stopPropagation(); setRenaming(c.chat_id); setRenameDraft(c.title || ""); } }}
                         className={cn(
                           "group relative flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm transition-colors duration-150",
                           isSelected
@@ -839,91 +595,56 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                             : "border-border/60 dark:border-white/10 bg-card/40 dark:bg-card/20 text-muted-foreground hover:border-accent/40 hover:bg-card/80 dark:hover:bg-card/45 hover:text-foreground",
                         )}
                       >
-                        {/* Active vertical indicator bar on the left */}
                         {isSelected && (
                           <div className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-accent shadow-[0_0_10px_var(--color-accent)]" />
                         )}
-
-                        {/* Selection checkbox (select mode only) */}
                         {selecting && (
-                          <span
-                            className={cn(
-                              "grid h-4 w-4 shrink-0 place-items-center rounded border transition-colors",
-                              selected.has(x.session_id) ? "border-accent bg-accent text-white" : "border-border",
-                            )}
-                          >
-                            {selected.has(x.session_id) && <Check className="h-3 w-3" />}
+                          <span className={cn("grid h-4 w-4 shrink-0 place-items-center rounded border transition-colors",
+                            selected.has(c.chat_id) ? "border-accent bg-accent text-white" : "border-border")}>
+                            {selected.has(c.chat_id) && <Check className="h-3 w-3" />}
                           </span>
                         )}
-
-                        {/* Chat Icon */}
                         <MessageSquare
                           className={cn(
                             "h-4 w-4 shrink-0 transition-colors",
-                            isSelected
-                              ? "text-accent"
-                              : "text-muted-foreground/60 group-hover:text-muted-foreground"
+                            isSelected ? "text-accent" : "text-muted-foreground/60 group-hover:text-muted-foreground"
                           )}
                         />
-
-                        {/* Topic Title (click the pencil or double-click to rename: Enter saves, Esc cancels) */}
-                        {renaming === x.session_id ? (
-                          <input
-                            autoFocus
-                            value={renameDraft}
-                            onClick={(e) => e.stopPropagation()}
+                        {renaming === c.chat_id ? (
+                          <input autoFocus value={renameDraft} onClick={(e) => e.stopPropagation()}
                             onChange={(e) => setRenameDraft(e.target.value)}
                             onKeyDown={(e) => {
-                              if (e.key === "Enter") { e.preventDefault(); saveRename(x.session_id); }
+                              if (e.key === "Enter") { e.preventDefault(); saveRename(c.chat_id); }
                               if (e.key === "Escape") { e.preventDefault(); setRenaming(null); }
                             }}
-                            onBlur={() => saveRename(x.session_id)}
+                            onBlur={() => saveRename(c.chat_id)}
                             className="min-w-0 flex-1 rounded-md border border-accent/60 bg-background px-1.5 py-0.5 text-[13px] text-foreground outline-none"
                           />
                         ) : (
-                          <span
-                            className={cn(
-                              "min-w-0 flex-1 truncate text-[13.5px] leading-snug",
-                              isSelected
-                                ? "text-foreground font-semibold"
-                                : "text-foreground/80 group-hover:text-foreground font-medium"
-                            )}
-                          >
-                            {x.title}
+                          <span className={cn("min-w-0 flex-1 truncate text-[13.5px] leading-snug",
+                            isSelected ? "text-foreground font-semibold" : "text-foreground/80 group-hover:text-foreground font-medium")}>
+                            {c.title || "New chat"}
                           </span>
                         )}
-
-                        {/* Trailing Timestamp & Action (fixed width & absolute overlay so chat items never shift or move) */}
+                        {c.unread > 0 && (
+                          <span data-testid="chat-unread" className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold text-accent-foreground">
+                            {c.unread}
+                          </span>
+                        )}
                         <div className="shrink-0 relative flex items-center justify-end h-5 min-w-[50px] ml-1">
-                          <span
-                            className={cn(
-                              "text-[10.5px] tabular-nums transition-opacity duration-150",
-                              "group-hover:opacity-0 group-has-[[data-state=open]]:opacity-0",
-                              isSelected
-                                ? "rounded-md bg-accent/20 px-1.5 py-0.5 text-accent font-semibold text-[10px]"
-                                : "text-muted-foreground/60"
-                            )}
-                          >
-                            {ago(x.updated_at)}
+                          <span className={cn("text-[10.5px] tabular-nums transition-opacity duration-150 group-hover:opacity-0",
+                            isSelected ? "rounded-md bg-accent/20 px-1.5 py-0.5 text-accent font-semibold text-[10px]" : "text-muted-foreground/60")}>
+                            {ago(c.updated_at)}
                           </span>
                           <div className="absolute right-0 flex items-center gap-0.5 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150">
-                            <button
-                              type="button"
-                              title="Rename chat"
-                              onClick={(e) => { e.stopPropagation(); setRenaming(x.session_id); setRenameDraft(x.title); }}
-                              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
-                            >
+                            <button type="button" title="Rename chat"
+                              onClick={(e) => { e.stopPropagation(); setRenaming(c.chat_id); setRenameDraft(c.title || ""); }}
+                              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer">
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
-                            <button
-                              type="button"
-                              title="Delete chat"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setDeleteTarget({ id: x.session_id, title: x.title });
-                              }}
-                              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger cursor-pointer"
-                            >
+                            <button type="button" title="Delete chat"
+                              onClick={(e) => { e.stopPropagation(); setDeleteTarget({ id: c.chat_id, title: c.title || "" }); }}
+                              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger cursor-pointer">
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
                           </div>
@@ -933,57 +654,38 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                   })
                 ) : (
                   <div className="rounded-xl border border-dashed border-border/70 p-6 text-center text-xs text-muted-foreground">
-                    Your chats appear here.
+                    {chatStore.ready ? (search ? "No chats match that search." : "Your chats appear here.") : "Loading chats…"}
                   </div>
                 )}
               </div>
-
-              {/* Select-mode action bar: select all, delete (confirmed) or share the chosen chats */}
               {selecting && (
                 <div className="shrink-0 border-t border-border bg-card/60 p-2.5">
                   <div className="flex items-center justify-between gap-1.5 px-0.5 pb-2 text-[11px] text-muted-foreground">
-                    <button
-                      type="button"
-                      onClick={() => setSelected(allSelected ? new Set() : new Set(sessions.map((s) => s.session_id)))}
-                      className="font-medium transition-colors hover:text-foreground cursor-pointer"
-                    >
+                    <button type="button" onClick={() => setSelected(allSelected ? new Set() : new Set(visibleChats.map((c) => c.chat_id)))}
+                      className="font-medium transition-colors hover:text-foreground cursor-pointer">
                       {allSelected ? "Clear all" : "Select all"}
                     </button>
                     <span>{selected.size} selected</span>
                   </div>
                   {confirmingDelete ? (
                     <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={deleteSelected}
-                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-danger px-2 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-danger/90 cursor-pointer"
-                      >
+                      <button type="button" onClick={() => void confirmDelete()}
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-danger px-2 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-danger/90 cursor-pointer">
                         <Trash2 className="h-3.5 w-3.5" /> Delete {selected.size}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => setConfirmingDelete(false)}
-                        className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
-                      >
+                      <button type="button" onClick={() => setConfirmingDelete(false)}
+                        className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer">
                         Keep
                       </button>
                     </div>
                   ) : (
                     <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        disabled={!selected.size}
-                        onClick={() => setConfirmingDelete(true)}
-                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-danger/90 px-2 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-danger disabled:cursor-default disabled:opacity-40 cursor-pointer"
-                      >
+                      <button type="button" disabled={!selected.size} onClick={() => setConfirmingDelete(true)}
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-danger/90 px-2 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-danger disabled:cursor-default disabled:opacity-40 cursor-pointer">
                         <Trash2 className="h-3.5 w-3.5" /> Delete
                       </button>
-                      <button
-                        type="button"
-                        disabled={!selected.size}
-                        onClick={openShare}
-                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-border px-2 py-1.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted disabled:cursor-default disabled:opacity-40 cursor-pointer"
-                      >
+                      <button type="button" disabled={!selected.size} onClick={() => setShareOpen(true)}
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-border px-2 py-1.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted disabled:cursor-default disabled:opacity-40 cursor-pointer">
                         <Copy className="h-3.5 w-3.5" /> Share
                       </button>
                     </div>
@@ -1023,141 +725,6 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
         )}
       </AnimatePresence>
 
-      {/* Undo toast: 8 s to bring deleted chats back (they wait in data/sessions/.trash).
-          No AnimatePresence here on purpose: an interrupted exit animation used to leave the toast
-          in the DOM (and on top of the action bar, eating clicks). It unmounts the moment undo clears. */}
-      {undo && (
-          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-            className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
-            <div className="flex items-center gap-3 rounded-2xl border border-border bg-background/95 px-4 py-2.5 shadow-2xl backdrop-blur-md">
-              <Trash2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <span className="text-xs text-foreground">
-                {undo.ids.length} chat{undo.ids.length > 1 ? "s" : ""} deleted
-              </span>
-              <button type="button" onClick={undoDelete}
-                className="rounded-lg bg-accent px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-accent/90 cursor-pointer">
-                Undo
-              </button>
-              <button type="button" onClick={() => setUndo(null)} title="Dismiss"
-                className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted cursor-pointer">
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </motion.div>
-      )}
-
-      {/* Delete confirmation dialog: Yes / No option */}
-      {deleteTarget && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
-          onClick={() => setDeleteTarget(null)}
-        >
-          <div
-            className="w-full max-w-sm rounded-2xl border border-border bg-background p-5 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start gap-3">
-              <div className="grid h-10 w-10 place-items-center rounded-xl bg-danger/15 text-danger shrink-0">
-                <Trash2 className="h-5 w-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <h3 className="text-sm font-semibold text-foreground">Delete this chat?</h3>
-                <p className="mt-1 text-xs text-muted-foreground truncate font-medium">
-                  {deleteTarget.title || "Untitled Conversation"}
-                </p>
-              </div>
-            </div>
-            <p className="mt-3 text-xs text-muted-foreground leading-relaxed">
-              Are you sure you want to delete this conversation? You can still undo this within 8 seconds after deleting.
-            </p>
-            <div className="mt-5 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setDeleteTarget(null)}
-                className="rounded-xl border border-border px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
-              >
-                No, keep
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const targetId = deleteTarget.id;
-                  setDeleteTarget(null);
-                  void deleteSession(targetId);
-                }}
-                className="rounded-xl bg-danger px-4 py-1.5 text-xs font-semibold text-white hover:bg-danger/90 transition-colors shadow-xs cursor-pointer"
-              >
-                Yes, delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Share: save the chosen chats to a local Markdown/PDF file, or copy them as text. Nothing is uploaded. */}
-      {shareOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-2xl border border-border bg-background p-5 shadow-2xl">
-            <h3 className="text-sm font-semibold text-foreground">
-              Share {selected.size} chat{selected.size > 1 ? "s" : ""}
-            </h3>
-            <p className="mt-1 text-[11px] text-muted-foreground">Saved on this PC only - nothing is uploaded.</p>
-            <div className="mt-4 space-y-3">
-              <div>
-                <div className="text-[11px] font-medium text-muted-foreground">Format</div>
-                <div className="mt-1 flex gap-2">
-                  {(["md", "pdf"] as const).map((f) => (
-                    <button key={f} type="button" onClick={() => { setShareFormat(f); setShareName((n) => n.replace(/\.(md|pdf)$/i, `.${f}`)); }}
-                      className={cn("rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer",
-                        shareFormat === f ? "border-accent bg-accent-soft text-accent" : "border-border text-muted-foreground hover:text-foreground")}>
-                      {f === "md" ? "Markdown (.md)" : "PDF (.pdf)"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <div className="text-[11px] font-medium text-muted-foreground">Folder (empty = ISHTI's own exports folder)</div>
-                <input value={shareDir} onChange={(e) => setShareDir(e.target.value)} spellCheck={false}
-                  placeholder={"e.g. D:\\Documents\\ISHTI"}
-                  className="mt-1 w-full rounded-lg border border-border bg-muted/30 px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-accent" />
-              </div>
-              <div>
-                <div className="text-[11px] font-medium text-muted-foreground">File name</div>
-                <input value={shareName} onChange={(e) => setShareName(e.target.value)} spellCheck={false}
-                  className="mt-1 w-full rounded-lg border border-border bg-muted/30 px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-accent" />
-              </div>
-            </div>
-            {shareError && <p className="mt-3 text-[11px] text-danger">{shareError}</p>}
-            {shareResult?.copied && <p className="mt-3 text-[11px] text-emerald-500">Copied to the clipboard.</p>}
-            {shareResult?.path && (
-              <div className="mt-3 rounded-lg border border-border/60 bg-muted/30 p-2">
-                <p className="break-all text-[11px] text-muted-foreground">{shareResult.path}</p>
-                <button type="button" onClick={() => postJSON("/api/reveal", { path: shareResult.path }).catch(() => {})}
-                  className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-accent hover:underline cursor-pointer">
-                  <FolderOpen className="h-3 w-3" /> Show in folder
-                </button>
-              </div>
-            )}
-            <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
-              <button type="button" onClick={copySelectedAsText}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer">
-                <Copy className="h-3.5 w-3.5" /> Copy as text
-              </button>
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => { setShareOpen(false); setShareResult(null); setShareError(""); }}
-                  className="rounded-xl border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted cursor-pointer">
-                  Close
-                </button>
-                <button type="button" disabled={shareBusy} onClick={doExport}
-                  className="rounded-xl bg-accent px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-accent/90 disabled:opacity-50 cursor-pointer">
-                  {shareBusy ? "Saving…" : `Save ${shareFormat.toUpperCase()}`}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Main chat conversation view */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex items-center justify-between border-b border-border px-4 sm:px-6 py-3 shrink-0">
@@ -1180,19 +747,13 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
             >
               {showHistory ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
             </button>
-            <AgentOrb
-              events={msgs.find((m) => m.live)?.events}
-              live={busy}
-              recording={recording}
-              size={42}
-              className="shrink-0"
-            />
+            <AgentOrb live={busy} recording={recording} size={42} className="shrink-0" />
             <div>
               <IshtiBrand
                 variant="wordmark"
                 height={26}
                 className="translate-y-0.5 cursor-pointer hover:opacity-80 transition-opacity"
-                onClick={newChat}
+                onClick={() => void newChat()}
                 title="ISHTI - Start New Chat"
               />
               <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 min-w-0">
@@ -1202,8 +763,10 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                   <span className="text-amber-500 font-medium">Writing down what you said…</span>
                 ) : busy ? (
                   <span className="text-accent font-medium truncate">
-                    {running > 1 ? `Working on ${running} tasks` : resolveAgentState(msgs.find((m) => m.live)?.events, true).label}
+                    {liveRuns.length > 1 ? `Working on ${liveRuns.length} tasks` : "Working on it…"}
                   </span>
+                ) : chatStore.connection === "reconnecting" ? (
+                  <span className="text-amber-500 font-medium">Reconnecting to the server…</span>
                 ) : boot && !boot.ready ? (
                   <span className="text-muted-foreground">{boot.unreachable ? "Waiting for the server…" : `Starting up · ${boot.progress}% — you can already type`}</span>
                 ) : (
@@ -1222,11 +785,12 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               aria-pressed={showFeedback} title="Show or hide answer feedback controls">
               Feedback {showFeedback ? "On" : "Off"}
             </button>
-            <button onClick={() => setGraphFor(graphFor ? null : msgs.filter((m) => m.role === "ishti").at(-1)?.id ?? null)}
-              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer">
+            <button onClick={() => setGraphFor(graphFor ? null : `run:${pendingRun?.run_id || ""}`)}
+              disabled={!busy && !graphRun}
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:cursor-default cursor-pointer">
               <Network className="h-4 w-4" /> Activity
             </button>
-            <button onClick={newChat}
+            <button onClick={() => void newChat()}
               className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer">
               <Plus className="h-4 w-4" /> New chat
             </button>
@@ -1234,14 +798,14 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
         </header>
 
         <div ref={scrollContainer} className="scroll-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-          {msgs.length === 0 ? (
+          {storeMsgs.length === 0 && !pendingRun && liveTurns.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-6 px-6">
               <motion.div
                 initial={{ scale: 0.9, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ duration: 0.4 }}
                 className="relative flex flex-col items-center justify-center cursor-pointer group select-none"
-                onClick={newChat}
+                onClick={() => void newChat()}
                 title="ISHTI - Start New Chat"
               >
                 <div className="absolute inset-0 -m-6 rounded-3xl bg-accent/15 blur-2xl pointer-events-none" />
@@ -1265,106 +829,50 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                   Your private executive AI workstation. What would you like to accomplish today?
                 </p>
               </div>
-
-                            </div>
+            </div>
           ) : (
             <div className="mx-auto w-full max-w-4xl xl:max-w-5xl space-y-5 px-4 sm:px-6 py-6 min-w-0">
               <AnimatePresence initial={false}>
-                {msgs.map((m) => (
-                  <motion.div key={m.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.22, ease: "easeOut" }}
-                    className={m.role === "user" ? "flex justify-end min-w-0" : "flex gap-3 min-w-0 max-w-full"}>
-                    {m.role === "user" ? (
-                      <div
-                        className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-accent-foreground shadow-xs"
-                        style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-leading)" }}
-                      >
-                        {(() => {
-                          const skillMatch = m.text.match(/^\[skill:([a-z0-9_-]+)\]\s*(.*)$/is);
-                          if (skillMatch) {
-                            return (
-                              <>
-                                <span className="inline-block mr-2 rounded-md bg-white/25 px-1.5 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider">
-                                  {skillMatch[1]}
-                                </span>
-                                {skillMatch[2]}
-                              </>
-                            );
-                          }
-                          return m.text;
-                        })()}
+                {storeMsgs.map(renderMessage)}
+                {liveTurns.map((t, i) => (
+                  <div key={`live-${i}`} className="space-y-3">
+                    <div className="flex justify-end min-w-0">
+                      <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-accent-foreground shadow-xs">
+                        {t.user}
                       </div>
-                    ) : (
-                      <>
-                        <IshtiBrand variant="icon" size={32} className="mt-0.5 shrink-0 shadow-xs" />
-                        <div
-                          className="min-w-0 flex-1 max-w-full overflow-hidden"
-                          style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-leading)" }}
-                        >
-                          <Thinking events={m.events} live={m.live} />
-                          {(() => {
-                            const scan = m.events.findLast((e) => e.type === "tool" && e.name === "scan");
-                            const plan = m.events.findLast((e) => e.type === "tool" && e.name === "plan");
-                            return scan ? <FolderScan scan={scan} plan={plan} /> : null;
-                          })()}
-                          {m.text ? <Markdown text={m.text} />
-                                  : m.live && <span className="inline-block h-4 w-2 animate-pulse rounded-sm bg-accent/60" />}
-                          {!m.live && <MediaPreview text={m.text} onSend={(p) => { setInput(`send "${p}" on whatsapp to `); box.current?.focus(); }} />}
-                          <Sources sources={m.sources} />
-                          {m.revisionOf && <p className="mt-1 text-[11px] text-muted-foreground">Revised answer after your feedback · no action was repeated</p>}
-                          {showFeedback && !m.live && m.messageId && !/\(yes\/no\)\s*$/i.test(m.text) && (
-                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-                              <button type="button" onClick={() => void rateAnswer(m.messageId!, "positive")}
-                                disabled={!!feedbackBusy} aria-label="This answer was helpful" aria-pressed={m.rating === "positive"}
-                                className={cn("inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 hover:text-foreground disabled:opacity-50", m.rating === "positive" && "text-emerald-500 border-emerald-500/40")}>
-                                <ThumbsUp className="h-3.5 w-3.5" /> Helpful
-                              </button>
-                              <button type="button" onClick={() => void rateAnswer(m.messageId!, "negative")}
-                                disabled={!!feedbackBusy} aria-label="This answer was wrong; try another answer" aria-pressed={m.rating === "negative"}
-                                className={cn("inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 hover:text-foreground disabled:opacity-50", m.rating === "negative" && "text-amber-500 border-amber-500/40")}>
-                                <ThumbsDown className="h-3.5 w-3.5" /> Try again
-                              </button>
-                              <button type="button" onClick={() => { setFeedbackReasonFor(m.messageId!); setFeedbackReason(""); }}
-                                className="hover:text-foreground">Explain what was wrong</button>
-                              {feedbackBusy === m.messageId && <span role="status">Reviewing this answer…</span>}
-                              {feedbackReasonFor === m.messageId && (
-                                <div className="flex w-full gap-2">
-                                  <input value={feedbackReason} onChange={(event) => setFeedbackReason(event.target.value.slice(0, 1000))}
-                                    placeholder="Optional detail for a better revision" aria-label="What was wrong with this answer"
-                                    className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-1.5 text-foreground" />
-                                  <button type="button" onClick={() => void rateAnswer(m.messageId!, "negative", feedbackReason)}
-                                    disabled={!!feedbackBusy} className="rounded-lg bg-accent px-2 py-1.5 text-white disabled:opacity-50">Revise</button>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          {feedbackError && feedbackError.messageId === m.messageId && <p role="alert" className="mt-1 text-xs text-destructive">{feedbackError.text}</p>}
-                          {!m.live && m.id === msgs.at(-1)?.id && /\(yes\/no\)\s*$/i.test(m.text) && (
-                            <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
-                              className="mt-2.5 flex flex-wrap gap-2">
-                              <button onClick={() => send("yes")}
-                                className="rounded-xl bg-accent px-4 py-2 text-xs font-semibold text-white shadow-xs transition-transform active:scale-95 cursor-pointer hover:opacity-90">Go ahead</button>
-                              <button onClick={() => send("no")}
-                                className="rounded-xl border border-border px-4 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted cursor-pointer">Cancel</button>
-                            </motion.div>
-                          )}
-                          {!m.live && m.events.length > 0 && (
-                            <button onClick={() => setGraphFor(m.id)}
-                              className="mt-1.5 text-[11px] text-muted-foreground transition-colors hover:text-accent cursor-pointer">
-                              View activity graph</button>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </motion.div>
+                    </div>
+                    <div className="flex gap-3 min-w-0 max-w-full">
+                      <IshtiBrand variant="icon" size={32} className="mt-0.5 shrink-0 shadow-xs" />
+                      <div className="min-w-0 flex-1 max-w-full overflow-hidden">
+                        <Markdown text={t.reply} />
+                      </div>
+                    </div>
+                  </div>
                 ))}
+                {pendingRun && (
+                  <motion.div key={pendingRun.run_id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.22, ease: "easeOut" }} className="flex gap-3 min-w-0 max-w-full" data-testid="pending-run">
+                    <IshtiBrand variant="icon" size={32} className="mt-0.5 shrink-0 shadow-xs" />
+                    <div className="min-w-0 flex-1 max-w-full overflow-hidden space-y-2">
+                      <RunStatusCard run={pendingRun} onCancel={(id) => void chatStore.cancelRun(id)} />
+                      {pendingRun.text ? (
+                        <>
+                          <StreamedDraftBanner />
+                          <div data-testid="run-draft">
+                            <Markdown text={pendingRun.text} />
+                          </div>
+                        </>
+                      ) : null}
+                    </div>
+                  </motion.div>
+                )}
               </AnimatePresence>
               <div ref={bottom} />
             </div>
           )}
         </div>
 
-        <form onSubmit={(e) => { e.preventDefault(); if (!recording && !transcribing && !uploading) send(input); }}
+        <form onSubmit={(e) => { e.preventDefault(); if (!recording && !transcribing && !uploading) void send(input); }}
           onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }}
           onDrop={(e) => { if (e.dataTransfer.files.length) { e.preventDefault(); void addUploads(e.dataTransfer.files); } }}
           className="px-4 sm:px-6 pb-5 pt-1 shrink-0">
@@ -1379,25 +887,6 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               {uploadError && <span role="alert" className="text-danger">{uploadError}</span>}
             </div>
           )}
-          <AnimatePresence initial={false}>
-            {queue.length > 0 && (
-              <motion.ul initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
-                aria-label="Queued messages" className="mx-auto mb-2 flex w-full max-w-4xl xl:max-w-5xl flex-col gap-1">
-                {queue.map((q, i) => (
-                  <motion.li key={`${i}-${q}`} layout initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
-                    className="flex items-center gap-2 rounded-xl border border-dashed border-border bg-muted/40 px-3 py-1.5 text-xs">
-                    <span className="shrink-0 font-medium text-accent">{i === 0 ? "Next" : `#${i + 1}`}</span>
-                    <span className="min-w-0 flex-1 truncate text-muted-foreground">{q}</span>
-                    <button type="button" aria-label="Remove from queue" title="Remove from queue"
-                      onClick={() => setQueue((all) => all.filter((_, j) => j !== i))}
-                      className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer">
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </motion.li>
-                ))}
-              </motion.ul>
-            )}
-          </AnimatePresence>
 
           {focusedSkill && (
             <div className="mx-auto mb-2 flex w-full max-w-4xl xl:max-w-5xl items-center justify-between rounded-xl border border-accent/40 bg-accent/10 px-3.5 py-1.5 shadow-xs">
@@ -1407,7 +896,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                   Target Skill: {focusedSkill}
                 </span>
                 <span className="text-[11px] text-muted-foreground truncate">
-                  Tasks in this session will be executed directly using this skill
+                  Tasks in this chat will be executed directly using this skill
                 </span>
               </div>
               <button
@@ -1430,9 +919,9 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               className="mx-auto w-full max-w-4xl xl:max-w-5xl rounded-2xl"
             >
               <div className="flex w-full items-end gap-2 rounded-2xl border border-border bg-background p-2 shadow-[0_2px_12px_rgba(29,27,46,0.06)] transition-shadow focus-within:shadow-[0_2px_18px_rgba(110,86,207,0.18)]">
-                <textarea ref={box} value={input} onChange={(e) => setInput(e.target.value)} rows={1}
+                <textarea ref={box} value={input} onChange={(e) => { setInput(e.target.value); if (activeChatId) chatStore.setDraft(activeChatId, e.target.value); }} rows={1}
                   onPaste={onComposerPaste}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!recording && !transcribing && !uploading) send(input); } }}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!recording && !transcribing && !uploading) void send(input); } }}
                   placeholder={focusedSkill ? `Assign a task using ${focusedSkill} skill…` : "Ask or tell ISHTI to do anything…"}
                   style={{ fontSize: "var(--chat-input-size)" }}
                   className="scroll-thin max-h-[220px] min-h-[40px] flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 leading-relaxed outline-none placeholder:text-muted-foreground" />
@@ -1446,7 +935,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                   className="flex h-9 items-center gap-1.5 rounded-xl border border-accent/40 px-2.5 text-xs font-semibold text-accent transition-colors hover:bg-accent-soft/40 cursor-pointer">
                   <AudioLines className="h-4 w-4" /> Live
                 </button>
-                <button type="submit" disabled={(!input.trim() && !uploads.length) || uploading || recording || transcribing} title={recording ? "Stop the recording first" : transcribing ? "Writing down what you said…" : canStart ? "Send" : "Queue: runs when a slot is free"}
+                <button type="submit" disabled={(!input.trim() && !uploads.length) || uploading || recording || transcribing} title={recording ? "Stop the recording first" : transcribing ? "Writing down what you said…" : "Send"}
                   className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-white transition-opacity disabled:opacity-40 cursor-pointer">
                   <ArrowUp className="h-4 w-4" />
                 </button>
@@ -1461,9 +950,9 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               className="mx-auto w-full max-w-4xl xl:max-w-5xl rounded-2xl"
             >
               <div className="flex w-full items-end gap-2 rounded-2xl border border-border bg-background p-2 shadow-[0_2px_12px_rgba(29,27,46,0.06)] transition-shadow focus-within:shadow-[0_2px_18px_rgba(110,86,207,0.18)]">
-                <textarea ref={box} value={input} onChange={(e) => setInput(e.target.value)} rows={1}
+                <textarea ref={box} value={input} onChange={(e) => { setInput(e.target.value); if (activeChatId) chatStore.setDraft(activeChatId, e.target.value); }} rows={1}
                   onPaste={onComposerPaste}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!recording && !transcribing && !uploading) send(input); } }}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!recording && !transcribing && !uploading) void send(input); } }}
                   placeholder={focusedSkill ? `Assign a task using ${focusedSkill} skill…` : "Ask or tell ISHTI to do anything…"}
                   style={{ fontSize: "var(--chat-input-size)" }}
                   className="scroll-thin max-h-[220px] min-h-[40px] flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 leading-relaxed outline-none placeholder:text-muted-foreground" />
@@ -1477,7 +966,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                   className="flex h-9 items-center gap-1.5 rounded-xl border border-accent/40 px-2.5 text-xs font-semibold text-accent transition-colors hover:bg-accent-soft/40 cursor-pointer">
                   <AudioLines className="h-4 w-4" /> Live
                 </button>
-                <button type="submit" disabled={(!input.trim() && !uploads.length) || uploading || recording || transcribing} title={recording ? "Stop the recording first" : transcribing ? "Writing down what you said…" : canStart ? "Send" : "Queue: runs when a slot is free"}
+                <button type="submit" disabled={(!input.trim() && !uploads.length) || uploading || recording || transcribing} title={recording ? "Stop the recording first" : transcribing ? "Writing down what you said…" : "Send"}
                   className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-white transition-opacity disabled:opacity-40 cursor-pointer">
                   <ArrowUp className="h-4 w-4" />
                 </button>
@@ -1488,21 +977,109 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
       </div>
 
       <AnimatePresence>
-        {graphMsg && (
+        {liveOpen && (
+          <LiveMode sessionId={activeChatId} onClose={() => setLiveOpen(false)}
+            onTurn={(user, reply) => {
+              setLiveTurns((all) => [...all, { user, reply }]);
+            }} />
+        )}
+      </AnimatePresence>
+
+      {/* Undo toast: 8 s to restore hidden chats (nothing is destroyed server-side) */}
+      {undoOpen && (
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+          className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
+          <div className="flex items-center gap-3 rounded-2xl border border-border bg-background/95 px-4 py-2.5 shadow-2xl backdrop-blur-md">
+            <Trash2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="text-xs text-foreground">Chat deleted</span>
+            <button type="button" onClick={() => { chatStore.undoHide(); setUndoOpen(false); }}
+              className="rounded-lg bg-accent px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-accent/90 cursor-pointer">
+              Undo
+            </button>
+            <button type="button" onClick={() => setUndoOpen(false)} title="Dismiss"
+              className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted cursor-pointer">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Delete confirmation dialog: Yes / No (hides locally; undo restores) */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+          onClick={() => setDeleteTarget(null)}>
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-background p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-danger/15 text-danger shrink-0">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-sm font-semibold text-foreground">Delete this chat?</h3>
+                <p className="mt-1 text-xs text-muted-foreground truncate font-medium">{deleteTarget.title || "Untitled Conversation"}</p>
+              </div>
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground leading-relaxed">
+              The chat is hidden from your list. You can undo for 8 seconds after deleting.
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button type="button" onClick={() => setDeleteTarget(null)}
+                className="rounded-xl border border-border px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer">
+                No, keep
+              </button>
+              <button type="button" onClick={() => { const id = deleteTarget.id; setDeleteTarget(null); chatStore.hideChats([id]); setUndoOpen(true); window.setTimeout(() => setUndoOpen(false), 8000); }}
+                className="rounded-xl bg-danger px-4 py-1.5 text-xs font-semibold text-white hover:bg-danger/90 transition-colors shadow-xs cursor-pointer">
+                Yes, delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Share: copy the selected chats' text locally. Nothing is uploaded. */}
+      {shareOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-background p-5 shadow-2xl">
+            <h3 className="text-sm font-semibold text-foreground">Share {selected.size} chat{selected.size > 1 ? "s" : ""}</h3>
+            <p className="mt-1 text-[11px] text-muted-foreground">Copies the conversation text to your clipboard - nothing is uploaded.</p>
+            <div className="mt-4 space-y-3">
+              <div>
+                <div className="text-[11px] font-medium text-muted-foreground">Format</div>
+                <div className="mt-1 flex gap-2">
+                  {(["md", "pdf"] as const).map((f) => (
+                    <button key={f} type="button" onClick={() => setShareFormat(f)}
+                      className={cn("rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer",
+                        shareFormat === f ? "border-accent bg-accent-soft text-accent" : "border-border text-muted-foreground hover:text-foreground")}>
+                      {f === "md" ? "Markdown (.md)" : "PDF (.pdf)"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            {shareError && <p className="mt-3 text-[11px] text-danger">{shareError}</p>}
+            {shareResult?.copied && <p className="mt-3 text-[11px] text-emerald-500">Copied to the clipboard.</p>}
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button type="button" onClick={() => { setShareOpen(false); setShareResult(null); setShareError(""); }}
+                className="rounded-xl border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted cursor-pointer">
+                Close
+              </button>
+              <button type="button" disabled={!selected.size} onClick={() => void doExport()}
+                className="rounded-xl bg-accent px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-accent/90 disabled:opacity-50 cursor-pointer">
+                Copy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Activity graph: the run's real steps (research/tool/verify) as an SVG trace */}
+      <AnimatePresence>
+        {graphRun && (
           <motion.aside initial={{ x: 40, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 40, opacity: 0 }}
             transition={{ duration: 0.28, ease: "easeOut" }}
             className="scroll-thin absolute inset-y-0 right-0 z-20 flex w-[min(480px,94%)] flex-col gap-3 overflow-y-auto border-l border-border bg-background p-4 shadow-[-12px_0_40px_rgba(29,27,46,0.12)] xl:static xl:z-auto xl:w-[480px] xl:shrink-0 xl:shadow-none">
             <div className="flex items-center justify-between">
-              <div className="flex rounded-xl bg-muted p-0.5 text-xs">
-                {(["answer", "chat"] as const).map((v) => (
-                  <button key={v} onClick={() => setGraphView(v)}
-                    className={`relative rounded-lg px-3 py-1 font-medium transition-colors ${graphView === v ? "text-foreground" : "text-muted-foreground"}`}>
-                    {graphView === v && <motion.span layoutId="graph-tab" className="absolute inset-0 rounded-lg bg-background shadow-sm"
-                      transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
-                    <span className="relative">{v === "answer" ? "This answer" : "This chat"}</span>
-                  </button>
-                ))}
-              </div>
+              <div className="text-sm font-semibold">Activity</div>
               <div className="flex gap-1">
                 <button onClick={() => setFullGraph(true)} title="Expand"
                   className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted cursor-pointer"><Maximize2 className="h-4 w-4" /></button>
@@ -1510,48 +1087,37 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                   <X className="h-4 w-4" /></button>
               </div>
             </div>
-            <div className="truncate text-[11px] text-muted-foreground">
-              {graphView === "answer" ? graphMsg.request : `${turns.length} question${turns.length === 1 ? "" : "s"} in this chat`}</div>
-            {graphView === "answer"
-              ? <ActivityGraph events={graphMsg.events} request={graphMsg.request ?? ""} live={graphMsg.live} />
-              : <ConversationGraph turns={turns} />}
+            <ActivityGraph
+              events={(graphRun.steps || []).map((s, i) => ({ t: i * 1000, type: s.kind as "tool", label: s.label, name: s.kind }))}
+              request={storeMsgs.find((m) => m.run_id === graphRun.run_id)?.text || ""}
+              live={graphRun.state === "running" || graphRun.state === "queued"}
+            />
             <p className="text-[11px] leading-relaxed text-muted-foreground">
-              {graphView === "answer"
-                ? "Every node is a real step. Skills are groups: click one to open or fold its tool calls. Violet = running, green = done, amber = waiting for you, red = failed."
-                : "Each question in this chat, linked to the skill that handled it."}</p>
+              Every node is a real step from this run. Violet = running, green = done, amber = waiting for you, red = failed.
+            </p>
           </motion.aside>
         )}
       </AnimatePresence>
-
       <AnimatePresence>
-        {liveOpen && (
-          <LiveMode sessionId={sessionId} onClose={() => setLiveOpen(false)}
-            onTurn={(user, reply, sid) => {
-              setMsgs((all) => [...all, { id: nextId++, role: "user", text: user, events: [], live: false, sources: [] },
-                { id: nextId++, role: "ishti", text: reply, events: [], live: false, sources: [], request: user }]);
-              if (sid && !sessionId) setSessionId(sid);
-              loadSessions();
-            }} />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {fullGraph && graphMsg && (
+        {fullGraph && graphRun && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
             className="fixed inset-0 z-50 flex flex-col gap-3 bg-background/95 p-6 backdrop-blur-sm"
             onKeyDown={(e) => e.key === "Escape" && setFullGraph(false)}>
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-base font-semibold">{graphView === "answer" ? "Activity" : "This chat"}</div>
-                <div className="text-xs text-muted-foreground">Scroll to zoom · drag to move · {graphView === "answer" ? graphMsg.request : `${turns.length} questions`}</div>
+                <div className="text-base font-semibold">Activity</div>
+                <div className="text-xs text-muted-foreground">Scroll to zoom · drag to move · {graphRun.run_id}</div>
               </div>
               <button onClick={() => setFullGraph(false)} className="rounded-xl border border-border p-2 text-muted-foreground hover:bg-muted cursor-pointer">
                 <Minimize2 className="h-4 w-4" /></button>
             </div>
             <div className="min-h-0 flex-1">
-              {graphView === "answer"
-                ? <ActivityGraph events={graphMsg.events} request={graphMsg.request ?? ""} live={graphMsg.live} full />
-                : <ConversationGraph turns={turns} full />}
+              <ActivityGraph
+                events={(graphRun.steps || []).map((s, i) => ({ t: i * 1000, type: s.kind as "tool", label: s.label, name: s.kind }))}
+                request={storeMsgs.find((m) => m.run_id === graphRun.run_id)?.text || ""}
+                live={graphRun.state === "running" || graphRun.state === "queued"}
+                full
+              />
             </div>
           </motion.div>
         )}

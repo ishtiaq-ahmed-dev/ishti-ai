@@ -53,7 +53,7 @@ import RareFolder from "@/components/rare/folder-component";
 import { CHAT_FONT_SIZES, getChatFontSize, setChatFontSize, type ChatFontSize } from "@/lib/font-size";
 import { cn } from "@/lib/utils";
 import { ModelsCard, VoiceCard, WhisperCard } from "@/components/ModelsVoices";
-import { RemoteControl } from "@/components/RemoteControl";
+// RemoteControl removed (WP5): connector UI lives on the Connectors page only.
 import { ArchitectureCard } from "@/components/ArchitectureCard";
 import { LanguageSettings } from "@/components/LanguageSettings";
 import { PrivacyPanel } from "@/components/PrivacyPanel";
@@ -3813,7 +3813,7 @@ function ChromeProfiles({
   );
 }
 
-export function Settings({ onToggleNav }: { onToggleNav?: () => void }) {
+export function Settings({ onToggleNav, children }: { onToggleNav?: () => void; children?: ReactNode }) {
   const [p, setP] = useState<{
     audio_output: boolean;
     wake_enabled: boolean;
@@ -4319,9 +4319,10 @@ export function Settings({ onToggleNav }: { onToggleNav?: () => void }) {
               />
             </div>
 
-            {/* 5. Remote Control (Telegram / WhatsApp) - Full Width */}
-            <div className="col-span-full">
-              <RemoteControl />
+            {/* 5. Remote Control: REMOVED from Settings (WP5) — WhatsApp/Telegram now live only on
+                the Connectors page. A one-line pointer redirects any saved habit/link. */}
+            <div className="col-span-full rounded-xl border border-border/60 bg-muted/20 p-3 text-xs text-muted-foreground" data-testid="settings-connectors-redirect">
+              WhatsApp &amp; Telegram connectors moved to the <a href="#connectors" className="text-accent hover:underline">Connectors page</a> — including the remote policy editor.
             </div>
           </div>
         </div>

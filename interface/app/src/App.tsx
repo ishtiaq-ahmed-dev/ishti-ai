@@ -4,7 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import { getJSON, postJSON } from "@/lib/api";
 import { Chat } from "@/sections/Chat";
 import { Connectors, Inputs, Settings, Skills, Tasks } from "@/sections/Pages";
+import { ConnectorsPage } from "@/sections/ConnectorsPage";
 import { Learning } from "@/sections/Learning";
+import { chatStore } from "@/lib/chat-store";
+import { ProfileSwitcher, PromptLayersViewer } from "@/components/ProfileSwitcher";
+import { AgentsPanel } from "@/components/AgentsPanel";
+import { LearningPanel } from "@/components/LearningPanel";
 import { Overview } from "@/sections/Overview";
 import { NotificationBell } from "@/components/rare/notification-bell";
 import { NotificationPopover, type Notif } from "@/components/NotificationCenter";
@@ -72,6 +77,8 @@ function getInitialPage(): Key {
 
 export default function App() {
   const boot = useBoot();
+  // WP1: start the app-level chat store + one shared event stream BEFORE any page mounts.
+  useEffect(() => { chatStore.start(); return () => chatStore.stop(); }, []);
   const [page, setPageState] = useState<Key>(getInitialPage);
   const [owner, setOwner] = useState("Ishtiaq Ahmed");
   const [notifs, setNotifs] = useState<Notif[]>([]);
@@ -462,6 +469,11 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* WP4: Personal/Business mode switch */}
+                <div className="mb-3 flex justify-center">
+                  <ProfileSwitcher />
+                </div>
+
                 <div className="scroll-thin flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
                   <nav className="space-y-0.5">
                     {NAV.map(({ key, label, icon: Icon }) => (
@@ -471,6 +483,12 @@ export default function App() {
                           transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
                         <Icon className={`relative h-4 w-4 ${page === key ? "text-accent" : ""}`} />
                         <span className="relative font-medium">{label}</span>
+                        {key === "chat" && chatStore.unreadTotal() > 0 && (
+                          <span data-testid="chat-unread-badge"
+                                className="relative ml-auto rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold text-accent-foreground">
+                            {chatStore.unreadTotal()}
+                          </span>
+                        )}
                       </button>
                     ))}
                   </nav>
@@ -521,11 +539,26 @@ export default function App() {
               {page === "chat" && <Chat owner={owner} onBusy={onBusy} showNav={showNav} onToggleNav={toggleNav} />}
               {page === "overview" && <Overview onToggleNav={toggleNav} />}
               {page === "inputs" && <Inputs onToggleNav={toggleNav} />}
-              {page === "connectors" && <Connectors onToggleNav={toggleNav} />}
+              {page === "connectors" && <ConnectorsPage />}
               {page === "tasks" && <Tasks onToggleNav={toggleNav} />}
               {page === "learning" && <Learning onToggleNav={toggleNav} />}
               {page === "skills" && <Skills onToggleNav={toggleNav} />}
-              {page === "settings" && <Settings onToggleNav={toggleNav} />}
+              {page === "settings" && (
+                <Settings onToggleNav={toggleNav}>
+                  {/* WP4 read-only prompt layers + WP7 agents live as Settings cards */}
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <div className="rounded-xl border border-border bg-card p-3">
+                      <PromptLayersViewer />
+                    </div>
+                    <div className="rounded-xl border border-border bg-card p-3">
+                      <AgentsPanel />
+                    </div>
+                    <div className="rounded-xl border border-border bg-card p-3 md:col-span-2">
+                      <LearningPanel />
+                    </div>
+                  </div>
+                </Settings>
+              )}
             </motion.div>
           </AnimatePresence>
         </main>
