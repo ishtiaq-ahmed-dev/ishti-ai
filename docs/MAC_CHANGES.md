@@ -1,7 +1,7 @@
 # Mac audit handoff
 
-Branch: `mac/audit-20261005`  
-Base: `e9d2559`  
+Branch: `mac/audit-20261005`
+Base: `e9d2559`
 API contract: `2.0.0` (unchanged)
 
 | ID | Change | Verified on Mac? | Needs PC test? |
