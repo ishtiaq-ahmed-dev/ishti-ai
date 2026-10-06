@@ -90,6 +90,7 @@ app.mount("/static", CachedStaticFiles(directory=STATIC_DIR, max_age=300), name=
 model_router = ModelRouter()
 active_websockets: List[WebSocket] = []
 _websocket_send_locks: Dict[int, asyncio.Lock] = {}
+WS_SEND_TIMEOUT_S = 5.0
 last_execution_state: Dict[str, Any] = {}
 last_research_state: Dict[str, Any] = {}
 MAIN_LOOP: asyncio.AbstractEventLoop = None  # set at startup; worker threads have no loop of their own
@@ -159,7 +160,7 @@ async def _send_websocket(ws: WebSocket, message: str):
     """Serialize writes so event broadcasts and the endpoint loop cannot corrupt each other's frames."""
     lock = _websocket_send_locks.setdefault(id(ws), asyncio.Lock())
     async with lock:
-        await ws.send_text(message)
+        await asyncio.wait_for(ws.send_text(message), timeout=WS_SEND_TIMEOUT_S)
 
 
 def sync_event_callback(event_type: str, data: Dict[str, Any]):

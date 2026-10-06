@@ -272,7 +272,9 @@ def op_draft(text, session):
                              "It's yours; I'll help with the history instead (\"client context "
                              f"{who}\").", "sources": []}
     from ishti import llm
+    from ishti.untrusted import guard
     g = grounding_for(who)
+    g = guard(g, f"client:{who}", session)
     trace(session, "draft", f"drafting from {who}'s own history only", status="start")
     draft = llm.ask(f"Draft a short, professional reply to this client. Ground EVERYTHING in their "
                     f"history below - never invent project details, prices or promises. Leave a "
@@ -350,7 +352,9 @@ def op_deal(text, session):
         return {"reply": f"No logged history for {who.title()} yet - log their messages and I can "
                          "summarize the deal.", "sources": []}
     from ishti import llm
+    from ishti.untrusted import guard
     body = "\n".join(f"[{e['kind']}] {e['body'][:200]}" for e in reversed(evs))
+    body = guard(body, f"client:{who}", session)
     out = llm.ask(f"Summarize the state of this client's deal from their history ONLY. Three short "
                   f"sections: Agreed / Pending / Owed (money or deliverables). If something isn't in "
                   f"the history, say 'not in the logged history' - never invent.\n\n{body}",
