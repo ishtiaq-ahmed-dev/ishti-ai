@@ -431,8 +431,13 @@ def get_status():  # a plain def: FastAPI runs it in a thread; it makes blocking
 async def get_doctor():
     loop = asyncio.get_event_loop()
     doc = IshtiDoctor()
-    report = await loop.run_in_executor(None, doc.check_all)
-    return JSONResponse(report)
+    try:
+        report = await asyncio.wait_for(loop.run_in_executor(None, doc.check_all), timeout=8.0)
+        return JSONResponse(report)
+    except asyncio.TimeoutError:
+        return JSONResponse({"ok": False, "error": "Diagnostics timed out after 8 seconds; retry when the system is idle."}, status_code=504)
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)[:500]}, status_code=503)
 
 
 @app.get("/api/research")
@@ -562,6 +567,31 @@ async def mic_toggle_endpoint():
     return JSONResponse(res)
 
 
+@app.get("/api/mcp/status")
+async def mcp_status():
+    """Read-only MCP hub state for the UI's Tools card (never starts a server)."""
+    from ishti import mcp_client
+    return JSONResponse(mcp_client.status())
+
+
+@app.post("/api/mcp/reload")
+async def mcp_reload():
+    """T2 owner action from the desktop UI: stop every live MCP session so the next call re-reads
+    config.json / freshly pasted tokens. Local loopback callers only (authorized())."""
+    from ishti import mcp_client
+    hub = mcp_client._hub
+    stopped = []
+    if hub is not None:
+        for name in list(hub.live.keys()):
+            try:
+                hub.close(name)
+                stopped.append(name)
+            except Exception as exc:
+                swallowed("server.mcp_reload.close", exc)
+        mcp_client._hub = None
+    return JSONResponse({"ok": True, "stopped": stopped})
+
+
 @app.post("/api/execute")
 async def execute_task(req: Request):
     body = await req.json()
@@ -663,7 +693,12 @@ async def list_sessions():
 
 @app.post("/api/sessions/new")
 async def create_new_session(req: Request):
-    body = await req.json()
+    try:
+        body = await req.json()
+    except Exception:
+        return JSONResponse({"error": "Send a JSON object with an optional title."}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"error": "Send a JSON object with an optional title."}, status_code=400)
     title = body.get("title", "New Conversation")
     conv = get_conversation_manager()
     new_id = conv.new_chat(title)

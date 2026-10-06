@@ -53,7 +53,7 @@ def conn() -> sqlite3.Connection:
             PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS chats(
                 chat_id TEXT PRIMARY KEY, title TEXT, profile TEXT NOT NULL DEFAULT 'personal',
-                created_at REAL, updated_at REAL);
+                created_at REAL, updated_at REAL, deleted_at REAL, delete_token TEXT);
             CREATE TABLE IF NOT EXISTS messages(
                 seq INTEGER PRIMARY KEY AUTOINCREMENT,
                 message_id TEXT UNIQUE, chat_id TEXT, role TEXT, text TEXT,
@@ -72,6 +72,12 @@ def conn() -> sqlite3.Connection:
                 ts REAL, UNIQUE(message_id, run_id, rating));
             CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
             """)
+            # Forward-only migration for runs.db files created before reversible chat deletion.
+            chat_cols = {r["name"] for r in _conn.execute("PRAGMA table_info(chats)").fetchall()}
+            if "deleted_at" not in chat_cols:
+                _conn.execute("ALTER TABLE chats ADD COLUMN deleted_at REAL")
+            if "delete_token" not in chat_cols:
+                _conn.execute("ALTER TABLE chats ADD COLUMN delete_token TEXT")
             _conn.commit()
         return _conn
 
@@ -118,6 +124,33 @@ def events_since(since_seq: int = 0, limit: int = 5000) -> list[dict]:
             for r in rows]
 
 
+def events_since_profile(profile: str | None = None, since_seq: int = 0,
+                         limit: int = 5000) -> list[dict]:
+    """Return global events plus chat/run events belonging to exactly one profile.
+
+    `last_seq` remains global, so a client can advance past hidden rows without learning their
+    contents and will not replay them after a profile switch.
+    """
+    wanted = _profiles.valid(profile or _profiles.active())
+    out: list[dict] = []
+    for event in events_since(since_seq, limit):
+        data = event.get("data") or {}
+        event_profile = data.get("profile")
+        if not event_profile and isinstance(data.get("message"), dict):
+            event_profile = data["message"].get("profile")
+        chat_id = data.get("chat_id")
+        if not event_profile and chat_id:
+            chat = get_chat(str(chat_id), include_deleted=True)
+            event_profile = (chat or {}).get("profile")
+        run_id = data.get("run_id")
+        if not event_profile and run_id:
+            run = get_run(str(run_id))
+            event_profile = (run or {}).get("profile")
+        if not event_profile or event_profile == wanted:
+            out.append(event)
+    return out
+
+
 def last_seq() -> int:
     with _lock:
         row = conn().execute("SELECT MAX(seq) AS m FROM event_log").fetchone()
@@ -138,22 +171,34 @@ def new_chat(profile: str | None = None, title: str = "New chat") -> dict:
     return {"chat_id": chat_id, "profile": profile}
 
 
-def list_chats(limit: int = 200) -> list[dict]:
+def list_chats(limit: int = 200, profile: str | None = None) -> list[dict]:
+    """List live chats in one profile namespace; trashed chats never appear."""
+    profile = _profiles.valid(profile or _profiles.active())
     with _lock:
         rows = conn().execute(
             "SELECT chat_id, title, profile, created_at, updated_at FROM chats "
-            "ORDER BY updated_at DESC LIMIT ?", (int(max(1, limit)),)).fetchall()
+            "WHERE profile = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT ?",
+            (profile, int(max(1, limit)))).fetchall()
     return [dict(r) for r in rows]
 
 
-def get_chat(chat_id: str) -> dict | None:
+def get_chat(chat_id: str, *, include_deleted: bool = False) -> dict | None:
+    """Internal id lookup. HTTP handlers must additionally enforce the active profile."""
+    deleted = "" if include_deleted else " AND deleted_at IS NULL"
     with _lock:
         row = conn().execute("SELECT chat_id, title, profile, created_at, updated_at FROM chats "
-                             "WHERE chat_id = ?", (str(chat_id),)).fetchone()
+                             f"WHERE chat_id = ?{deleted}", (str(chat_id),)).fetchone()
     return dict(row) if row else None
 
 
-def set_chat_title(chat_id: str, title: str) -> dict:
+def get_chat_for_profile(chat_id: str, profile: str | None = None) -> dict | None:
+    """Owner-facing lookup that makes a cross-profile id indistinguishable from a missing id."""
+    wanted = _profiles.valid(profile or _profiles.active())
+    chat = get_chat(chat_id)
+    return chat if chat and chat["profile"] == wanted else None
+
+
+def set_chat_title(chat_id: str, title: str, profile: str | None = None) -> dict:
     """Server-side rename. The UI still allows free renames locally (title overrides), but the
     durable title serves the auto-name: the first user message names the chat (no more rows of
     'New chat'). The literal placeholder is refused so a stale client can never erase a real name
@@ -165,17 +210,63 @@ def set_chat_title(chat_id: str, title: str) -> dict:
         raise ValueError("'New chat' is the auto-name placeholder and cannot be stored")
     with _lock:
         c = conn()
-        row = c.execute("SELECT chat_id FROM chats WHERE chat_id = ?", (str(chat_id),)).fetchone()
+        wanted = _profiles.valid(profile or _profiles.active())
+        row = c.execute("SELECT chat_id FROM chats WHERE chat_id = ? AND profile = ? "
+                        "AND deleted_at IS NULL", (str(chat_id), wanted)).fetchone()
         if not row:
             raise ValueError("unknown chat_id")
         c.execute("UPDATE chats SET title = ? WHERE chat_id = ?", (clean, str(chat_id)))
         c.commit()
-    publish("chat_renamed", {"chat_id": str(chat_id), "title": clean})
-    return get_chat(chat_id)
+    publish("chat_renamed", {"chat_id": str(chat_id), "title": clean, "profile": wanted})
+    return get_chat_for_profile(chat_id, wanted)
+
+
+def trash_chat(chat_id: str, profile: str | None = None) -> dict:
+    """Soft-delete one chat and return a profile-bound, single-use undo token."""
+    wanted = _profiles.valid(profile or _profiles.active())
+    token = uuid.uuid4().hex
+    now = time.time()
+    with _lock:
+        c = conn()
+        row = c.execute("SELECT chat_id FROM chats WHERE chat_id = ? AND profile = ? "
+                        "AND deleted_at IS NULL", (str(chat_id), wanted)).fetchone()
+        if not row:
+            raise ValueError("unknown chat_id")
+        c.execute("UPDATE chats SET deleted_at = ?, delete_token = ? WHERE chat_id = ?",
+                  (now, token, str(chat_id)))
+        c.commit()
+    publish("chat_deleted", {"chat_id": str(chat_id), "profile": wanted})
+    return {"deleted": True, "chat_id": str(chat_id), "undo_token": token,
+            "undo_seconds": 8}
+
+
+def restore_chat(chat_id: str, undo_token: str, profile: str | None = None,
+                 max_age_s: float = 8.0) -> dict:
+    """Restore a trashed chat during its UI undo window; tokens cannot cross profiles/chats."""
+    wanted = _profiles.valid(profile or _profiles.active())
+    token = str(undo_token or "").strip()
+    now = time.time()
+    with _lock:
+        c = conn()
+        row = c.execute("SELECT deleted_at FROM chats WHERE chat_id = ? AND profile = ? "
+                        "AND delete_token = ? AND deleted_at IS NOT NULL",
+                        (str(chat_id), wanted, token)).fetchone()
+        if not row:
+            raise ValueError("unknown or already-used undo token")
+        if now - float(row["deleted_at"] or 0) > max_age_s:
+            c.execute("UPDATE chats SET delete_token = NULL WHERE chat_id = ?", (str(chat_id),))
+            c.commit()
+            raise ValueError("undo window expired")
+        c.execute("UPDATE chats SET deleted_at = NULL, delete_token = NULL, updated_at = ? "
+                  "WHERE chat_id = ?", (now, str(chat_id)))
+        c.commit()
+    publish("chat_restored", {"chat_id": str(chat_id), "profile": wanted})
+    return {"restored": True, "chat": get_chat_for_profile(chat_id, wanted)}
 
 
 def chat_profile(chat_id: str) -> str:
-    chat = get_chat(chat_id)
+    # A deleted chat may still have a worker finishing. Its immutable profile remains authoritative.
+    chat = get_chat(chat_id, include_deleted=True)
     return _profiles.valid(chat["profile"]) if chat else _profiles.active()
 
 
@@ -283,18 +374,34 @@ def get_run(run_id: str) -> dict | None:
     return out
 
 
-def list_runs(chat_id: str | None = None, limit: int = 100) -> list[dict]:
-    sql = ("SELECT run_id, chat_id, message_id, state, text, profile, error, started_at, ended_at "
-           "FROM runs")
+def get_run_for_profile(run_id: str, profile: str | None = None) -> dict | None:
+    wanted = _profiles.valid(profile or _profiles.active())
+    run = get_run(run_id)
+    return run if run and run["profile"] == wanted else None
+
+
+def list_runs(chat_id: str | None = None, limit: int = 100,
+              profile: str | None = None) -> list[dict]:
+    sql = ("SELECT run_id, chat_id, message_id, state, text, profile, steps, error, "
+           "started_at, ended_at FROM runs")
     args: list = []
+    where: list[str] = []
+    if profile is not None:
+        where.append("profile = ?")
+        args.append(_profiles.valid(profile))
     if chat_id:
-        sql += " WHERE chat_id = ?"
+        where.append("chat_id = ?")
         args.append(str(chat_id))
+    if where:
+        sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY started_at DESC LIMIT ?"
     args.append(int(max(1, limit)))
     with _lock:
         rows = conn().execute(sql, args).fetchall()
-    return [dict(r) for r in rows]
+    out = [dict(r) for r in rows]
+    for run in out:
+        run["steps"] = json.loads(run.get("steps") or "[]")
+    return out
 
 
 def run_state(run_id: str) -> str | None:

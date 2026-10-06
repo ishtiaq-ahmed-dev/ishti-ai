@@ -88,3 +88,8 @@ export const del = (url: string) => fetch(url, { method: "DELETE" }).then(checkR
 export const putJSON = <T,>(url: string, body?: unknown): Promise<T> =>
   fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) })
     .then(checkResponse);
+export const patchJSON = <T,>(url: string, body?: unknown): Promise<T> =>
+  fetch(url, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) })
+    .then(checkResponse);
+export const deleteJSON = <T,>(url: string): Promise<T> =>
+  fetch(url, { method: "DELETE" }).then(checkResponse);

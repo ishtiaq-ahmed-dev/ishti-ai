@@ -1585,7 +1585,16 @@ async def about_get():
 
 @api.post("/api/about/instructions")
 async def about_instructions(req: Request):
-    text = str((await req.json()).get("instructions", "")).strip()[:4000]
+    try:
+        body = await req.json()
+    except Exception:
+        return JSONResponse({"error": "Send a JSON object with an instructions string."}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"error": "Send a JSON object with an instructions string."}, status_code=400)
+    raw = body.get("instructions", "")
+    if raw is not None and not isinstance(raw, str):
+        return JSONResponse({"error": "instructions must be a string."}, status_code=400)
+    text = str(raw or "").strip()[:4000]
     if text:
         get_facts().set("owner", "instructions", text)
     else:

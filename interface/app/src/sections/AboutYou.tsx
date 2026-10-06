@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { Check, ChevronDown, Pencil, Plus, Trash2, X } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { del, getJSON, postJSON } from "@/lib/api";
 import { Page } from "@/sections/Pages";
 
@@ -12,6 +12,7 @@ type About = {
 };
 
 const label = (attr: string) => attr.replace(/^prefers_/, "").replace(/_/g, " ");
+const errorText = (error: unknown) => error instanceof Error ? error.message : "The request failed.";
 
 function Section({ title, hint, children }: { title: string; hint: string; children: ReactNode }) {
   return (
@@ -25,10 +26,12 @@ function Section({ title, hint, children }: { title: string; hint: string; child
 
 /** One editable owner fact: click the pencil to change it, the bin to forget it. */
 function Row({ attr, value, onSave, onDelete }: {
-  attr: string; value: string; onSave: (attr: string, value: string) => Promise<void>; onDelete: () => Promise<void>;
+  attr: string; value: string; onSave: (attr: string, value: string) => Promise<boolean>; onDelete: () => Promise<boolean>;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [busy, setBusy] = useState(false);
   useEffect(() => setDraft(value), [value]);
   return (
     <motion.li layout initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -8 }}
@@ -36,22 +39,41 @@ function Row({ attr, value, onSave, onDelete }: {
       <span className="w-40 shrink-0 truncate text-xs font-medium capitalize text-muted-foreground" title={attr}>{label(attr)}</span>
       {editing ? (
         <form className="flex min-w-0 flex-1 items-center gap-1.5"
-          onSubmit={async (e) => { e.preventDefault(); if (draft.trim()) { await onSave(attr, draft.trim()); setEditing(false); } }}>
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!draft.trim()) return;
+            setBusy(true);
+            const ok = await onSave(attr, draft.trim());
+            setBusy(false);
+            if (ok) setEditing(false);
+          }}>
           <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} aria-label={`Edit ${label(attr)}`}
             onKeyDown={(e) => e.key === "Escape" && setEditing(false)}
             className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-1 text-sm outline-none focus:border-accent" />
-          <button type="submit" title="Save" className="rounded-md p-1 text-accent hover:bg-accent-soft cursor-pointer"><Check className="h-4 w-4" /></button>
+          <button type="submit" disabled={busy} title="Save" className="rounded-md p-1 text-accent hover:bg-accent-soft disabled:opacity-40 cursor-pointer"><Check className="h-4 w-4" /></button>
           <button type="button" title="Cancel" onClick={() => setEditing(false)}
             className="rounded-md p-1 text-muted-foreground hover:bg-muted cursor-pointer"><X className="h-4 w-4" /></button>
         </form>
       ) : (
         <>
           <span className="min-w-0 flex-1 break-words text-sm">{value}</span>
-          <span className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <span className={`flex shrink-0 gap-0.5 transition-opacity ${confirmingDelete ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}>
+            {confirmingDelete ? (<>
+              <button type="button" disabled={busy} onClick={() => setConfirmingDelete(false)}
+                className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted disabled:opacity-40 cursor-pointer">Cancel</button>
+              <button type="button" disabled={busy} onClick={async () => {
+                setBusy(true);
+                const ok = await onDelete();
+                setBusy(false);
+                if (!ok) setConfirmingDelete(false);
+              }}
+                className="rounded-md bg-danger px-2 py-1 text-[11px] font-medium text-white disabled:opacity-40 cursor-pointer">{busy ? "Forgetting…" : "Confirm forget"}</button>
+            </>) : (<>
             <button type="button" title="Edit" aria-label={`Edit ${label(attr)}`} onClick={() => setEditing(true)}
               className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"><Pencil className="h-3.5 w-3.5" /></button>
-            <button type="button" title="Forget" aria-label={`Forget ${label(attr)}`} onClick={onDelete}
+            <button type="button" title="Forget" aria-label={`Forget ${label(attr)}`} onClick={() => setConfirmingDelete(true)}
               className="rounded-md p-1 text-muted-foreground hover:bg-danger/10 hover:text-danger cursor-pointer"><Trash2 className="h-3.5 w-3.5" /></button>
+            </>)}
           </span>
         </>
       )}
@@ -59,25 +81,28 @@ function Row({ attr, value, onSave, onDelete }: {
   );
 }
 
-function AddRow({ prefix = "", placeholder, onAdd }: { prefix?: string; placeholder: string; onAdd: (a: string, v: string) => Promise<void> }) {
+function AddRow({ prefix = "", placeholder, onAdd }: { prefix?: string; placeholder: string; onAdd: (a: string, v: string) => Promise<boolean> }) {
   const [attr, setAttr] = useState("");
   const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
   return (
     <form className="mt-2 flex flex-wrap items-center gap-2 px-3"
       onSubmit={async (e) => {
         e.preventDefault();
         const key = attr.trim().toLowerCase().replace(/\W+/g, "_").replace(/^_|_$/g, "");
         if (!key || !value.trim()) return;
-        await onAdd(prefix + key.replace(/^prefers_/, ""), value.trim());
-        setAttr(""); setValue("");
+        setBusy(true);
+        const ok = await onAdd(prefix + key.replace(/^prefers_/, ""), value.trim());
+        setBusy(false);
+        if (ok) { setAttr(""); setValue(""); }
       }}>
       <input value={attr} onChange={(e) => setAttr(e.target.value)} placeholder={placeholder} aria-label="What"
         className="w-40 rounded-lg border border-border bg-background px-2 py-1 text-xs outline-none focus:border-accent" />
       <input value={value} onChange={(e) => setValue(e.target.value)} placeholder="value" aria-label="Value"
         className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-1 text-sm outline-none focus:border-accent" />
-      <button type="submit" disabled={!attr.trim() || !value.trim()}
+      <button type="submit" disabled={busy || !attr.trim() || !value.trim()}
         className="flex items-center gap-1 rounded-lg bg-accent px-2.5 py-1 text-xs font-medium text-white disabled:opacity-40 cursor-pointer">
-        <Plus className="h-3.5 w-3.5" /> Add</button>
+        <Plus className="h-3.5 w-3.5" /> {busy ? "Adding…" : "Add"}</button>
     </form>
   );
 }
@@ -88,20 +113,63 @@ export function AboutYouBody() {
   const [instructions, setInstructions] = useState("");
   const [saved, setSaved] = useState(false);
   const [showSent, setShowSent] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [savingInstructions, setSavingInstructions] = useState(false);
 
-  const load = () => getJSON<About>("/api/about").then((a) => { setAbout(a); setInstructions(a.instructions); });
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError("");
+    try {
+      const a = await getJSON<About>("/api/about");
+      setAbout(a);
+      setInstructions(a.instructions);
+    } catch (error) {
+      setLoadError(errorText(error));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
   useEffect(() => {
-    load();
-    const handleMemoryEvent = () => load();
+    void load();
+    const handleMemoryEvent = () => void load();
     window.addEventListener("ishti-memory-updated", handleMemoryEvent);
     return () => window.removeEventListener("ishti-memory-updated", handleMemoryEvent);
-  }, []);
+  }, [load]);
 
-  const save = async (attr: string, value: string) => { await postJSON("/api/facts", { entity: "owner", attr, value }); await load(); };
-  const forget = async (attr: string) => { await del(`/api/facts/owner/${encodeURIComponent(attr)}`); await load(); };
+  const save = async (attr: string, value: string) => {
+    setActionError("");
+    try {
+      await postJSON("/api/facts", { entity: "owner", attr, value });
+      await load();
+      return true;
+    } catch (error) {
+      setActionError(errorText(error));
+      return false;
+    }
+  };
+  const forget = async (attr: string) => {
+    setActionError("");
+    try {
+      await del(`/api/facts/owner/${encodeURIComponent(attr)}`);
+      await load();
+      return true;
+    } catch (error) {
+      setActionError(errorText(error));
+      return false;
+    }
+  };
   const saveInstructions = async () => {
-    const a = await postJSON<About>("/api/about/instructions", { instructions });
-    setAbout(a); setSaved(true); setTimeout(() => setSaved(false), 1800);
+    setSavingInstructions(true); setActionError("");
+    try {
+      const a = await postJSON<About>("/api/about/instructions", { instructions });
+      setAbout(a); setSaved(true); setTimeout(() => setSaved(false), 1800);
+    } catch (error) {
+      setActionError(errorText(error));
+    } finally {
+      setSavingInstructions(false);
+    }
   };
 
   const rows = (items: Record<string, string>) => (
@@ -114,21 +182,34 @@ export function AboutYouBody() {
     </ul>
   );
 
+  if (!about) {
+    if (loadError) {
+      return (
+        <div role="alert" className="rounded-2xl border border-danger/30 bg-danger/10 p-5 text-sm text-danger">
+          <p>Could not load what ISHTI knows about you: {loadError}</p>
+          <button type="button" onClick={() => void load()} className="mt-3 rounded-lg border border-danger/40 px-3 py-1.5 text-xs font-medium hover:bg-danger/10 cursor-pointer">Try again</button>
+        </div>
+      );
+    }
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start" aria-label={loading ? "Loading About you" : "About you is unavailable"}>
+        <div className="lg:col-span-7 space-y-4">
+          <div className="h-64 rounded-2xl border border-border bg-card/40 animate-pulse p-4" />
+          <div className="h-20 rounded-2xl border border-border bg-card/40 animate-pulse p-4" />
+        </div>
+        <div className="lg:col-span-5 space-y-4">
+          <div className="h-44 rounded-2xl border border-border bg-card/40 animate-pulse p-4" />
+          <div className="h-44 rounded-2xl border border-border bg-card/40 animate-pulse p-4" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
-      {!about ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-          <div className="lg:col-span-7 space-y-4">
-            <div className="h-64 rounded-2xl border border-border bg-card/40 animate-pulse p-4" />
-            <div className="h-20 rounded-2xl border border-border bg-card/40 animate-pulse p-4" />
-          </div>
-          <div className="lg:col-span-5 space-y-4">
-            <div className="h-44 rounded-2xl border border-border bg-card/40 animate-pulse p-4" />
-            <div className="h-44 rounded-2xl border border-border bg-card/40 animate-pulse p-4" />
-          </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          {loadError && <p role="alert" className="lg:col-span-12 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">Could not refresh this page: {loadError}</p>}
+          {actionError && <p role="alert" className="lg:col-span-12 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">Changes were not saved: {actionError}</p>}
           {/* Left Column: Custom Instructions & Live Prompt Context */}
           <div className="lg:col-span-7 space-y-4">
             <Section
@@ -164,10 +245,10 @@ export function AboutYouBody() {
                   <button
                     type="button"
                     onClick={saveInstructions}
-                    disabled={instructions === about.instructions}
+                    disabled={savingInstructions || instructions === about.instructions}
                     className="rounded-lg bg-accent px-3.5 py-1.5 text-xs font-medium text-white disabled:opacity-40 hover:opacity-90 transition-opacity cursor-pointer shadow-xs"
                   >
-                    Save instructions
+                    {savingInstructions ? "Saving…" : "Save instructions"}
                   </button>
                 </div>
               </div>
@@ -226,7 +307,9 @@ export function AboutYouBody() {
               title="Personal Details"
               hint="Personal and professional details ISHTI uses to assist you."
             >
-              {rows(about.facts)}
+              {Object.keys(about.facts).length ? rows(about.facts) : (
+                <p className="px-3 py-2 text-xs text-muted-foreground italic">No personal details saved yet.</p>
+              )}
               <AddRow placeholder="e.g. role or city" onAdd={save} />
             </Section>
 
@@ -245,7 +328,6 @@ export function AboutYouBody() {
             </Section>
           </div>
         </div>
-      )}
     </>
   );
 }

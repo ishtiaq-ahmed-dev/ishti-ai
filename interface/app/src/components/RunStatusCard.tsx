@@ -3,13 +3,57 @@
 // explicitly marked as working draft; final bubble only on run_finished; exhaustion states show
 // backend text verbatim (what was tried, what is missing) - never a fabricated answer.
 import { useEffect, useState } from "react";
-import { CheckCircle2, CircleStop, ExternalLink, FlaskConical, Loader2 } from "lucide-react";
+import { CheckCircle2, ChevronDown, CircleStop, ExternalLink, FlaskConical, Loader2 } from "lucide-react";
 import type { StoreRun } from "@/lib/chat-store";
 
 type Props = {
   run: StoreRun;
   onCancel: (runId: string) => void;
 };
+
+function runDuration(run: StoreRun): string {
+  const start = run.started_at || run.steps.find((step) => step.ts)?.ts || null;
+  const end = run.ended_at || [...run.steps].reverse().find((step) => step.ts)?.ts || null;
+  const seconds = start && end ? Math.max(0, end - start) : 0;
+  return seconds < 1 ? `${Math.round(seconds * 1000)} ms` : `${seconds.toFixed(1)} s`;
+}
+
+function usedSkills(run: StoreRun): string[] {
+  const names: string[] = [];
+  for (const step of run.steps) {
+    const match = step.label.match(/^Using\s+([^:·—]+)/i);
+    if (match?.[1]) names.push(match[1].trim());
+  }
+  return [...new Set(names)].filter(Boolean);
+}
+
+/** Collapsed, replay-safe trace shown with a final assistant message. */
+export function RunThoughts({ run }: { run: StoreRun }) {
+  const [open, setOpen] = useState(false);
+  if (!run.steps.length || !["done", "failed", "cancelled"].includes(run.state)) return null;
+  const skills = usedSkills(run);
+  const summary = skills.length ? `used ${skills.join(", ")}` : `used ${[...new Set(run.steps.map((s) => s.kind))].join(", ")}`;
+  return (
+    <div className="mb-2 text-[12px]" data-testid="persisted-thinking">
+      <button type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open}
+        className="flex items-center gap-1.5 rounded-md py-0.5 text-muted-foreground transition-colors hover:text-foreground">
+        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" aria-hidden />
+        <span>Thought for {runDuration(run)} · {summary}</span>
+        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
+      </button>
+      {open && (
+        <ol className="mt-1.5 space-y-1 border-l-2 border-emerald-500/25 pl-3 text-muted-foreground">
+          {run.steps.map((step, index) => (
+            <li key={`${step.n}-${index}`} className="flex items-start gap-1.5">
+              <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-emerald-500" aria-hidden />
+              <span className="break-words">{step.label}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
 
 export function RunStatusCard({ run, onCancel }: Props) {
   const [elapsed, setElapsed] = useState(0);

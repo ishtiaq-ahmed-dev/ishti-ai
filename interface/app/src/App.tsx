@@ -1,9 +1,9 @@
 import { AnimatePresence, motion } from "motion/react";
-import { Bot, Cpu, GraduationCap, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, Plug, Power, Cable, Settings as SettingsIcon, Sparkles, Minimize2, X, Zap } from "lucide-react";
+import { Bot, Cpu, GraduationCap, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, Power, Cable, Settings as SettingsIcon, Sparkles, Minimize2, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { getJSON, postJSON } from "@/lib/api";
 import { Chat } from "@/sections/Chat";
-import { Connectors, Inputs, Settings, Skills, Tasks } from "@/sections/Pages";
+import { Settings, Skills, Tasks } from "@/sections/Pages";
 import { ConnectorsPage } from "@/sections/ConnectorsPage";
 import { Learning } from "@/sections/Learning";
 import { chatStore } from "@/lib/chat-store";
@@ -43,14 +43,14 @@ type ShutdownProgress = {
 const NAV = [
   { key: "chat", label: "Chat", icon: MessageSquare },
   { key: "overview", label: "Overview", icon: LayoutDashboard },
-  { key: "inputs", label: "Inputs", icon: Plug },
   { key: "connectors", label: "Connectors", icon: Cable },
   { key: "tasks", label: "Tasks", icon: ListChecks },
   { key: "learning", label: "Learning", icon: GraduationCap },
   { key: "skills", label: "Skills", icon: Bot },
   { key: "settings", label: "Settings", icon: SettingsIcon },
 ] as const;
-// About you and Memory are tabs of Learning; System is a card inside Settings (old #about / #memory / #system links still land there).
+// Inputs merged into Connectors (owner request): the Connectors page shows sensors, messaging,
+// tools and agents in one section. #inputs still lands here (alias below).
 type Key = (typeof NAV)[number]["key"];
 
 type Fact = { entity: string; attr: string; value: string };
@@ -58,9 +58,10 @@ type Fact = { entity: string; attr: string; value: string };
 function parseHash(raw: string): Key | null {
   const clean = raw.replace(/^#\/?/, "").toLowerCase().split("/")[0].split("?")[0];
   // #notifications is the Notifications tab of Tasks; #about/#memory are tabs of Learning; #system is a card in Settings.
+  // #inputs is now the merged Connectors page (Inputs + Connectors are one section).
   const alias = (clean === "notifications" ? "tasks"
     : clean === "about" || clean === "memory" ? "learning"
-      : clean === "system" ? "settings" : clean === "markets" ? "skills" : clean) as Key;
+      : clean === "system" ? "settings" : clean === "markets" ? "skills" : clean === "inputs" ? "connectors" : clean) as Key;
   return NAV.some((n) => n.key === alias) ? alias : null;
 }
 
@@ -75,7 +76,6 @@ function getInitialPage(): Key {
   }
   return "chat";
 }
-
 export default function App() {
   const boot = useBoot();
   // WP1: start the app-level chat store + one shared event stream BEFORE any page mounts.
@@ -86,6 +86,7 @@ export default function App() {
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [unread, setUnread] = useState(0);
   const [showNotifs, setShowNotifs] = useState(false);
+  const [notificationError, setNotificationError] = useState("");
   const [busy, setBusy] = useState(false);
   const [showNav, setShowNav] = useState(() => {
     try {
@@ -378,8 +379,8 @@ export default function App() {
 
   const loadNotifications = useCallback(() => {
     getJSON<{ notifications: Notif[]; unread: number }>("/api/notifications")
-      .then((d) => { setNotifs(d.notifications ?? []); setUnread(d.unread ?? 0); })
-      .catch(() => {});
+      .then((d) => { setNotifs(d.notifications ?? []); setUnread(d.unread ?? 0); setNotificationError(""); })
+      .catch((err) => setNotificationError(err instanceof Error ? err.message : String(err)));
   }, []);
 
   useEffect(() => {
@@ -392,13 +393,17 @@ export default function App() {
   const markAllRead = useCallback(() => {
     setNotifs((cur) => cur.map((n) => ({ ...n, read: true })));
     setUnread(0);
-    postJSON("/api/notifications/read", {}).catch(() => {}).finally(() => window.dispatchEvent(new CustomEvent("ishti-notification")));
+    postJSON("/api/notifications/read", {})
+      .catch((err) => setNotificationError(err instanceof Error ? err.message : String(err)))
+      .finally(() => window.dispatchEvent(new CustomEvent("ishti-notification")));
   }, []);
 
   const markOneRead = useCallback((id: number) => {
     setNotifs((cur) => cur.map((n) => (n.id === id ? { ...n, read: true } : n)));
     setUnread((u) => Math.max(0, u - 1));
-    postJSON("/api/notifications/read", { id }).catch(() => {}).finally(() => window.dispatchEvent(new CustomEvent("ishti-notification")));
+    postJSON("/api/notifications/read", { id })
+      .catch((err) => setNotificationError(err instanceof Error ? err.message : String(err)))
+      .finally(() => window.dispatchEvent(new CustomEvent("ishti-notification")));
   }, []);
 
   const viewAllNotifications = useCallback(() => {
@@ -476,6 +481,7 @@ export default function App() {
                 <div className="mb-3 flex justify-center">
                   <ProfileSwitcher />
                 </div>
+                {notificationError && <p role="alert" className="mb-2 px-2 text-[10px] text-danger">Notifications: {notificationError}</p>}
 
                 <div className="scroll-thin flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
                   <nav className="space-y-0.5">
@@ -541,7 +547,6 @@ export default function App() {
               transition={{ duration: 0.15 }}>
               {page === "chat" && <Chat owner={owner} onBusy={onBusy} showNav={showNav} onToggleNav={toggleNav} />}
               {page === "overview" && <Overview onToggleNav={toggleNav} />}
-              {page === "inputs" && <Inputs onToggleNav={toggleNav} />}
               {page === "connectors" && <ConnectorsPage />}
               {page === "tasks" && <Tasks onToggleNav={toggleNav} />}
               {page === "learning" && <Learning onToggleNav={toggleNav} />}

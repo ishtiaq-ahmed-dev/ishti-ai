@@ -159,16 +159,22 @@ function CRMAndLeadsPanel() {
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const loadData = useCallback(() => {
+  const loadData = useCallback(async () => {
     setLoading(true);
-    Promise.all([
-      getJSON<{ clients: ClientRow[] }>("/api/crm/clients").catch(() => ({ clients: [] })),
-      getJSON<{ leads: LeadRow[]; stats: { total?: number; verified?: number } }>("/api/leads").catch(() => ({ leads: [], stats: null })),
-    ]).then(([crmRes, leadsRes]) => {
+    try {
+      const [crmRes, leadsRes] = await Promise.all([
+        getJSON<{ clients: ClientRow[] }>("/api/crm/clients"),
+        getJSON<{ leads: LeadRow[]; stats: { total?: number; verified?: number } }>("/api/leads"),
+      ]);
       setClients(crmRes?.clients || []);
       setLeads(leadsRes?.leads || []);
       setLeadsStats(leadsRes?.stats || null);
-    }).finally(() => setLoading(false));
+      setMsg("");
+    } catch (err) {
+      setMsg(`CRM refresh failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -427,13 +433,14 @@ export function Tasks({ onToggleNav }: { onToggleNav?: () => void }) {
   const [editing, setEditing] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
   const [draftDue, setDraftDue] = useState("");
-  const [undo, setUndo] = useState<{ text: string; due: number } | null>(null);
+  const [undo, setUndo] = useState<Reminder | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [error, setError] = useState("");
   // done tasks come back too: completing one must never make it vanish (it moves to the Done group)
   const load = () => getJSON<{ reminders: Reminder[] }>("/api/reminders?include_done=1")
-    .then((d) => setItems(d.reminders ?? []))
-    .catch((err) => console.warn("[tasks] load failed:", err));
+    .then((d) => { setItems(d.reminders ?? []); setError(""); })
+    .catch((err) => setError(`Tasks refresh failed: ${err instanceof Error ? err.message : String(err)}`));
 
   useEffect(() => {  // the undo window for a deleted task
     if (!undo) return;
@@ -443,7 +450,8 @@ export function Tasks({ onToggleNav }: { onToggleNav?: () => void }) {
   useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, []);
   useEffect(() => {
     const loadUnread = () => getJSON<{ unread: number }>("/api/notifications")
-      .then((d) => setUnreadNotifs(d.unread ?? 0)).catch(() => {});
+      .then((d) => setUnreadNotifs(d.unread ?? 0))
+      .catch((err) => setError(`Notifications refresh failed: ${err instanceof Error ? err.message : String(err)}`));
     loadUnread();
     window.addEventListener("ishti-notification", loadUnread);
     return () => window.removeEventListener("ishti-notification", loadUnread);
@@ -459,40 +467,56 @@ export function Tasks({ onToggleNav }: { onToggleNav?: () => void }) {
     try { window.history.replaceState(null, "", next === "notifications" ? "#notifications" : next === "crm" ? "#crm" : "#tasks"); } catch {}
   };
   const toggleDone = async (r: Reminder) => {
-    setItems((cur) => cur.map((x) => (x.id === r.id ? { ...x, done: !r.done } : x)));   // stays on screen
-    await postJSON(`/api/reminders/${r.id}/${r.done ? "open" : "done"}`, {}).catch(() => {});
-    load();
+    try {
+      await postJSON(`/api/reminders/${r.id}/${r.done ? "open" : "done"}`, {});
+      setError("");
+      await load();
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
   };
   const snooze = async (r: Reminder, minutes: number) => {
     setBusyId(r.id);
-    await postJSON(`/api/reminders/${r.id}/snooze`, { minutes }).catch(() => {});
-    setBusyId(null);
-    load();
+    try {
+      await postJSON(`/api/reminders/${r.id}/snooze`, { minutes });
+      setError("");
+      await load();
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+    finally { setBusyId(null); }
   };
   const removeTask = async (r: Reminder) => {
-    await del(`/api/reminders/${r.id}`).catch(() => {});
-    setItems((cur) => cur.filter((x) => x.id !== r.id));
-    setUndo({ text: r.text, due: r.due });
+    try {
+      await del(`/api/reminders/${r.id}`);
+      setItems((cur) => cur.filter((x) => x.id !== r.id));
+      setUndo(r);
+      setError("");
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
   };
   const undoDelete = async () => {
     if (!undo) return;
-    await postJSON("/api/reminders", { text: undo.text, due: undo.due }).catch(() => {});
-    setUndo(null);
-    load();
+    try {
+      await postJSON("/api/reminders", { text: undo.text, due: undo.due, repeat: undo.repeat });
+      setUndo(null);
+      setError("");
+      await load();
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
   };
   const clearDone = async () => {
     setConfirmClear(false);
-    setItems((cur) => cur.filter((r) => !r.done));   // optimistic; the reload confirms
-    await postJSON("/api/reminders/clear_done", {}).catch(() => {});
-    load();
+    try {
+      await postJSON("/api/reminders/clear_done", {});
+      setError("");
+      await load();
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
   };
   const startEdit = (r: Reminder) => { setEditing(r.id); setDraft(r.text); setDraftDue(localInput(r.due)); };
   const saveEdit = async (r: Reminder) => {
     const text = draft.trim();
     const due = draftDue ? Math.floor(new Date(draftDue).getTime() / 1000) : r.due;
-    setEditing(null);
-    await postJSON(`/api/reminders/${r.id}`, { text, due }).catch(() => {});
-    load();
+    try {
+      await postJSON(`/api/reminders/${r.id}`, { text, due });
+      setEditing(null);
+      setError("");
+      await load();
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
   };
   const openTasks = items.filter((r) => !r.done);
   const doneTasks = items.filter((r) => r.done);
@@ -569,6 +593,7 @@ export function Tasks({ onToggleNav }: { onToggleNav?: () => void }) {
         ? "Everything ISHTI told you about — reminders, finished jobs, downloads, alerts and errors."
         : "Local business CRM and lead pipeline with complete personal vs business data separation."}
       onToggleNav={onToggleNav}>
+      {error && <div role="alert" className="mb-3 rounded-xl border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>}
       {tab === "tasks" ? (
         <>
           <Card>
@@ -1449,7 +1474,6 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
     lastError?: string | null;
   } | null>(null);
   const [clipboardPreview, setClipboardPreview] = useState<string | null>(null);
-  const [screenNotice, setScreenNotice] = useState<string | null>(null);
 
   const load = useCallback(() => {
     getJSON<InputsPayload>("/api/inputs")
@@ -1530,19 +1554,10 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
     try {
       const res = await getJSON<{ ok: boolean; preview: string }>("/api/inputs/clipboard");
       setClipboardPreview(res.preview);
+      setError("");
     } catch (err: any) {
-      setClipboardPreview("Clipboard access ready");
-    }
-  };
-
-  // Test Screen Perception
-  const handleTestScreen = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      const res = await getJSON<{ ok: boolean; detail: string }>("/api/inputs/screen");
-      setScreenNotice(res.detail);
-    } catch (err: any) {
-      setScreenNotice("Screen perception ready");
+      setClipboardPreview(null);
+      setError(err?.message || "Clipboard read failed");
     }
   };
 
@@ -1555,7 +1570,6 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
     const isMic = c.id === "mic";
     const isWa = c.id === "whatsapp";
     const isClip = c.id === "clipboard";
-    const isScreen = c.id === "screen";
 
     return (
       <div
@@ -1644,16 +1658,6 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
                   </button>
                 )}
 
-                {isScreen && (
-                  <button
-                    type="button"
-                    onClick={handleTestScreen}
-                    className="flex items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-foreground hover:bg-muted/50 cursor-pointer"
-                  >
-                    <Monitor className="h-3 w-3" />
-                    <span>Test Perception</span>
-                  </button>
-                )}
               </div>
             </div>
 
@@ -1669,13 +1673,6 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
               <div className="mt-2.5 rounded-xl border border-border/80 bg-muted/40 p-2 text-xs font-mono text-foreground">
                 <span className="text-[10px] uppercase font-bold text-muted-foreground mr-1.5">Clipboard Content:</span>
                 {clipboardPreview}
-              </div>
-            )}
-
-            {isScreen && screenNotice && (
-              <div className="mt-2.5 rounded-xl border border-border/80 bg-muted/40 p-2 text-xs font-mono text-emerald-500">
-                <span className="text-[10px] uppercase font-bold text-muted-foreground mr-1.5">Screen Status:</span>
-                {screenNotice}
               </div>
             )}
 
@@ -4377,8 +4374,8 @@ export function Settings({ onToggleNav, children }: { onToggleNav?: () => void; 
             </AnimatePresence>
           </Card>
         </div>
+        {children}
       </div>
     </Page>
   );
 }
-

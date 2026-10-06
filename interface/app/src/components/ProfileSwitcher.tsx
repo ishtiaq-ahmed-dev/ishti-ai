@@ -2,7 +2,7 @@
 // namespace indicator, and the read-only prompt-layer viewer (core locked, profile visible).
 import { useEffect, useState } from "react";
 import { Briefcase, Heart, Layers } from "lucide-react";
-import { getJSON, putJSON } from "@/lib/api";
+import { getJSON } from "@/lib/api";
 import { chatStore, type Profile } from "@/lib/chat-store";
 import { cn } from "@/lib/utils";
 
@@ -13,7 +13,6 @@ type Layers = {
 };
 
 export function useActiveProfile(): Profile {
-  const [, force] = useState(0);
   const [profile, setProfileState] = useState<Profile>(chatStore.activeProfile);
   useEffect(() => chatStore.subscribe(() => setProfileState(chatStore.activeProfile)), []);
   return profile;
@@ -22,7 +21,7 @@ export function useActiveProfile(): Profile {
 export function ProfileSwitcher({ pendingRuns = 0 }: { pendingRuns?: number }) {
   const active = useActiveProfile();
   const [confirming, setConfirming] = useState<Profile | null>(null);
-  const [, rerender] = useState(0);
+  const [error, setError] = useState("");
 
   const switchTo = async (p: Profile) => {
     if (p === active) return;
@@ -32,9 +31,13 @@ export function ProfileSwitcher({ pendingRuns = 0 }: { pendingRuns?: number }) {
 
   const doSwitch = async (p: Profile) => {
     setConfirming(null);
-    await chatStore.setProfile(p);
-    window.dispatchEvent(new Event("ishti-profile-changed"));
-    rerender((n) => n + 1); // local re-render (postJSON path also emits store-wide)
+    setError("");
+    try {
+      await chatStore.setProfile(p);
+      window.dispatchEvent(new Event("ishti-profile-changed"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   return (
@@ -54,6 +57,7 @@ export function ProfileSwitcher({ pendingRuns = 0 }: { pendingRuns?: number }) {
           </button>
         ))}
       </div>
+      {error && <span role="alert" className="max-w-48 truncate text-[10px] text-danger" title={error}>{error}</span>}
 
       {confirming && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40" role="dialog" aria-modal="true" data-testid="profile-confirm">

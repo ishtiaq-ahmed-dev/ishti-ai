@@ -2,7 +2,7 @@
 // Chats/messages/runs live here so switching sections never unmounts chat state. Hydrated from
 // GET /api/chats + /api/chats/{id}/messages, advanced by one shared event stream (since_seq replay,
 // auto-resync on gap). Drafts + scroll positions persisted per chat (survive navigation, reload).
-import { getJSON, postJSON, putJSON } from "@/lib/api";
+import { deleteJSON, getJSON, patchJSON, postJSON, putJSON } from "@/lib/api";
 
 export type Profile = "personal" | "business";
 export type RunState = "queued" | "running" | "done" | "failed" | "cancelled";
@@ -23,9 +23,11 @@ export type StoreRun = {
   chat_id: string;
   state: RunState;
   text: string; // accumulated streamed text (working draft)
-  steps: { kind: "research" | "tool" | "verify"; label: string; n: number; sources: string[] }[];
+  steps: { kind: "research" | "tool" | "verify"; label: string; n: number; sources: string[]; ts?: number }[];
   profile?: string;
   error?: string | null;
+  started_at?: number | null;
+  ended_at?: number | null;
   lastSeq: number; // last event seq applied to this run (resync guard)
 };
 
@@ -50,6 +52,7 @@ class ChatStore {
   activeChatId: string | null = null;
   activeProfile: Profile = "personal";
   connection: "connecting" | "live" | "reconnecting" = "connecting";
+  error: string | null = null;
   lastSeq = 0;
   ready = false;
 
@@ -118,7 +121,7 @@ class ChatStore {
       for (const c of d.chats) {
         this.chats.set(c.chat_id, { ...c, unread: 0, profile: c.profile || "personal" });
       }
-      const saved = this.savedActiveChat();
+      const saved = this.savedActiveChat(this.activeProfile);
       this.activeChatId = saved && this.chats.has(saved) ? saved : d.chats[0]?.chat_id || null;
       if (!this.chats.size) {
         const c = await postJSON<{ chat_id: string; profile: Profile }>("/api/chats", {});
@@ -135,8 +138,8 @@ class ChatStore {
     this.pollEvents(0); // one shared stream for the whole app
   }
 
-  private savedActiveChat(): string | null {
-    try { return localStorage.getItem("ishti-active-chat-v1"); } catch { return null; }
+  private savedActiveChat(profile: Profile = this.activeProfile): string | null {
+    try { return localStorage.getItem(`ishti-active-chat-v1-${profile}`) || localStorage.getItem("ishti-active-chat-v1"); } catch { return null; }
   }
 
   setActiveChat(chatId: string) {
@@ -144,7 +147,10 @@ class ChatStore {
     this.activeChatId = chatId;
     const chat = this.chats.get(chatId)!;
     chat.unread = 0;
-    try { localStorage.setItem("ishti-active-chat-v1", chatId); } catch {}
+    try {
+      localStorage.setItem("ishti-active-chat-v1", chatId);
+      localStorage.setItem(`ishti-active-chat-v1-${chat.profile}`, chatId);
+    } catch {}
     void this.hydrateMessages(chatId);
     this.emit();
   }
@@ -160,7 +166,10 @@ class ChatStore {
     this.chats.set(c.chat_id, chat);
     this.messages.set(c.chat_id, []);
     this.activeChatId = c.chat_id;
-    try { localStorage.setItem("ishti-active-chat-v1", c.chat_id); } catch {}
+    try {
+      localStorage.setItem("ishti-active-chat-v1", c.chat_id);
+      localStorage.setItem(`ishti-active-chat-v1-${chat.profile}`, c.chat_id);
+    } catch {}
     this.emit();
     return chat;
   }
@@ -179,7 +188,10 @@ class ChatStore {
       merged.sort((a, b) => (a.seq === b.seq ? a.ts - b.ts : a.seq - b.seq));
       this.messages.set(chatId, merged);
       this.emit();
-    } catch {}
+    } catch (err) {
+      this.error = err instanceof Error ? err.message : String(err);
+      this.emit();
+    }
   }
 
   // ---------------- send (optimistic, idempotent) ----------------
@@ -187,7 +199,6 @@ class ChatStore {
     const clean = text.trim();
     if (!clean) return null;
     const clientMsgId = (crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`);
-    const chat = this.chats.get(chatId);
     const optimistic: StoreMessage = {
       seq: Number.MAX_SAFE_INTEGER, message_id: `pending-${clientMsgId}`, role: "user",
       text: clean, run_id: "", ts: Date.now() / 1000, channel: "text", pending: true,
@@ -212,17 +223,36 @@ class ChatStore {
                                     text: "", steps: [], lastSeq: this.lastSeq });
       }
       this.emit();
+      this.error = null;
       return res;
-    } catch {
+    } catch (err) {
       // offline: keep the message pending and restore the draft (never drop the user's text)
       this.setDraft(chatId, clean);
+      this.error = `Message not sent: ${err instanceof Error ? err.message : String(err)}`;
       this.emit();
       return null;
     }
   }
 
   async cancelRun(runId: string) {
-    try { await postJSON(`/api/runs/${runId}/cancel`); } catch {}
+    try {
+      await postJSON(`/api/runs/${runId}/cancel`);
+      this.error = null;
+    } catch (err) {
+      this.error = `Could not stop the run: ${err instanceof Error ? err.message : String(err)}`;
+      this.emit();
+    }
+  }
+
+  async persistLiveTurn(chatId: string, user: string, reply: string) {
+    try {
+      await postJSON(`/api/chats/${chatId}/live-turns`, { user, reply });
+      await this.hydrateMessages(chatId);
+      this.error = null;
+    } catch (err) {
+      this.error = `Live turn was not saved: ${err instanceof Error ? err.message : String(err)}`;
+      this.emit();
+    }
   }
 
   // ---------------- one shared event stream (poll with since_seq; auto-resync on gap) ----------------
@@ -265,7 +295,7 @@ class ChatStore {
   }
 
   // ---------------- event application (pure state transitions) ----------------
-  applyEvent(ev: { seq: number; type: string; data: any }) {
+  applyEvent(ev: { seq: number; type: string; data: any; ts?: number }) {
     if (ev.seq <= this.lastSeq) return; // duplicate suppression (idempotent replay)
     this.lastSeq = ev.seq;
     const d = ev.data || {};
@@ -293,14 +323,14 @@ class ChatStore {
       case "run_started": {
         this.runs.set(d.run_id, {
           run_id: d.run_id, chat_id: d.chat_id, state: "running", text: "", steps: [],
-          profile: d.profile, lastSeq: ev.seq,
+          profile: d.profile, started_at: ev.ts || Date.now() / 1000, lastSeq: ev.seq,
         });
         break;
       }
       case "run_step": {
         const run = this.runs.get(d.run_id);
         if (run) {
-          run.steps = [...run.steps, { kind: d.kind, label: d.label, n: d.n, sources: d.sources || [] }];
+          run.steps = [...run.steps, { kind: d.kind, label: d.label, n: d.n, sources: d.sources || [], ts: d.ts }];
           run.lastSeq = ev.seq;
         }
         break;
@@ -318,6 +348,7 @@ class ChatStore {
         if (run) {
           run.state = d.cancelled ? "cancelled" : "done";
           if (typeof d.text === "string") run.text = d.text;
+          run.ended_at = ev.ts || Date.now() / 1000;
           run.lastSeq = ev.seq;
         }
         // Belt for the missed-publish case: if the final assistant message event was never
@@ -338,9 +369,20 @@ class ChatStore {
       }
       case "run_failed": {
         const run = this.runs.get(d.run_id);
-        if (run) { run.state = "failed"; run.error = d.error || "failed"; run.lastSeq = ev.seq; }
+        if (run) { run.state = "failed"; run.error = d.error || "failed"; run.ended_at = ev.ts || Date.now() / 1000; run.lastSeq = ev.seq; }
         break;
       }
+      case "chat_renamed": {
+        const chat = this.chats.get(d.chat_id);
+        if (chat && typeof d.title === "string") chat.title = d.title;
+        break;
+      }
+      case "chat_deleted": {
+        this.chats.delete(d.chat_id);
+        break;
+      }
+      case "chat_restored":
+        break;
       case "profile_changed": {
         if (d.active) this.activeProfile = d.active;
         if (d.chat_id && d.profile) {
@@ -377,11 +419,13 @@ class ChatStore {
       for (const r of d.runs || []) {
         const known = this.runs.get(r.run_id);
         const terminal = ["done", "failed", "cancelled"].includes(r.state);
-        if (known && terminal) {
-          known.state = r.state;
-          if (typeof r.text === "string" && r.text) known.text = r.text;
-          if (r.error) known.error = r.error;
-        }
+        const hydrated: StoreRun = {
+          run_id: r.run_id, chat_id: r.chat_id, state: r.state, text: r.text || "",
+          steps: Array.isArray(r.steps) ? r.steps : [], profile: r.profile,
+          error: r.error, started_at: r.started_at, ended_at: r.ended_at,
+          lastSeq: known?.lastSeq ?? this.lastSeq,
+        };
+        if (!known || terminal) this.runs.set(r.run_id, { ...(known || hydrated), ...hydrated });
         // recover the answer for a chat whose assistant row never landed (pre-fix or lost publish)
         const chatId = r.chat_id as string;
         if (r.state === "done" && r.text && chatId && this.chats.has(chatId)) {
@@ -413,65 +457,78 @@ class ChatStore {
 
   // ---------------- profile (WP4) ----------------
   async setProfile(p: Profile) {
-    try { await putJSON("/api/profile", { active: p }); } catch {}
+    await putJSON("/api/profile", { active: p });
     this.activeProfile = p;
-    // Chats never merge across profiles: jump to the newest chat of this profile (or start one).
-    const cur = this.activeChatId ? this.chats.get(this.activeChatId) : null;
-    if (!cur || (cur.profile || "personal") !== p) {
-      const mine = [...this.chats.values()].filter((c) => (c.profile || "personal") === p)
-        .sort((a, b) => b.updated_at - a.updated_at)[0];
-      if (mine) this.setActiveChat(mine.chat_id);
-      else if (this.ready) await this.newChat(p);
+    const d = await getJSON<{ chats: StoreChat[] }>("/api/chats");
+    for (const [id, chat] of [...this.chats.entries()]) {
+      if ((chat.profile || "personal") === p) this.chats.delete(id);
     }
+    for (const chat of d.chats || []) {
+      this.chats.set(chat.chat_id, { ...chat, unread: 0, profile: chat.profile || p });
+    }
+    const saved = this.savedActiveChat(p);
+    const mine = (saved && this.chats.get(saved)?.profile === p ? this.chats.get(saved) : null)
+      || [...this.chats.values()].filter((c) => c.profile === p).sort((a, b) => b.updated_at - a.updated_at)[0];
+    if (mine) this.setActiveChat(mine.chat_id);
+    else if (this.ready) await this.newChat(p);
+    await this.reconcileRunsForProfile();
     this.emit();
   }
 
-  // ---------------- chat list: server rows + local title overrides + hidden (deleted) chats ----------------
-  // v2 backend has no PATCH/DELETE /api/chats yet (docs/contract_requests/frontend.md), so rename
-  // and delete are local-only for now: rename overrides the shown title, delete hides the row.
-  // Nothing is destroyed server-side - undo always restores.
-  titleOverrides: Record<string, string> = (() => {
-    try { return JSON.parse(localStorage.getItem("ishti-chat-titles-v1") || "{}"); } catch { return {}; }
-  })();
-  hiddenChats: string[] = (() => {
-    try { return JSON.parse(localStorage.getItem("ishti-chat-hidden-v1") || "[]"); } catch { return []; }
-  })();
-  lastHidden: { chats: string[]; at: number } | null = null;
+  private async reconcileRunsForProfile() {
+    this.reconciled = false;
+    await this.reconcileRuns();
+  }
 
-  setTitle(chatId: string, title: string) {
+  // ---------------- chat list: durable server rename + soft-delete/undo ----------------
+  lastTrash: { chat: StoreChat; token: string }[] = [];
+
+  async setTitle(chatId: string, title: string) {
     const clean = title.trim();
-    if (!clean) return;
-    this.titleOverrides[chatId] = clean;
-    try { localStorage.setItem("ishti-chat-titles-v1", JSON.stringify(this.titleOverrides)); } catch {}
+    if (!clean) throw new Error("A chat title cannot be empty.");
+    const updated = await patchJSON<StoreChat>(`/api/chats/${chatId}`, { title: clean });
+    const chat = this.chats.get(chatId);
+    if (chat) Object.assign(chat, updated);
     this.emit();
   }
 
-  hideChats(chatIds: string[]) {
+  async trashChats(chatIds: string[]) {
     if (!chatIds.length) return;
-    this.lastHidden = { chats: [...chatIds], at: Date.now() };
-    this.hiddenChats = [...new Set([...this.hiddenChats, ...chatIds])];
-    try { localStorage.setItem("ishti-chat-hidden-v1", JSON.stringify(this.hiddenChats)); } catch {}
+    const trashed: { chat: StoreChat; token: string }[] = [];
+    for (const id of chatIds) {
+      const chat = this.chats.get(id);
+      if (!chat || chat.profile !== this.activeProfile) continue;
+      const result = await deleteJSON<{ chat_id: string; undo_token: string }>(`/api/chats/${id}`);
+      trashed.push({ chat: { ...chat }, token: result.undo_token });
+      this.chats.delete(id);
+    }
+    this.lastTrash = trashed;
     if (chatIds.includes(this.activeChatId || "")) {
       const next = this.chatList()[0];
       if (next) this.setActiveChat(next.chat_id);
+      else this.activeChatId = null;
     }
     this.emit();
   }
 
-  undoHide() {
-    if (!this.lastHidden) return;
-    const set = new Set(this.lastHidden.chats);
-    this.hiddenChats = this.hiddenChats.filter((id) => !set.has(id));
-    this.lastHidden = null;
-    try { localStorage.setItem("ishti-chat-hidden-v1", JSON.stringify(this.hiddenChats)); } catch {}
+  async undoTrash() {
+    const pending = [...this.lastTrash];
+    if (!pending.length) return;
+    for (const item of pending) {
+      const result = await patchJSON<{ chat: StoreChat }>(`/api/chats/${item.chat.chat_id}`, {
+        restore: true, undo_token: item.token,
+      });
+      this.chats.set(item.chat.chat_id, { ...(result.chat || item.chat), unread: 0 });
+    }
+    this.lastTrash = [];
     this.emit();
   }
 
   chatList(): StoreChat[] {
     return [...this.chats.values()]
-      .filter((c) => !this.hiddenChats.includes(c.chat_id))
+      .filter((c) => c.profile === this.activeProfile)
       .sort((a, b) => b.updated_at - a.updated_at)
-      .map((c) => (this.titleOverrides[c.chat_id] ? { ...c, title: this.titleOverrides[c.chat_id] } : c));
+      .map((c) => c);
   }
 
   messagesOf(chatId: string | null): StoreMessage[] {

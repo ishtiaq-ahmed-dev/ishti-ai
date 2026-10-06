@@ -33,7 +33,12 @@ async def _body(req: Request) -> dict:
 @router.post("/api/chats")
 async def chats_create(req: Request):
     body = await _body(req)
-    chat = runs.new_chat(profile=body.get("profile") or None)
+    from ishti import profiles
+    active = profiles.load_active()
+    requested = body.get("profile")
+    if requested in profiles.PROFILES and requested != active:
+        return _bad("chat profile does not match the active owner profile", 403)
+    chat = runs.new_chat(profile=requested if requested in profiles.PROFILES else active)
     if body.get("profile"):
         runs.publish("profile_changed", {"chat_id": chat["chat_id"], "profile": chat["profile"]})
     return chat
@@ -41,18 +46,43 @@ async def chats_create(req: Request):
 
 @router.get("/api/chats")
 async def chats_list(limit: int = 200):
-    return {"chats": runs.list_chats(limit=limit)}
+    from ishti import profiles
+    return {"chats": runs.list_chats(limit=limit, profile=profiles.load_active())}
+
+
+@router.patch("/api/chats/{chat_id}")
+async def chat_rename(chat_id: str, req: Request):
+    body = await _body(req)
+    try:
+        if body.get("restore") is True:
+            return runs.restore_chat(chat_id, str(body.get("undo_token") or ""))
+        return runs.set_chat_title(chat_id, str(body.get("title") or ""))
+    except ValueError as exc:
+        message = str(exc)
+        code = 404 if "unknown chat" in message else (410 if "expired" in message else 400)
+        return _bad(message, code)
+
+
+@router.delete("/api/chats/{chat_id}")
+async def chat_delete(chat_id: str):
+    try:
+        out = runs.trash_chat(chat_id)
+        return {**out, "trashed": True}
+    except ValueError as exc:
+        return _bad(str(exc), 404)
 
 
 @router.get("/api/chats/{chat_id}/messages")
 async def chat_messages(chat_id: str, after_seq: int = 0):
-    if not runs.get_chat(chat_id):
+    if not runs.get_chat_for_profile(chat_id):
         return _bad("unknown chat_id", 404)
     return {"chat_id": chat_id, "messages": runs.messages_after(chat_id, after_seq)}
 
 
 @router.post("/api/chats/{chat_id}/messages")
 async def chat_send(chat_id: str, req: Request):
+    if not runs.get_chat_for_profile(chat_id):
+        return _bad("unknown chat_id", 404)
     body = await _body(req)
     text = str(body.get("text") or "").strip()
     if not text:
@@ -74,16 +104,38 @@ async def chat_send(chat_id: str, req: Request):
     return {"message_id": msg["message_id"], "run_id": run["run_id"], "duplicate": False}
 
 
+@router.post("/api/chats/{chat_id}/live-turns")
+async def chat_live_turn(chat_id: str, req: Request):
+    """Persist a completed local voice turn without launching a second text-model run."""
+    chat = runs.get_chat_for_profile(chat_id)
+    if not chat:
+        return _bad("unknown chat_id", 404)
+    body = await _body(req)
+    user = str(body.get("user") or "").strip()
+    reply = str(body.get("reply") or "").strip()
+    if not user or not reply:
+        return _bad("user and reply are required")
+    user_row = runs.add_user_message(chat_id, user, client_msg_id=body.get("client_msg_id"),
+                                     channel="live")
+    assistant = runs.add_assistant_message(chat_id, reply, channel="live", profile=chat["profile"])
+    return {"saved": True, "user_message_id": user_row["message"]["message_id"],
+            "assistant_message_id": assistant["message_id"]}
+
+
 # ---------------------------------------------------------------- runs (14.2)
 
 @router.get("/api/runs")
 async def runs_list(chat_id: str | None = None, limit: int = 100):
-    return {"runs": runs.list_runs(chat_id=chat_id, limit=limit)}
+    from ishti import profiles
+    active = profiles.load_active()
+    if chat_id and not runs.get_chat_for_profile(chat_id, active):
+        return _bad("unknown chat_id", 404)
+    return {"runs": runs.list_runs(chat_id=chat_id, limit=limit, profile=active)}
 
 
 @router.get("/api/runs/{run_id}")
 async def run_get(run_id: str):
-    run = runs.get_run(run_id)
+    run = runs.get_run_for_profile(run_id)
     if not run:
         return _bad("unknown run_id", 404)
     return run
@@ -91,6 +143,8 @@ async def run_get(run_id: str):
 
 @router.post("/api/runs/{run_id}/cancel")
 async def run_cancel(run_id: str):
+    if not runs.get_run_for_profile(run_id):
+        return _bad("unknown run_id", 404)
     out = runs.cancel_run(run_id)
     if not out.get("cancelled") and "state" not in out:
         return _bad("unknown run_id", 404)
@@ -102,7 +156,9 @@ async def run_cancel(run_id: str):
 @router.get("/api/events")
 async def events_since(since_seq: int = 0, limit: int = 2000):
     """HTTP replay twin of /ws/events?since_seq=N (same log)."""
-    return {"events": runs.events_since(since_seq, limit), "last_seq": runs.last_seq()}
+    from ishti import profiles
+    return {"events": runs.events_since_profile(profiles.load_active(), since_seq, limit),
+            "last_seq": runs.last_seq()}
 
 
 @router.post("/api/feedback")
@@ -228,12 +284,26 @@ async def connector_config(cid: str, req: Request):
     from ishti.channels import policy
     upd = {}
     if isinstance(body.get("control_numbers"), list):
-        upd["allowed_telegram_ids"] = [str(n) for n in body["control_numbers"]]
+        # WhatsApp stores E.164 phone numbers in their OWN policy key (never inside
+        # allowed_telegram_ids: one "+92..." string there poisons the int() allowlist check and
+        # silently blocks every Telegram sender). Telegram keeps numeric IDs.
+        nums = [str(n).strip() for n in body["control_numbers"] if str(n).strip()]
+        if cid == "whatsapp":
+            import re as _re
+            bad = [n for n in nums if not _re.match(r"^\+[1-9]\d{6,14}$", n)]
+            if bad:
+                return _bad(f"not E.164: {', '.join(bad[:3])}")
+            upd["whatsapp_control_numbers"] = nums
+        else:
+            upd["allowed_telegram_ids"] = nums
     if isinstance(body.get("policy"), dict):
         upd.update({k: v for k, v in body["policy"].items() if k in policy.DEFAULTS})
     if upd:
         policy.save(upd)
-    return {"saved": True, "connector": cid}
+    pol = policy.load()
+    key = "whatsapp_control_numbers" if cid == "whatsapp" else "allowed_telegram_ids"
+    return {"saved": True, "connector": cid,
+            "control_numbers": [str(n) for n in pol.get(key, [])]}
 
 
 # ---------------------------------------------------------------- agents (14.4)
@@ -255,6 +325,26 @@ async def agent_messages(aid: str):
     if aid not in agents.AGENTS:
         return _bad("unknown agent", 404)
     return {"agent_id": aid, "messages": runs.AGENT_MESSAGES.get(aid, [])}
+
+
+@router.post("/api/agents/events")
+async def agent_events(req: Request):
+    """The owner's answers to INPUT_REQUIRED prompts (A2A loop closure). The owner is the only
+    T2 authority; the answer flows into the typed agent bus as a result envelope."""
+    body = await _body(req)
+    aid = str(body.get("agent_id") or "")
+    from ishti import agents
+    if aid not in agents.AGENTS:
+        return _bad("unknown agent", 404)
+    text = str(body.get("answer") or body.get("text") or "").strip()
+    if not text:
+        return _bad("answer is required")
+    from ishti import agent_bus
+    agent_bus.publish(f"input.response.{aid}", {"answer": text[:2000], "run_id": str(body.get("run_id") or "")},
+                      sender="owner", type_="result")
+    runs.agent_message(aid, "owner", text[:4000])
+    runs.agent_status(aid, "idle", "owner answered")
+    return {"ok": True, "agent_id": aid}
 
 
 # ---------------------------------------------------------------- learning (14.4)
@@ -366,12 +456,16 @@ if __name__ == "__main__":
     assert isinstance(conns, list) and conns
     assert c.get("/api/connectors/whatsapp/status").json()["id"] == "whatsapp"
     assert c.get("/api/connectors/nope/status").status_code == 404
-    assert c.put("/api/connectors/telegram/config",
-                 json={"control_numbers": ["+923001234567"]}).json()["saved"] is True
+    got = c.put("/api/connectors/telegram/config",
+                json={"control_numbers": ["+923001234567"]}).json()
+    assert got["saved"] is True and got["control_numbers"] == ["+923001234567"]  # persists (read-back)
     agents = c.get("/api/agents").json()["agents"]
     assert any(a["id"] == "researcher" for a in agents)
     assert c.get("/api/agents/researcher/messages").json()["agent_id"] == "researcher"
     assert c.get("/api/agents/ghost/messages").status_code == 404
+    assert c.post("/api/agents/events", json={"agent_id": "researcher", "answer": "use browser A"}).json()["ok"] is True
+    assert c.post("/api/agents/events", json={"agent_id": "ghost", "answer": "x"}).status_code == 404
+    assert c.post("/api/agents/events", json={"agent_id": "researcher"}).status_code == 400
     ls = c.get("/api/learning/status").json()
     assert ls["mode"] in ("off", "propose", "auto_t0")
     pr = c.post("/api/skills/proposals", json={}).status_code  # 405: no bare POST

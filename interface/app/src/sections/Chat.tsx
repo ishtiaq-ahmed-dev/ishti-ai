@@ -1,9 +1,8 @@
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUp, AudioLines, Briefcase, Check, Copy, FolderOpen, Heart, Maximize2, MessageSquare, Mic, Minimize2, Network, PanelLeft, PanelLeftClose, Paperclip, Pencil, Plus, Square, Trash2, X } from "lucide-react";
+import { ArrowUp, AudioLines, Briefcase, Check, Copy, Heart, Maximize2, MessageSquare, Mic, Minimize2, Network, PanelLeft, PanelLeftClose, Paperclip, Pencil, Plus, Square, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AgentOrb } from "@/components/AgentOrb";
 import { ActivityGraph, ConversationGraph, type Turn } from "@/components/ActivityGraph";
-import { Thinking } from "@/components/Thinking";
 import BorderBeam from "border-beam";
 import VoiceBeam from "voice-glow";
 import { IshtiBrand } from "@/components/IshtiBrand";
@@ -13,7 +12,7 @@ import { LiveMode } from "@/components/LiveMode";
 import { cn } from "@/lib/utils";
 import { useBootState } from "@/lib/boot";
 import { chatStore, type StoreChat, type StoreMessage, type StoreRun } from "@/lib/chat-store";
-import { RunStatusCard, StreamedDraftBanner, UnverifiedBanner, runUnverified } from "@/components/RunStatusCard";
+import { RunStatusCard, RunThoughts, StreamedDraftBanner, UnverifiedBanner, runUnverified } from "@/components/RunStatusCard";
 import { FeedbackPanel } from "@/components/FeedbackPanel";
 
 function ago(iso: number) {
@@ -90,9 +89,8 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [undoOpen, setUndoOpen] = useState(false);
+  const [managementError, setManagementError] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
-  const [shareFormat, setShareFormat] = useState<"md" | "pdf">("md");
-  const [shareName, setShareName] = useState(`ishti-chats-${new Date().toISOString().slice(0, 10)}.md`);
   const [shareResult, setShareResult] = useState<{ path: string; copied?: boolean } | null>(null);
   const [shareError, setShareError] = useState("");
   // Activity graph (per-answer trace + whole-chat turns) + live draft state for the orb/AgentOrb header
@@ -155,7 +153,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   const [liveTurns, setLiveTurns] = useState<{ user: string; reply: string }[]>([]);
   const recorder = useRef<MediaRecorder | null>(null);
   const uploadInput = useRef<HTMLInputElement>(null);
-  const [uploads, setUploads] = useState<{ name: string; mention: string; size: number }[]>([]);
+  const [uploads, setUploads] = useState<{ name: string; mention: string; size: number; action: string }[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const box = useRef<HTMLTextAreaElement>(null);
@@ -256,16 +254,23 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     if (!ids.length) return;
     setSelecting(false);
     setSelected(new Set());
-    chatStore.hideChats(ids);
-    setUndoOpen(true);
-    window.setTimeout(() => setUndoOpen(false), 8000);
+    setManagementError("");
+    try {
+      await chatStore.trashChats(ids);
+      setUndoOpen(true);
+      window.setTimeout(() => setUndoOpen(false), 8000);
+    } catch (err) {
+      setManagementError(err instanceof Error ? err.message : String(err));
+    }
   }, [selected]);
 
-  const saveRename = useCallback((id: string) => {
+  const saveRename = useCallback(async (id: string) => {
     const title = renameDraft.trim();
     setRenaming(null);
     if (!title) return;
-    chatStore.setTitle(id, title);
+    setManagementError("");
+    try { await chatStore.setTitle(id, title); }
+    catch (err) { setManagementError(err instanceof Error ? err.message : String(err)); }
   }, [renameDraft]);
 
   const doExport = useCallback(async () => {
@@ -283,13 +288,12 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
         for (const m of msgs) parts.push(`${m.role === "user" ? "You" : "ISHTI"}: ${m.text}`);
         parts.push("");
       }
-      if (shareFormat === "pdf") throw new Error("PDF export needs the desktop share service; copied as text instead.");
       await navigator.clipboard.writeText(parts.join("\n"));
       setShareResult({ path: "(clipboard)", copied: true });
     } catch (err) {
       setShareError(err instanceof Error ? err.message : String(err));
     }
-  }, [selected, shareFormat]);
+  }, [selected]);
 
   const newChat = useCallback(async () => {
     if (creatingChat.current) return;
@@ -299,6 +303,9 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
       setInput("");
       setUploads([]);
       clearFocusedSkill();
+      setManagementError("");
+    } catch (err) {
+      setManagementError(`Could not start a new chat: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       creatingChat.current = false;
     }
@@ -373,7 +380,8 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
         const response = await fetch("/api/upload", { method: "POST", body: form });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data?.error || `Upload failed (${response.status})`);
-        setUploads((current) => [...current, { name: data.name || file.name, mention: data.mention, size: data.size || file.size }]);
+        const action = String(data.action || data.mention || "inspect this file").split(/[\r\n]/, 1)[0];
+        setUploads((current) => [...current, { name: file.name, mention: data.mention, size: data.size || file.size, action }]);
         totalBytes += file.size;
         totalCount += 1;
       }
@@ -446,7 +454,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
           const data = await res.json();
           if (data?.text && data.text.trim()) setInput(data.text.trim());
         } catch (sttErr) {
-          console.warn("[Voice] STT transcription failed:", sttErr);
+          setManagementError(`Voice transcription failed: ${sttErr instanceof Error ? sttErr.message : String(sttErr)}`);
         } finally {
           setTranscribing(false);
           box.current?.focus();
@@ -456,7 +464,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
       rec.start(1000); // 1 s chunks feed the live transcript
       setRecording(true);
     } catch (micErr) {
-      console.warn("[Voice] Microphone access failed or denied:", micErr);
+      setManagementError(`Microphone unavailable: ${micErr instanceof Error ? micErr.message : String(micErr)}`);
       setRecording(false);
       setAudioStream(null);
     }
@@ -496,6 +504,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
             className="min-w-0 flex-1 max-w-full overflow-hidden"
             style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-leading)" }}
           >
+            {m.run_id && chatStore.runs.get(m.run_id) && <RunThoughts run={chatStore.runs.get(m.run_id)!} />}
             <Markdown text={m.text} />
             <MediaPreview text={m.text} onSend={(p) => { setInput(`send "${p}" on whatsapp to `); box.current?.focus(); }} />
             <Sources run={m.run_id ? chatStore.runs.get(m.run_id) : undefined} />
@@ -917,8 +926,8 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
           <input ref={uploadInput} type="file" multiple hidden onChange={(e) => addUploads(e.currentTarget.files)} />
           {(uploads.length > 0 || uploading || uploadError) && (
             <div className="mx-auto mb-2 flex w-full max-w-4xl xl:max-w-5xl flex-wrap items-center gap-2 text-xs">
-              {uploads.map((file, index) => <span key={`${file.name}-${index}`} className="inline-flex max-w-[240px] items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-1">
-                <span className="truncate">{file.name}</span>
+              {uploads.map((file, index) => <span key={`${file.name}-${index}`} className="inline-flex max-w-[360px] items-center gap-1 rounded-xl border border-border bg-muted/40 px-2 py-1">
+                <span className="min-w-0"><span className="block truncate font-medium">{file.name}</span><span className="block truncate text-[10px] text-muted-foreground">ISHTI will {file.action}</span></span>
                 <button type="button" aria-label={`Remove ${file.name}`} onClick={() => setUploads((all) => all.filter((_, i) => i !== index))} className="text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>
               </span>)}
               {uploading && <span className="text-muted-foreground">Uploading…</span>}
@@ -1019,6 +1028,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
           <LiveMode sessionId={activeChatId} onClose={() => setLiveOpen(false)}
             onTurn={(user, reply) => {
               setLiveTurns((all) => [...all, { user, reply }]);
+              if (activeChatId) void chatStore.persistLiveTurn(activeChatId, user, reply);
             }} />
         )}
       </AnimatePresence>
@@ -1030,7 +1040,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
           <div className="flex items-center gap-3 rounded-2xl border border-border bg-background/95 px-4 py-2.5 shadow-2xl backdrop-blur-md">
             <Trash2 className="h-4 w-4 shrink-0 text-muted-foreground" />
             <span className="text-xs text-foreground">Chat deleted</span>
-            <button type="button" onClick={() => { chatStore.undoHide(); setUndoOpen(false); }}
+            <button type="button" onClick={() => { void chatStore.undoTrash().then(() => setUndoOpen(false)).catch((err) => setManagementError(err instanceof Error ? err.message : String(err))); }}
               className="rounded-lg bg-accent px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-accent/90 cursor-pointer">
               Undo
             </button>
@@ -1042,7 +1052,13 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
         </motion.div>
       )}
 
-      {/* Delete confirmation dialog: Yes / No (hides locally; undo restores) */}
+      {(managementError || chatStore.error) && (
+        <div role="alert" className="fixed bottom-20 left-1/2 z-[60] -translate-x-1/2 rounded-xl border border-danger/40 bg-background px-4 py-2 text-xs text-danger shadow-xl">
+          {managementError || chatStore.error}
+        </div>
+      )}
+
+      {/* Delete confirmation dialog: Yes / No (server-side trash; undo restores) */}
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
           onClick={() => setDeleteTarget(null)}>
@@ -1065,7 +1081,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                 className="rounded-xl border border-border px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer">
                 No, keep
               </button>
-              <button type="button" onClick={() => { const id = deleteTarget.id; setDeleteTarget(null); chatStore.hideChats([id]); setUndoOpen(true); window.setTimeout(() => setUndoOpen(false), 8000); }}
+              <button type="button" onClick={() => { const id = deleteTarget.id; setDeleteTarget(null); setManagementError(""); void chatStore.trashChats([id]).then(() => { setUndoOpen(true); window.setTimeout(() => setUndoOpen(false), 8000); }).catch((err) => setManagementError(err instanceof Error ? err.message : String(err))); }}
                 className="rounded-xl bg-danger px-4 py-1.5 text-xs font-semibold text-white hover:bg-danger/90 transition-colors shadow-xs cursor-pointer">
                 Yes, delete
               </button>
@@ -1081,18 +1097,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
             <h3 className="text-sm font-semibold text-foreground">Share {selected.size} chat{selected.size > 1 ? "s" : ""}</h3>
             <p className="mt-1 text-[11px] text-muted-foreground">Copies the conversation text to your clipboard - nothing is uploaded.</p>
             <div className="mt-4 space-y-3">
-              <div>
-                <div className="text-[11px] font-medium text-muted-foreground">Format</div>
-                <div className="mt-1 flex gap-2">
-                  {(["md", "pdf"] as const).map((f) => (
-                    <button key={f} type="button" onClick={() => setShareFormat(f)}
-                      className={cn("rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer",
-                        shareFormat === f ? "border-accent bg-accent-soft text-accent" : "border-border text-muted-foreground hover:text-foreground")}>
-                      {f === "md" ? "Markdown (.md)" : "PDF (.pdf)"}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <p className="text-xs text-muted-foreground">Markdown text</p>
             </div>
             {shareError && <p className="mt-3 text-[11px] text-danger">{shareError}</p>}
             {shareResult?.copied && <p className="mt-3 text-[11px] text-emerald-500">Copied to the clipboard.</p>}

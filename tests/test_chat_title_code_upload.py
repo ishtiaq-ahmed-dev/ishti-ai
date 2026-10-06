@@ -9,4 +9,5 @@ def test_chat_title_from_first_message():
 def test_code_uploads_allowed_apk_not():
     for n in ("a.html", "a.css", "a.js", "a.py"):
         assert files_api.kind_of(n) == "code" and files_api.kind_of(n) in files_api.KINDS
-    assert ".apk" not in files_api.ALLOWED_EXT and ".exe" not in files_api.ALLOWED_EXT
+    for suffix in (".apk", ".exe", ".jar", ".dll"):
+        assert suffix not in files_api.ALLOWED_EXT

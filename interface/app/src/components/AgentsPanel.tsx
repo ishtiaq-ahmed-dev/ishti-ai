@@ -37,8 +37,12 @@ export function AgentsPanel() {
       if (ev.type === "agent_status" && ev.data?.state === "input_required") {
         setInput({ agent_id: ev.data.agent_id, question: ev.data.detail, run_id: ev.data.run_id });
       }
+      if (ev.type === "input_required") {
+        // the durable event from agent_bus.request_input: {agent_id, question, run_id}
+        setInput({ agent_id: ev.data?.agent_id, question: ev.data?.question, run_id: ev.data?.run_id });
+      }
       if (ev.type === "agent_message") {
-        setMessages((cur) => dedupe([...cur, { sender: ev.data.agent_id, text: ev.data.text }]));
+        setMessages((cur) => dedupe([...cur, { sender: ev.data?.from || ev.data?.agent_id, text: ev.data?.text }]));
       }
     };
     const off = chatStore.addSink(sink);

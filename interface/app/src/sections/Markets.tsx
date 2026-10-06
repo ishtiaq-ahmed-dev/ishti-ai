@@ -20,6 +20,7 @@ type Saved = {
 
 const SYM: Record<string, string> = { USD: "$", EUR: "€", GBP: "£" };
 const decimalsFor = (v: number) => (v >= 1000 ? 0 : v >= 10 ? 2 : 4);
+const errorText = (error: unknown) => error instanceof Error ? error.message : "The request failed.";
 
 function Spark({ data, up }: { data: number[]; up: boolean }) {
   if (data.length < 2) return <div className="h-10" />;
@@ -96,22 +97,38 @@ export function Markets({ onToggleNav, embedded }: { onToggleNav?: () => void; e
   const Shell = embedded ? EmbeddedShell : Page;
   const [items, setItems] = useState<Item[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [q, setQ] = useState("");
   const [add, setAdd] = useState("");
   const [tab, setTab] = useState<"live" | "history">("live");
   const [addError, setAddError] = useState("");
   const [analysis, setAnalysis] = useState<{ reply: string; charts: Chart[] } | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState("");
+  const [actionError, setActionError] = useState("");
 
-  const load = () => { setLoading(true); return getJSON<{ items: Item[] }>("/api/markets/watchlist").then((d) => setItems(d.items)).finally(() => setLoading(false)); };
-  useEffect(() => { load(); const t = setInterval(load, 60_000); return () => clearInterval(t); }, []);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError("");
+    try {
+      const data = await getJSON<{ items: Item[] }>("/api/markets/watchlist");
+      setItems(data.items ?? []);
+    } catch (error) {
+      setLoadError(errorText(error));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => { void load(); const t = setInterval(() => void load(), 60_000); return () => clearInterval(t); }, [load]);
 
   const analyze = async (what: string) => {
     if (!what.trim()) return;
-    setQ(what); setAnalyzing(true); setAnalysis(null);
+    setQ(what); setAnalyzing(true); setAnalysis(null); setAnalysisError("");
     try {
       setAnalysis(await getJSON(`/api/markets/analyze?q=${encodeURIComponent(what.trim())}`));
       if (tab === "history") void loadHistory();   // a fresh run from the History tab shows up in the list too
+    } catch (error) {
+      setAnalysisError(errorText(error));
     } finally { setAnalyzing(false); }
   };
 
@@ -120,36 +137,55 @@ export function Markets({ onToggleNav, embedded }: { onToggleNav?: () => void; e
   const [hq, setHq] = useState("");
   const [openSaved, setOpenSaved] = useState<Saved | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [historyError, setHistoryError] = useState("");
   const loadHistory = useCallback((search = "") => {
+    setSaved(null);
+    setHistoryError("");
     return getJSON<{ items: Saved[] }>(`/api/markets/history?q=${encodeURIComponent(search)}`)
       .then((d) => setSaved(d.items ?? []))
-      .catch(() => setSaved([]));
+      .catch((error) => setHistoryError(errorText(error)));
   }, []);
   useEffect(() => { if (tab === "history") void loadHistory(hq); }, [tab, loadHistory, hq]);
   const rerun = async (s: Saved) => {
-    setBusyId(s.id);
+    setBusyId(s.id); setActionError("");
     try {
       const d = await postJSON<{ question: string; result: { reply?: string; charts?: Chart[] } }>(`/api/markets/history/${s.id}/rerun`, {});
       setAnalysis({ reply: d.result?.reply ?? "", charts: d.result?.charts ?? [] });
       setQ(d.question || s.question || s.name);
       setTab("live");
       await loadHistory(hq);
+    } catch (error) {
+      setActionError(errorText(error));
     } finally { setBusyId(null); }
   };
   const removeSaved = async (s: Saved) => {
-    await del(`/api/markets/history/${s.id}`).catch(() => {});
-    setOpenSaved((cur) => (cur?.id === s.id ? null : cur));
-    await loadHistory(hq);
+    setActionError("");
+    try {
+      await del(`/api/markets/history/${s.id}`);
+      setOpenSaved((cur) => (cur?.id === s.id ? null : cur));
+      await loadHistory(hq);
+    } catch (error) {
+      setActionError(errorText(error));
+    }
   };
   const addItem = async () => {
     if (!add.trim()) return;
-    setAddError("");
-    const r = await postJSON<{ items?: Item[]; error?: string }>("/api/markets/watchlist", { add: add.trim() });
-    if (r.error) setAddError(r.error); else { setItems(r.items ?? null); setAdd(""); }
+    setAddError(""); setActionError("");
+    try {
+      const r = await postJSON<{ items?: Item[]; error?: string }>("/api/markets/watchlist", { add: add.trim() });
+      if (r.error) setAddError(r.error); else { setItems(r.items ?? []); setAdd(""); }
+    } catch (error) {
+      setAddError(errorText(error));
+    }
   };
   const remove = async (it: Item) => {
-    const r = await postJSON<{ items: Item[] }>("/api/markets/watchlist", { remove: { kind: it.kind, id: it.id } });
-    setItems(r.items);
+    setActionError("");
+    try {
+      const r = await postJSON<{ items: Item[] }>("/api/markets/watchlist", { remove: { kind: it.kind, id: it.id } });
+      setItems(r.items ?? []);
+    } catch (error) {
+      setActionError(errorText(error));
+    }
   };
 
   return (
@@ -167,8 +203,10 @@ export function Markets({ onToggleNav, embedded }: { onToggleNav?: () => void; e
       </div>
 
       {tab === "live" && (<>
+      {loadError && <p role="alert" className="mb-3 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">Could not load market prices: {loadError}</p>}
+      {actionError && <p role="alert" className="mb-3 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{actionError}</p>}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        {items === null ? (
+        {items === null && !loadError ? (
           Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="h-28 rounded-2xl border border-border bg-card/40 p-3.5 animate-pulse flex flex-col justify-between">
               <div className="space-y-1.5">
@@ -178,7 +216,7 @@ export function Markets({ onToggleNav, embedded }: { onToggleNav?: () => void; e
               <div className="h-5 w-2/3 rounded bg-muted" />
             </div>
           ))
-        ) : (
+        ) : items?.length ? (
           <AnimatePresence initial={false}>
             {items.map((it, i) => {
               const up = (it.change_pct ?? 0) >= 0;
@@ -210,7 +248,9 @@ export function Markets({ onToggleNav, embedded }: { onToggleNav?: () => void; e
             );
           })}
         </AnimatePresence>
-        )}
+        ) : !loadError ? (
+          <p className="col-span-full rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">Your watchlist is empty. Add a market above to start tracking it.</p>
+        ) : null}
       </div>
 
       <form className="mt-3 flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); addItem(); }}>
@@ -234,6 +274,7 @@ export function Markets({ onToggleNav, embedded }: { onToggleNav?: () => void; e
         </form>
         <AnimatePresence mode="wait">
           {analyzing && <motion.div key="l" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mt-4 h-56 animate-pulse rounded-xl bg-muted/60" />}
+          {analysisError && !analyzing && <motion.p key="e" role="alert" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-4 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">Analysis failed: {analysisError}</motion.p>}
           {analysis && !analyzing && (
             <motion.div key="a" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="mt-4 grid gap-4 lg:grid-cols-[3fr_2fr]">
               <div>{analysis.charts?.[0] ? <PriceChart chart={analysis.charts[0]} /> : <p className="text-sm text-muted-foreground">No price history for this one.</p>}</div>
@@ -246,6 +287,7 @@ export function Markets({ onToggleNav, embedded }: { onToggleNav?: () => void; e
 
       {tab === "history" && (
         <section className="rounded-2xl border border-border bg-background p-4 sm:p-5" data-testid="markets-history">
+          {actionError && <p role="alert" className="mb-3 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{actionError}</p>}
           {openSaved ? (
             <div>
               <button type="button" onClick={() => setOpenSaved(null)} className="mb-3 flex items-center gap-1 text-xs text-accent cursor-pointer">
@@ -282,7 +324,8 @@ export function Markets({ onToggleNav, embedded }: { onToggleNav?: () => void; e
                 <input value={hq} onChange={(e) => setHq(e.target.value)} placeholder="Search your saved analyses: symbol, name, question or BUY / WAIT / AVOID…"
                   aria-label="Search history" className="w-full rounded-xl border border-border bg-background py-2 pl-9 pr-3 text-sm outline-none focus:border-accent" />
               </div>
-              {saved === null ? <p className="mt-4 text-sm text-muted-foreground">Loading…</p>
+              {historyError ? <p role="alert" className="mt-4 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">Could not load saved analyses: {historyError}</p>
+                : saved === null ? <p className="mt-4 text-sm text-muted-foreground">Loading saved analyses…</p>
                 : saved.length === 0 ? <p className="mt-6 text-center text-sm text-muted-foreground">{hq ? "Nothing matches that search." : "Nothing saved yet. Every analysis you ask for is kept here with its buy / sell plan."}</p>
                 : (
                   <ul className="mt-3 divide-y divide-border/60">

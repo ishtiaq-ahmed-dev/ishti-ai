@@ -218,9 +218,18 @@ async def save_upload(file: UploadFile, folder=None):
         swallowed("ishti/files_api.py:scan_upload_failed")
         Path(path).unlink(missing_ok=True)
         return None, ("The security scan could not complete. The staged file was rejected.", 503)
-    verb = {"document": "summarize", "image": "describe the image", "code": "read and review", "audio": "transcribe", "video": "info about"}[kind_of(name)]
-    return {"ok": True, "path": path, "name": os.path.basename(path), "size": size, "kind": kind_of(name),
-            "mention": f"{verb} {path}"}, None
+    kind = kind_of(name)
+    verb = {"document": "summarize", "image": "describe the image", "code": "read and review",
+            "audio": "transcribe", "video": "describe"}[kind]
+    action = {
+        "document": "summarize the document",
+        "image": "describe the image",
+        "code": "read and review the code as text (never execute it)",
+        "audio": "transcribe the audio",
+        "video": "describe the video",
+    }[kind]
+    return {"ok": True, "path": path, "name": os.path.basename(path), "size": size, "kind": kind,
+            "action": action, "mention": f"{verb} {path}"}, None
 
 
 @router.post("/api/upload")

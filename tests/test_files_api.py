@@ -38,6 +38,7 @@ def test_upload_saves_under_a_safe_unique_name_and_returns_the_path(api):
     assert os.path.dirname(j["path"]) == str(tmp / "uploads") and ".." not in j["name"]
     assert open(j["path"], "rb").read() == b"%PDF-1.4 x"
     assert j["mention"] == f"summarize {j['path']}"
+    assert j["action"] == "summarize the document"
     again = up(c, "Quarterly report (final).PDF", b"%PDF-1.7 second").json()
     assert again["path"] != j["path"]                      # never overwrites an earlier upload
 
@@ -122,7 +123,7 @@ def test_failed_upload_read_removes_partial_file(tmp_path):
 
 def test_upload_refuses_executables_empty_and_oversized(api, monkeypatch):
     c, tmp = api
-    for bad in ("setup.exe", "run.bat", "x.ps1", "noext"):
+    for bad in ("setup.exe", "mobile.apk", "library.jar", "native.dll", "run.bat", "x.ps1", "noext"):
         r = up(c, bad)
         assert r.status_code == 400 and "can't take" in r.json()["error"], bad
     assert up(c, "empty.txt", b"").status_code == 400

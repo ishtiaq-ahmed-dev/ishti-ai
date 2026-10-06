@@ -136,14 +136,16 @@ export function NotificationPopover({
 export function NotificationsPanel() {
   const [items, setItems] = useState<Notif[]>([]);
   const [unread, setUnread] = useState(0);
+  const [error, setError] = useState("");
 
   const load = () => {
     getJSON<{ notifications: Notif[]; unread: number }>("/api/notifications")
       .then((d) => {
         setItems(d.notifications ?? []);
         setUnread(d.unread ?? 0);
+        setError("");
       })
-      .catch((err) => console.warn("[notifications] load failed:", err));
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)));
   };
 
   useEffect(() => {
@@ -154,6 +156,10 @@ export function NotificationsPanel() {
   }, []);
 
   const sync = () => window.dispatchEvent(new CustomEvent("ishti-notification"));
+  const mark = async (body: object) => {
+    try { await postJSON("/api/notifications/read", body); setError(""); sync(); }
+    catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+  };
 
   return (
     <div className="rounded-2xl border border-border bg-background">
@@ -169,17 +175,18 @@ export function NotificationsPanel() {
         {unread > 0 && (
           <button
             type="button"
-            onClick={() => postJSON("/api/notifications/read", {}).catch(() => {}).finally(sync)}
+            onClick={() => void mark({})}
             className="flex items-center gap-1.5 rounded-xl border border-border px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
           >
             <CheckCheck className="h-3.5 w-3.5" /> Mark all read
           </button>
         )}
       </div>
+      {error && <p role="alert" className="border-b border-border/60 px-4 py-2 text-xs text-danger">{error}</p>}
       <div className="divide-y divide-border/40">
         {items.length ? (
           items.map((n) => (
-            <Row key={n.id} n={n} onOpen={(x) => { if (!x.read) postJSON("/api/notifications/read", { id: x.id }).catch(() => {}).finally(sync); }} />
+            <Row key={n.id} n={n} onOpen={(x) => { if (!x.read) void mark({ id: x.id }); }} />
           ))
         ) : (
           <p className="px-4 py-10 text-center text-sm text-muted-foreground">
