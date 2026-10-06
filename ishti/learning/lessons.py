@@ -222,6 +222,10 @@ def attribute(lesson_ids, reward, interaction_id="", reason=""):
         got = store.row("SELECT * FROM lessons WHERE lesson_id=? AND status='active'", (lesson_id,))
         if not got:
             continue
+        if interaction_id and store.row(
+                "SELECT 1 FROM lesson_events WHERE lesson_id=? AND interaction_id=? "
+                "AND reason LIKE 'owner-rated exact answer%'", (lesson_id, interaction_id)):
+            continue
         # the owner confirmed it explicitly: their statement outranks our own outcome signal
         if int(got.get("confirmed") or 0):
             continue
@@ -479,7 +483,7 @@ def _memory_writeback(lesson):
         return False
 
 
-def guidance_for(text, domain=None, limit=4):
+def guidance_for(text, domain=None, limit=4, session_id=None):
     """The lessons that apply to this request, highest precedence first (spec 13/27).
 
     Ordered by (relevance, kind priority, confidence). Weak observations only appear when they
@@ -497,6 +501,8 @@ def guidance_for(text, domain=None, limit=4):
     floor = float(thresholds().get("weak", 0.3))
     scored = []
     for ls in active(limit=200):
+        if ls.get("kind") == "temporary" and (not session_id or str(ls.get("entity") or "") != str(session_id)):
+            continue
         pinned = bool(int(ls.get("confirmed") or 0)) or ls.get("source") in (
             "explicit_user_correction", "user_confirmation", "owner_statement",
             "temporary_instruction", "dashboard")
@@ -514,9 +520,11 @@ def guidance_for(text, domain=None, limit=4):
     return [s["lesson"] for s in scored[:int(limit)]]
 
 
-def context_for(text, domain=None, limit=4):
+def context_for(text, domain=None, limit=4, session_id=None, capture=None):
     """A prompt block for the chat skill: what ISHTI has learned that bears on this request."""
-    got = guidance_for(text, domain, limit)
+    got = guidance_for(text, domain, limit, session_id=session_id)
+    if isinstance(capture, list):
+        capture.extend(str(ls["lesson_id"]) for ls in got if ls.get("lesson_id"))
     if not got:
         return ""
     lines = []

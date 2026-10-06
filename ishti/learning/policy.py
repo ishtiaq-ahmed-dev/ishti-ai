@@ -14,7 +14,7 @@ _TEMP_RX = re.compile(
     re.I
 )
 
-def temporary_instruction(text: str) -> Optional[Dict[str, Any]]:
+def temporary_instruction(text: str, session: Optional[Any] = None) -> Optional[Dict[str, Any]]:
     """Parse text for temporary instruction pattern (spec 13)."""
     t = (text or "").strip()
     m = _TEMP_RX.match(t)
@@ -23,6 +23,7 @@ def temporary_instruction(text: str) -> Optional[Dict[str, Any]]:
     stmt = (m.group("stmt") or m.group("stmt2") or "").strip()
     if not stmt:
         return None
+    sid = session.get("id") if isinstance(session, dict) else session
     # Add a temporary instruction lesson
     ttl = float(store.cfg().get("temporary_ttl_s", 3600))
     return lessons.add(
@@ -30,6 +31,7 @@ def temporary_instruction(text: str) -> Optional[Dict[str, Any]]:
         statement=stmt,
         scope="session",
         context="session",
+        entity=str(sid)[:160] if sid else "",
         source="temporary_instruction",
         confidence=1.0,
         expires=store.now() + ttl
@@ -43,7 +45,8 @@ def check(text: str, decision: Optional[Dict[str, Any]] = None,
     
     dec = decision or {}
     domain = str(dec.get("skill") or "") if isinstance(dec, dict) else ""
-    guidance = lessons.guidance_for(text, domain=domain, limit=5)
+    sid = session.get("id") if isinstance(session, dict) else session
+    guidance = lessons.guidance_for(text, domain=domain, limit=5, session_id=sid)
     overrides = []
     override_skill = None
     why_reasons = []

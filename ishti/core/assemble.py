@@ -113,7 +113,7 @@ def assemble(request: str, *, state_summary: str = "", memories: list | None = N
     return "\n\n".join(parts)
 
 
-def arch2_block(request: str, state_summary: str = "") -> str:
+def arch2_block(request: str, state_summary: str = "", session_id=None, capture=None) -> str:
     """The RELEVANT-* middle of the template from arch2's own retrievers (pipeline.py's
     context block). Returns the assembled memory context, '' when nothing is relevant."""
     from ishti.arch2 import retrieval, people
@@ -134,8 +134,10 @@ def arch2_block(request: str, state_summary: str = "") -> str:
     lessons = []
     try:
         from ishti.learning import lessons as L
-        lessons = [f"{l['statement']} (confidence {l['confidence']:.2f})"
-                   for l in L.guidance_for(request, limit=4)]
+        got = L.guidance_for(request, limit=4, session_id=session_id)
+        if isinstance(capture, list):
+            capture.extend(str(l["lesson_id"]) for l in got if l.get("lesson_id"))
+        lessons = [f"{l['statement']} (confidence {l['confidence']:.2f})" for l in got]
     except Exception as _exc:
         swallowed('ishti/core/assemble.py:arch2_block', _exc)
     convo = [h["text"][:280] for h in retrieval.vector_hits(request)]

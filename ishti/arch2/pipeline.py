@@ -239,7 +239,9 @@ def run(request: str, session, skills: dict) -> dict:
     Returns {"reply", "sources"} like any skill."""
     from ishti import llm  # openai import lives here; arch2 must load without it
 
-    context = retrieval.assemble_context(request)
+    session["_applied_lesson_ids"] = []
+    context = retrieval.assemble_context(request, session_id=session.get("id"),
+                                         capture=session["_applied_lesson_ids"])
     # D3: the conversation-state summary (active topic / task / constraints) is pinned
     # into the context block - the brain never sees only the raw latest message.
     state_summary = session.get("state_summary") or ""
