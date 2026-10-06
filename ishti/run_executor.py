@@ -59,6 +59,12 @@ def _run_one(run_id: str, run: dict, cancelled: threading.Event, t0: float) -> N
                           sources=ev.get("sources"))
         elif kind == "verify":
             runs.run_step(run_id, "verify", ev.get("label") or "verify")
+        elif kind == "route":  # restore the "what I decided" line the old Thinking panel showed
+            runs.run_step(run_id, "tool", "Routing: " + str(ev.get("why") or ev.get("skill") or "choosing a skill")[:200])
+        elif kind == "step" and ev.get("status") == "start":
+            runs.run_step(run_id, "tool", f"Using {ev.get('skill') or 'skill'}")
+        elif kind == "escalate":
+            runs.run_step(run_id, "research", str(ev.get("why") or "Trying another way"))
         elif kind == "research_state":
             # WP2 never-early gate: the orchestrator's deep_research state machine publishes
             # state changes; a final answer may only go out when the state is COMPLET else the

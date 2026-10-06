@@ -32,8 +32,7 @@ export function ProfileSwitcher({ pendingRuns = 0 }: { pendingRuns?: number }) {
 
   const doSwitch = async (p: Profile) => {
     setConfirming(null);
-    try { await putJSON("/api/profile", { active: p }); } catch {}
-    chatStore.activeProfile = p;
+    await chatStore.setProfile(p);
     window.dispatchEvent(new Event("ishti-profile-changed"));
     rerender((n) => n + 1); // local re-render (postJSON path also emits store-wide)
   };

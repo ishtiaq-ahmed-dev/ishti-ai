@@ -10,7 +10,9 @@ MAX_FILE_BYTES = 50 * 1024 * 1024
 MAX_TEXT_CHARS = 60000
 MAX_OUTPUT_BYTES = MAX_TEXT_CHARS * 6 + 4096
 TIMEOUT_SECONDS = 45
-EXTENSIONS = {".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv", ".pptx", ".txt", ".md"}
+EXTENSIONS = {".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv", ".pptx", ".txt", ".md",
+              ".html", ".htm", ".css", ".js", ".jsx", ".ts", ".tsx", ".py", ".xml", ".yaml", ".yml", ".toml", ".ini", ".log",
+              ".sql", ".sh", ".java", ".c", ".cpp", ".h", ".go", ".rs", ".php", ".rb", ".vue", ".scss"}
 
 
 class DocumentReadError(RuntimeError):

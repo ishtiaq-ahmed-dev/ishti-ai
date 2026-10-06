@@ -202,7 +202,8 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
 
   // ---------------- derived selectors ----------------
   const q = search.trim().toLowerCase();
-  const visibleChats = (q ? chats.filter((c) => (c.title || "").toLowerCase().includes(q)) : chats);
+  const inProfile = chats.filter((c) => (c.profile || "personal") === chatStore.activeProfile);
+  const visibleChats = (q ? inProfile.filter((c) => (c.title || "").toLowerCase().includes(q)) : inProfile);
   // Profiles never merge: each chat keeps the profile it was created with (runs, prompt layers
   // and memory namespace follow the chat), and the sidebar shows the two namespaces apart.
   const personalChats = visibleChats.filter((c) => (c.profile || "personal") === "personal");

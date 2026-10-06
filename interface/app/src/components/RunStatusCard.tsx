@@ -3,7 +3,7 @@
 // explicitly marked as working draft; final bubble only on run_finished; exhaustion states show
 // backend text verbatim (what was tried, what is missing) - never a fabricated answer.
 import { useEffect, useState } from "react";
-import { CircleStop, ExternalLink, FlaskConical, Loader2 } from "lucide-react";
+import { CheckCircle2, CircleStop, ExternalLink, FlaskConical, Loader2 } from "lucide-react";
 import type { StoreRun } from "@/lib/chat-store";
 
 type Props = {
@@ -18,11 +18,11 @@ export function RunStatusCard({ run, onCancel }: Props) {
     return () => clearInterval(t);
   }, []);
 
-  const researchSteps = run.steps.filter((s) => s.kind === "research");
   const verifySteps = run.steps.filter((s) => s.kind === "verify");
   const current = run.steps[run.steps.length - 1];
   const researching = run.steps.some((s) => s.kind === "research");
   const live = run.state === "running" || run.state === "queued";
+  const headline = current ? current.label : run.state === "queued" ? "Queued…" : "Thinking…";
 
   return (
     <div className="rounded-xl border border-border/70 bg-card/60 p-3 text-sm" data-testid="run-status">
@@ -30,11 +30,9 @@ export function RunStatusCard({ run, onCancel }: Props) {
         {researching
           ? <FlaskConical className="h-4 w-4 text-accent" aria-hidden />
           : <Loader2 className="h-4 w-4 animate-spin text-accent" aria-hidden />}
-        <span className="font-medium text-foreground">
-          {researching ? "Researching…" : run.state === "queued" ? "Queued…" : "Working…"}
-        </span>
+        <span className="min-w-0 truncate font-medium text-foreground">{headline}</span>
         <span className="text-xs text-muted-foreground" aria-live="polite">
-          {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")} elapsed
+          {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}
         </span>
         {live && (
           <button
@@ -47,19 +45,14 @@ export function RunStatusCard({ run, onCancel }: Props) {
         )}
       </div>
 
-      {current && (
-        <div className="mt-2 flex items-baseline gap-2 text-xs text-muted-foreground">
-          <span className="rounded bg-muted px-1.5 py-0.5 font-mono">{current.kind}</span>
-          <span>{current.label}</span>
-        </div>
-      )}
-
-      {researchSteps.length > 0 && (
-        <ol className="mt-2 space-y-1 text-xs text-muted-foreground">
+      {run.steps.length > 0 && (
+        <ol className="mt-2 space-y-1 border-l-2 border-sky-500/30 pl-3 text-xs text-muted-foreground">
           {run.steps.map((s, i) => (
             <li key={i} className="flex items-center gap-1.5">
-              <span className="font-mono text-[10px] opacity-70">{i + 1}.</span>
-              <span>{s.label}</span>
+              {live && i === run.steps.length - 1
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-500" aria-hidden />
+                : <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" aria-hidden />}
+              <span className="min-w-0 break-words">{s.label}</span>
               {s.sources.slice(0, 3).map((u) => (
                 <a key={u} href={u} target="_blank" rel="noreferrer"
                    className="inline-flex max-w-[180px] items-center gap-0.5 truncate text-accent hover:underline">

@@ -153,6 +153,8 @@ class ChatStore {
     // Pin the profile at creation: a chat keeps its profile forever (its runs, prompt layers and
     // memory namespace follow the chat), so an in-flight global switch must not blur it.
     const wanted = profile ?? this.activeProfile;
+    const cur = this.activeChatId ? this.chats.get(this.activeChatId) : null;
+    if (cur && cur.profile === wanted && !(this.messages.get(cur.chat_id) || []).length) return cur; // already blank
     const c = await postJSON<{ chat_id: string; profile: Profile }>("/api/chats", { profile: wanted });
     const chat: StoreChat = { chat_id: c.chat_id, title: "New chat", profile: c.profile, created_at: Date.now() / 1000, updated_at: Date.now() / 1000, unread: 0 };
     this.chats.set(c.chat_id, chat);
@@ -280,6 +282,10 @@ class ChatStore {
         const chat = this.chats.get(chatId);
         if (chat) {
           chat.updated_at = Math.max(chat.updated_at, m.ts);
+          if (m.role === "user" && chat.title === "New chat") {
+            const t = (m.text || "").split(/\s+/).join(" ").trim();
+            if (t) chat.title = t.length > 48 ? t.slice(0, 48).trimEnd() + "…" : t;
+          }
           if (chatId !== this.activeChatId && m.role === "assistant") chat.unread += 1;
         }
         break;
@@ -407,8 +413,16 @@ class ChatStore {
 
   // ---------------- profile (WP4) ----------------
   async setProfile(p: Profile) {
-    await putJSON("/api/profile", { active: p });
+    try { await putJSON("/api/profile", { active: p }); } catch {}
     this.activeProfile = p;
+    // Chats never merge across profiles: jump to the newest chat of this profile (or start one).
+    const cur = this.activeChatId ? this.chats.get(this.activeChatId) : null;
+    if (!cur || (cur.profile || "personal") !== p) {
+      const mine = [...this.chats.values()].filter((c) => (c.profile || "personal") === p)
+        .sort((a, b) => b.updated_at - a.updated_at)[0];
+      if (mine) this.setActiveChat(mine.chat_id);
+      else if (this.ready) await this.newChat(p);
+    }
     this.emit();
   }
 

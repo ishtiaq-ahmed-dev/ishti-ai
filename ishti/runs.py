@@ -153,6 +153,27 @@ def get_chat(chat_id: str) -> dict | None:
     return dict(row) if row else None
 
 
+def set_chat_title(chat_id: str, title: str) -> dict:
+    """Server-side rename. The UI still allows free renames locally (title overrides), but the
+    durable title serves the auto-name: the first user message names the chat (no more rows of
+    'New chat'). The literal placeholder is refused so a stale client can never erase a real name
+    after an auto-title (that was the 'too many New chat rows' regression)."""
+    clean = str(title or "").strip()[:120]
+    if not clean:
+        raise ValueError("title must not be empty")
+    if clean.lower() == "new chat":
+        raise ValueError("'New chat' is the auto-name placeholder and cannot be stored")
+    with _lock:
+        c = conn()
+        row = c.execute("SELECT chat_id FROM chats WHERE chat_id = ?", (str(chat_id),)).fetchone()
+        if not row:
+            raise ValueError("unknown chat_id")
+        c.execute("UPDATE chats SET title = ? WHERE chat_id = ?", (clean, str(chat_id)))
+        c.commit()
+    publish("chat_renamed", {"chat_id": str(chat_id), "title": clean})
+    return get_chat(chat_id)
+
+
 def chat_profile(chat_id: str) -> str:
     chat = get_chat(chat_id)
     return _profiles.valid(chat["profile"]) if chat else _profiles.active()
@@ -165,6 +186,12 @@ def messages_after(chat_id: str, after_seq: int = 0, limit: int = 1000) -> list[
             "FROM messages WHERE chat_id = ? AND seq > ? ORDER BY seq LIMIT ?",
             (str(chat_id), int(max(0, after_seq)), int(max(1, limit)))).fetchall()
     return [dict(r) for r in rows]
+
+
+def chat_title(text: str) -> str:
+    """First line of the first user message, trimmed - the sidebar label (mirrored in chat-store.ts)."""
+    t = " ".join(str(text).split())
+    return (t[:48].rstrip() + "…") if len(t) > 48 else (t or "New chat")
 
 
 def add_user_message(chat_id: str, text: str, client_msg_id: str | None = None,
@@ -193,7 +220,8 @@ def add_user_message(chat_id: str, text: str, client_msg_id: str | None = None,
                 (chat_id, client_msg_id or "")).fetchone()
             c.commit()
             return {"message": dict(row), "duplicate": True}
-        c.execute("UPDATE chats SET updated_at = ? WHERE chat_id = ?", (now, chat_id))
+        c.execute("UPDATE chats SET updated_at = ?, title = CASE WHEN title = 'New chat' THEN ? ELSE title END "
+                  "WHERE chat_id = ?", (now, chat_title(text), chat_id))
         c.commit()
         msg = dict(c.execute("SELECT seq, message_id, role, text, run_id, client_msg_id, channel, "
                              "profile, ts FROM messages WHERE seq = ?",
@@ -214,7 +242,8 @@ def add_assistant_message(chat_id: str, text: str, run_id: str = "",
             # second assistant message of a chat and silently drop run_finished/message_created.
             (uuid.uuid4().hex[:16], chat_id, "assistant", str(text or ""), run_id, None, channel,
              _profiles.valid(profile or chat_profile(chat_id)), now))
-        c.execute("UPDATE chats SET updated_at = ? WHERE chat_id = ?", (now, chat_id))
+        c.execute("UPDATE chats SET updated_at = ?, title = CASE WHEN title = 'New chat' THEN ? ELSE title END "
+                  "WHERE chat_id = ?", (now, chat_title(text), chat_id))
         c.commit()
         msg = dict(c.execute("SELECT seq, message_id, role, text, run_id, client_msg_id, channel, "
                              "profile, ts FROM messages WHERE seq = ?",

@@ -41,6 +41,8 @@ KEEP_DAYS = 30
 KINDS = {
     "document": {".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv", ".pptx", ".txt", ".md", ".json", ".rtf", ".odt"},
     "image": {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff", ".heic"},
+    "code": {".html", ".htm", ".css", ".js", ".jsx", ".ts", ".tsx", ".py", ".xml", ".yaml", ".yml", ".toml", ".ini", ".log",
+             ".sql", ".sh", ".java", ".c", ".cpp", ".h", ".go", ".rs", ".php", ".rb", ".vue", ".scss"},  # text only; never executed. apk/exe/jar stay unlisted = rejected
     "audio": {".mp3", ".wav", ".m4a", ".ogg", ".flac", ".opus", ".aac"},
     "video": {".mp4", ".mkv", ".mov", ".avi", ".webm"},
 }
@@ -130,7 +132,7 @@ def _valid_upload_content(ext, sample, path):
         return True
     if ext == ".rtf":
         return sample.lstrip().startswith(b"{\\rtf")
-    if ext in {".txt", ".md", ".csv", ".json"}:
+    if ext in {".txt", ".md", ".csv", ".json"} | KINDS["code"]:
         if b"\x00" in sample:
             return False
         try:
@@ -161,7 +163,7 @@ async def save_upload(file: UploadFile, folder=None):
     name = safe_name(file.filename)
     ext = os.path.splitext(name)[1]
     if ext not in ALLOWED_EXT:
-        return None, (f"I can't take a {ext or 'extensionless'} file. Documents, images, audio and video are fine.", 400)
+        return None, (f"I can't take a {ext or 'extensionless'} file. Documents, code, images, audio and video are fine.", 400)
     os.makedirs(folder, exist_ok=True)
     path = os.path.join(folder, f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex}-{name}")
     size = 0
@@ -216,7 +218,7 @@ async def save_upload(file: UploadFile, folder=None):
         swallowed("ishti/files_api.py:scan_upload_failed")
         Path(path).unlink(missing_ok=True)
         return None, ("The security scan could not complete. The staged file was rejected.", 503)
-    verb = {"document": "summarize", "image": "describe the image", "audio": "transcribe", "video": "info about"}[kind_of(name)]
+    verb = {"document": "summarize", "image": "describe the image", "code": "read and review", "audio": "transcribe", "video": "info about"}[kind_of(name)]
     return {"ok": True, "path": path, "name": os.path.basename(path), "size": size, "kind": kind_of(name),
             "mention": f"{verb} {path}"}, None
 

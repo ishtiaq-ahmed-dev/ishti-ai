@@ -140,9 +140,12 @@ def extract(extension, data, limit):
         source = io.BytesIO(data)
         frame = pd.read_csv(source, nrows=200) if extension == ".csv" else pd.read_excel(source, nrows=200)
         return frame.to_csv(index=False)[:limit]
-    if extension in {".txt", ".md", ".doc"}:
+    if extension in {".txt", ".md", ".doc"} or extension in _CODE_EXT:
         return data.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")[:limit]
     raise ValueError("Unsupported format")
+
+
+_CODE_EXT = {".html", ".htm", ".css", ".js", ".jsx", ".ts", ".tsx", ".py", ".xml", ".yaml", ".yml", ".toml", ".ini", ".log", ".sql", ".sh", ".java", ".c", ".cpp", ".h", ".go", ".rs", ".php", ".rb", ".vue", ".scss"}
 
 
 def main():

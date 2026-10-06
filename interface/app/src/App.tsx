@@ -7,6 +7,7 @@ import { Connectors, Inputs, Settings, Skills, Tasks } from "@/sections/Pages";
 import { ConnectorsPage } from "@/sections/ConnectorsPage";
 import { Learning } from "@/sections/Learning";
 import { chatStore } from "@/lib/chat-store";
+import { ProfileGate } from "@/components/ProfileGate";
 import { ProfileSwitcher, PromptLayersViewer } from "@/components/ProfileSwitcher";
 import { AgentsPanel } from "@/components/AgentsPanel";
 import { LearningPanel } from "@/components/LearningPanel";
@@ -79,6 +80,7 @@ export default function App() {
   const boot = useBoot();
   // WP1: start the app-level chat store + one shared event stream BEFORE any page mounts.
   useEffect(() => { chatStore.start(); return () => chatStore.stop(); }, []);
+  const [gated, setGated] = useState(() => { try { return !sessionStorage.getItem("ishti-profile-chosen"); } catch { return true; } });
   const [page, setPageState] = useState<Key>(getInitialPage);
   const [owner, setOwner] = useState("Ishtiaq Ahmed");
   const [notifs, setNotifs] = useState<Notif[]>([]);
@@ -415,6 +417,7 @@ export default function App() {
 
   return (
     <BootContext.Provider value={boot}>
+    {gated && <ProfileGate onChosen={() => setGated(false)} />}
     <div className="flex h-full p-3 bg-canvas text-foreground transition-colors duration-200">
       <BootPanel boot={boot} />
       <div className="relative flex min-h-0 flex-1 overflow-hidden rounded-3xl border border-border bg-background shadow-[0_8px_40px_rgba(0,0,0,0.06)] dark:shadow-[0_8px_40px_rgba(0,0,0,0.8)]">
