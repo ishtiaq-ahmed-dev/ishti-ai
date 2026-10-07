@@ -12,7 +12,7 @@ import { LiveMode } from "@/components/LiveMode";
 import { cn } from "@/lib/utils";
 import { useBootState } from "@/lib/boot";
 import { chatStore, type StoreChat, type StoreMessage, type StoreRun } from "@/lib/chat-store";
-import { RunStatusCard, RunThoughts, StreamedDraftBanner, UnverifiedBanner, runUnverified } from "@/components/RunStatusCard";
+import { toggleAllThinking, Thinking, StreamedDraftBanner, UnverifiedBanner, runUnverified } from "@/components/RunStatusCard";
 import { FeedbackPanel } from "@/components/FeedbackPanel";
 
 function ago(iso: number) {
@@ -116,6 +116,11 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   const pendingRun = liveRuns.length ? liveRuns[liveRuns.length - 1] : null;
   const busy = liveRuns.length > 0;
   const chats = chatStore.chatList();
+  // T2: offer Expand/Collapse-all when this chat shows more than one thinking block.
+  const thinkingCount = storeMsgs.filter((m) => {
+    const r = m.run_id ? chatStore.runs.get(m.run_id) : null;
+    return r && r.steps.length > 0 && ["done", "failed", "cancelled"].includes(r.state);
+  }).length;
 
   const [showHistory, setShowHistory] = useState(() => {
     try {
@@ -585,7 +590,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
             className="ishti-selectable min-w-0 flex-1 max-w-full overflow-hidden"
             style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-leading)" }}
           >
-            {m.run_id && chatStore.runs.get(m.run_id) && <RunThoughts run={chatStore.runs.get(m.run_id)!} />}
+            {m.run_id && <Thinking runId={m.run_id} run={chatStore.runs.get(m.run_id)} />}
             <Markdown text={m.text} />
             <MediaPreview text={m.text} onSend={(p) => { setInput(`send "${p}" on whatsapp to `); box.current?.focus(); }} />
             <Sources run={m.run_id ? chatStore.runs.get(m.run_id) : undefined} />
@@ -905,6 +910,21 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
             </div>
           </div>
           <div className="flex items-center gap-1">
+            {thinkingCount > 1 && (
+              <span className="flex items-center text-[11px] text-muted-foreground" data-testid="thinking-bulk">
+                <button type="button" onClick={() => toggleAllThinking(true)}
+                  className="rounded-md px-1.5 py-1 transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
+                  title="Expand every thinking panel in this chat">
+                  Expand all
+                </button>
+                <span aria-hidden>·</span>
+                <button type="button" onClick={() => toggleAllThinking(false)}
+                  className="rounded-md px-1.5 py-1 transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
+                  title="Collapse every thinking panel in this chat">
+                  Collapse all
+                </button>
+              </span>
+            )}
             <button type="button" onClick={() => setShowFeedback((visible) => {
               const next = !visible;
               try { localStorage.setItem("ishti-show-answer-feedback", String(next)); } catch {}
@@ -983,7 +1003,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                     transition={{ duration: 0.22, ease: "easeOut" }} className="flex gap-3 min-w-0 max-w-full" data-testid="pending-run">
                     <IshtiBrand variant="icon" size={32} className="mt-0.5 shrink-0 shadow-xs" />
                     <div className="min-w-0 flex-1 max-w-full overflow-hidden space-y-2">
-                      <RunStatusCard run={pendingRun} onCancel={(id) => void chatStore.cancelRun(id)} />
+                      <Thinking run={pendingRun} onCancel={(id) => void chatStore.cancelRun(id)} />
                       {pendingRun.text ? (
                         <>
                           <StreamedDraftBanner />
