@@ -11,9 +11,11 @@ import json
 import time
 import asyncio
 import secrets
+import re
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect, Request
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse, Response, RedirectResponse
 import uvicorn
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -30,7 +32,8 @@ from ishti.dispatcher import api as ishti_api, handle as ishti_handle, HOOKS as 
 from ishti import notifications as notifications_store
 # Speed (Cycle 4): cached pre-compression, cache headers, selective gzip - with its own offline test.
 from interface.web_ui.static_perf import CachedStaticFiles, SelectiveGZipMiddleware
-from ishti.web_security import authorized as dashboard_authorized, request_origin_ok, token_matches
+from ishti.web_security import (authorized as dashboard_authorized, request_origin_ok, token_matches,
+                                client_ip, direct_loopback, login_guard, owner_sessions)
 from ishti.core.logutil import swallowed
 
 app = FastAPI(title="ISHTI Personal AI Assistant")
@@ -73,12 +76,168 @@ def authorized(conn) -> bool:
 async def require_token_for_remote(request: Request, call_next):
     if not request_origin_ok(request):
         return JSONResponse({"error": "foreign origin"}, status_code=403)
+    public = request.url.path in {"/login", "/api/remote/login"}
+    if public:
+        return await call_next(request)
     if not authorized(request):
-        return JSONResponse({"error": "unauthorized"}, status_code=401)
-    response = await call_next(request)
-    if token_matches(request.query_params.get("token"), API_TOKEN):
-        response.set_cookie("ishti_token", API_TOKEN, httponly=True, secure=True, samesite="strict")
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        return RedirectResponse("/login", status_code=303)
+    return await call_next(request)
+
+
+def _https_request(request: Request) -> bool:
+    return request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+
+
+def _set_session_cookie(response: Response, request: Request, token: str):
+    response.set_cookie("ishti_session", token, max_age=30 * 86400, path="/", httponly=True,
+                        secure=_https_request(request), samesite="lax")
+
+
+def _new_browser_session(request: Request, device="") -> str:
+    label = str(device or request.headers.get("user-agent") or "Browser")[:120]
+    return owner_sessions.create(ip=client_ip(request), device=label)
+
+
+@app.get("/login")
+async def remote_login_page(request: Request, code: str = ""):
+    if code and owner_sessions.consume_magic(code):
+        token = _new_browser_session(request)
+        response = RedirectResponse("/", status_code=303)
+        _set_session_cookie(response, request, token)
+        return response
+    path = os.path.join(ROOT_DIR, "interface", "web_ui", "static", "login.html")
+    return FileResponse(path, media_type="text/html", headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/remote/login")
+async def remote_login(request: Request):
+    ip = client_ip(request)
+    remaining = login_guard.remaining(ip)
+    if remaining:
+        return JSONResponse({"error": "Too many attempts", "retry_after_s": remaining}, status_code=429)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    key, code = str(body.get("access_key") or ""), str(body.get("code") or "")
+    valid = token_matches(key, API_TOKEN) or bool(code and owner_sessions.consume_magic(code))
+    if not valid:
+        remaining = login_guard.fail(ip)
+        return JSONResponse({"error": "Invalid access key", "retry_after_s": remaining},
+                            status_code=429 if remaining else 401)
+    login_guard.success(ip)
+    token = _new_browser_session(request, body.get("device_label", ""))
+    response = JSONResponse({"ok": True})
+    _set_session_cookie(response, request, token)
     return response
+
+
+@app.post("/api/remote/logout")
+async def remote_logout(request: Request):
+    owner_sessions.revoke_token(request.cookies.get("ishti_session", ""))
+    response = JSONResponse({"ok": True})
+    response.delete_cookie("ishti_session", path="/")
+    return response
+
+
+@app.post("/api/remote/magic-link")
+async def remote_magic_link(request: Request):
+    if not direct_loopback(request):
+        return JSONResponse({"error": "Magic links can be created only on the local desktop"}, status_code=403)
+    code = owner_sessions.create_magic()
+    try:
+        from ishti import tunnel
+        base = tunnel.url().rstrip("/")
+    except Exception:
+        base = ""
+    return {"url": f"{base}/login?code={code}" if base else f"/login?code={code}", "expires_in_s": 300}
+
+
+@app.get("/api/remote/sessions")
+async def remote_sessions(_request: Request):
+    return {"sessions": owner_sessions.list()}
+
+
+@app.post("/api/remote/sessions/revoke")
+async def remote_session_revoke(request: Request):
+    try:
+        session_id = str((await request.json()).get("id") or "")
+    except Exception:
+        session_id = ""
+    return {"revoked": owner_sessions.revoke(session_id)}
+
+
+@app.post("/api/remote/sessions/revoke-all")
+async def remote_sessions_revoke_all(request: Request):
+    if not direct_loopback(request):
+        return JSONResponse({"error": "Revoke all is available only on the local desktop"}, status_code=403)
+    return {"revoked": owner_sessions.revoke_all()}
+
+
+@app.post("/api/remote/sessions/rotate-api-token")
+async def remote_rotate_api_token(request: Request):
+    if not direct_loopback(request):
+        return JSONResponse({"error": "Key rotation is available only on the local desktop"}, status_code=403)
+    global API_TOKEN
+    new_token = secrets.token_urlsafe(32)
+    tmp = TOKEN_PATH + f".{os.getpid()}.tmp"
+    try:
+        with open(tmp, "x", encoding="utf-8") as stream:
+            stream.write(new_token)
+        os.replace(tmp, TOKEN_PATH)
+    finally:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+    API_TOKEN = new_token
+    revoked = owner_sessions.revoke_all()
+    return {"rotated": True, "sessions_revoked": revoked}
+
+
+_REMOTE_SECRET = re.compile(r"(?i)\b(?P<label>bearer|api[_-]?token|authtoken|token|password|secret)\b\s*[:=]?\s*[^\s,;]+")
+_REMOTE_PHONE = re.compile(r"(?<!\d)\+?\d[\d ()-]{7,}\d(?!\d)")
+
+
+def _redact_remote_log(value: str) -> str:
+    text = _REMOTE_SECRET.sub(lambda match: match.group("label") + ": [redacted]", str(value))
+
+    def phone(match):
+        raw = match.group(0); found = re.sub(r"\D", "", raw)
+        return "•••••••" + found[-3:] if len(found) > 3 else "•••"
+
+    return _REMOTE_PHONE.sub(phone, text)
+
+
+def _tail_file(path: str, lines: int) -> list[str]:
+    try:
+        with open(path, "rb") as stream:
+            stream.seek(0, os.SEEK_END); size = stream.tell(); stream.seek(max(0, size - 512 * 1024))
+            data = stream.read(512 * 1024)
+        return [_redact_remote_log(line[-2000:]) for line in data.decode("utf-8", "replace").splitlines()[-lines:]]
+    except OSError:
+        return []
+
+
+@app.get("/api/remote/logs")
+async def remote_logs(source: str = "audit", lines: int = 200):
+    lines = max(1, min(500, int(lines)))
+    if source == "audit":
+        from ishti import audit
+        rows = audit.query(limit=lines)
+        output = [_redact_remote_log(f"{row[0]:.3f} {row[8] or '-'} {row[1]} {row[2] or '-'} {row[3]} {row[4]}")
+                  for row in reversed(rows)]
+    elif source == "backend":
+        from ishti import lifecycle
+        output = _tail_file(lifecycle.LOG_FILE, lines)
+    elif source == "wa_bridge":
+        from ishti import wa_bridge
+        output = _tail_file(str(Path(wa_bridge.DATA) / "bridge.log"), lines)
+    else:
+        return JSONResponse({"error": "source must be audit, backend or wa_bridge"}, status_code=400)
+    return {"source": source, "lines": output, "count": len(output), "capped": lines}
 
 STATIC_DIR = os.path.join(ROOT_DIR, "interface", "web_ui", "static")
 TEMPLATES_DIR = os.path.join(ROOT_DIR, "interface", "web_ui", "templates")

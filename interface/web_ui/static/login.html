@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ISHTI owner sign-in</title>
+  <style>
+    :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090b10;color:#f5f7fb;font:15px system-ui,sans-serif;padding:20px}.card{width:min(420px,100%);border:1px solid #293142;border-radius:18px;background:#111620;padding:24px;box-shadow:0 20px 70px #0008}h1{font-size:22px;margin:0 0 8px}p{color:#aeb8c8;line-height:1.5}label{display:block;font-weight:650;margin:20px 0 7px}input,button{width:100%;height:44px;border-radius:10px;font:inherit}input{border:1px solid #364055;background:#0b1018;color:#fff;padding:0 12px}button{border:0;background:#7c5cff;color:#fff;font-weight:750;margin-top:12px;cursor:pointer}button:disabled{opacity:.55}#error{min-height:20px;color:#ff9a9a;margin-top:10px}.note{font-size:12px;border-top:1px solid #293142;margin-top:18px;padding-top:14px}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>ISHTI owner sign-in</h1>
+    <p>Enter the access key shown on your ISHTI PC. The key stays out of the URL and is exchanged for a revocable browser session.</p>
+    <form id="login">
+      <label for="key">Access key</label>
+      <input id="key" name="key" type="password" autocomplete="current-password" autofocus required>
+      <button id="submit" type="submit">Sign in</button>
+      <div id="error" role="alert"></div>
+    </form>
+    <p class="note">On ngrok's free plan, a one-time browser warning may appear before this page. Continue through it once. ISHTI does not bypass that safety screen.</p>
+  </main>
+  <script>
+    const form=document.getElementById('login'),key=document.getElementById('key'),error=document.getElementById('error'),button=document.getElementById('submit');
+    form.addEventListener('submit',async(event)=>{event.preventDefault();error.textContent='';button.disabled=true;
+      try{const response=await fetch('/api/remote/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({access_key:key.value,device_label:navigator.userAgent.slice(0,120)})});
+        const data=await response.json();if(!response.ok)throw new Error(data.error||'Sign-in failed');location.replace('/');
+      }catch(err){error.textContent=err instanceof Error?err.message:'Sign-in failed';button.disabled=false;key.select();}
+    });
+  </script>
+</body>
+</html>
