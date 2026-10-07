@@ -38,10 +38,24 @@ export function ackName(status) {
 export class MessageStore {
   constructor({ maxChats = 200, maxMessages = 200, ttl = 7 * 86400000, clock = Date.now } = {}) {
     Object.assign(this, { maxChats, maxMessages, ttl, clock });
-    this.chats = new Map(); this.contacts = new Map(); this.raw = new Map(); this.pendingStatus = new Map(); this.revision = 0;
+    this.chats = new Map(); this.contacts = new Map(); this.lidToPhone = new Map(); this.raw = new Map(); this.pendingStatus = new Map(); this.revision = 0;
+  }
+  rememberIdentity(lid, phone) {
+    lid = String(lid || ''); phone = String(phone || '');
+    if (!/@lid$/.test(lid) || !/@s\.whatsapp\.net$/.test(phone)) return;
+    this.lidToPhone.set(userJid(lid), userJid(phone));
+    while (this.lidToPhone.size > 5000) this.lidToPhone.delete(this.lidToPhone.keys().next().value);
+  }
+  resolvePhone(jid) {
+    jid = userJid(jid);
+    if (/@s\.whatsapp\.net$/.test(jid)) return jid;
+    return this.lidToPhone.get(jid) || '';
   }
   updateContacts(contacts) {
-    for (const c of contacts) if (c.id) this.contacts.set(c.id, c.name || c.notify || c.verifiedName || this.contacts.get(c.id) || c.id);
+    for (const c of contacts) if (c.id) {
+      this.contacts.set(c.id, c.name || c.notify || c.verifiedName || this.contacts.get(c.id) || c.id);
+      this.rememberIdentity(c.lid || (/@lid$/.test(c.id) ? c.id : ''), c.jid || (/@s\.whatsapp\.net$/.test(c.id) ? c.id : ''));
+    }
     while (this.contacts.size > 5000) this.contacts.delete(this.contacts.keys().next().value);
     this.revision++;
   }
@@ -60,8 +74,13 @@ export class MessageStore {
   ingest(message, type = 'notify') {
     const key = message.key || {}, chat = key.remoteJid;
     if (!chat || !key.id || /@(?:broadcast|newsletter)$/.test(chat) || !message.message) return null;
+    this.rememberIdentity(key.senderLid, key.senderPn);
+    this.rememberIdentity(key.participantLid, key.participantPn);
+    this.rememberIdentity(/@lid$/.test(chat) ? chat : '', key.senderPn || key.participantPn);
     const records = this.chats.get(chat) || new Map(), previous = records.get(key.id), detail = describeMessage(message.message);
+    const senderJid = this.resolvePhone(key.participantPn || key.senderPn || key.participant || chat);
     const row = { chat, id: key.id, fromMe: !!key.fromMe, participant: key.participant || '', ...detail,
+      senderJid, senderLid: key.participantLid || key.senderLid || (/@lid$/.test(chat) ? chat : ''),
       ts: Number(message.messageTimestamp || 0) * 1000, observedAt: this.clock(), unread: previous?.unread ?? (type === 'notify' && !key.fromMe),
       delivery: message.status == null ? previous?.delivery || this.pendingStatus.get(chat + '\0' + key.id) || 'observed' : ackName(message.status) };
     this.pendingStatus.delete(chat + '\0' + key.id);

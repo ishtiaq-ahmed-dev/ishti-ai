@@ -47,8 +47,11 @@ function useControlNumbers(cid: "whatsapp" | "telegram", reload: () => void) {
       .catch(() => {});
   }, [cid]);
   usePoll(sync, 15000);
-  const save = useCallback(async (next: string[]) => {
-    const d = await putJSON<{ saved: boolean; control_numbers?: string[] }>(`/api/connectors/${cid}/config`, { control_numbers: next });
+  const save = useCallback(async (next: string[], automationConfirm = false) => {
+    const d = await putJSON<{ saved: boolean; control_numbers?: string[] }>(`/api/connectors/${cid}/config`, {
+      control_numbers: next,
+      ...(cid === "whatsapp" ? { automation_confirm: automationConfirm } : {}),
+    });
     // Trust the server read-back, not the optimistic list: what the backend stored is what shows.
     setNumbers(Array.isArray(d.control_numbers) ? d.control_numbers : next);
     reload();
@@ -71,6 +74,7 @@ function WhatsAppCard({ row, reload }: { row?: Connector; reload: () => void }) 
   const [country, setCountry] = useState("+92");
   const [err, setErr] = useState("");
   const [pairing, setPairing] = useState(false);
+  const [automationConfirm, setAutomationConfirm] = useState(false);
   const { numbers, save } = useControlNumbers("whatsapp", reload);
 
   useEffect(() => {
@@ -112,7 +116,7 @@ function WhatsAppCard({ row, reload }: { row?: Connector; reload: () => void }) 
     if (!E164.test(full)) { setErr("Use full international format, e.g. +923001234567"); return; }
     if (numbers.includes(full)) { setErr("That number is already in the list."); return; }
     try {
-      await save([...numbers, full]);   // server read-back updates the list; nothing to clear locally
+      await save([...numbers, full], automationConfirm);   // explicit checkbox may enable the live poller
       setDraft("");
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
   };
@@ -203,6 +207,11 @@ function WhatsAppCard({ row, reload }: { row?: Connector; reload: () => void }) 
             </li>
           ))}
         </ul>
+        <label className="mt-2 flex items-start gap-2 text-[11px] text-muted-foreground">
+          <input type="checkbox" checked={automationConfirm} onChange={(e) => setAutomationConfirm(e.target.checked)}
+                 data-testid="wa-automation-confirm" className="mt-0.5" />
+          <span>When I save a control number and the QR bridge is connected, enable owner-only WhatsApp automation now.</span>
+        </label>
       </div>
     </div>
   );

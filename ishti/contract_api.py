@@ -229,7 +229,7 @@ def _connector_rows() -> list[dict]:
     except Exception as exc:  # catalog must never take the API down
         rows.append({"id": "catalog_error", "kind": "api", "status": "error",
                      "configured": False, "detail": str(exc)[:200]})
-    wa_connected, tg = False, {}
+    wa_connected, wa_runtime, tg = False, {}, {}
     try:
         from ishti import wa_bridge
         wa_connected = bool(wa_bridge.connected())
@@ -237,11 +237,14 @@ def _connector_rows() -> list[dict]:
         swallowed("ishti/contract_api.py:wa_status", exc)
     try:
         from ishti.channels import service
-        tg = service.get().health().get("telegram", {})
+        remote_health = service.get().health()
+        tg = remote_health.get("telegram", {})
+        wa_runtime = remote_health.get("whatsapp", {})
     except Exception as exc:
         swallowed("ishti/contract_api.py:tg_status", exc)
     rows.append({"id": "whatsapp", "kind": "channel", "status": "connected" if wa_connected else "disconnected",
-                 "configured": wa_connected, "detail": "linked via QR" if wa_connected else "QR link flow"})
+                 "configured": wa_connected,
+                 "detail": "linked and listening" if wa_runtime.get("running") else ("linked; automation off" if wa_connected else "QR link flow")})
     tg_on = bool(tg.get("running"))
     rows.append({"id": "telegram", "kind": "channel",
                  "status": "connected" if tg_on else "disconnected",
@@ -262,8 +265,8 @@ async def connector_status(cid: str):
         return _bad("unknown connector", 404)
     from ishti.channels import policy
     pol = policy.load()
-    detail = {"whatsapp": {"paired": bool(pol.get("whatsapp_enabled")),
-                           "detail": "risk ack + QR link flow"},
+    detail = {"whatsapp": {"paired": bool(row["configured"]),
+                           "detail": row["detail"]},
               "telegram": {"paired": bool(pol.get("telegram_enabled")),
                            "detail": "bot token + pairing"}}.get(cid, {})
     return {"id": cid, "status": row["status"], "configured": row["configured"],
@@ -336,6 +339,12 @@ async def connector_config(cid: str, req: Request):
             upd["whatsapp_control_numbers"] = nums
         else:
             upd["allowed_telegram_ids"] = nums
+    if cid == "whatsapp" and body.get("automation_confirm") is True and upd.get("whatsapp_control_numbers"):
+        from ishti import wa_bridge
+        if wa_bridge.connected():
+            current = policy.load()
+            upd["whatsapp_enabled"] = True
+            upd["risk_ack"] = {**(current.get("risk_ack") or {}), "whatsapp_automation": True}
     if isinstance(body.get("policy"), dict):
         pol_in = dict(body["policy"])
         if "max_per_minute" in pol_in:  # UI name -> policy key
@@ -344,10 +353,15 @@ async def connector_config(cid: str, req: Request):
         upd.update({k: v for k, v in pol_in.items() if k in policy.DEFAULTS})
     if upd:
         policy.save(upd)
+        if cid == "whatsapp":
+            from ishti.channels import service
+            service.get().start()
     pol = policy.load()
     key = "whatsapp_control_numbers" if cid == "whatsapp" else "allowed_telegram_ids"
     return {"saved": True, "connector": cid,
-            "control_numbers": [str(n) for n in pol.get(key, [])]}
+            "control_numbers": [str(n) for n in pol.get(key, [])],
+            "automation_enabled": bool(pol.get("whatsapp_enabled") and
+                                       (pol.get("risk_ack") or {}).get("whatsapp_automation"))}
 
 
 # ---------------------------------------------------------------- agents (14.4)

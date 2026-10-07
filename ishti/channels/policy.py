@@ -8,6 +8,7 @@ Rules:
   - defaults are the safe ones: everything OFF except the read-only panic commands.
 """
 import os
+import re
 import threading
 import time
 
@@ -47,10 +48,42 @@ _cache = {"at": 0.0, "data": None}
 _TTL = 3.0  # seconds: local edits apply almost immediately, per-request reads stay cheap
 
 
-def _write_defaults():
+def _migrate_phone_ids(data: dict) -> tuple[dict, bool]:
+    """Move legacy formatted phone strings out of Telegram's numeric-ID allowlist."""
+    telegram, phones, changed = [], list(data.get("whatsapp_control_numbers") or []), False
+    for value in data.get("allowed_telegram_ids") or []:
+        raw = str(value).strip()
+        number = re.sub(r"\D", "", raw)
+        looks_phone = isinstance(value, str) and (raw.startswith("+") or raw.startswith("00") or bool(re.search(r"[ ()-]", raw)))
+        if looks_phone and 10 <= len(number) <= 15:
+            e164 = "+" + (number[2:] if raw.startswith("00") else number)
+            if e164 not in phones:
+                phones.append(e164)
+            changed = True
+        else:
+            telegram.append(value)
+    if changed:
+        data["allowed_telegram_ids"] = telegram
+        data["whatsapp_control_numbers"] = phones
+    return data, changed
+
+
+def _write(data: dict):
     os.makedirs(os.path.dirname(PATH), exist_ok=True)
-    with open(PATH, "w", encoding="utf-8") as f:
-        yaml.safe_dump(DEFAULTS, f, allow_unicode=True, sort_keys=False)
+    tmp = PATH + f".{os.getpid()}.{threading.get_ident()}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as stream:
+            yaml.safe_dump(data, stream, allow_unicode=True, sort_keys=False)
+        os.replace(tmp, PATH)
+    finally:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+
+
+def _write_defaults():
+    _write(DEFAULTS)
 
 
 def load(force=False) -> dict:
@@ -60,6 +93,7 @@ def load(force=False) -> dict:
         if not force and _cache["data"] is not None and now - _cache["at"] < _TTL:
             return _cache["data"]
     data = dict(DEFAULTS)
+    migrated = False
     try:
         if os.path.exists(PATH):
             with open(PATH, encoding="utf-8") as f:
@@ -70,6 +104,9 @@ def load(force=False) -> dict:
                         data["sensitive_output"] = {**DEFAULTS["sensitive_output"], **v}
                     else:
                         data[k] = v
+                data, migrated = _migrate_phone_ids(data)
+                if migrated:
+                    _write(data)
         else:
             _write_defaults()
     except Exception as exc:  # a broken policy file must never take the channel down: safe defaults
@@ -89,9 +126,8 @@ def save(update: dict) -> dict:
                 current["sensitive_output"] = {**current["sensitive_output"], **v}
             else:
                 current[k] = v
-        os.makedirs(os.path.dirname(PATH), exist_ok=True)
-        with open(PATH, "w", encoding="utf-8") as f:
-            yaml.safe_dump(current, f, allow_unicode=True, sort_keys=False)
+        current, _ = _migrate_phone_ids(current)
+        _write(current)
         _cache["at"], _cache["data"] = 0.0, None  # drop the cache: next read sees the edit
     return load(force=True)
 

@@ -41,21 +41,25 @@ def next_step(channel: str, enabled: bool, token: bool, paired: bool, running: b
             return "Telegram has a token but no paired phone: click Pair Telegram, then send /pair <code> to your bot."
         return "Telegram is ready but switched off: turn it on in Settings > Remote Control."
     if running:
-        return "WhatsApp (your own 'Message yourself' chat) is on."
+        return "WhatsApp is connected and listening for the allowed owner number(s)."
     if not enabled:
-        return ("WhatsApp is off. To use it, tick the risk note and switch it on in Settings > Remote Control > WhatsApp; "
-                "it only reads and replies in your own 'Message yourself' chat.")
-    return ("WhatsApp is switched on but not running: open WhatsApp Web in the browser and log in." if risk_ack
+        return ("WhatsApp control is off. Add an owner control number and explicitly enable automation in Settings > Connectors.")
+    if not paired:
+        return "WhatsApp control is enabled but the local bridge is not linked; scan the QR in Settings > Connectors."
+    return ("WhatsApp is linked but the inbound listener is not running; review its last error." if risk_ack
             else "WhatsApp is switched on but its risk note is not accepted yet (Settings > Remote Control > WhatsApp).")
 
 
 class RemoteService:
-    def __init__(self):
+    def __init__(self, bridge=None):
         self.client: TelegramClient | None = None
         self.poller: Poller | None = None
         self.gate: Gate | None = None
         self.whatsapp = None
         self.started_at = 0.0
+        if bridge is None:
+            from ishti import wa_bridge as bridge
+        self.bridge = bridge
 
     # ------------------------------------------------------------ lifecycle
     def start(self) -> dict:
@@ -73,12 +77,16 @@ class RemoteService:
         elif not tg and self.poller:
             self.poller.stop()
             self.poller = None
-        wa_on = __import__("ishti.channels.whatsapp_channel", fromlist=["enabled"]).enabled(pol)
+        try:
+            wa_state = self.bridge.status()
+        except Exception:
+            wa_state = {"connected": False}
+        wa_on = (bool(pol.get("whatsapp_enabled"))
+                 and bool((pol.get("risk_ack") or {}).get("whatsapp_automation"))
+                 and bool(wa_state.get("connected")))
         if wa_on and not (self.whatsapp and self.whatsapp.running):
-            from ishti.channels.whatsapp_channel import WhatsAppChannel
-            if self.gate is None:
-                self.gate = Gate(client=None)
-            self.whatsapp = WhatsAppChannel(gate=self.gate)
+            from ishti.channels.wa_inbound import WhatsAppInbound
+            self.whatsapp = WhatsAppInbound(bridge=self.bridge)
             self.whatsapp.start()
         elif not wa_on and self.whatsapp:
             self.whatsapp.stop()
@@ -104,6 +112,12 @@ class RemoteService:
         tg_running = bool(self.poller and self.poller.running)
         wa_running = bool(self.whatsapp and self.whatsapp.running)
         wa_ack = bool((pol.get("risk_ack") or {}).get("whatsapp_automation"))
+        try:
+            wa_state = self.bridge.status()
+        except Exception as exc:
+            wa_state = {"connected": False, "lastError": f"{type(exc).__name__}: {str(exc)[:120]}"}
+        wa_connected = bool(wa_state.get("connected"))
+        wa_error = self.whatsapp.last_error if self.whatsapp else str(wa_state.get("lastError") or "")
         out = {
             "telegram": {"enabled": bool(pol.get("telegram_enabled")), "token_stored": sec["token_stored"],
                          "paired_ids": sec["paired_ids"], "running": tg_running,
@@ -112,9 +126,12 @@ class RemoteService:
                                                 bool(sec["paired_ids"]), tg_running)},
             "whatsapp": {"enabled": bool(pol.get("whatsapp_enabled")),
                          "risk_ack": wa_ack,
+                         "connected": wa_connected,
                          "running": wa_running,
-                         "last_error": self.whatsapp.last_error if self.whatsapp else "",
-                         "next_step": next_step("whatsapp", bool(pol.get("whatsapp_enabled")), False, False,
+                         "pairing_state": wa_state.get("pairingState", "paired" if wa_connected else "waiting_for_scan"),
+                         "last_inbound_ts": self.whatsapp.last_inbound_ts if self.whatsapp else 0.0,
+                         "last_error": wa_error,
+                         "next_step": next_step("whatsapp", bool(pol.get("whatsapp_enabled")), False, wa_connected,
                                                 wa_running, wa_ack)},
             "pin_set": sec["pin_set"], "locked": sec["locked"], "lockout_s": sec["lockout_s"],
             "approvals_pending": approvals.pending(), "started_at": self.started_at,

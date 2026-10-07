@@ -86,6 +86,14 @@ test('incoming store deduplicates unread rows, keeps own direction and exact IDs
   assert.equal(store.list()[0].unread, 1); assert.equal(store.messages(chat).length, 2);
   assert.equal(store.messages(chat)[1].fromMe, true);
 });
+test('LID message envelopes and contacts retain the phone-number mapping', () => {
+  const store = new MessageStore(), lid = '123456789012345@lid';
+  store.updateContacts([{ id: lid, lid, jid: chat, name: 'Owner' }]);
+  const row = store.ingest({ ...message('LID_1'), key: { remoteJid: lid, id: 'LID_1', fromMe: false,
+    senderLid: lid, senderPn: chat } });
+  assert.equal(row.senderJid, chat); assert.equal(row.senderLid, lid);
+  assert.equal(store.resolvePhone(lid), chat);
+});
 test('store bounds and TTL evict raw payloads too', () => {
   let clock = 100; const store = new MessageStore({ maxMessages: 2, maxChats: 1, ttl: 50, clock: () => clock });
   for (const id of ['A', 'B', 'C']) store.ingest(message(id));
