@@ -431,6 +431,23 @@ async def proposal_action(pid: str, action: str):
     return {"id": pid, "status": p["status"]}
 
 
+@router.get("/api/owner/behavior")
+async def owner_behavior_list():
+    """What ISHTI has learned about the owner's behaviour (typed, with provenance) - the owner can see and delete it."""
+    from ishti import behavior_profiles
+    return {"facts": behavior_profiles.owner_visible_facts()}
+
+
+@router.delete("/api/owner/behavior/{fact_id}")
+async def owner_behavior_delete(fact_id: str, confirm: int = 0):
+    from ishti import behavior_profiles
+    if not confirm:  # deleting learned data is a T2-style action: the UI must confirm first
+        return _bad("confirm=1 required (the owner must confirm deleting a learned fact)", 400)
+    if not behavior_profiles.delete_fact(fact_id):
+        return _bad("unknown fact", 404)
+    return {"deleted": fact_id}
+
+
 @router.put("/api/learning/mode")
 async def learning_mode_put(req: Request):
     body = await _body(req)

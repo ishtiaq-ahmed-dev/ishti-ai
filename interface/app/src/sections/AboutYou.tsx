@@ -107,6 +107,42 @@ function AddRow({ prefix = "", placeholder, onAdd }: { prefix?: string; placehol
   );
 }
 
+type LearnedFact = { id: string; fact_type: string; value: string; provenance: { source: string; confidence: number; reference: string } };
+
+/** What ISHTI has worked out about the owner from real use (language, habits, frequent tasks) - visible, with source, deletable. */
+function LearnedBehavior() {
+  const [facts, setFacts] = useState<LearnedFact[] | null>(null);
+  const [err, setErr] = useState("");
+  const load = useCallback(() => {
+    getJSON<{ facts: LearnedFact[] }>("/api/owner/behavior")
+      .then((d) => setFacts((prev) => (JSON.stringify(prev) === JSON.stringify(d.facts) ? prev : d.facts)))
+      .catch((e) => setErr(errorText(e)));
+  }, []);
+  useEffect(() => { load(); const t = setInterval(() => { if (!document.hidden) load(); }, 20000); return () => clearInterval(t); }, [load]);
+  const forgetFact = async (f: LearnedFact) => {
+    if (!window.confirm(`Forget this learned fact?
+
+${f.value}`)) return;
+    try { await del(`/api/owner/behavior/${encodeURIComponent(f.id)}?confirm=1`); load(); } catch (e) { setErr(errorText(e)); }
+  };
+  return (
+    <Section title="What ISHTI learned about you" hint="Worked out automatically from how you use it (language, when you work, what you ask for most). Each item shows where it came from. Delete anything that is wrong.">
+      {err && <p role="alert" className="mb-2 text-xs text-danger">{err}</p>}
+      {facts && !facts.length && <p className="text-xs text-muted-foreground">Nothing yet. It learns after a few conversations.</p>}
+      <ul className="space-y-1.5" data-testid="learned-facts">
+        {(facts || []).map((f) => (
+          <li key={f.id} className="flex items-center gap-2 rounded-lg border border-border px-2.5 py-1.5 text-sm">
+            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">{f.fact_type.replace("_", " ")}</span>
+            <span className="min-w-0 flex-1 break-words">{f.value}</span>
+            <span className="text-[10px] text-muted-foreground" title={f.provenance.reference}>{f.provenance.source} · {Math.round(f.provenance.confidence * 100)}%</span>
+            <button type="button" aria-label="Forget this" onClick={() => void forgetFact(f)} className="rounded p-1 text-muted-foreground hover:text-danger cursor-pointer"><Trash2 className="h-3.5 w-3.5" /></button>
+          </li>
+        ))}
+      </ul>
+    </Section>
+  );
+}
+
 /** Everything ISHTI knows about the owner and sends with their messages - visible and editable personal profile. */
 export function AboutYouBody() {
   const [about, setAbout] = useState<About | null>(null);
@@ -253,6 +289,8 @@ export function AboutYouBody() {
                 </div>
               </div>
             </Section>
+
+            <LearnedBehavior />
 
             {/* Prompt Transparency Dropdown */}
             <section className="rounded-2xl border border-border bg-background shadow-xs">

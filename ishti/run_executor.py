@@ -104,6 +104,8 @@ def _run_one(run_id: str, run: dict, cancelled: threading.Event, t0: float) -> N
         from ishti import feedback_bridge
         feedback_bridge.trajectory(_text_of(run), used)
         feedback_bridge.auto_title_async(run["chat_id"])
+        from ishti import owner_learning
+        owner_learning.observe_turn(_text_of(run), used)  # learn the owner's language/habits/frequent tasks, visibly
     except BaseException as exc:  # dispatcher reports its own Exceptions; this is the belt
         if type(exc).__name__ == "Cancelled":
             runs.cancel_run(run_id)
