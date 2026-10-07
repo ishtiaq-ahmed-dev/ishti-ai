@@ -111,9 +111,11 @@ def usable_skills(skills: dict, exclude: Iterable[str] = ()) -> dict:
     try:
         from ishti.skills import registry
         blocked.update(registry.disabled_names())
-    except Exception:
-        pass
-    return {name: skill for name, skill in skills.items()
+    except Exception as exc:
+        from ishti.core.logutil import swallowed
+        swallowed("ishti/tool_routing.py:usable_skills", exc)
+    from ishti.skill_execution import available  # the PC execution gate (owner flags, permissions) stays authoritative
+    return {name: skill for name, skill in available(skills).items()
             if name not in blocked and _status(skill) not in NON_ROUTABLE}
 
 
