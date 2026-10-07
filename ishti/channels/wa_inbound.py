@@ -8,6 +8,7 @@ import re
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 from ishti.channels import policy as policy_mod, security
 from ishti.channels.gate import Gate, _alert, _audit
@@ -46,7 +47,7 @@ def _phone_candidates(row: dict) -> list[str]:
 
 class WhatsAppInbound:
     def __init__(self, *, bridge=None, dispatch=None, policy_loader=None, cursor_path=None,
-                 clock=time.time, alert=None, allow_message=None, initial_cursor_ms=None):
+                 clock=time.time, alert=None, allow_message=None, initial_cursor_ms=None, background=False):
         if bridge is None:
             from ishti import wa_bridge as bridge
         self.bridge = bridge
@@ -62,6 +63,10 @@ class WhatsAppInbound:
         self._pending: set[str] = set()
         self.last_error = ""
         self.last_inbound_ts = 0.0
+        # background=True (the real service): a long model run must not block /kill, /lock and /status
+        # arriving in the same chat, so natural-language requests run on a small pool, one at a time per session
+        self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ishti-wa-run") if background else None
+        self._session_locks: dict[str, threading.Lock] = {}
         self._cursor, self._seen = self._load_cursor(initial_cursor_ms)
 
     def _load_cursor(self, initial_cursor_ms):
@@ -196,12 +201,24 @@ class WhatsAppInbound:
         if dispatch is None:
             from ishti import dispatcher
             dispatch = dispatcher.handle
-        result = dispatch(answer_text, session_id=session, channel="whatsapp")
-        answer = (result or {}).get("final_answer") if isinstance(result, dict) else str(result or "")
-        answer = answer or "(empty reply)"
-        if answer.rstrip().endswith("(yes/no)"):
-            self._pending.add(session)
-        self._send(chat, answer)
+        def run():
+            with self._session_locks.setdefault(session, threading.Lock()):
+                try:
+                    result = dispatch(answer_text, session_id=session, channel="whatsapp")
+                    answer = (result or {}).get("final_answer") if isinstance(result, dict) else str(result or "")
+                    answer = answer or "(empty reply)"
+                    if answer.rstrip().endswith("(yes/no)"):
+                        self._pending.add(session)
+                except Exception as exc:
+                    self.last_error = f"{type(exc).__name__}: {str(exc)[:160]}"
+                    _audit("whatsapp dispatch failed", self.last_error, channel="whatsapp", session=session)
+                    answer = f"That failed: {self.last_error}"
+                self._send(chat, answer)
+
+        if self._pool:
+            self._pool.submit(run)
+        else:
+            run()
 
     def poll_once(self) -> int:
         pol = self.policy_loader()
@@ -245,6 +262,8 @@ class WhatsAppInbound:
         if thread and thread.is_alive():
             thread.join(timeout)
         self._thread = None
+        if self._pool:
+            self._pool.shutdown(wait=False, cancel_futures=True)
         return not (thread and thread.is_alive())
 
     @property

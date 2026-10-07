@@ -87,7 +87,7 @@ class RemoteService:
                  and bool(wa_state.get("connected")))
         if wa_on and not (self.whatsapp and self.whatsapp.running):
             from ishti.channels.wa_inbound import WhatsAppInbound
-            self.whatsapp = WhatsAppInbound(bridge=self.bridge)
+            self.whatsapp = WhatsAppInbound(bridge=self.bridge, background=True)
             self.whatsapp.start()
         elif not wa_on and self.whatsapp:
             self.whatsapp.stop()

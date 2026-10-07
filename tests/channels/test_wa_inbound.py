@@ -149,3 +149,29 @@ def test_policy_migrates_formatted_phone_strings_out_of_telegram_ids(tmp_path, m
         assert "+92 300-1234567" not in yaml.safe_load(target.read_text(encoding="utf-8"))["allowed_telegram_ids"]
     finally:
         policy.reset_cache()
+
+
+def test_long_run_does_not_block_kill_or_status_in_background_mode(tmp_path, monkeypatch):
+    """Owner sends a slow request, then /status: the poll loop must answer /status while the run is still busy."""
+    import threading
+    monkeypatch.setattr(mod, "_audit", lambda *_a, **_k: None)
+    release = threading.Event()
+    bridge = FakeBridge([row("SLOW", "do something long"), row("ST", "/status", observed=1001)])
+
+    def slow(text, **_):
+        release.wait(5)
+        return {"final_answer": "finished"}
+
+    poller = inbound(tmp_path, bridge, slow, background=True)
+    poller.poll_once()                       # returns although the first request is still running
+    deadline = time.time() + 3
+    while time.time() < deadline and not any("status" in m["text"].lower() for m in bridge.sent):
+        time.sleep(0.05)
+    assert any("ISHTI remote status" in m["text"] for m in bridge.sent), bridge.sent
+    assert not any("finished" in m["text"] for m in bridge.sent)   # the slow run has not answered yet
+    release.set()
+    deadline = time.time() + 3
+    while time.time() < deadline and not any("finished" in m["text"] for m in bridge.sent):
+        time.sleep(0.05)
+    assert any("finished" in m["text"] for m in bridge.sent)
+    poller.stop()
