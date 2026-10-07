@@ -38,14 +38,23 @@ OPS = [
 ]
 
 
+# "plan a 3 day trip to Swat with a budget of 40000" is a planning request that MENTIONS a budget, not "set my budget".
+PLANNING = re.compile(r"\b(?:plan|planning|trip|travel|itinerary|vacation|holiday|tour|wedding|party|event|project|"
+                      r"launch|campaign)\b", I)
+
+
+def _hits(text):
+    return [(n, rx) for n, rx in OPS if rx.search(text) and not (n == "budget_set" and PLANNING.search(text))]
+
+
 def match(text):
     # "if I spend 250 on groceries and 175 on fuel, how much did I spend" is arithmetic about a hypothetical, not a log entry or a report
-    return (any(rx.search(text) for _, rx in OPS) and not re.search(r"\b(?:should|would|could|want\s+to|price\s+of)\b", text, I)
+    return (bool(_hits(text)) and not re.search(r"\b(?:should|would|could|want\s+to|price\s+of)\b", text, I)
             and not re.match(r"\s*(?:what\s+)?if\b", text, I))
 
 
 def run(text, session):
-    for name, rx in OPS:
+    for name, rx in _hits(text):
         if m := rx.search(text):
             trace(session, "ledger", name)
             return {"reply": globals()["op_" + name](m, text, session), "sources": []}

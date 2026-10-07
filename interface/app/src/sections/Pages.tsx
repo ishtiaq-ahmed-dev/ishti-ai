@@ -3621,6 +3621,11 @@ export function SystemBody() {
           </div>
         )}
 
+        <div className="mt-2 text-xs text-muted-foreground" data-testid="heal-auto-note">
+          {healStatus?.enabled
+            ? `Auto-Heal is watching: checks every ${healStatus?.auto_interval_s ?? 60}s and repairs on its own (at most once per ${Math.round((healStatus?.auto_cooldown_s ?? 300) / 60)} min).`
+            : "Auto-Heal is off. Turn it on to repair problems automatically; the button always works."}
+        </div>
         <div className="mt-2 text-xs text-muted-foreground flex items-center justify-between">
           <span>Pending candidates: <strong className="text-foreground">{healStatus?.pending_count ?? 0}</strong></span>
           {healStatus?.last_run && (

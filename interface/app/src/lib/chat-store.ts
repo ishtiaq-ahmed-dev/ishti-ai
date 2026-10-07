@@ -263,8 +263,9 @@ class ChatStore {
     const gen = this.generation;
     try {
       const d = await getJSON<{ events: { seq: number; type: string; data: any }[]; last_seq: number }>(
-        `/api/events?since_seq=${since}`);
+        `/api/events?since_seq=${since}&wait=20`);
       if (gen !== this.generation) return;
+      const wasLive = this.connection === "live";
       this.connection = "live";
       this.pollFailures = 0;
       for (const ev of d.events) this.applyEvent(ev);
@@ -274,12 +275,12 @@ class ChatStore {
         void this.hydrateMessages(this.activeChatId);
       }
       this.lastSeq = Math.max(this.lastSeq, d.last_seq);
-      this.emit();
+      if (d.events.length || since === 0 || !wasLive) this.emit();  // an empty long-poll changes nothing: no re-render
     } catch {
       this.pollFailures += 1;
       if (this.pollFailures >= 2) this.connection = "reconnecting";
     }
-    const backoff = Math.min(2000, 250 * Math.max(1, this.pollFailures));
+    const backoff = this.pollFailures ? Math.min(4000, 500 * this.pollFailures) : 0;  // long-poll: re-ask at once
     this.pollTimer = window.setTimeout(() => this.pollEvents(this.lastSeq), backoff);
   }
 

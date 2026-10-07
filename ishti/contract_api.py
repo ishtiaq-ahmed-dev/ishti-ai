@@ -6,6 +6,7 @@ ishti/agents.py and ishti/connectors.py. No business logic here beyond shaping a
 from __future__ import annotations
 
 import asyncio
+import time
 import os
 import sys
 
@@ -156,11 +157,17 @@ async def run_cancel(run_id: str):
 # ---------------------------------------------------------------- events (14.3) + feedback (14.4)
 
 @router.get("/api/events")
-async def events_since(since_seq: int = 0, limit: int = 2000):
-    """HTTP replay twin of /ws/events?since_seq=N (same log)."""
+async def events_since(since_seq: int = 0, limit: int = 2000, wait: float = 0):
+    """HTTP replay twin of /ws/events?since_seq=N (same log). wait=N (<=25 s) makes it a long-poll: the call
+    returns as soon as there is an event for the active profile, or empty after N seconds - so an idle UI costs
+    ~one request per N seconds instead of several per second."""
     from ishti import profiles
-    return {"events": runs.events_since_profile(profiles.load_active(), since_seq, limit),
-            "last_seq": runs.last_seq()}
+    deadline = time.monotonic() + max(0.0, min(float(wait), 25.0))
+    while True:
+        evs = runs.events_since_profile(profiles.load_active(), since_seq, limit)
+        if evs or time.monotonic() >= deadline:
+            return {"events": evs, "last_seq": runs.last_seq()}
+        await asyncio.sleep(0.15)
 
 
 @router.post("/api/feedback")
@@ -261,7 +268,9 @@ async def connector_status(cid: str):
                            "detail": "bot token + pairing"}}.get(cid, {})
     return {"id": cid, "status": row["status"], "configured": row["configured"],
             "detail": row["detail"], **detail,
-            "policy": {"quiet_hours": pol.get("quiet_hours", ""), "max_per_minute": pol.get("rate_limit_per_min", 20)}}
+            "policy": {"quiet_hours": pol.get("quiet_hours", ""), "max_per_minute": pol.get("rate_limit_per_min", 20)},
+            "control_numbers": [str(n) for n in pol.get("whatsapp_control_numbers" if cid == "whatsapp"
+                                                        else "allowed_telegram_ids", [])]}
 
 
 @router.post("/api/connectors/{cid}/connect")

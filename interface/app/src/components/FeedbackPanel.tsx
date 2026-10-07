@@ -65,14 +65,15 @@ export function FeedbackPanel({ messageId, runId }: Props) {
           aria-pressed={choice === -1}
           data-testid="thumb-down"
           disabled={phase === "sending"}
-          onClick={() => { setExpanded(true); void submit(-1); }}
+          onClick={() => { setChoice(-1); setExpanded(true); setPhase("idle"); }}
           className={cn("rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-accent",
             choice === -1 && "bg-accent/15 text-accent")}
         >
           {choice === -1 && phase === "recorded" ? <Check className="h-3.5 w-3.5" /> : <ThumbsDown className="h-3.5 w-3.5" />}
         </button>
         {phase === "sending" && <span className="text-[11px] text-muted-foreground" role="status">Recording…</span>}
-        {phase === "recorded" && <span className="text-[11px] text-muted-foreground" role="status">Recorded — this shapes future answers.</span>}
+        {phase === "recorded" && <span className="text-[11px] text-muted-foreground" role="status">
+          {choice === -1 ? "Thanks — writing a better answer below. Rate it again if it is still off." : "Recorded — this shapes future answers."}</span>}
         {phase === "error" && (
           <span className="flex items-center gap-1 text-[11px] text-destructive" role="alert">
             {error || "Not saved yet."}
@@ -85,6 +86,7 @@ export function FeedbackPanel({ messageId, runId }: Props) {
 
       {expanded && choice === -1 && phase !== "recorded" && (
         <div className="mt-2 rounded-lg border border-border bg-card/70 p-2.5" data-testid="feedback-details">
+          <div className="mb-1.5 text-xs font-medium text-foreground">What was wrong? (pick any, or skip)</div>
           <div className="flex flex-wrap gap-1.5">
             {REASONS.map((r) => (
               <button
@@ -113,8 +115,9 @@ export function FeedbackPanel({ messageId, runId }: Props) {
             className="mt-1.5 w-full resize-y rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:border-accent"
           />
           <div className="mt-1.5 flex items-center justify-between">
-            <button onClick={() => setExpanded(false)} className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground hover:text-foreground">
-              <X className="h-3 w-3" /> Close
+            <button onClick={() => void submit(-1)} disabled={phase === "sending"} data-testid="feedback-skip"
+              className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground hover:text-foreground">
+              <X className="h-3 w-3" /> Skip details
             </button>
             <button
               onClick={resubmit}

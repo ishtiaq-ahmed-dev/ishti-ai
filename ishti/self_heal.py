@@ -1,12 +1,12 @@
-"""Self-healing mode controller (Section 2).
+"""Self-healing mode controller.
 
-Hard rules:
-  1. The self-healing/auto-fix system must NOT run automatically in the background.
-  2. Mode is OFF by default.
-  3. Remediation actions only run when the owner manually triggers them via the UI
-     button/toggle or an explicit command.
-  4. Crash resilience, watchdog restarts, and kill switch remain always-active;
-     this restriction applies strictly to proactive/auto-fix self-healing behavior.
+Rules:
+  1. OFF by default. Nothing heals in the background until the owner turns Auto-Heal ON (the toggle is the consent).
+  2. ON: a light loop checks health every minute and, when something is really wrong, runs the same safe repairs
+     as the manual button (restart Ollama, reap orphaned model servers, restart the search container, reset counters).
+     At most one automatic run per cooldown; it never touches user data and never lowers a safety gate.
+  3. The manual trigger always works, ON or OFF.
+  4. Crash watchdog and kill switch are always active, independent of this mode.
 """
 import json
 import os
@@ -63,6 +63,61 @@ def _save_state():
 
 _load_state()
 
+AUTO_INTERVAL_S = 60       # how often the loop looks
+AUTO_COOLDOWN_S = 300      # minimum gap between automatic repair runs
+_loop_thread = None
+
+
+def diagnose() -> List[str]:
+    """Cheap, read-only health probe. Returns human-readable problems (empty = healthy)."""
+    problems: List[str] = []
+    try:
+        base_url = CONFIG["llm"]["base_url"].rsplit("/v1", 1)[0]
+        if not requests.get(f"{base_url}/api/tags", timeout=4).ok:
+            problems.append("Ollama API not answering")
+    except Exception as exc:
+        problems.append(f"Ollama unreachable ({type(exc).__name__})")
+    try:
+        import psutil
+        ollama_pids, servers = set(), []
+        for p in psutil.process_iter(["pid", "name", "ppid"]):
+            n = (p.info["name"] or "").lower()
+            if n.startswith("ollama") and "llama-server" not in n:
+                ollama_pids.add(p.info["pid"])
+            elif "llama-server" in n:
+                servers.append(p)
+        if any(p.info["ppid"] not in ollama_pids for p in servers):
+            problems.append("orphaned llama-server.exe holding VRAM")
+    except Exception as exc:
+        swallowed("ishti/self_heal.py:diagnose.orphans", exc)
+    return problems
+
+
+def _auto_loop():
+    last = 0.0
+    while True:
+        time.sleep(AUTO_INTERVAL_S)
+        try:
+            if not is_enabled() or time.time() - last < AUTO_COOLDOWN_S:
+                continue
+            from ishti import killswitch
+            killswitch.check()  # a killed/locked app heals nothing
+            issues = diagnose()
+            if issues:
+                last = time.time()
+                trigger_heal(trigger="auto", issues=issues)
+        except Exception as exc:
+            swallowed("ishti/self_heal.py:_auto_loop", exc)
+
+
+def ensure_loop() -> None:
+    """Start the background loop once (idempotent). It idles while Auto-Heal is OFF."""
+    global _loop_thread
+    with _lock:
+        if _loop_thread is None or not _loop_thread.is_alive():
+            _loop_thread = threading.Thread(target=_auto_loop, name="ishti-auto-heal", daemon=True)
+            _loop_thread.start()
+
 
 def is_enabled() -> bool:
     """True ONLY if owner explicitly toggled on automatic background self-healing."""
@@ -75,6 +130,8 @@ def set_enabled(enabled: bool) -> bool:
         _state["enabled"] = bool(enabled)
         _save_state()
     print(f"[self_heal] Self-healing mode set to: {'ENABLED' if _state['enabled'] else 'OFF (Manual trigger only)'}")
+    if _state["enabled"]:
+        ensure_loop()
     return _state["enabled"]
 
 
@@ -102,7 +159,10 @@ def get_status() -> Dict[str, Any]:
             "pending_count": len(_state["pending"]),
             "pending": list(_state["pending"]),
             "last_run": _state["last_run"],
-            "last_report": _state["last_report"]
+            "last_report": _state["last_report"],
+            "auto_loop_running": bool(_loop_thread and _loop_thread.is_alive()),
+            "auto_interval_s": AUTO_INTERVAL_S,
+            "auto_cooldown_s": AUTO_COOLDOWN_S,
         }
 
 
@@ -142,14 +202,14 @@ def reap_orphaned_llama_servers() -> int:
     return reaped
 
 
-def trigger_heal() -> Dict[str, Any]:
+def trigger_heal(trigger: str = "manual", issues: List[str] | None = None) -> Dict[str, Any]:
     """
     On-demand self-healing run, triggered manually by the owner.
     Diagnoses and applies remediations across models, search, memory, and voice.
     """
-    actions_taken: List[str] = []
+    actions_taken: List[str] = [f"Detected: {i}" for i in (issues or [])]
     t0 = time.time()
-    print("[self_heal] >>> Manual self-healing triggered by owner...")
+    print(f"[self_heal] >>> Self-healing run ({trigger})...")
 
     # 0. FIX-6: hard-killing Ollama (crash, task-manager, chaos) orphans its llama-server.exe
     # model servers; each holds its model's VRAM and the fresh daemon cannot fit anything
@@ -238,9 +298,9 @@ def trigger_heal() -> Dict[str, Any]:
         os.makedirs(os.path.dirname(REFLECTIONS_PATH), exist_ok=True)
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
         entry = (
-            f"\n### Manual Self-Healing Event\n"
+            f"\n### Self-Healing Event ({trigger})\n"
             f"- **Timestamp**: {timestamp}\n"
-            f"- **Trigger**: Manual Owner Request\n"
+            f"- **Trigger**: {'Owner button' if trigger == 'manual' else 'Auto-Heal loop (owner enabled)'}\n"
             f"- **Remediations Executed**:\n"
             + "\n".join(f"  - {a}" for a in actions_taken) + "\n"
         )
@@ -251,6 +311,7 @@ def trigger_heal() -> Dict[str, Any]:
 
     report = {
         "status": "success",
+        "trigger": trigger,
         "actions_taken": actions_taken,
         "duration_ms": round((time.time() - t0) * 1000, 1),
         "timestamp": time.time(),

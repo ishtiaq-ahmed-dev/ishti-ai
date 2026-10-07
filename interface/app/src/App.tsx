@@ -558,7 +558,7 @@ export default function App() {
               transition={{ duration: 0.15 }}>
               {page === "chat" && <Chat owner={owner} onBusy={onBusy} showNav={showNav} onToggleNav={toggleNav} />}
               {page === "overview" && <Overview onToggleNav={toggleNav} />}
-              {page === "connectors" && <ConnectorsPage />}
+              {page === "connectors" && <ConnectorsPage onToggleNav={toggleNav} />}
               {page === "tasks" && <Tasks onToggleNav={toggleNav} />}
               {page === "learning" && <Learning onToggleNav={toggleNav} />}
               {page === "skills" && <Skills onToggleNav={toggleNav} />}

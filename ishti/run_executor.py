@@ -103,6 +103,7 @@ def _run_one(run_id: str, run: dict, cancelled: threading.Event, t0: float) -> N
         runs.finish_run(run_id, answer)
         from ishti import feedback_bridge
         feedback_bridge.trajectory(_text_of(run), used)
+        feedback_bridge.auto_title_async(run["chat_id"])
     except BaseException as exc:  # dispatcher reports its own Exceptions; this is the belt
         if type(exc).__name__ == "Cancelled":
             runs.cancel_run(run_id)

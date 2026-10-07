@@ -105,6 +105,8 @@ MAIN_LOOP: asyncio.AbstractEventLoop = None  # set at startup; worker threads ha
 async def _capture_loop():
     global MAIN_LOOP
     MAIN_LOOP = asyncio.get_running_loop()
+    from ishti import self_heal
+    self_heal.ensure_loop()  # idles until the owner turns Auto-Heal ON
     from ishti import CONFIG
     from ishti.skills.reminders.skill import start as start_reminders
 

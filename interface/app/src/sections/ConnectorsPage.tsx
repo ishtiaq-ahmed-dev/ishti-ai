@@ -3,9 +3,9 @@
 // secrets). Remote-policy editor here (local only). T2 risk notices before first connect.
 // Owner update: Inputs is MERGED here (sensors + accounts + OAuth catalog in one section);
 // #inputs deep links land on this page. Nothing was removed from Inputs.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Bot, Cable, Check, CheckCircle2, ClipboardCheck, MessageCircle, Mic, MicOff, Monitor, Play, Plus, QrCode, RefreshCw, Send, Shield, Trash2, Webhook, X, XCircle } from "lucide-react";
+import { Bot, Cable, Check, CheckCircle2, ClipboardCheck, MessageCircle, Mic, MicOff, Monitor, PanelLeft, Play, Plus, QrCode, RefreshCw, Send, Shield, Trash2, Webhook, X, XCircle } from "lucide-react";
 import { getJSON, postJSON, putJSON } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -15,15 +15,26 @@ type McpServer = { name: string; command: string; extension: boolean; token_stor
 
 const E164 = /^\+[1-9]\d{6,14}$/;
 
+// Polling that costs nothing when it changes nothing: skipped while the window is hidden, and callers
+// only set state when the payload really differs (no re-render storm every few seconds).
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+function usePoll(fn: () => void, ms: number) {
+  useEffect(() => {
+    fn();
+    const t = setInterval(() => { if (!document.hidden) fn(); }, ms);
+    return () => clearInterval(t);
+  }, [fn, ms]);
+}
+
 function useConnectors() {
   const [rows, setRows] = useState<Connector[]>([]);
   const [loading, setLoading] = useState(true);
   const load = useCallback(() => {
     getJSON<{ connectors: Connector[] }>("/api/connectors")
-      .then((d) => { setRows(d.connectors); setLoading(false); })
+      .then((d) => { setRows((prev) => (same(prev, d.connectors) ? prev : d.connectors)); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
-  useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, [load]);
+  usePoll(load, 10000);
   return { rows, loading, reload: load };
 }
 
@@ -31,11 +42,11 @@ function useConnectors() {
 function useControlNumbers(cid: "whatsapp" | "telegram", reload: () => void) {
   const [numbers, setNumbers] = useState<string[]>([]);
   const sync = useCallback(() => {
-    putJSON<{ saved: boolean; control_numbers?: string[] }>(`/api/connectors/${cid}/config`, {})
-      .then((d) => { if (Array.isArray(d.control_numbers)) setNumbers(d.control_numbers); })
+    getJSON<{ control_numbers?: string[] }>(`/api/connectors/${cid}/status`)
+      .then((d) => { if (Array.isArray(d.control_numbers)) setNumbers((prev) => (same(prev, d.control_numbers) ? prev : d.control_numbers!)); })
       .catch(() => {});
   }, [cid]);
-  useEffect(() => { sync(); const t = setInterval(sync, 8000); return () => clearInterval(t); }, [sync]);
+  usePoll(sync, 15000);
   const save = useCallback(async (next: string[]) => {
     const d = await putJSON<{ saved: boolean; control_numbers?: string[] }>(`/api/connectors/${cid}/config`, { control_numbers: next });
     // Trust the server read-back, not the optimistic list: what the backend stored is what shows.
@@ -334,9 +345,9 @@ function McpCard() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const load = useCallback(() => {
-    getJSON<{ servers: McpServer[]; error?: string }>("/api/mcp/status").then(setSt).catch(() => setSt(null));
+    getJSON<{ servers: McpServer[]; error?: string }>("/api/mcp/status").then((d) => setSt((prev) => (same(prev, d) ? prev : d))).catch(() => setSt(null));
   }, []);
-  useEffect(() => { load(); const t = setInterval(load, 8000); return () => clearInterval(t); }, [load]);
+  usePoll(load, 15000);
   const reload = async () => {
     setBusy(true); setMsg("");
     try {
@@ -388,12 +399,12 @@ function A2aCard() {
   const [msg, setMsg] = useState("");
   const load = useCallback(() => {
     getJSON<{ agents: { id: string; state: string; goal?: string }[] }>("/api/agents").then((d) => {
-      setAgents(d.agents || []);
+      setAgents((prev) => (same(prev, d.agents || []) ? prev : (d.agents || [])));
       const asking = (d.agents || []).find((a) => a.state === "input_required");
       setPending(asking ? { agent_id: asking.id, question: (asking as any).detail || "needs your input" } : null);
     }).catch(() => {});
   }, []);
-  useEffect(() => { load(); const t = setInterval(load, 4000); return () => clearInterval(t); }, [load]);
+  usePoll(load, 8000);
   const submit = async () => {
     if (!pending || !answer.trim()) return;
     try {
@@ -475,11 +486,11 @@ function InputsPanel() {
 
   const load = useCallback(() => {
     getJSON<InputsPayload>("/api/inputs")
-      .then(setData)
+      .then((d) => { setData((prev) => (same(prev, d) ? prev : d)); setError(""); })
       .catch((e: Error) => setError(e?.message || "could not reach /api/inputs"));
   }, []);
   useEffect(load, [load, tick]);
-  useEffect(() => { const t = setInterval(() => setTick((n) => n + 1), 15000); return () => clearInterval(t); }, []);
+  usePoll(useCallback(() => setTick((n) => n + 1), []), 20000);
 
   const openQrModal = async (e: React.MouseEvent) => { e.stopPropagation(); setQrData(null); setQrError(""); setQrModalOpen(true); };
 
@@ -530,7 +541,9 @@ function InputsPanel() {
   const devices = channels.filter((c) => c.kind !== "account");
   const live = devices.filter((c) => c.state === "on").length;
 
-  const InCard = ({ c }: { c: InputChannel }) => {
+  // A plain render function, NOT a nested component: a component declared here is a new type every render,
+  // which remounted every card (lost focus/state) on each poll.
+  const renderInCard = (c: InputChannel) => {
     const isMic = c.id === "mic";
     const isWa = c.id === "whatsapp";
     const isClip = c.id === "clipboard";
@@ -613,11 +626,11 @@ function InputsPanel() {
       {data && (
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2 items-start">
-            {devices.map((c) => <InCard key={c.id} c={c} />)}
+            {devices.map((c) => <Fragment key={c.id}>{renderInCard(c)}</Fragment>)}
           </div>
           {accounts.length > 0 && (
             <div className="grid gap-3 sm:grid-cols-3 items-start">
-              {accounts.map((c) => <InCard key={c.id} c={c} />)}
+              {accounts.map((c) => <Fragment key={c.id}>{renderInCard(c)}</Fragment>)}
             </div>
           )}
           {data.note && <p className="text-[11px] text-muted-foreground font-mono">{data.note}</p>}
@@ -709,13 +722,20 @@ function InputsPanel() {
   );
 }
 
-export function ConnectorsPage() {
+export function ConnectorsPage({ onToggleNav }: { onToggleNav?: () => void }) {
   const { rows, loading, reload } = useConnectors();
   const byId = useMemo(() => Object.fromEntries(rows.map((r) => [r.id, r])), [rows]);
   const activity: Row[] = []; // wire to /api/remote/status recent rows when backend exposes them
   return (
-    <div className="mx-auto max-w-5xl space-y-4 p-4" data-testid="connectors-page">
+    <div className="scroll-thin h-full overflow-y-auto" data-testid="connectors-scroll">
+    <div className="mx-auto max-w-5xl space-y-4 p-4 pb-10" data-testid="connectors-page">
       <header className="flex items-center gap-2">
+        {onToggleNav && (
+          <button type="button" onClick={onToggleNav} title="Show navigation bar"
+            className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer">
+            <PanelLeft className="h-4 w-4 text-accent" />
+          </button>
+        )}
         <Cable className="h-5 w-5 text-accent" aria-hidden />
         <h2 className="text-lg font-bold text-foreground">Connectors</h2>
         <span className="text-[11px] text-muted-foreground">Inputs + connectors in one place: sensors, messaging, tools, agents.</span>
@@ -755,6 +775,7 @@ export function ConnectorsPage() {
         <h3 className="text-sm font-bold text-foreground">Recent activity</h3>
         {activity.length === 0 && <p className="mt-1 text-xs text-muted-foreground">Nothing yet.</p>}
       </section>
+    </div>
     </div>
   );
 }

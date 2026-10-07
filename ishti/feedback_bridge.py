@@ -12,9 +12,11 @@ import threading
 from ishti.core.logutil import swallowed
 
 # UI reason chip -> learning error taxonomy (ishti/learning/errors.py)
-_REASON_TYPE = {"wrong tool": "wrong_application", "wrong fact": "wrong_fact", "wrong facts": "wrong_fact",
-                "too long": "style_preference", "too short": "style_preference", "ignored context": "wrong_interpretation",
-                "didn't do it": "incomplete_action", "did not do it": "incomplete_action"}
+_REASON_TYPE = {"wrong tool": "wrong_skill", "wrong fact": "wrong_assumption", "wrong facts": "wrong_assumption",
+                "wrong source": "wrong_assumption", "missed the point": "wrong_interpretation",
+                "ignored context": "wrong_interpretation", "bad format": "unknown", "too long": "unknown",
+                "too short": "unknown", "unsafe": "wrong_permission", "didn't do it": "tool_failure",
+                "did not do it": "tool_failure"}
 
 
 def error_type(reasons, comment: str, correction: str) -> str:
@@ -90,7 +92,7 @@ def record_async(*a, **k) -> None:
 
 
 if __name__ == "__main__":
-    assert error_type(["Wrong tool"], "", "") == "wrong_application"
+    assert error_type(["Wrong tool"], "", "") == "wrong_skill"
     assert error_type([], "", "use chrome") == "owner_feedback" and error_type([], "", "") == "wrong_interpretation"
     assert record("nope", "nope", -1)["recorded"] is False  # unknown message: no crash, nothing recorded
     print("[self-check] feedback_bridge OK")
@@ -147,3 +149,45 @@ def build_from_proposal(pid: str) -> None:
             from ishti import runs as _r
             _r.publish("learning_update", {"kind": "skill_build_failed", "detail": {"id": pid, "error": str(exc)[:200]}})
     threading.Thread(target=work, name="ishti-skill-build", daemon=True).start()
+
+
+# ---------------------------------------------------------------- topic titles for chats
+
+def topic_title(request: str, answer: str) -> str:
+    """3-6 word topic label from the first exchange ('Peshawar weather', 'Invoice for Ali'). '' when unavailable."""
+    import os
+    import re
+    if os.environ.get("ISHTI_TEST_MODE") and not os.environ.get("ISHTI_ROUTE_LLM"):
+        return ""
+    try:
+        from ishti import llm
+        out = llm.ask(f"Conversation start.\nUser: {request[:400]}\nAssistant: {answer[:400]}\n\n"
+                      "Write a title of 2-6 words naming the TOPIC of this conversation (what it is about), same language as "
+                      "the user, no quotes, no trailing punctuation, not a full sentence. Output only the title.",
+                      system="You write short chat titles.", role="planner", temperature=0.2, max_tokens=20)
+        t = re.sub(r"[\"'`*#]", "", (out or "").strip().splitlines()[0] if (out or "").strip() else "").strip(" .:-")
+        return " ".join(t.split()[:7])[:50] if 2 <= len(t) else ""
+    except Exception as exc:
+        swallowed("ishti/feedback_bridge.py:topic_title", exc)
+        return ""
+
+
+def auto_title_async(chat_id: str) -> None:
+    """After the FIRST answer of a chat, replace the first-words title with a topic title - unless the owner renamed it."""
+    def work():
+        try:
+            from ishti import runs
+            msgs = runs.messages_after(chat_id, 0, limit=50)
+            users = [m for m in msgs if m["role"] == "user"]
+            answers = [m for m in msgs if m["role"] == "assistant"]
+            chat = runs.get_chat(chat_id)
+            if not chat or not users or len(answers) != 1:
+                return
+            if chat["title"] not in ("New chat", runs.chat_title(users[0]["text"])):
+                return  # renamed by the owner (or already topic-titled)
+            title = topic_title(users[0]["text"], answers[0]["text"])
+            if title and title.lower() != "new chat":
+                runs.set_chat_title(chat_id, title, profile=chat["profile"])
+        except Exception as exc:
+            swallowed("ishti/feedback_bridge.py:auto_title", exc)
+    threading.Thread(target=work, name="ishti-auto-title", daemon=True).start()
