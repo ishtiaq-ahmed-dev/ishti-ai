@@ -76,10 +76,12 @@ def test_brave_and_installed_apps():
     assert m["browser"].lower() == "brawe" and apps.browser_url(m["what"], m["q"]).endswith("q=ssr+movies+tenet+movie")
 
 
-def test_only_owner_words_come_back_from_semantic_recall():
+def test_only_owner_words_come_back_from_semantic_recall(monkeypatch):
     import tempfile
-    from ishti.semantic import Semantic
-    s = Semantic(tempfile.mkdtemp())
+    from ishti import semantic
+
+    monkeypatch.setattr(semantic, "embed", lambda texts: [[1.0, 0.0, 0.0] for _ in texts])
+    s = semantic.Semantic(tempfile.mkdtemp())
     s.add("User: my brother is Irfan\nISHTI: Noted: your brother is Ishaq.")
     assert all("ISHTI:" not in h for h in s.recall("who is my brother", max_distance=2.0))
 
