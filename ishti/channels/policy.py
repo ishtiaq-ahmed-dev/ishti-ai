@@ -21,6 +21,7 @@ PATH = os.path.join(os.path.dirname(CONFIG["memory"]["db_path"]), "remote_policy
 DEFAULTS = {
     "telegram_enabled": False,          # master switch; pairing still required
     "whatsapp_enabled": False,          # default OFF (R2: automation risk, honest warning in the UI)
+    "remote_access_enabled": False,     # ngrok never auto-starts until the owner explicitly turns this on
     "allowed_telegram_ids": [],         # numeric Telegram user IDs (pairing fills this)
     "whatsapp_control_numbers": [],     # E.164 WhatsApp control numbers (desktop UI; empty = linked self-chat)
     "stale_command_max_age_s": 300,     # messages queued while the PC was off: expire, don't execute
