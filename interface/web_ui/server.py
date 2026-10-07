@@ -447,17 +447,42 @@ def get_status():  # a plain def: FastAPI runs it in a thread; it makes blocking
     }
 
 
+_DOCTOR = {"report": None, "at": 0.0, "task": None}
+
+
+def _doctor_refresh():
+    """One diagnostics run in the background; the result is cached so reads answer at once."""
+    t = _DOCTOR["task"]
+    if t is None or t.done():
+        _DOCTOR["task"] = asyncio.get_event_loop().run_in_executor(None, IshtiDoctor().check_all)
+
+        def _store(fut):
+            try:
+                _DOCTOR["report"], _DOCTOR["at"] = fut.result(), time.time()
+            except Exception as exc:
+                swallowed("server.doctor_refresh", exc)
+        _DOCTOR["task"].add_done_callback(_store)
+    return _DOCTOR["task"]
+
+
 @app.get("/api/doctor")
-async def get_doctor():
-    loop = asyncio.get_event_loop()
-    doc = IshtiDoctor()
+async def get_doctor(fresh: int = 0):
+    """fresh=1 (the Run diagnostics button) waits for a new run (up to 55 s). Otherwise the last report is returned
+    immediately (with age_s) and a refresh is started when it is older than 60 s; the very first call waits."""
+    age = time.time() - _DOCTOR["at"]
     try:
-        report = await asyncio.wait_for(loop.run_in_executor(None, doc.check_all), timeout=8.0)
-        return JSONResponse(report)
+        if fresh or _DOCTOR["report"] is None:
+            await asyncio.wait_for(asyncio.shield(_doctor_refresh()), timeout=55.0)
+        elif age > 60:
+            _doctor_refresh()
     except asyncio.TimeoutError:
-        return JSONResponse({"ok": False, "error": "Diagnostics timed out after 8 seconds; retry when the system is idle."}, status_code=504)
+        if _DOCTOR["report"] is None:
+            return JSONResponse({"ok": False, "error": "Diagnostics are still running; try again in a moment."}, status_code=202)
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)[:500]}, status_code=503)
+    rep = dict(_DOCTOR["report"] or {})
+    rep["age_s"] = round(time.time() - _DOCTOR["at"], 1) if _DOCTOR["at"] else None
+    return JSONResponse(rep)
 
 
 @app.get("/api/research")

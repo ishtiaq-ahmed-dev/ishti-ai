@@ -3513,7 +3513,7 @@ export function SystemBody() {
   useEffect(() => {
     const load = () => getJSON<Telemetry>("/api/system").then(setT);
     load(); const id = setInterval(load, 3000);
-    getJSON<typeof activity>("/api/activity").then(setActivity);
+    getJSON<typeof activity>("/api/activity").then(setActivity).catch(() => {});
     getJSON<any>("/api/self_heal/status").then(setHealStatus).catch(() => {});
     return () => clearInterval(id);
   }, []);
@@ -3522,7 +3522,7 @@ export function SystemBody() {
   return (
     <>
       <div className="mb-3 flex justify-end">
-        <button disabled={running} onClick={async () => { setRunning(true); setDoctor((await getJSON<{ checks: Record<string, Check[]> }>("/api/doctor")).checks); setRunning(false); }}
+        <button disabled={running} onClick={async () => { setRunning(true); try { setDoctor((await getJSON<{ checks: Record<string, Check[]> }>("/api/doctor?fresh=1")).checks); } catch (e) { window.dispatchEvent(new CustomEvent("ishti-api-error", { detail: { msg: e instanceof Error ? e.message : "Diagnostics failed" } })); } finally { setRunning(false); } }}
           className="flex items-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-xs font-medium text-white disabled:opacity-50 cursor-pointer">
           {running ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />} Run diagnostics</button>
       </div>
