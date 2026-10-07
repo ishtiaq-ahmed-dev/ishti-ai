@@ -200,8 +200,16 @@ def run_understanding() -> dict[str, Any]:
     }
 
 
-_FAILURE = re.compile(r"\b(?:can(?:not|'t)|unable|failed|failure|not found|no results?|nothing found|error|sorry)\b", re.I)
-_RECOVERY = re.compile(r"\b(?:try|instead|provide|give me|narrow|specify|choose|which|what|where|can you|could you|next step)\b", re.I)
+_FAILURE = re.compile(
+    r"\b(?:can(?:not|'t)|couldn(?:'t| not)|unable|failed|failure|not found|no (?:results?|files?)|nothing found|error|sorry)\b",
+    re.I,
+)
+_RECOVERY = re.compile(
+    r"\b(?:try|instead|provide|give me|narrow|specify|choose|which|what exact|where(?: is| should| exact)|"
+    r"unlock|upload|attach|next (?:step|option)|can you (?:provide|choose|open|upload)|"
+    r"could you (?:provide|choose|open|upload))\b",
+    re.I,
+)
 
 
 def detect_dead_end(reply: Any) -> dict[str, Any]:
@@ -213,7 +221,7 @@ def detect_dead_end(reply: Any) -> dict[str, Any]:
         reasons.append("empty_disambiguation")
     if re.search(r"\b(?:todo|not implemented|coming soon)\b", text, re.I):
         reasons.append("placeholder")
-    if _FAILURE.search(text) and not (_RECOVERY.search(text) or "?" in text):
+    if _FAILURE.search(text) and not _RECOVERY.search(text):
         reasons.append("failure_without_recovery")
     return {"dead_end": bool(reasons), "reasons": reasons}
 
@@ -223,7 +231,8 @@ def run_dead_end() -> dict[str, Any]:
         ("", True), ("Sorry, I can't do that.", True), ("No results found.", True),
         ("Did you mean:", True), ("TODO", True),
         ("I couldn't find it. Which folder should I search?", False),
-        ("No results; try a narrower filename.", False),
+        ("No results; try a narrower filename.", False), ("I couldn't open it. Did that help?", True),
+        ("No files.", True),
         ("That failed, but I can use the local copy instead.", False),
         ("Done: saved the synthetic report.", False), ("What exact file do you mean?", False),
     ]
@@ -247,9 +256,15 @@ def run_dead_end() -> dict[str, Any]:
             "metrics": {"detector_accuracy": _ratio(correct, len(cases)),
                         "fallback_outcome_accuracy": _ratio(fallback_correct, len(fallbacks)),
                         "fallback_recovery_rate": _ratio(recovered, len(fallbacks)),
-                        "product_failure_handling_rate": (_ratio(handled, len(measured_product))
-                                                          if measured_product else metric(
-                                                              measured=False, reason="No safe product failure path was measurable."))},
+                        "dependency_boundary_handling_rate": (_ratio(handled, len(measured_product))
+                                                               if measured_product else metric(
+                                                                   measured=False, reason="No safe dependency boundary was measurable.")),
+                        "product_failure_handling_rate": metric(
+                            measured=False,
+                            reason="Direct dependency probes bypass dispatcher/Arch2 recovery; orchestrated outcome is not yet measured."),
+                        "orchestrated_recovery_rate": metric(
+                            measured=False,
+                            reason="No injectable end-to-end recovery seam exists before WP-B.")},
             "failures": [row for row in product_rows if row.get("dead_end")],
             "metadata": {"detector_calibration_cases": len(cases), "product_scenarios": product_rows}}
 
@@ -272,10 +287,12 @@ def _product_failure_outcomes() -> list[dict[str, Any]]:
             reply = out.get("reply", "") if isinstance(out, dict) else str(out or "")
             state = detect_dead_end(reply)
             rows.append({"scenario": name, "status": "measured", "reply": reply[:240],
-                         "fallback": fallback, "dead_end": state["dead_end"], "reasons": state["reasons"]})
+                         "expected_recovery": fallback, "fallback_executed": False,
+                         "boundary_reached": True, "dead_end": state["dead_end"], "reasons": state["reasons"]})
         except Exception as exc:
             rows.append({"scenario": name, "status": "measured", "reply": "",
-                         "fallback": fallback, "dead_end": True,
+                         "expected_recovery": fallback, "fallback_executed": False,
+                         "boundary_reached": True, "dead_end": True,
                          "reasons": [f"exception:{type(exc).__name__}"]})
 
     with tempfile.TemporaryDirectory(prefix="ishti-eval-failures-") as raw:
@@ -300,13 +317,14 @@ def _product_failure_outcomes() -> list[dict[str, Any]]:
         finally:
             computer_use.get_computer_use_agent = old_agent
 
-        old_get = utilities_skill.requests.get
+        old_get, old_place = utilities_skill.requests.get, utilities_skill.owner_place
+        utilities_skill.owner_place = lambda: ("Synthetic City", "Synthetic Country")
         utilities_skill.requests.get = lambda *_a, **_k: (_ for _ in ()).throw(
             ConnectionError("synthetic network unavailable"))
         try:
             record("network_unavailable", lambda: utilities_skill.run("prayer times today", {}), "offline explanation")
         finally:
-            utilities_skill.requests.get = old_get
+            utilities_skill.requests.get, utilities_skill.owner_place = old_get, old_place
 
         unknown = folder / "sample.unknown"
         unknown.write_text("synthetic", encoding="utf-8")

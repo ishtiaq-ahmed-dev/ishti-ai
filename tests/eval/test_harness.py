@@ -75,6 +75,11 @@ def test_expanded_product_suites_report_matrices_and_isolation(monkeypatch):
     suites = {item["suite"]: item for item in report["results"]}
     scenarios = {row["scenario"] for row in suites["dead_end"]["metadata"]["product_scenarios"]}
     assert scenarios == {"missing_file", "locked_file", "tool_failure", "network_unavailable", "unknown_format"}
+    product_rows = suites["dead_end"]["metadata"]["product_scenarios"]
+    assert all(row["boundary_reached"] and not row["fallback_executed"] for row in product_rows)
+    assert suites["dead_end"]["metrics"]["dependency_boundary_handling_rate"]["value"] == 0.2
+    assert suites["dead_end"]["metrics"]["product_failure_handling_rate"]["status"] == "unmeasured"
+    assert suites["dead_end"]["metrics"]["orchestrated_recovery_rate"]["status"] == "unmeasured"
     assert suites["correctness"]["metrics"]["product_exact_accuracy"]["denominator"] >= 6
     matrix = suites["files"]["metadata"]["operation_matrix"]
     assert set(matrix) == {"py", "js", "ts", "html", "css", "json", "csv", "txt", "md", "ipynb",
