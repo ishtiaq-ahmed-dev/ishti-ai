@@ -33,7 +33,7 @@ from ishti import notifications as notifications_store
 # Speed (Cycle 4): cached pre-compression, cache headers, selective gzip - with its own offline test.
 from interface.web_ui.static_perf import CachedStaticFiles, SelectiveGZipMiddleware
 from ishti.web_security import (authorized as dashboard_authorized, request_origin_ok, token_matches,
-                                client_ip, direct_loopback, login_guard, owner_sessions)
+                                client_ip, direct_loopback, login_guard, owner_sessions, requires_local)
 from ishti.core.logutil import swallowed
 
 app = FastAPI(title="ISHTI Personal AI Assistant")
@@ -83,6 +83,8 @@ async def require_token_for_remote(request: Request, call_next):
         if request.url.path.startswith("/api/"):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
         return RedirectResponse("/login", status_code=303)
+    if requires_local(request.method, request.url.path) and not direct_loopback(request):
+        return JSONResponse({"error": "This setting can be changed only on the local desktop"}, status_code=403)
     return await call_next(request)
 
 

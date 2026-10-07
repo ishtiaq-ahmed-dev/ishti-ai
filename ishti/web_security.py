@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import threading
 import time
@@ -41,6 +42,22 @@ def direct_loopback(conn) -> bool:
     authority = host_authority(conn.headers.get("host"))
     return bool(conn.client and conn.client.host in LOOPBACK and authority and authority[0] in LOOPBACK
                 and not any(header in conn.headers for header in PROXY_HEADERS))
+
+
+# Security configuration is changed on the desktop only: a stolen remote session must not be able to
+# add control numbers, set the PIN, widen the policy, enable a channel or start pairing.
+# (Revoke/disconnect/stop stay remote-capable: they only reduce access.)
+_LOCAL_ONLY = (
+    ("PUT", re.compile(r"^/api/remote/policy$")),
+    ("POST", re.compile(r"^/api/remote/(pin|enable|test|pair/start|pair/cancel|telegram/token)$")),
+    ("DELETE", re.compile(r"^/api/remote/(pin|telegram/token)$")),
+    ("PUT", re.compile(r"^/api/connectors/[^/]+/config$")),
+    ("POST", re.compile(r"^/api/connectors/[^/]+/(connect|test)$")),
+)
+
+
+def requires_local(method: str, path: str) -> bool:
+    return any(method.upper() == m and rx.match(path) for m, rx in _LOCAL_ONLY)
 
 
 def client_ip(conn) -> str:
