@@ -93,7 +93,9 @@ export default function App() {
       const saved = localStorage.getItem("ishti-show-nav");
       if (saved !== null) return saved === "true";
     } catch {}
-    return true;
+    // Phone widths: the nav renders as a full-screen overlay there (max-sm:absolute), so a fresh
+    // load must not cover the chat and its input. The header still offers "Show navigation bar".
+    return typeof window === "undefined" ? true : window.innerWidth >= 640;
   });
 
   const [showExitModal, setShowExitModal] = useState(false);

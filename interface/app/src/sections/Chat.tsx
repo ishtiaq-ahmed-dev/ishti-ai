@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { ArrowUp, AudioLines, Briefcase, Check, Copy, Heart, Maximize2, MessageSquare, Mic, Minimize2, Network, PanelLeft, PanelLeftClose, Paperclip, Pencil, Plus, Square, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AgentOrb } from "@/components/AgentOrb";
-import { ActivityGraph, ConversationGraph, type Turn } from "@/components/ActivityGraph";
+import { ActivityGraph, ActivityList, ConversationGraph, type Turn } from "@/components/ActivityGraph";
 import BorderBeam from "border-beam";
 import VoiceBeam from "voice-glow";
 import { IshtiBrand } from "@/components/IshtiBrand";
@@ -127,7 +127,8 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
       const saved = localStorage.getItem("ishti-chat-show-history");
       if (saved !== null) return saved === "true";
     } catch {}
-    return true;
+    // Phone widths: the drawer is a full-screen overlay, so don't cover the chat on first load.
+    return typeof window === "undefined" ? true : window.innerWidth >= 640;
   });
   const [historyWidth, setHistoryWidth] = useState(() => {
     try {
@@ -154,9 +155,11 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   const [shareOpen, setShareOpen] = useState(false);
   const [shareResult, setShareResult] = useState<{ path: string; copied?: boolean } | null>(null);
   const [shareError, setShareError] = useState("");
-  // Activity graph (per-answer trace + whole-chat turns) + live draft state for the orb/AgentOrb header
-  const [graphFor, setGraphFor] = useState<string | null>(null); // message_id or "run:{run_id}"
+  // Activity panel (per-answer trace + whole-chat turns) + live draft state for the orb/AgentOrb header.
+  // graphFor: a message_id, "run:{run_id}", or "chat" (panel open, chat has no runs -> empty state).
+  const [graphFor, setGraphFor] = useState<string | null>(null);
   const [graphView, setGraphView] = useState<"answer" | "chat">("answer");
+  const [activityView, setActivityView] = useState<"list" | "graph">("list"); // T3: plain list is the default tab
   const [fullGraph, setFullGraph] = useState(false);
 
   useEffect(() => {
@@ -302,9 +305,21 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
       return next;
     });
   }, []);
+  // T3: the Activity panel is open for any chat that has at least one run, defaulting to the last one.
+  const chatRuns = activeChatId ? chatStore.runsOfChat(activeChatId) : [];
+  const lastChatRun = chatRuns.length
+    ? [...chatRuns].sort((a, b) => (a.started_at || 0) - (b.started_at || 0))[chatRuns.length - 1]
+    : null;
   const graphRun = (() => {
     if (!graphFor) return null;
-    if (graphFor.startsWith("run:")) return liveRuns.find((r) => r.run_id === graphFor.slice(4)) || null;
+    if (graphFor === "chat") return lastChatRun;
+    if (graphFor.startsWith("run:")) {
+      // T3: a run key must keep resolving after the run FINISHES (it used to be looked up only in
+      // liveRuns, so the panel went blank the moment a run completed).
+      const id = graphFor.slice(4);
+      return liveRuns.find((r) => r.run_id === id) || chatRuns.find((r) => r.run_id === id)
+        || chatStore.runs.get(id) || null;
+    }
     const msg = storeMsgs.find((m) => m.message_id === graphFor);
     return msg ? (chatStore.runs.get(msg.run_id) || null) : null;
   })();
@@ -934,9 +949,9 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               aria-pressed={showFeedback} title="Show or hide answer feedback controls">
               Feedback {showFeedback ? "On" : "Off"}
             </button>
-            <button onClick={() => setGraphFor(graphFor ? null : `run:${pendingRun?.run_id || ""}`)}
-              disabled={!busy && !graphRun}
-              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:cursor-default cursor-pointer">
+            <button onClick={() => setGraphFor(graphFor ? null : (pendingRun ? `run:${pendingRun.run_id}` : lastChatRun ? `run:${lastChatRun.run_id}` : "chat"))}
+              aria-expanded={!!graphFor}
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer">
               <Network className="h-4 w-4" /> Activity
             </button>
             <button onClick={() => void newChat()}
@@ -1217,45 +1232,80 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
         </div>
       )}
 
-      {/* Activity graph: the run's real steps (research/tool/verify) as an SVG trace */}
+      {/* Activity panel: a plain list of real run steps (default) plus the SVG graph as the second tab. */}
       <AnimatePresence>
-        {graphRun && (
+        {graphFor && (
           <motion.aside initial={{ x: 40, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 40, opacity: 0 }}
             transition={{ duration: 0.28, ease: "easeOut" }}
-            className="scroll-thin absolute inset-y-0 right-0 z-20 flex w-[min(480px,94%)] flex-col gap-3 overflow-y-auto border-l border-border bg-background p-4 shadow-[-12px_0_40px_rgba(29,27,46,0.12)] xl:static xl:z-auto xl:w-[480px] xl:shrink-0 xl:shadow-none">
-            <div className="flex items-center justify-between">
-              <div className="flex rounded-xl bg-muted p-0.5 text-xs">
-                {(["answer", "chat"] as const).map((v) => (
-                  <button key={v} onClick={() => setGraphView(v)}
-                    className={`relative rounded-lg px-3 py-1 font-medium transition-colors ${graphView === v ? "text-foreground" : "text-muted-foreground"}`}>
-                    {v === "answer" ? "This answer" : "This chat"}
-                  </button>
-                ))}
+            data-testid="activity-panel"
+            className="scroll-thin absolute inset-y-0 right-0 z-20 flex w-[min(480px,94%)] min-w-0 flex-col gap-3 overflow-y-auto overflow-x-hidden border-l border-border bg-background p-4 pb-6 shadow-[-12px_0_40px_rgba(29,27,46,0.12)] xl:static xl:z-auto xl:w-[480px] xl:shrink-0 xl:shadow-none">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {graphRun && (
+                  <div className="flex rounded-xl bg-muted p-0.5 text-xs">
+                    {(["list", "graph"] as const).map((v) => (
+                      <button key={v} onClick={() => setActivityView(v)} data-testid={`activity-view-${v}`}
+                        aria-pressed={activityView === v}
+                        className={`relative rounded-lg px-3 py-1 font-medium transition-colors cursor-pointer ${activityView === v ? "text-foreground" : "text-muted-foreground"}`}>
+                        {v === "list" ? "List" : "Graph"}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {graphRun && activityView === "graph" && (
+                  <div className="flex rounded-xl bg-muted p-0.5 text-xs">
+                    {(["answer", "chat"] as const).map((v) => (
+                      <button key={v} onClick={() => setGraphView(v)}
+                        className={`relative rounded-lg px-3 py-1 font-medium transition-colors cursor-pointer ${graphView === v ? "text-foreground" : "text-muted-foreground"}`}>
+                        {v === "answer" ? "This answer" : "This chat"}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="flex gap-1">
-                <button onClick={() => setFullGraph(true)} title="Expand"
-                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted cursor-pointer"><Maximize2 className="h-4 w-4" /></button>
-                <button onClick={() => setGraphFor(null)} title="Close" className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted cursor-pointer">
+              <div className="flex shrink-0 gap-1">
+                {graphRun && activityView === "graph" && (
+                  <button onClick={() => setFullGraph(true)} title="Expand"
+                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted cursor-pointer"><Maximize2 className="h-4 w-4" /></button>
+                )}
+                <button onClick={() => setGraphFor(null)} title="Close" aria-label="Close activity"
+                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted cursor-pointer">
                   <X className="h-4 w-4" /></button>
               </div>
             </div>
-            <div className="truncate text-[11px] text-muted-foreground">
-              {graphView === "answer" ? (graphRun.steps[graphRun.steps.length - 1]?.label || "Run steps") : `${turns.length} question${turns.length === 1 ? "" : "s"} in this chat`}
-            </div>
-            {graphView === "answer" ? (
-              <ActivityGraph
-                events={(graphRun.steps || []).map((s, i) => ({ t: i * 1000, type: s.kind as "tool", label: s.label, name: s.kind }))}
-                request={storeMsgs.find((m) => m.run_id === graphRun.run_id)?.text || ""}
-                live={graphRun.state === "running" || graphRun.state === "queued"}
-              />
+            {!graphRun ? (
+              <p className="rounded-2xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground" data-testid="activity-empty">
+                No activity yet — send a message and this chat's steps will appear here.
+              </p>
             ) : (
-              <ConversationGraph turns={turns} />
+              <>
+                <div className="min-w-0 break-words text-[11px] text-muted-foreground">
+                  {activityView === "list"
+                    ? `${chatRuns.length} run${chatRuns.length === 1 ? "" : "s"} in this chat`
+                    : graphView === "answer"
+                      ? (graphRun.steps[graphRun.steps.length - 1]?.label || "Run steps")
+                      : `${turns.length} question${turns.length === 1 ? "" : "s"} in this chat`}
+                </div>
+                {activityView === "list" ? (
+                  <ActivityList runs={graphView === "answer" && graphFor !== "chat" ? [graphRun] : chatRuns} />
+                ) : graphView === "answer" ? (
+                  <ActivityGraph
+                    events={(graphRun.steps || []).map((s, i) => ({ t: i * 1000, type: s.kind as "tool", label: s.label, name: s.kind }))}
+                    request={storeMsgs.find((m) => m.run_id === graphRun.run_id)?.text || ""}
+                    live={graphRun.state === "running" || graphRun.state === "queued"}
+                  />
+                ) : (
+                  <ConversationGraph turns={turns} />
+                )}
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  {activityView === "list"
+                    ? "Every row is a real step from this run. Tap a row for its detail. Updates live while ISHTI works."
+                    : graphView === "answer"
+                      ? "Every node is a real step from this run. Violet = running, green = done, amber = waiting for you, red = failed."
+                      : "Each question in this chat, linked to how it was handled."}
+                </p>
+              </>
             )}
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
-              {graphView === "answer"
-                ? "Every node is a real step from this run. Violet = running, green = done, amber = waiting for you, red = failed."
-                : "Each question in this chat, linked to how it was handled."}
-            </p>
           </motion.aside>
         )}
       </AnimatePresence>

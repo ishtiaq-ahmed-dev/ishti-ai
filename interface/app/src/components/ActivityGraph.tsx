@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from "motion/react";
-import { Minus, Plus, RotateCcw } from "lucide-react";
+import { CheckCircle2, ChevronDown, Loader2, Minus, Plus, RotateCcw, XCircle } from "lucide-react";
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import type { TraceEvent } from "@/lib/api";
+import type { StoreRun } from "@/lib/chat-store";
 
 type Status = "active" | "done" | "error" | "waiting" | "skipped";
 type GNode = { id: string; depth: number; parent?: string; label: string; sub?: string; status: Status; group?: string };
@@ -239,6 +240,118 @@ export function ConversationGraph({ turns, full = false }: { turns: Turn[]; full
     <div className={`relative overflow-hidden rounded-2xl border border-border bg-graph ${full ? "h-full" : ""}`}>
       {full ? <Zoomable height={H}>{content}</Zoomable>
             : <svg viewBox={`0 0 760 ${H}`} className="block max-h-[60vh] w-full">{content}</svg>}
+    </div>
+  );
+}
+
+// ---- T3: the plain LIST view of the activity panel (default tab, graph stays the second tab) ----
+// One row per step with kind (route/skill/tool/verify/research), label, duration and status; each row
+// expands (aria-expanded/aria-controls) to its detail text and sources. It reads StoreRun state that
+// the chat store keeps updating, so rows appear live on run_step events and after a reconnect resync.
+const KIND_LABEL: Record<string, string> = {
+  route: "route", skill: "skill", tool: "tool", verify: "verify", research: "research",
+};
+
+function isLiveRun(run: StoreRun): boolean {
+  return run.state === "running" || run.state === "queued";
+}
+
+function stepStatusOf(run: StoreRun, index: number): "running" | "done" | "failed" {
+  if (run.state === "failed" && index === run.steps.length - 1) return "failed";
+  return isLiveRun(run) && index === run.steps.length - 1 ? "running" : "done";
+}
+
+function StepListRow({ run, index }: { run: StoreRun; index: number }) {
+  const [open, setOpen] = useState(false);
+  const step = run.steps[index];
+  const status = stepStatusOf(run, index);
+  const end = run.steps[index + 1]?.ts ?? (isLiveRun(run) ? undefined : run.ended_at);
+  const ms = step.ts && end ? Math.max(0, Math.round((end - step.ts) * 1000)) : undefined;
+  const detailId = `activity-detail-${run.run_id}-${index}`;
+  const kind = KIND_LABEL[step.kind] || step.kind;
+  return (
+    <li className="rounded-lg border border-border/60 bg-card/40">
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-controls={detailId}
+        data-testid="activity-step"
+        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] transition-colors hover:bg-muted/50">
+        <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
+        {status === "running" ? (
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-sky-500" aria-hidden />
+        ) : status === "failed" ? (
+          <XCircle className="h-3.5 w-3.5 shrink-0 text-destructive" aria-hidden />
+        ) : (
+          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" aria-hidden />
+        )}
+        <span className="shrink-0 rounded border border-border/70 bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {kind}
+        </span>
+        <span className={`min-w-0 flex-1 truncate ${status === "failed" ? "text-destructive" : "text-foreground"}`}>{step.label}</span>
+        <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{ms !== undefined ? `${ms} ms` : ""}</span>
+      </button>
+      {open && (
+        <div id={detailId} className="border-t border-border/60 px-2.5 py-2 text-[11px] text-muted-foreground">
+          <p className="break-words whitespace-pre-wrap text-foreground">{step.label}</p>
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+            <span>step {step.n ?? index + 1}</span>
+            <span>kind: {kind}</span>
+            <span>status: {status}</span>
+            {ms !== undefined && <span>{ms} ms</span>}
+          </div>
+          {step.sources?.length > 0 && (
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {step.sources.map((u) => (
+                <a key={u} href={u} target="_blank" rel="noreferrer"
+                  className="max-w-full truncate text-accent hover:underline">
+                  {u.replace(/^https?:\/\//, "").split("/")[0]}
+                </a>
+              ))}
+            </div>
+          )}
+          {status === "failed" && run.error && <p className="mt-1 text-destructive">{run.error}</p>}
+        </div>
+      )}
+    </li>
+  );
+}
+
+/** Plain list view: every run's steps as expandable rows (newest run first). */
+export function ActivityList({ runs }: { runs: StoreRun[] }) {
+  const ordered = [...runs].sort((a, b) => (b.started_at || 0) - (a.started_at || 0));
+  if (!ordered.length) {
+    return (
+      <p className="rounded-2xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground" data-testid="activity-empty">
+        No activity yet — runs and their steps will appear here.
+      </p>
+    );
+  }
+  return (
+    <div className="min-w-0 space-y-3" data-testid="activity-list">
+      {ordered.map((run) => {
+        const start = run.started_at;
+        const end = run.ended_at;
+        const dur = start && end ? `${Math.max(0, end - start).toFixed(1)} s` : isLiveRun(run) ? "running…" : "";
+        return (
+          <section key={run.run_id} className="min-w-0">
+            <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+              <span className="font-mono">{run.run_id.slice(0, 10)}</span>
+              <span className={`rounded-full border px-1.5 py-0.5 ${
+                run.state === "failed" ? "border-destructive/40 text-destructive"
+                : isLiveRun(run) ? "border-sky-500/40 text-sky-500" : "border-emerald-500/40 text-emerald-600"}`}>
+                {run.state}
+              </span>
+              {dur && <span>{dur}</span>}
+              <span>{run.steps.length} step{run.steps.length === 1 ? "" : "s"}</span>
+            </div>
+            {run.steps.length ? (
+              <ol className="space-y-1">
+                {run.steps.map((_s, i) => <StepListRow key={`${run.run_id}-${i}`} run={run} index={i} />)}
+              </ol>
+            ) : (
+              <p className="text-[11px] text-muted-foreground">No steps recorded for this run yet.</p>
+            )}
+          </section>
+        );
+      })}
     </div>
   );
 }
