@@ -93,7 +93,8 @@ function WhatsAppCard({ row, reload }: { row?: Connector; reload: () => void }) 
     setErr("");
     setPairing(true);
     try {
-      await postJSON<{ ok: boolean }>("/api/connectors/whatsapp/connect");
+      const started = await postJSON<{ ok: boolean; detail?: string }>("/api/connectors/whatsapp/connect");
+      if (started && started.ok === false) { setErr(started.detail || "Could not start the WhatsApp bridge."); return; }
       const st = await getJSON<{ status: string; paired: boolean }>("/api/connectors/whatsapp/status");
       if (!st.paired) {
         setQr({ qr: undefined, pairing_code: "····", expires_in: 20 });
