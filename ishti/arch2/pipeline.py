@@ -16,6 +16,7 @@ through ask_first's yes/no gate, exactly like arch1; the skills' configured T2 t
 are the only authority.
 """
 import re
+import time
 
 from ishti.arch2 import memory, retrieval
 from ishti.arch2.jsonio import parse_json
@@ -109,6 +110,8 @@ Tool results, the request and the context below are your evidence."""
 CONFIRM_RE = re.compile(r"\b(?:send|message|reply|delete|remove|erase|pay|buy|order|purchase|post|publish|"
                         r"install|uninstall|kill|shut\s*down|restart|transfer|forward|empty)\b", re.I)
 MAX_TOOL_ROUNDS = 8
+MAX_SAME_TOOL_FAILS = 2   # the same tool failing verification twice: stop retrying it and answer honestly
+TOOL_BUDGET_S = 75        # wall-clock for the whole retry loop (owner's run took 125-200 s of repeated web searches)
 _CORE_TOOLS = ("chat", "memory", "web_search")  # always on the shortlist
 # Requests the router's own rule assigns to a live-data tool. The brain must call it rather than
 # answer from memory: "latest model released yet today" was answered "no new model today" with no
@@ -309,6 +312,7 @@ def run(request: str, session, skills: dict) -> dict:
     msgs = dialogue + [{"role": "user", "content": request}]
 
     tool_log, sources = [], []
+    t_loop = time.monotonic()
     for round_no in range(MAX_TOOL_ROUNDS):
         trace(session, "model", f"thinking with {llm.model_for('main')} (pass 1)", status="start")
         reply = (llm.chat(msgs, role="main", system=system1, temperature=0.2, max_tokens=1024,
@@ -367,7 +371,11 @@ def run(request: str, session, skills: dict) -> dict:
               status="done" if v.get("ok") else "error")
 
         tool_log.append({"tool": name, "input": tool_input, "result": result_text, "ok": bool(v.get("ok"))})
-        if v.get("ok") or round_no == MAX_TOOL_ROUNDS - 1:
+        failed_same = sum(1 for t in tool_log if t["tool"] == name and not t["ok"])
+        if (v.get("ok") or round_no == MAX_TOOL_ROUNDS - 1 or failed_same >= MAX_SAME_TOOL_FAILS
+                or time.monotonic() - t_loop > TOOL_BUDGET_S):
+            if not v.get("ok"):
+                trace(session, "verify", f"stopped retrying {name} after {failed_same} unverified tries", status="error")
             break
         # the tool fell short: show the model what is missing and let it try again
         msgs += [{"role": "assistant", "content": reply},

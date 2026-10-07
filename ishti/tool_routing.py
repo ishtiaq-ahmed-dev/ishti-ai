@@ -44,7 +44,7 @@ _CUES = (
     ("security_scan", re.compile(r"\b(?:security[- ]scan|security scan|scan mcp|audit (?:the )?skill manifests?|"
                                   r"(?:repository|repo).{0,30}(?:committed )?secrets?|shell true|verify false)\b", re.I)),
     ("fileops", re.compile(r"\b(?:rename|zip|unzip|duplicate files?|compare (?:these two |these |two )?(?:files?|folders?)|"
-                            r"recycle bin|delete (?:the |a )?(?:old )?file)\b", re.I)),
+                            r"recycle bin|delete (?:the |a )?(?:old )?file|(?:delete|remove|trash)\b.{0,40}\b(?:files?|folders?)\b)\b", re.I)),
     ("whatsapp", re.compile(r"\bwhats ?app\b|\b(?:family|work) group messages?\b", re.I)),
     ("writing", re.compile(r"\b(?:rewrite|paraphrase|fix the grammar|bullet points?|blog outline|formal tone|"
                             r"draft .{0,20} from (?:these )?(?:notes|bullets)|summari[sz]e this text|short notes|"
@@ -70,6 +70,9 @@ _CUES = (
     ("files", re.compile(r"\b(?:find|locate|where is|search my pc for)\b.{0,70}\b(?:file|folder|pdf|docx|csv|png|"
                           r"downloads?|containing|named|logo|proposal)\b", re.I)),
     ("weather", re.compile(r"\b(?:weather|forecast|temperature|rain|umbrella|how hot|how cold|mausam|hawa|barish|mosam)\b|موسم", re.I)),
+    # the owner's own PC locations: "3 newest files in downloads" is a folder question, never a web search
+    ("folders", re.compile(r"\b(?:in|from|on|inside)\s+(?:my\s+|the\s+)?(?:downloads?|desktop|documents|pictures)\b"
+                           r"|\bmy\s+(?:downloads?|desktop|documents|pictures)\b|\b[A-Za-z]:\\", re.I)),
     ("web_search", re.compile(r"\b(?:search the web|look up|latest|newest|today'?s? .{0,25}news|currently leads|"
                               r"actively maintained|what changed in)\b", re.I)),
 )
