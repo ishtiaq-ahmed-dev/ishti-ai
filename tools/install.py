@@ -559,10 +559,29 @@ def phase2():
         say("  Could not create the icon. You can still start ISHTI by double-clicking start.bat in this folder.")
     else:
         say("  Done.")
+    step(9, "WhatsApp control bridge (optional)")
+    bridge_step()
     say("\n" + "=" * 60)
     say("All done - double-click ISHTI on your desktop.")
     say("=" * 60)
     return 0
+
+
+def bridge_step():
+    """The WhatsApp bridge is a small Node program with its own packages; node_modules is not in the repo, so a fresh PC
+    needs them installed or pairing silently fails. Optional: without Node, everything else still works."""
+    bridge = os.path.join(ROOT, "tools", "wa_bridge")
+    if os.path.isdir(os.path.join(bridge, "node_modules", "@whiskeysockets")):
+        say("  Already installed.")
+        return
+    npm = shutil.which("npm")
+    if not npm:
+        say("  WhatsApp control needs Node.js 20 or newer (free: https://nodejs.org). Install it and run install.bat again.")
+        say("  Everything else works without it.")
+        return
+    say("  Installing the bridge's own packages...")
+    code, _out = run_logged([npm, "ci", "--omit=dev", "--no-audit", "--no-fund"], cwd=bridge)
+    say("  Done." if not code else "  Could not install them (details in install.log). WhatsApp control stays off; everything else works.")
 
 
 def models_step(manage):

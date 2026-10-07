@@ -213,7 +213,10 @@ def start() -> dict:
         bootstrap = {**_credentials(create=True), "testDestination": test_destination()}
         node = os.environ.get("ISHTI_NODE_EXE") or shutil.which("node")
         if not node or not Path(node).is_file():
-            raise BridgeError("Node.js runtime is unavailable")
+            raise BridgeError("Node.js 20+ is required for WhatsApp control: install it from https://nodejs.org, then run install.bat")
+        if not (Path(BRIDGE_DIR) / "node_modules" / "@whiskeysockets").is_dir():
+            raise BridgeError("The WhatsApp bridge packages are not installed: run install.bat "
+                              "(or `npm ci --omit=dev` in tools\\wa_bridge)")
         log_path = Path(DATA) / "bridge.log"
         with log_path.open("ab") as log:
             _child = subprocess.Popen([node, str(Path(BRIDGE_DIR) / "index.js")], cwd=BRIDGE_DIR,
