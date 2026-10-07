@@ -1,5 +1,13 @@
 # Progress
 
+26. 2026-10-07 (WP-D1 safe outputs complete):
+- Enabled `ISHTI_INTEL_SAFE_FILE_OUTPUTS` by default after the three-run file eval reduced measured DOCX/PPTX/PDF-split overwrite defects from 3/3 to 0/3. Set the flag to `0` to restore the legacy writer path.
+- DOCX/PPTX creation now writes to a same-directory temporary file and publishes with a no-replace hard link; collisions receive versioned names. Full PDF split uses a newly created versioned directory. Existing files, directories and destination symlinks are not replaced.
+- Focused tests execute and reopen real DOCX/PPTX/PDF outputs and cover serialization failure, racing targets, scope denial before temp creation, cleanup failure and directory collision. The full evaluator remained unchanged outside the target metric across three runs.
+- Reviewer and security reviewer found no blockers. Three clean-checkout full runs passed in fresh Python processes: 1136 tests, 0 failures/errors, 3 skips each (`_work/wp-d1-full-clean-{1,2,3}.xml`; 173.919 s, 174.989 s, 178.493 s). The installed desktop was not relaunched because this package has no persisted runtime state and the audit avoids touching the owner session.
+- A flag-controlled offline visual guard prevents dry-run tests from calling Ollama; the semantic filtering unit test now injects deterministic embeddings. Live visual planning is unchanged. Commits: `f09e8a5`, `42ed948`.
+- **Next:** WP-B no-dead-end replan ladder. Existing uncommitted browser/WhatsApp/checklist work remains outside these commits and produced failures only in the dirty checkout, so verification used an isolated worktree at the same committed revision.
+
 25. 2026-10-07 (intelligence-failure audit started):
 - Read the owner-supplied audit mission and repository `AGENTS.md`; created local branch `audit/intel` and rollback tag `pre-intel` from the intake HEAD. The tracked tree was clean; pre-existing untracked `reports/` artifacts were preserved.
 - Phase 0 environment evidence is in `docs/audit/INTEL_BASELINE.md`. Python 3.11.9, Node v24.16.0, Ollama 0.35.0, NVIDIA GeForce RTX 5070 Ti, driver 610.88, and 16303 MiB reported GPU memory were observed. `ollama list` reported 32 installed models. `/api/ps` reported `ishti-spark2.5-q8:4b` resident with `size_vram == size == 4706271231` bytes and context length 8192.
