@@ -333,7 +333,7 @@ def _create_main_window(main_api, url):
     _remember["maximized"] = g["maximized"]
     win = webview.create_window(title=TITLE, url=url, width=g["width"], height=g["height"], x=g["x"], y=g["y"],
                                 min_size=window_state.MIN_SIZE, maximized=g["maximized"], confirm_close=False,
-                                js_api=main_api)
+                                text_select=True, js_api=main_api)
     main_api.set_window(win)
     _remember["win"] = win
     win.events.closing += on_closing
