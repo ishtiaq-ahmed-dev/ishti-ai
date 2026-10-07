@@ -15,6 +15,7 @@ Safety rule (spec 24): memory NEVER authorizes an action. High-impact verbs alwa
 through ask_first's yes/no gate, exactly like arch1; the skills' configured T2 tiers
 are the only authority.
 """
+import json
 import re
 import time
 
@@ -119,7 +120,7 @@ _CORE_TOOLS = ("chat", "memory", "web_search")  # always on the shortlist
 LIVE_TOOLS = ("web_search", "web_fetch", "weather", "markets", "deep_research", "shopping", "travel")
 
 
-def _rule_tool(request: str, skills: dict):
+def _rule_tool(request: str, skills: dict, session=None):
     """The tool the router's deterministic rule picked for THIS request, or None.
 
     Beyond LIVE_TOOLS (weather/web/etc.), a rule-matched action skill is also forced: the owner's
@@ -127,7 +128,7 @@ def _rule_tool(request: str, skills: dict):
     never be answered from chat when the matching skill is usable. Only skipped for T0/general skills
     whose rule cue is a fallback, not a real action match.
     """
-    dec = _route_decision(request, _usable(skills))
+    dec = _route_decision(request, _usable(skills), session)
     if dec.get("skill") in skills:
         skill = dec["skill"]
         if dec.get("source") in ("rule", "learned", "shortlist", "explicit_directive", "reference_resolved"):
@@ -142,11 +143,11 @@ def _usable(skills: dict) -> dict:
     return dict(sorted(usable_skills(skills).items()))
 
 
-def _route_decision(request: str, usable: dict) -> dict:
+def _route_decision(request: str, usable: dict, session=None) -> dict:
     """The full router decision for this request (rule match + Laya scores). {} on any failure."""
     try:
         from ishti.tool_routing import route as _route
-        return _route(request, usable) or {}
+        return _route(request, usable, session=session) or {}
     except Exception:
         return {}
 
@@ -241,7 +242,7 @@ def _deterministic_fallback(request: str, session, skills: dict, tool_log: list,
     except Exception as exc:
         trace(session, "fallback", f"deterministic route error: {exc}", status="error")
 
-    forced = _rule_tool(request, skills)
+    forced = _rule_tool(request, skills, session)
     if forced and forced in _usable(skills) and not any(t.get("tool") == forced for t in tool_log):
         try:
             trace(session, "fallback", f"deterministic rule tool {forced}", status="start")
@@ -302,7 +303,7 @@ def run(request: str, session, skills: dict) -> dict:
         context = f"CONVERSATION STATE:\n{state_summary}\n\n{context}"
     tool_block = _tool_manifests(skills, request)
     system1 = llm.style() + "\n\n" + SYSTEM_PASS1.format(tools=tool_block, context=context or "(none)")
-    forced = _rule_tool(request, skills)
+    forced = _rule_tool(request, skills, session)
     if forced in skills:
         # deterministic nudge: the rules already know this one belongs to a live tool
         system1 += (f"\n\nLIVE REQUEST: this request matches the {forced} tool exactly. Your reply MUST be "
@@ -318,6 +319,12 @@ def run(request: str, session, skills: dict) -> dict:
         reply = (llm.chat(msgs, role="main", system=system1, temperature=0.2, max_tokens=1024,
                           on_token=session.get("on_token")).content or "").strip()
         call = _parse_tool_call(reply)
+        if not call and forced in _usable(skills) and not tool_log:
+            # small local models sometimes ignore "your reply MUST be the tool call": the rules already know which
+            # tool owns this request, so run it rather than let the model claim it "cannot" do it
+            trace(session, "model", f"matched tool {forced} - running it directly", status="done")
+            call = {"tool": forced, "input": request}
+            reply = json.dumps(call)
         if not call:
             trace(session, "model", "answered directly", status="done")
             clean = _not_a_repeat(reply, session)

@@ -22,3 +22,12 @@ def test_action_request_keeps_the_owners_words():
 def test_bare_followup_still_uses_the_anchor():
     st = _state("search Sony WH-1000XM5")
     assert "WH-1000XM5" in QueryResolver().resolve("go deeper", st).request
+
+
+def test_delete_them_refers_to_the_files_just_listed_not_the_last_owner_message():
+    from ishti.reference_resolver import resolve_reference
+    table = "| Name | Size | Modified |\n|---|---|---|\n| a.mkv | 8.2 GB | 07 Oct 2026 |\n| b.exe | 212.6 MB | 06 Oct 2026 |"
+    session = {"history": [{"role": "user", "content": "show my 3 newest files in downloads"},
+                           {"role": "assistant", "content": table}]}
+    ref = resolve_reference("delete them", session)
+    assert ref and [f["name"] for f in ref["files"]] == ["a.mkv", "b.exe"], ref

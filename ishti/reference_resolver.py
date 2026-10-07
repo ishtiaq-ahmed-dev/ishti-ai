@@ -90,6 +90,23 @@ def extract_files_from_text(content: str) -> List[Dict[str, str]]:
     return results
 
 
+_FILE_VERB = re.compile(r"\b(?:delete|remove|trash|recycle|move|rename|zip|copy|open)\b", re.I)
+
+
+def _last_assistant_list(history) -> Optional[Dict[str, Any]]:
+    for turn in reversed(history):
+        if turn.get("role") == "assistant":
+            content = str(turn.get("content") or "").strip()
+            files = extract_files_from_text(content)
+            if files:
+                return {"type": "last_assistant_table", "payload": content, "files": files,
+                        "description": f"last assistant file list ({len(files)} files)"}
+            if "|" in content and "---" in content:
+                return {"type": "last_assistant_table", "payload": content, "files": [],
+                        "description": "last assistant table"}
+    return None
+
+
 def resolve_reference(text: str, session: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """Resolve pronouns and relative references in order:
     1. Payload pasted in same message after command.
@@ -127,6 +144,11 @@ def resolve_reference(text: str, session: Optional[Dict[str, Any]] = None) -> Op
     if not has_ref:
         return None
 
+    if _FILE_VERB.search(text):
+        listed = _last_assistant_list(history)
+        if listed and listed["files"]:
+            return listed
+
     # Order 2: Last owner paste in session
     if session.get("last_paste"):
         return {
@@ -152,25 +174,9 @@ def resolve_reference(text: str, session: Optional[Dict[str, Any]] = None) -> Op
             }
 
     # Order 3: Last assistant table / list / artifact
-    for turn in reversed(history):
-        if turn.get("role") == "assistant":
-            content = str(turn.get("content") or "").strip()
-            files = extract_files_from_text(content)
-            if files:
-                return {
-                    "type": "last_assistant_table",
-                    "payload": content,
-                    "files": files,
-                    "description": f"last assistant file list ({len(files)} files)",
-                }
-            # Markdown table of general rows
-            if "|" in content and "---" in content:
-                return {
-                    "type": "last_assistant_table",
-                    "payload": content,
-                    "files": [],
-                    "description": "last assistant table",
-                }
+    listed = _last_assistant_list(history)
+    if listed:
+        return listed
 
     # Order 4: Last created / opened file
     last_file = session.get("last_file") or session.get("created_file")
