@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import ast
+import datetime as dt
 import json
-import inspect
 import importlib.util
 import math
 import os
@@ -566,35 +566,93 @@ def run_files() -> dict[str, Any]:
             if matrix[ext]["convert"]["status"] == "unmeasured" and ext not in {"doc", "xls"}:
                 matrix[ext]["convert"]["reason"] = "Conversion requires COM, an LLM, or has no product path; not exercised."
         overwrite_regressions = []
-        for ext, operation, fn in (("docx", "create", docs_skill.op_make_doc),
-                                   ("pptx", "create", docs_skill.op_make_deck),
-                                   ("pdf", "split", docs_skill.op_pdf_split)):
-            source = inspect.getsource(fn)
-            if ext == "pdf":
-                collision = "_pages" in source and "page_{i:03d}.pdf" in source and "exist_ok=True" in source
-                target_one = folder / "same_pages" / "page_001.pdf"
-                target_two = folder / "same_pages" / "page_001.pdf"
-            else:
-                collision = "dt.date.today()" in source and ".save(dst)" in source and "beside(" not in source
-                target_one = folder / f"same synthetic topic SAME-DAY.{ext}"
-                target_two = folder / f"same synthetic topic SAME-DAY.{ext}"
-            row = {"extension": ext, "operation": operation, "same_target": target_one == target_two,
-                   "overwrite_risk": bool(collision and target_one == target_two),
-                   "evidence": ("static split path reuses <stem>_pages/page_001.pdf without collision avoidance"
-                                if ext == "pdf" else
-                                "static product path construction uses topic + date and direct save(dst) without collision avoidance")}
-            overwrite_regressions.append(row)
-            cell = "edit" if ext == "pdf" else "create"
-            matrix[ext][cell] = {"status": "measured", "passed": not row["overwrite_risk"],
-                                 "product_defect": row["overwrite_risk"], "evidence": row["evidence"]}
+        safe_enabled = docs_skill._safe_outputs_enabled()
+        old_home, old_ask = docs_skill.HOME, docs_skill.llm.ask
+        docs_skill.HOME = str(folder)
+        try:
+            for ext, operation in (("docx", "create"), ("pptx", "create")):
+                title = "same synthetic document" if ext == "docx" else "Same synthetic deck"
+                base = folder / f"{title} {dt.date.today()}.{ext}"
+                base.write_bytes(b"owner sentinel")
+                try:
+                    if ext == "docx":
+                        docs_skill.llm.ask = lambda *_a, **_k: "# same synthetic document\nCERULEAN-42"
+                        reply = docs_skill.op_make_doc(None, "create a document about same synthetic document", {})
+                        made = Path(reply.split("Word document: ", 1)[1].splitlines()[0])
+                        from docx import Document
+                        reopened = "CERULEAN-42" in "\n".join(p.text for p in Document(made).paragraphs)
+                    else:
+                        docs_skill.llm.ask = lambda *_a, **_k: json.dumps({
+                            "title": title, "subtitle": "CERULEAN-42",
+                            "slides": [{"title": "proof", "bullets": ["safe"]}],
+                        })
+                        reply = docs_skill.op_make_deck(None, "create a presentation about safe output", {})
+                        made = Path(reply.split(": ", 1)[1].splitlines()[0])
+                        from pptx import Presentation
+                        reopened = Presentation(made).slides[0].shapes.title.text == title
+                    risk = base.read_bytes() != b"owner sentinel"
+                    row = {"extension": ext, "operation": operation, "same_target": made == base,
+                           "overwrite_risk": risk, "flag_enabled": safe_enabled,
+                           "output_reopened": reopened,
+                           "evidence": "product writer executed and output was reopened"}
+                    overwrite_regressions.append(row)
+                    matrix[ext]["create"] = {"status": "measured", "passed": not risk and reopened,
+                                               "product_defect": risk, "evidence": row["evidence"]}
+                except Exception as exc:
+                    unavailable = isinstance(exc, (ImportError, ModuleNotFoundError))
+                    reason = f"Product writer {'unavailable' if unavailable else 'failed'}: {type(exc).__name__}: {exc}"
+                    overwrite_regressions.append({
+                        "extension": ext, "operation": operation, "overwrite_risk": None,
+                        "flag_enabled": safe_enabled, "output_reopened": False, "evidence": reason,
+                    })
+                    matrix[ext]["create"] = {
+                        "status": "unmeasured" if unavailable else "measured",
+                        "passed": False, "reason": reason,
+                    }
+        finally:
+            docs_skill.HOME, docs_skill.llm.ask = old_home, old_ask
+
+        if "pdf" in samples:
+            collision_pdf = folder / "collision.pdf"
+            collision_pdf.write_bytes(samples["pdf"].read_bytes())
+            base_dir = folder / "collision_pages"
+            base_dir.mkdir()
+            sentinel = base_dir / "page_001.pdf"
+            sentinel.write_bytes(b"owner sentinel")
+            try:
+                reply = docs_skill.op_pdf_split(None, f"split {collision_pdf}", {})
+                made_dir = Path(reply.rsplit(" in ", 1)[1])
+                made = made_dir / "page_001.pdf"
+                import pikepdf
+                with pikepdf.open(made) as reopened_pdf:
+                    reopened = len(reopened_pdf.pages) == 1
+                risk = sentinel.read_bytes() != b"owner sentinel"
+                overwrite_regressions.append({
+                    "extension": "pdf", "operation": "split", "same_target": made_dir == base_dir,
+                    "overwrite_risk": risk, "flag_enabled": safe_enabled, "output_reopened": reopened,
+                    "evidence": "product split executed and output was reopened",
+                })
+            except Exception as exc:
+                unavailable = isinstance(exc, (ImportError, ModuleNotFoundError))
+                reason = f"Product splitter {'unavailable' if unavailable else 'failed'}: {type(exc).__name__}: {exc}"
+                overwrite_regressions.append({
+                    "extension": "pdf", "operation": "split", "overwrite_risk": None,
+                    "flag_enabled": safe_enabled, "output_reopened": False, "evidence": reason,
+                })
+                matrix["pdf"]["edit"] = {
+                    "status": "unmeasured" if unavailable else "measured",
+                    "passed": False, "reason": reason,
+                }
     correct = sum(ok for _name, ok in checks)
     measured_cells = [cell for row in matrix.values() for cell in row.values() if cell["status"] == "measured"]
     passed_cells = sum(bool(cell.get("passed")) for cell in measured_cells)
+    measured_overwrites = [row for row in overwrite_regressions
+                           if isinstance(row.get("overwrite_risk"), bool)]
     return {"suite": "files", "case_count": len(checks) + len(measured_cells),
             "metrics": {"synthetic_file_checks": _ratio(correct, len(checks)),
                         "measured_operation_pass_rate": _ratio(passed_cells, len(measured_cells)),
                         "overwrite_defect_rate": _ratio(
-                            sum(row["overwrite_risk"] for row in overwrite_regressions), len(overwrite_regressions))},
+                            sum(row["overwrite_risk"] for row in measured_overwrites), len(measured_overwrites))},
             "failures": ([name for name, ok in checks if not ok]
                          + [{"extension": ext, "operation": op, **cell}
                             for ext, row in matrix.items() for op, cell in row.items()

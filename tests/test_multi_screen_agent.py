@@ -189,12 +189,15 @@ class TestMultiScreenOSAgent(unittest.TestCase):
         self.assertIsNone(self.agent.parse_action('{"action":"click","x":5000,"y":650}'))
 
     def test_perceive_plan_act_step(self):
-        cmd, record = self.agent.step("Drag the window from Screen 1 to Screen 2")
+        env = {"ISHTI_TEST_MODE": "1", "ISHTI_INTEL_OFFLINE_VISUAL_GUARD": "1"}
+        with patch.dict(os.environ, env), patch("ishti.llm.chat") as chat:
+            cmd, record = self.agent.step("Drag the window from Screen 1 to Screen 2")
         self.assertIsNotNone(cmd)
         self.assertIn("step", record)
         self.assertIn("cursor_before", record)
         self.assertIn("execution", record)
         self.assertTrue(record["execution"]["success"])
+        chat.assert_not_called()
 
     def test_run_loop_completes_objective(self):
         with patch.object(self.agent, "_call_reasoning_engine", return_value='{"thought": "Task is complete.", "action": "done"}'):

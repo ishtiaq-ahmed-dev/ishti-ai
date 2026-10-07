@@ -678,6 +678,12 @@ Output your response using ONLY this schema:
 
     def _call_reasoning_engine(self, img: Image.Image, user_prompt: str) -> str:
         """Invokes ISHTI's local multimodal vision/LLM engine with the stitched frame."""
+        from ishti import test_mode
+
+        offline_guard = os.environ.get("ISHTI_INTEL_OFFLINE_VISUAL_GUARD", "1").strip().lower()
+        if test_mode.enabled() and offline_guard in {"1", "true", "yes", "on"}:
+            return self._heuristic_planner(user_prompt)
+
         sys_prompt = self.get_system_prompt()
 
         # Try local Ollama vision model via ishti.llm

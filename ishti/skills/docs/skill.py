@@ -11,9 +11,11 @@ Outputs go next to the source file or to Documents\\ISHTI."""
 import datetime as dt
 import os
 import re
+import tempfile
 import time
 
-from ishti import llm
+from ishti import llm, scope
+from ishti.core.logutil import swallowed
 from ishti.untrusted import guard
 from ishti.skills import trace
 
@@ -24,6 +26,7 @@ DOC_EXT = (".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv", ".pptx", ".txt", ".
 PATH = re.compile(r"[A-Za-z]:[\\/][^\"'<>|?*\n]+?\.(?:pdf|docx?|xlsx?|csv|pptx|txt|md)\b", I)
 HOME = os.path.join(os.path.expanduser("~"), "Documents", "ISHTI")
 NOTES = os.path.join(os.path.expanduser("~"), "Documents", "ISHTI Notes")
+SAFE_OUTPUTS_FLAG = "ISHTI_INTEL_SAFE_FILE_OUTPUTS"
 OPS = [
     ("invoice", re.compile(r"\b(?:make|create|generate|write|prepare|send)\s+(?:an?\s+)?invoice\b", I)),
     ("pdf_form", re.compile(r"\b(?:fill(?:\s+in|\s+out)?|complete)\b.+\.pdf\b|\b(?:what|which|list)\s+(?:form\s+)?fields\b.+\.pdf\b", I)),
@@ -72,6 +75,70 @@ def beside(src, suffix, ext):
     while os.path.exists(out):
         out, n = f"{stem}_{suffix}_{n}{ext}", n + 1
     return out
+
+
+def _safe_outputs_enabled():
+    return os.environ.get(SAFE_OUTPUTS_FLAG, "1").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _versioned_path(path):
+    """Choose a readable candidate; publication still uses a no-replace operation."""
+    stem, ext = os.path.splitext(path)
+    candidate, n = path, 1
+    while os.path.lexists(candidate):
+        candidate, n = f"{stem}_{n}{ext}", n + 1
+    return candidate
+
+
+def _atomic_save_new(path, save):
+    """Publish a complete same-volume file atomically, and never replace a target."""
+    folder = os.path.dirname(path) or "."
+    temp_path = None
+    try:
+        # os.open/os.link are not globally wrapped by scope.install; validate before
+        # creating even the temporary file, then again at the publication boundary.
+        scope.check_write(path, "create")
+        fd, temp_path = tempfile.mkstemp(prefix=".ishti-", suffix=os.path.splitext(path)[1], dir=folder)
+        os.close(fd)
+        save(temp_path)
+        try:
+            scope.check_write(path, "create")
+            os.link(temp_path, path)
+        except (FileExistsError, PermissionError) as exc:
+            if os.path.lexists(path):
+                raise FileExistsError(path) from exc
+            raise
+    finally:
+        if temp_path:
+            try:
+                os.remove(temp_path)
+            except OSError as exc:
+                # Publication is already complete and no owner file is at risk. A locked
+                # hidden temp is safer than retrying and creating duplicate outputs.
+                swallowed("docs._atomic_save_new.cleanup", exc)
+
+
+def _atomic_unique_save(path, save):
+    """Save once, then atomically publish at the first destination that does not exist."""
+    stem, ext = os.path.splitext(path)
+    candidate, n = _versioned_path(path), 1
+    while True:
+        try:
+            _atomic_save_new(candidate, save)
+            return candidate
+        except FileExistsError:
+            while os.path.lexists(candidate):
+                candidate, n = f"{stem}_{n}{ext}", n + 1
+
+
+def _versioned_directory(path):
+    candidate, n = path, 1
+    while True:
+        try:
+            os.mkdir(candidate)
+            return candidate
+        except FileExistsError:
+            candidate, n = f"{path}_{n}", n + 1
 
 
 # ---------------------------------------------------------------- reading any document
@@ -137,12 +204,27 @@ def op_pdf_split(m, text, session):
             dst = beside(src, f"pages_{a}-{b}", ".pdf")
             out.save(dst)
             return f"Pages {a}-{b} of {n}: {dst}"
-        folder = os.path.splitext(src)[0] + "_pages"
-        os.makedirs(folder, exist_ok=True)
-        for i, page in enumerate(pdf.pages, 1):
-            one = pikepdf.Pdf.new()
-            one.pages.append(page)
-            one.save(os.path.join(folder, f"page_{i:03d}.pdf"))
+        safe_outputs = _safe_outputs_enabled()
+        base_folder = os.path.splitext(src)[0] + "_pages"
+        folder = _versioned_directory(base_folder) if safe_outputs else base_folder
+        if not safe_outputs:
+            os.makedirs(folder, exist_ok=True)
+        try:
+            for i, page in enumerate(pdf.pages, 1):
+                one = pikepdf.Pdf.new()
+                one.pages.append(page)
+                dst = os.path.join(folder, f"page_{i:03d}.pdf")
+                if safe_outputs:
+                    _atomic_save_new(dst, one.save)
+                else:
+                    one.save(dst)
+        except Exception:
+            if safe_outputs:
+                try:
+                    os.rmdir(folder)
+                except OSError as exc:
+                    swallowed("docs.op_pdf_split.cleanup", exc)
+            raise
     return f"Split into {n} single-page PDFs in {folder}"
 
 
@@ -309,7 +391,10 @@ def op_make_doc(m, text, session):
     os.makedirs(HOME, exist_ok=True)
     name = re.sub(r"[^\w -]", "", topic)[:50].strip() or "document"
     dst = os.path.join(HOME, f"{name} {dt.date.today()}.docx")
-    d.save(dst)
+    if _safe_outputs_enabled():
+        dst = _atomic_unique_save(dst, d.save)
+    else:
+        d.save(dst)
     return f"Word document: {dst}\n\n" + body[:600]
 
 
@@ -340,7 +425,10 @@ def op_make_deck(m, text, session):
     os.makedirs(HOME, exist_ok=True)
     name = re.sub(r"[^\w -]", "", plan.get("title", "deck"))[:50].strip() or "deck"
     dst = os.path.join(HOME, f"{name} {dt.date.today()}.pptx")
-    prs.save(dst)
+    if _safe_outputs_enabled():
+        dst = _atomic_unique_save(dst, prs.save)
+    else:
+        prs.save(dst)
     return f"PowerPoint ({len(plan.get('slides', [])) + 1} slides): {dst}\n" + "\n".join(f"- {s.get('title', '')}" for s in plan.get("slides", [])[:12])
 
 

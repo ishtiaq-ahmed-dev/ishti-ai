@@ -70,6 +70,7 @@ def test_understanding_reports_required_corpus_dimensions(monkeypatch):
 def test_expanded_product_suites_report_matrices_and_isolation(monkeypatch):
     monkeypatch.setenv("ISHTI_TEST_MODE", "1")
     monkeypatch.setenv("ISHTI_SCRATCH", "1")
+    monkeypatch.setenv("ISHTI_INTEL_SAFE_FILE_OUTPUTS", "0")
     report = run_suites("all")
     suites = {item["suite"]: item for item in report["results"]}
     scenarios = {row["scenario"] for row in suites["dead_end"]["metadata"]["product_scenarios"]}
@@ -93,6 +94,15 @@ def test_expanded_product_suites_report_matrices_and_isolation(monkeypatch):
     assert matrix["ipynb"]["read"]["status"] == "unsupported"
     assert matrix["js"]["validate"]["upload_accepted"] is False
     assert suites["files"]["metadata"]["ipynb_support"]["product_execute"].startswith("unmeasured")
+
+
+def test_safe_output_candidate_removes_all_measured_overwrite_defects(monkeypatch):
+    monkeypatch.setenv("ISHTI_TEST_MODE", "1")
+    monkeypatch.setenv("ISHTI_SCRATCH", "1")
+    monkeypatch.setenv("ISHTI_INTEL_SAFE_FILE_OUTPUTS", "1")
+    suite = run_suites("files")["results"][0]
+    assert suite["metrics"]["overwrite_defect_rate"]["value"] == 0.0
+    assert all(not row["overwrite_risk"] for row in suite["metadata"]["overwrite_regressions"])
 
 
 def test_repeat_aggregates_median_metrics(monkeypatch):
