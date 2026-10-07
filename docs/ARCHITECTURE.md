@@ -1,6 +1,6 @@
 # ARCHITECTURE: how ISHTI works today
 
-Last targeted verification against the code: 2026-10-04 (branch `feat/repo-integration`). This document describes what the
+Last targeted verification against the code: 2026-10-07 (branch `audit/intel`). This document describes what the
 repository contains now. Where a number appears it is labelled **MEASURED** (with the file that holds the
 measurement), **SOURCED** (taken from an existing doc or config that I did not re-measure), or **ASSUMED**.
 Anything I could not confirm in code is said so.
@@ -12,7 +12,7 @@ ladders), [SETTINGS.md](SETTINGS.md), subsystem deep-dives in [arch/](arch/).
 ## 1. What ISHTI is, in one paragraph
 
 A local-first personal assistant for one Windows PC. A FastAPI backend (`ishti/` + `interface/web_ui/server.py`,
-port 8888) takes a request from the UI, the microphone, or a paired remote channel, routes it to one of 124 skills,
+port 8888) takes a request from the UI, the microphone, or a paired remote channel, routes it across 126 skill manifests,
 and returns a reply. All language-model calls go to a local Ollama server. Search goes through a local SearXNG
 instance first. There is no cloud model call in the request path; the web skills reach the internet because
 fetching web pages is their job, and every skill's network reach is declared in its manifest (see
@@ -76,16 +76,17 @@ implemented but off by default). Voice is only another input; the transcript goe
 4. **Routing** (`ishti/router.py::route`), in this order:
    1. `corrections.learned` (what the owner corrected before wins);
    2. skill `match()` triggers from the manifests, ordered by manifest `priority` (deterministic, no model);
-   3. Laya "typed-decisions" router over the skills whose manifest has `laya: true` (12 of 124; MEASURED by
+   3. Laya "typed-decisions" router over the eligible skills (12 of 126 manifests; MEASURED by
       reading the manifests), accepted if confidence >= `router.min_confidence` (0.2 in `ishti/config.json`);
    4. otherwise the default skill, `chat`, which is the LLM-backed fallback.
-   There is no separate "LLM router" pass: the LLM fallback is the `chat` skill, and the only other LLM call before
-   a skill runs is the planner's split for multi-skill requests and the follow-up rewriter. Statuses `broken`,
+   When Laya is unavailable, `router.py::_llm_pick` can make a separate planner-model routing pass before the
+   default `chat` fallback. The planner can also split multi-skill requests and the follow-up resolver can rewrite
+   unresolved context. Statuses `broken`,
    `draft`, `disabled`, `retired` and skills the owner disabled in Settings are never picked.
 5. `_run`: tier gate (T3 refused unless `allow_t3`, T2 asks first, test mode blocks T2 side effects), then
    `skill.run(text, session)` inside `audit.context(...)` and `scope` enforcement. A skill that returns `None` means
-   "not mine" and the next-best skill is tried. If a web skill's reply admits it fell short, one escalation hop
-   runs (browser -> web_search -> deep_research, `ESCALATE` map, at most two hops).
+   "not mine" and the next-best skill is tried. If a web skill's reply admits it fell short, the escalation ladder
+   runs for at most two hops (browser -> web_search -> deep_research, `ESCALATE` map).
 6. `_finish`: sources filtered to the cited ones, secrets masked everywhere they could be stored, runtime history trimmed to
    the last 200 messages while older persisted turns remain searchable, chat persisted; then only background threads run (semantic remember, fine-tune log,
    arch2 consolidation, owner-fact learning, learning-turn scoring, monitor). Nothing in step 6 sits on the reply path.
@@ -98,7 +99,7 @@ notes ~20% run-to-run drift).
 
 | Name | What it is | How it is selected | Status |
 |---|---|---|---|
-| **arch1** (default) | The dispatcher cascade in section 3: reflex, rules, Laya, 124 skills, planner for multi-skill requests. | `ishti/config.json` -> `arch.active = "arch1"` | The default and the most-tested path. |
+| **arch1** | The dispatcher cascade in section 3: reflex, rules, Laya, 126 skill manifests, planner for multi-skill requests. | `ishti/config.json` -> `arch.active = "arch1"` | Implemented and historically the most-tested path; it is not the configured active path on 2026-10-07. |
 | **arch2** | Two-pass brain (`ishti/arch2/`): intent router shortlists 5-20 skills (rules, then Laya scores), the "main" model thinks/plans/calls tools, a validation pass judges each tool run, the "main" model writes the final answer. Adds the four-layer memory in `arch2/memory.py`. | `arch.active = "arch2"` in `ishti/config.json`, the dashboard's Architecture card (`GET /api/arch`, `POST /api/arch/switch`), or the spoken/typed command "use arch 2" (`ishti/arch2/registry.py` owns this state) | Implemented and switchable. Needs a live Ollama to run its LLM passes. |
 | **Architecture profiles** (`ishti/core/architectures.py`) | Six declared profiles with component lists, required dependencies and health checks: `simple_voice`, `router_single_agent` (default), `memory_augmented`, `multi_agent_orchestrator`, `flowise_flow`, `custom`. Switching is health-check gated and hot. | `arch.active_profile` in `ishti/config.json`, or the typed/spoken command "switch to multi agent mode" (asks yes/no first). I found no REST route and no UI card for the profile registry. | See the limits below. |
 
@@ -174,10 +175,10 @@ Roles are named in `ishti/config.json` (`llm.models`): `planner` (the always-res
 (Ollama's OpenAI-compatible `/v1` endpoint). `ishti/llm.py::model_for(role)` resolves a role to a model that is
 actually installed and that the governor currently allows.
 
-Configured at the time of writing (SOURCED, `ishti/config.json`): planner `ishti-spark2.5:4b`, coder
-`qwen3-coder:30b-a3b`, translator `gemma3:4b`, fallback `ishti-qwen2.5:14b`. `NEEDS.md` N23 records that the
-configured coder name was not installed when last checked; I did not re-check installed models, because that needs
-a running Ollama.
+Configured on 2026-10-07 (SOURCED, `ishti/config.json`): planner `ishti-spark2.5-q8:4b`, coder
+`ishti-qwen2.5-coder:14b`, translator `gemma3:4b`, fallback `ishti-qwen2.5:14b`; arch2 main and validator are
+`qwen3:14b`. A read-only `ollama list` probe found all of those names installed. `/api/ps` observed the planner
+fully resident (`size_vram == size == 4706271231` bytes) at context length 8192; this is point-in-time evidence.
 
 The governor (`ishti/vram.py`, policy in `models_ladder.yaml`, docs in [arch/gpu-vram-governor.md](arch/gpu-vram-governor.md)):
 

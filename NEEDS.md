@@ -1,5 +1,14 @@
 # Needs and verification status
 
+## Intelligence audit blockers (2026-10-07)
+
+| Item | Current evidence | Exact missing input / work |
+|---|---|---|
+| Owner-labelled real failure set (~30 cases) | The repository has 300 synthetic/curated task cases. Real sessions, corrections, monitor rows, learning data, audit data and runtime logs can contain plaintext personal content; only `ftlog` is redacted by construction. The audit has not opened those personal records. | A disposable redacted export of roughly 30 failed conversations with stable case IDs and desired outcomes, or explicit owner authorization to copy the named local stores into an audit scratch area and redact them before analysis. Until then, build and baseline the harness with synthetic/curated cases and report real-log clustering as BLOCKED. |
+| Generic long-term memory isolation | Behavior facts enforce exact client scope and targeted adversarial tests exist. `profiles.memory_ns()` has no call sites, and the generic Arch2 memory tables have no profile/client namespace. | Implement namespace columns and migration behind a feature flag, then prove owner/profile/client isolation through write, retrieval, restart and contradiction tests before enabling it. |
+| `.ipynb` and post-write artifact validation | Pinned Office/PDF libraries exist, but no notebook create/edit/execute path was found and generated Office/PDF outputs are not consistently reopened/rendered. | Add sandboxed notebook support and per-format validators in WP-D; PDF visual inspection needs deterministic synthetic fixtures and a renderer, not real documents. |
+| DOCX/PPTX/PDF split overwrite safety | `op_make_doc` and `op_make_deck` directly save topic-and-date filenames, and PDF split writes fixed page filenames; a repeated operation can overwrite an existing artifact without a T2 confirmation. | Add regression evals, then implement versioned output or backup/undo behind the WP-D feature flag before enabling any broader file work. |
+
 Updated: 2026-10-05. Unit tests and helper modules do not prove production integration or model accuracy.
 
 | Item | Current evidence | Remaining work |
