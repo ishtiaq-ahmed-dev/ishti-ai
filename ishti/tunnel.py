@@ -1,6 +1,7 @@
 """Owner-controlled ngrok tunnel lifecycle. The agent API is queried on loopback only."""
 from __future__ import annotations
 
+from ishti.core.logutil import swallowed
 import argparse
 import json
 import os
@@ -112,8 +113,8 @@ class TunnelManager:
                 self._lines.extend(line.strip() for line in stream if line.strip())
                 self._log_offset = stream.tell()
             self._lines[:] = self._lines[-40:]
-        except (OSError, ValueError):
-            pass
+        except (OSError, ValueError) as _exc:
+            swallowed('ishti/tunnel.py' + ':115', _exc)
 
     def _owned_saved_process(self):
         saved = self._saved_state()
@@ -189,14 +190,14 @@ class TunnelManager:
                     try:
                         process.kill()
                         process.wait(timeout=3)
-                    except Exception:
-                        pass
+                    except Exception as _exc:
+                        swallowed('ishti/tunnel.py' + ':192', _exc)
             self.process = None; self.public_url = ""; self.port = 0
             if self._log_handle:
                 try:
                     self._log_handle.close()
-                except OSError:
-                    pass
+                except OSError as _exc:
+                    swallowed('ishti/tunnel.py' + ':198', _exc)
                 self._log_handle = None
             self._write_state(None)
             if was_running and record:

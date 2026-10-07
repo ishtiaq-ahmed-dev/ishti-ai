@@ -12,8 +12,8 @@ keeps its own token; nothing here replaces or weakens it):
     "cross-site"/"same-site" values are refused regardless of token; when an Origin header
     is present it must match the Host. Legacy/non-browser clients that send neither still
     work (they already hold the bearer token)
-  * documented cookie posture: HttpOnly + Secure + SameSite=Strict (server.py already sets
-    exactly this for its ishti_token cookie)
+  * documented cookie posture: HttpOnly + Secure (https) + SameSite (web_security.OwnerSessionStore
+    issues the browser `ishti_session` cookie; the long-lived API key never goes in a cookie or URL)
 
 Never raises: every method returns a value (None/False/0).
 Self-check: python ishti/api_sessions.py

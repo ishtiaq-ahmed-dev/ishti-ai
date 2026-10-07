@@ -1,6 +1,7 @@
 """Apps skill: launch or focus desktop applications - anything installed (found through the Start menu, the way Windows lists
 apps), open a site or a search in a named browser ("open ssr movies in brave and search for tenet"), and say whether an app is
 installed ("can you see my brave app?")."""
+from ishti.core.logutil import swallowed
 import re
 from urllib.parse import quote_plus
 
@@ -71,8 +72,8 @@ def match(text):
     try:
         from ishti.normalizer import normalize_message
         text = normalize_message(text)
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/skills/apps/skill.py' + ':74', _exc)
     if _play_words(text):
         return True
     if WHATSAPP.search(text):
@@ -110,8 +111,8 @@ def run(text, session):
     try:
         from ishti.normalizer import normalize_message
         text = normalize_message(text)
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/skills/apps/skill.py' + ':113', _exc)
     if not _have(text) and not _play_words(text):
         from ishti.connectors import try_request
         result = try_request(text, session)

@@ -5,6 +5,7 @@ Keeps academic records separate from the family relationship graph.
 """
 from __future__ import annotations
 
+from ishti.core.logutil import swallowed
 import os
 import re
 import sqlite3
@@ -77,8 +78,8 @@ def set_course_teacher(course: str, teacher: str, provenance: str = "owner") -> 
     try:
         from ishti.facts import get_facts
         get_facts().set(f"course:{c_clean.lower()}", "teacher", t_clean)
-    except Exception:
-        pass
+    except Exception as _exc:
+        swallowed('ishti/courses.py' + ':80', _exc)
 
     return {
         "course": c_clean,

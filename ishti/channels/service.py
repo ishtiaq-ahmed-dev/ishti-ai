@@ -44,10 +44,11 @@ def next_step(channel: str, enabled: bool, token: bool, paired: bool, running: b
         return "WhatsApp is connected and listening for the allowed owner number(s)."
     if not enabled:
         return ("WhatsApp control is off. Add an owner control number and explicitly enable automation in Settings > Connectors.")
+    if not risk_ack:
+        return "WhatsApp is switched on but its risk note is not accepted yet (Settings > Remote Control > WhatsApp)."
     if not paired:
         return "WhatsApp control is enabled but the local bridge is not linked; scan the QR in Settings > Connectors."
-    return ("WhatsApp is linked but the inbound listener is not running; review its last error." if risk_ack
-            else "WhatsApp is switched on but its risk note is not accepted yet (Settings > Remote Control > WhatsApp).")
+    return "WhatsApp is linked but the inbound listener is not running; review its last error."
 
 
 class RemoteService:

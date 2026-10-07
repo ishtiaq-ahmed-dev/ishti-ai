@@ -14,6 +14,7 @@ hashed + in-memory (ishti/api_sessions.py), so a restart invalidates them.
 """
 from __future__ import annotations
 
+from ishti.core.logutil import swallowed
 import asyncio
 import re
 
@@ -286,20 +287,20 @@ def attach(app):
             try:
                 from ishti import lifecycle, tunnel
                 await asyncio.to_thread(tunnel.start, int(lifecycle._st.get("port") or 8888))
-            except Exception:
-                pass
+            except Exception as _exc:
+                swallowed('ishti/channels/api.py' + ':289', _exc)
 
     def _down():
         from ishti.channels import service
         try:
             service.get().stop()
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/channels/api.py' + ':296', _exc)
         try:
             from ishti import tunnel
             tunnel.stop()
-        except Exception:
-            pass
+        except Exception as _exc:
+            swallowed('ishti/channels/api.py' + ':301', _exc)
 
     app.on_event("startup")(_boot)
     app.on_event("shutdown")(_down)

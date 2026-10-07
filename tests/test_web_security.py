@@ -53,11 +53,16 @@ def test_every_proxy_header_requires_a_token(header):
     assert security.authorized(connection({header: value, "authorization": "Bearer test-token"}), "test-token")
 
 
-def test_https_tunnel_and_remote_native_client_remain_supported():
+def test_https_tunnel_and_remote_native_client_remain_supported(tmp_path):
+    store = security.OwnerSessionStore(tmp_path / "sessions.json")
+    sid = store.create(ip="203.0.113.8", device="test")
     h = {"host": "ishtitest.example", "origin": "https://ishtitest.example",
-         "x-forwarded-proto": "https", "cookie": "ishti_token=test-token"}
-    assert security.authorized(connection(h), "test-token")
-    assert not security.authorized(connection({**h, "origin": "https://evil.example"}), "test-token")
+         "x-forwarded-proto": "https", "cookie": f"ishti_session={sid}"}
+    assert security.authorized(connection(h), "test-token", store)
+    assert not security.authorized(connection({**h, "origin": "https://evil.example"}), "test-token", store)
+    # the retired long-lived-key cookie must NOT authenticate any more
+    legacy = {**h, "cookie": "ishti_token=test-token"}
+    assert not security.authorized(connection(legacy), "test-token", store)
     assert security.authorized(connection({"authorization": "bearer test-token"}, client="192.0.2.1"), "test-token")
     assert not security.authorized(connection(client="192.0.2.1"), "")
     assert not security.token_matches("", "")
@@ -90,15 +95,17 @@ def test_actual_http_middleware_blocks_before_routes_and_no_wildcard_cors(server
     assert "access-control-allow-origin" not in result.headers
 
 
-def test_only_valid_query_token_sets_cookie(server):
+def test_query_token_never_authenticates_or_sets_cookie(server):
     local = TestClient(server.app, base_url="http://127.0.0.1:8888", client=("127.0.0.1", 12345))
     assert "set-cookie" not in local.get("/api/security-probe?token=wrong").headers
     remote = TestClient(server.app, base_url="https://ishtitest.example", client=("192.0.2.1", 12345))
-    assert remote.get("/api/security-probe?token=wrong").status_code == 401
-    result = remote.get("/api/security-probe?token=test-token", headers={"origin": "https://ishtitest.example"})
-    assert result.status_code == 404
-    cookie = result.headers["set-cookie"]
-    assert "HttpOnly" in cookie and "Secure" in cookie and "SameSite=strict" in cookie
+    for token in ("wrong", "test-token"):  # even the REAL key in a URL is refused (leaks via history/referrers)
+        result = remote.get(f"/api/security-probe?token={token}", headers={"origin": "https://ishtitest.example"})
+        assert result.status_code == 401 and "set-cookie" not in result.headers
+    # native clients keep the Bearer path
+    ok = remote.get("/api/security-probe", headers={"origin": "https://ishtitest.example",
+                                                    "authorization": "Bearer test-token"})
+    assert ok.status_code == 404
 
 
 @pytest.mark.parametrize("path", ["/ws", "/ws/events", "/ws/live"])

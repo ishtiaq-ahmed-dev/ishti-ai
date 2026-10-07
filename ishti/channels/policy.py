@@ -7,6 +7,7 @@ Rules:
     the gate's remote-forbidden classifier rejects any request that asks for one (tested).
   - defaults are the safe ones: everything OFF except the read-only panic commands.
 """
+from ishti.core.logutil import swallowed
 import os
 import re
 import threading
@@ -79,8 +80,8 @@ def _write(data: dict):
     finally:
         try:
             os.unlink(tmp)
-        except FileNotFoundError:
-            pass
+        except FileNotFoundError as _exc:
+            swallowed('ishti/channels/policy.py' + ':82', _exc)
 
 
 def _write_defaults():
