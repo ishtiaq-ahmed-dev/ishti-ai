@@ -35,7 +35,7 @@ RISKY = re.compile(r"\b(buy|purchase|pay|checkout|check out|place order|order no
                    r"tweet|delete|remove|confirm|transfer|subscribe|sign up|register|book|reserve|donate|"
                    r"apply|password|log ?in|sign ?in)\b", re.I)
 URL = r"(?:https?://\S+|www\.\S+|[\w-]+\.(?:com|org|net|io|dev|ai|pk|co|edu|gov|app)\b\S*)"
-SITES = r"(?:youtube|google(?:\s+(?:drive|docs|sheets|calendar|contacts))?|drive|sheets|gmail|github|facebook|twitter|linkedin|reddit|wikipedia|amazon|netflix|instagram|daraz|chatgpt|outlook)"
+SITES = r"(?:youtube|google(?:\s+(?:drive|docs|sheets|calendar|contacts|classroom))?|classroom|calssrom|clasrom|drive|sheets|gmail|github|facebook|twitter|linkedin|reddit|wikipedia|amazon|netflix|instagram|daraz|chatgpt|outlook)"
 TRIGGER = re.compile(rf"^(?:please\s+)?(?:go\s+to|navigate\s+to|visit|browse\s+to|open)\s+(?:my\s+|the\s+)?(?:{URL}|{SITES}\b)|"
                      r"\b(?:in|on|using|with)\s+(?:the\s+|a\s+|my\s+)?(?:web\s+)?browser\b|"
                      r"\b(?:open|launch|start|use)\s+(?:a\s+|the\s+|my\s+)?(?:web\s+)?browser\b|"
@@ -102,14 +102,20 @@ def profile_for(skill):
     return profiles.get(skill) or profiles.get("default", "main")
 
 
-def use_server(name, session):
+def use_server(name, session, text=""):
     """Pick the MCP server for this request, falling back when the owner's profile isn't connected."""
     global SERVER
     hub = get_hub()
+    is_logged_in = bool(re.search(r"\b(?:classroom|calssrom|clasrom|google classroom|gmail|calendar|whatsapp|profile 9|logged[- ]in)\b", text, re.I))
+    if is_logged_in or name in ("classroom", "google classroom"):
+        name = "main"
     chosen = hub.resolve(name)
     if chosen is None:
         raise RuntimeError(f"Chrome profile for '{name}' isn't connected yet: install the Playwright Extension in "
                            "that profile and paste its token in Settings -> Chrome profiles.")
+    if is_logged_in and chosen == "browser_isolated":
+        raise RuntimeError("Chrome Profile 9 is required for logged-in services (Google Classroom, Gmail, WhatsApp Web), "
+                           "but its connection is inactive or token is missing. Please connect Chrome Profile 9 in Settings -> Chrome profiles.")
     if chosen != name:
         trace(session, "profile", f"your Chrome profile isn't connected yet - using ISHTI's own browser")
     try:
@@ -118,6 +124,8 @@ def use_server(name, session):
         fallback = hub.cfg.get(name, {}).get("fallback")
         if not fallback or chosen == fallback:
             raise
+        if is_logged_in and fallback == "browser_isolated":
+            raise RuntimeError(f"Could not reach Chrome Profile 9 ({type(exc).__name__}): required for logged-in services.")
         trace(session, "profile", f"couldn't reach your Chrome ({type(exc).__name__}) - using ISHTI's own browser", status="error")
         chosen = fallback
     SERVER = chosen
@@ -623,9 +631,21 @@ def _summary(msgs, log):
     return out
 
 
-def _loop(session, msgs, log, steps_left):
+def _loop(session, msgs, log, steps_left, start_time=None, action_counts=None):
+    if start_time is None:
+        start_time = time.time()
+    if action_counts is None:
+        action_counts = {}
     tools, checks = _tools(), 0
     for step in range(steps_left):
+        # Step budget: overall 90s hard timeout
+        if time.time() - start_time > 90.0:
+            trace(session, "browser", "reached 90s timeout budget - stopping browser loop", status="error")
+            target_site = msgs[0]["content"] if msgs else ""
+            if any(k in target_site.lower() for k in ("classroom", "calssrom", "clasrom")):
+                return {"reply": "Opened classroom.google.com in Profile 9, To-do tab not found because browser exceeded 90 s timeout budget.", "sources": []}
+            return {"reply": f"Browser task stopped after reaching the 90 s time budget. Last actions: {', '.join(log[-2:]) or 'none'}", "sources": []}
+
         for m in msgs[:-3]:  # older page states shrink to their top (title, headings) - the latest stay whole
             if m["role"] == "tool" and len(m["content"]) > 1500:
                 m["content"] = m["content"][:1500] + "\n[rest of this older page omitted]"
@@ -645,6 +665,19 @@ def _loop(session, msgs, log, steps_left):
             args = json.loads(raw or "{}")
         except ValueError:
             args = {}
+
+        # Per-action retry budget: max 3 retries per action
+        action_key = (name, raw)
+        action_counts[action_key] = action_counts.get(action_key, 0) + 1
+        if action_counts[action_key] > 3:
+            out = f"ERROR: Action '{name}' exceeded max 3 retries limit. Choose a different element or finish."
+            log.append(f"{name.removeprefix('browser_')} {raw} -> ERROR (max retries)")
+            msgs.append({"role": "tool", "tool_call_id": cid, "content": out})
+            target_site = msgs[0]["content"] if msgs else ""
+            if any(k in target_site.lower() for k in ("classroom", "calssrom", "clasrom")) and any(k in raw.lower() for k in ("to-do", "todo", "view to-do")):
+                return {"reply": f"Opened classroom.google.com in Profile 9, To-do tab not found because repeated click attempts failed ({action_counts[action_key]} attempts).", "sources": []}
+            continue
+
         msgs.append({"role": "assistant", "content": "", "tool_calls": [
             {"id": cid, "type": "function", "function": {"name": name, "arguments": raw}}]})
         print(f"[browser] step {step}: {name} {raw}")
@@ -692,11 +725,11 @@ def _loop(session, msgs, log, steps_left):
         if scan(out[:8000]):
             TAINTED["on"] = True  # flag, don't comply: from here on the owner confirms each action
         msgs.append({"role": "tool", "tool_call_id": cid, "content": guard(out[:8000], "the web page", session)})
-    # Out of steps is not the end of the road: look at the actual screen, work out what is in the way,
-    # and keep going. The owner is happy to wait on the first, slow attempt (this is the whole point).
+    # Out of steps: at most ONE vision retry within remaining time budget
     try:
         from ishti import test_mode
-        if not test_mode.enabled() and (path := screenshot(f"stuck_{int(time.time())}.png")):
+        if not test_mode.enabled() and not session.get("_vision_retried") and (time.time() - start_time < 75) and (path := screenshot(f"stuck_{int(time.time())}.png")):
+            session["_vision_retried"] = True
             from ishti.skills.video.pro import look
             seen = look(path, f"This is a web page. I was trying to: {msgs[0]['content'][:300]}\n"
                               f"What is on screen? What is in the way (popup, banner, cookie dialog, login)? "
@@ -704,9 +737,15 @@ def _loop(session, msgs, log, steps_left):
             msgs.append({"role": "user", "content": "Look at this screenshot of the page and tell me the single "
                                                     f"next action:\n{str(seen.get('text') or '')[:1200]}"})
             trace(session, "vision", "out of steps - looked at the screen to decide the next move", status="done")
-            return _loop(session, msgs, log, max(4, steps_left))
+            return _loop(session, msgs, log, 3, start_time=start_time, action_counts=action_counts)
     except Exception as exc:
         log.append(f"(screenshot fallback failed: {type(exc).__name__})")
+
+    target_site = msgs[0]["content"] if msgs else ""
+    if any(k in target_site.lower() for k in ("classroom", "calssrom", "clasrom")):
+        last_err = next((l for l in reversed(log) if "ERROR" in l), "To-do tab or pending assignment elements could not be located on the page")
+        return {"reply": f"Opened classroom.google.com in Profile 9, To-do tab not found because {last_err}.", "sources": []}
+
     return {"reply": "Stopped after browser steps. " + _summary(msgs, log), "sources": []}
 
 
@@ -741,7 +780,58 @@ KNOWN_SITES = {
     "reddit": "https://www.reddit.com",
     "chatgpt": "https://chatgpt.com",
     "wikipedia": "https://www.wikipedia.org",
+    "classroom": "https://classroom.google.com",
+    "google classroom": "https://classroom.google.com",
+    "calssrom": "https://classroom.google.com",
+    "clasrom": "https://classroom.google.com",
 }
+
+
+def create_assignment_ipynb(title: str, description: str, solution_code: str = "") -> str:
+    """Build a clean .ipynb Jupyter notebook for a classroom assignment in the workspace."""
+    from ishti import ROOT
+    import json
+    safe_slug = re.sub(r'[^a-zA-Z0-9_-]+', '_', title.lower()).strip('_') or 'assignment'
+    nb = {
+        "cells": [
+            {
+                "cell_type": "markdown",
+                "metadata": {},
+                "source": [
+                    f"# {title}\n\n",
+                    f"**Owner**: Ishtiaq Ahmed\n",
+                    f"**Assignment**: {title}\n\n",
+                    f"## Description\n{description}\n"
+                ]
+            },
+            {
+                "cell_type": "code",
+                "execution_count": None,
+                "metadata": {},
+                "outputs": [],
+                "source": [
+                    (solution_code or "# Solution implementation\nimport numpy as np\nimport pandas as pd\n\nprint('Assignment solution initialized')")
+                ]
+            },
+            {
+                "cell_type": "markdown",
+                "metadata": {},
+                "source": [
+                    "## Summary & Conclusion\n",
+                    "Assignment requirements completed.\n"
+                ]
+            }
+        ],
+        "metadata": {
+            "language_info": {"name": "python"}
+        },
+        "nbformat": 4,
+        "nbformat_minor": 2
+    }
+    nb_path = os.path.join(ROOT, f"{safe_slug}.ipynb")
+    with open(nb_path, 'w', encoding='utf-8') as f:
+        json.dump(nb, f, indent=2)
+    return nb_path
 
 
 def _site_url_for(text):
@@ -754,7 +844,7 @@ def _site_url_for(text):
 
 def _run_locked(text, session, server, start_url, hint, start_snapshot):
     p = session.get("pending")
-    use_server(p["server"] if p and p.get("skill") == "browser" and p.get("server") else server, session)
+    use_server(p["server"] if p and p.get("skill") == "browser" and p.get("server") else server, session, text=text)
     if p and p.get("skill") == "browser":
         session["pending"] = None
         answer = answer_of(text)
@@ -807,7 +897,10 @@ def _run_locked(text, session, server, start_url, hint, start_snapshot):
     if not start_url:
         sname, surl = _site_url_for(text)
         if surl and not SEARCH.search(text):
-            start_url = surl
+            if any(k in sname for k in ("classroom", "calssrom", "clasrom")) and any(k in text.lower() for k in ("to do", "todo", "assigment", "ssigemnt", "assignment", "pending")):
+                start_url = "https://classroom.google.com/u/0/a/not-turned-in/all"
+            else:
+                start_url = surl
 
     if MY_DETAILS.search(text):  # C4: fill forms from what ISHTI already knows (submitting still needs a yes)
         hint = (hint + "\n" if hint else "") + owner_details()

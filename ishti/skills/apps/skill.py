@@ -18,6 +18,7 @@ IN_BROWSER = re.compile(r"^\s*(?:please\s+|can\s+you\s+)?(?:open|go\s+to|visit|s
 HAVE = re.compile(r"^\s*(?:can\s+you\s+(?:see|find)|do\s+i\s+have|is|have\s+i\s+got)\s+(?:my\s+|the\s+)?(?P<app>[\w .+-]{2,30}?)\s*"
                   r"(?:app|application|browser)?\s*(?:installed|on\s+(?:my\s+|this\s+)?(?:pc|computer|laptop)|in\s+(?:my\s+|this\s+)?(?:pc|computer))?\s*\??$", re.I)
 SITES = {"youtube": "https://www.youtube.com", "google": "https://www.google.com", "gmail": "https://mail.google.com",
+         "classroom": "https://classroom.google.com", "google classroom": "https://classroom.google.com",
          "facebook": "https://www.facebook.com", "instagram": "https://www.instagram.com", "twitter": "https://x.com", "x": "https://x.com",
          "github": "https://github.com", "linkedin": "https://www.linkedin.com", "netflix": "https://www.netflix.com", "outlook": "https://outlook.live.com/mail/",
          "whatsapp": "https://web.whatsapp.com", "chatgpt": "https://chatgpt.com", "wikipedia": "https://www.wikipedia.org",
@@ -67,6 +68,11 @@ def _play_words(text):
 
 
 def match(text):
+    try:
+        from ishti.normalizer import normalize_message
+        text = normalize_message(text)
+    except Exception:
+        pass
     if _play_words(text):
         return True
     if WHATSAPP.search(text):
@@ -80,6 +86,9 @@ def match(text):
     m = VERB.match(text)
     if not m or MULTI_STEP.search(m.group("app")):
         return False
+    app_key = m.group("app").lower().strip()
+    if app_key in SITES:
+        return True
     return (IntentDetector.classify(re.sub(r"\b(?:the|a|an|my)\s+", "", text, flags=re.I))["mode"] == "APP_CONTROL"
             or bool(_installed(m.group("app"))))
 
@@ -98,6 +107,11 @@ def browser_url(what, q=None):
 
 
 def run(text, session):
+    try:
+        from ishti.normalizer import normalize_message
+        text = normalize_message(text)
+    except Exception:
+        pass
     if not _have(text) and not _play_words(text):
         from ishti.connectors import try_request
         result = try_request(text, session)

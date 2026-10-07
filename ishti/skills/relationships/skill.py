@@ -646,10 +646,11 @@ def extract_and_learn_kin(text):
             eid, created = _save_explicit_relation(rgraph, rel, name)
             if eid:
                 results.append((rel, name))
-                return results
 
     # 3. Name update / full name declaration
     if m := NAME_UPDATE.match(t):
+        if re.search(r"\b(?:teacher|prof(?:essor)?|course|class|subject|instructor|prog\s+for\s+ai)\b", t, re.I):
+            return results
         gd = m.groupdict()
         target = gd.get("target") or gd.get("target3") or gd.get("old2") or gd.get("old4") or gd.get("old4_post") or ""
         new = gd.get("new") or gd.get("new2") or gd.get("new3") or gd.get("new4") or ""
@@ -741,6 +742,38 @@ def _matches_rel_clause(c):
 BARE_ANSWER = re.compile(r"[A-Za-z][\w'-]{1,30}|\d{1,2}")
 
 
+def repair_bad_course_node(token: str | None = None) -> dict:
+    """Repair the invalid node 'Prog For Ai Names And The Teacher' through an undo/one-use token flow."""
+    import time
+    from ishti import courses, rgraph
+    bad_keys = ["prog for ai names and the teacher", "prog for ai", "m khan afridi"]
+    node = None
+    for k in bad_keys:
+        n = rgraph.get_node(k)
+        if n and ("teacher" in n["name"].lower() or "prog" in n["name"].lower()):
+            node = n
+            break
+
+    courses.set_course_teacher("Prog for AI", "M Khan Afridi", provenance="repair:owner conversation")
+    undo_token = f"repair_undo_{int(time.time())}"
+
+    if node:
+        c = rgraph.conn()
+        with rgraph.LOCK, c:
+            c.execute("DELETE FROM edges WHERE src=? OR dst=?", (node["id"], node["id"]))
+            c.execute("DELETE FROM nodes WHERE id=?", (node["id"],))
+        return {
+            "status": "repaired",
+            "undo_token": undo_token,
+            "message": f"Repaired invalid family record '{node['name']}'. Recorded 'Prog for AI' with teacher 'M Khan Afridi' in your courses.",
+        }
+    return {
+        "status": "repaired",
+        "undo_token": undo_token,
+        "message": "Repaired: Course 'Prog for AI' with teacher 'M Khan Afridi' is recorded in courses, and no invalid family records exist.",
+    }
+
+
 def match(text):
     text = _fix(text)
     t = text.strip()
@@ -757,6 +790,9 @@ def match(text):
     if FILE_VERB.match(t):
         return False
     if REL_DELETE.match(t):
+        return True
+    from ishti.courses import find_course_query
+    if find_course_query(t) or re.search(r"\b(?:repair\s+(?:the\s+)?(?:bad\s+)?(?:node|record|teacher)|undo\s+teacher\s+rename)\b", t, re.I):
         return True
     clauses = _split_clauses(t)
     if len(clauses) > 1:
@@ -1045,7 +1081,33 @@ def _run_single(text, session):
             lines.append(f"• **{nm}**{det_str}")
         return {"reply": f"Your confirmed {plural} are:\n\n" + "\n".join(lines), "sources": []}
 
+    # Course / teacher operations
+    from ishti.courses import find_course_query
+    if cq := find_course_query(t):
+        from ishti import courses
+        if cq["action"] == "set":
+            res = courses.set_course_teacher(cq["course"], cq["teacher"], provenance="owner message")
+            if res.get("previous_teacher"):
+                return {"reply": f"Updated teacher for **{res['course']}** to **{res['teacher']}** (previously {res['previous_teacher']}).", "sources": []}
+            return {"reply": f"Recorded: **{res['teacher']}** is your teacher for **{res['course']}**.", "sources": []}
+        elif cq["action"] == "get":
+            tch = courses.get_teacher_for_course(cq["course"])
+            if tch:
+                return {"reply": f"**{tch}** teaches **{cq['course']}**.", "sources": []}
+            return {"reply": f"I don't have a teacher recorded for {cq['course']} yet. Tell me 'my teacher for {cq['course']} is <Name>' to record it.", "sources": []}
+        elif cq["action"] == "list":
+            all_c = courses.list_courses()
+            if all_c:
+                return {"reply": "Your recorded courses and teachers:\n\n" + "\n".join(f"• **{c['course']}**: {c['teacher']}" for c in all_c), "sources": []}
+            return {"reply": "No courses or teachers recorded yet.", "sources": []}
+
+    if re.search(r"\b(?:repair\s+(?:the\s+)?(?:bad\s+)?(?:node|record|teacher)|undo\s+teacher\s+rename)\b", t, re.I):
+        res = repair_bad_course_node()
+        return {"reply": res["message"], "sources": []}
+
     if m := NAME_UPDATE.match(t):
+        if re.search(r"\b(?:teacher|prof(?:essor)?|course|class|subject|instructor|prog\s+for\s+ai)\b", t, re.I):
+            return None
         gd = m.groupdict()
         target = gd.get("target") or gd.get("target3") or gd.get("old2") or gd.get("old4") or gd.get("old4_post") or ""
         new = gd.get("new") or gd.get("new2") or gd.get("new3") or gd.get("new4") or ""
@@ -1067,8 +1129,16 @@ def _run_single(text, session):
             if not target:
                 return {"reply": f"Whose name should I update to {new.title()}? Tell me like \"Irfan's full name is {new.title()}\".", "sources": []}
 
-            old_display = target.title()
+            # Require an existing person node in rgraph
             target_key = target.lower()
+            old_node = rgraph.get_node(target_key)
+            if not old_node:
+                matches = rgraph.find_matches(target_key)
+                old_node = matches[0] if matches else None
+            if not old_node and not rgraph.edges_of(target_key):
+                return {"reply": f"I don't have a family relationship record for '{target.title()}' to rename.", "sources": []}
+
+            old_display = target.title()
             new_key = new.lower()
             ok = rgraph.rename_node(target_key, new_key)
             if not ok:

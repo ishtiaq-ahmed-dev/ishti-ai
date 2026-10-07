@@ -34,8 +34,10 @@ _ALIASES = {
     "shares": "markets", "crypto": "markets", "pdf": "docs", "spreadsheet": "docs",
     "graph": "chart", "plot": "chart", "timer": "reminders", "alarm": "reminders",
     "schedule": "calendar", "meeting": "calendar", "whatsapp": "whatsapp",
+    "classroom": "browser", "calssrom": "browser", "clasrom": "browser",
 }
 _CUES = (
+    ("browser", re.compile(r"\b(?:classroom|google classroom|google calssrom|google clasrom|web browser|profile 9|tabs?|open .* tabs?)\b", re.I)),
     ("pdftables", re.compile(r"\b(?:extract|pull|get|export|turn)\b.{0,55}\btable|\bpdf tables?\b|"
                               r"\btabular data\b.{0,45}\b(?:pdf|csv)\b", re.I)),
     ("chart", re.compile(r"\b(?:bar chart|line (?:chart|graph)|histogram|chart|plot|visuali[sz]e)\b", re.I)),
@@ -45,7 +47,8 @@ _CUES = (
                             r"recycle bin|delete (?:the |a )?(?:old )?file)\b", re.I)),
     ("whatsapp", re.compile(r"\bwhats ?app\b|\b(?:family|work) group messages?\b", re.I)),
     ("writing", re.compile(r"\b(?:rewrite|paraphrase|fix the grammar|bullet points?|blog outline|formal tone|"
-                            r"draft .{0,20} from (?:these )?(?:notes|bullets)|summari[sz]e this text)\b", re.I)),
+                            r"draft .{0,20} from (?:these )?(?:notes|bullets)|summari[sz]e this text|short notes|"
+                            r"short answer|notes for this|solve it|solve this)\b", re.I)),
     ("email", re.compile(r"\b(?:gmail|unread (?:mail|email)|search my (?:mail|email)|newest email|email to|"
                           r"read .{0,12}email from|send the approved email)\b", re.I)),
     ("budget", re.compile(r"\b(?:i spent|spending|expenses?|budget limit|dining limit|log (?:salary )?income|"
@@ -58,15 +61,15 @@ _CUES = (
                             r"market calls?|ogdc|nvidia price)\b", re.I)),
     ("docs", re.compile(r"\b(?:merge .{0,20}pdfs?|convert .{0,30}(?:word|pdf)|powerpoint|word (?:file|document|report)|"
                          r"summari[sz]e this spreadsheet|compare .{0,20}word documents?)\b", re.I)),
-    ("calc", re.compile(r"\b(?:solve|derivative|integral|calculate|percent|prime factors?|simplify|gcd|lcm|"
+    ("calc", re.compile(r"\b(?:derivative|integral|percent|prime factors?|gcd|lcm|"
                          r"how much .{0,20}cost)\b|(?:\d\s*[+*/=-]\s*\d)", re.I)),
     ("calendar", re.compile(r"\b(?:calendar|schedule|free slots?|add (?:a )?(?:meeting|event)|cancel .{0,20}event|ics)\b", re.I)),
-    ("reminders", re.compile(r"\b(?:remind|reminder|timer|alarm|wake me)\b", re.I)),
+    ("reminders", re.compile(r"\b(?:remind|reminder|timer|alarm|wake me|utha dena|uthao|yaad dila|alarm lagao)\b", re.I)),
     ("memory", re.compile(r"\b(?:remember that|what do you remember|forget the saved|project .{0,25}(?:status|is in)|"
                            r"update the status of project|where did i store)\b", re.I)),
     ("files", re.compile(r"\b(?:find|locate|where is|search my pc for)\b.{0,70}\b(?:file|folder|pdf|docx|csv|png|"
                           r"downloads?|containing|named|logo|proposal)\b", re.I)),
-    ("weather", re.compile(r"\b(?:weather|forecast|temperature|rain|umbrella|how hot|how cold)\b", re.I)),
+    ("weather", re.compile(r"\b(?:weather|forecast|temperature|rain|umbrella|how hot|how cold|mausam|hawa|barish|mosam)\b|موسم", re.I)),
     ("web_search", re.compile(r"\b(?:search the web|look up|latest|newest|today'?s? .{0,25}news|currently leads|"
                               r"actively maintained|what changed in)\b", re.I)),
 )
@@ -211,9 +214,13 @@ def _clarification(text: str, candidates: list[tuple[str, float]]) -> str:
     return "What exact action and target should I use the tool for?"
 
 
-def route(text: str, skills: dict, exclude=(), *, llm_fn: Callable[..., str] | None = None) -> dict:
+def route(text: str, skills: dict, exclude=(), *, session: dict | None = None, llm_fn: Callable[..., str] | None = None) -> dict:
     """Select a skill without executing it; low-confidence actions return a clarification."""
-    text = str(text or "").strip()
+    try:
+        from ishti.normalizer import normalize_message
+        text = normalize_message(str(text or "")).strip()
+    except Exception:
+        text = str(text or "").strip()
     live = usable_skills(skills, exclude)
     explicit = _EXPLICIT.match(text)
     if explicit:
@@ -221,7 +228,24 @@ def route(text: str, skills: dict, exclude=(), *, llm_fn: Callable[..., str] | N
         if name in live:
             return {"skill": name, "confidence": 1.0, "source": "explicit_directive", "scores": [(name, 1.0)]}
 
-    if _AMBIGUOUS.search(text) and _ACTION.search(text):
+    has_explicit_target = bool(re.search(r"\b(?:classroom|google classroom|calssrom|clasrom|youtube|gmail|whatsapp|drive|sheets)\b", text, re.I))
+    if _AMBIGUOUS.search(text) and _ACTION.search(text) and not has_explicit_target:
+        resolved_skill = None
+        try:
+            from ishti.reference_resolver import resolve_reference
+            ref = resolve_reference(text, session)
+            if ref:
+                if re.search(r"\b(?:delete|remove|trash|recycle)\b", text, re.I) and "fileops" in live:
+                    resolved_skill = "fileops"
+                elif re.search(r"\b(?:send|message|text|forward|write)\b", text, re.I) and "whatsapp" in live:
+                    resolved_skill = "whatsapp"
+        except Exception:
+            resolved_skill = None
+
+        if resolved_skill:
+            return {"skill": resolved_skill, "confidence": 1.0, "source": "reference_resolved",
+                    "scores": [(resolved_skill, 1.0)]}
+
         candidates = candidate_shortlist(text, skills, exclude=exclude)
         return {"skill": "chat", "confidence": 0.0, "source": "clarify",
                 "clarify": _clarification(text, candidates), "scores": candidates[:3]}
@@ -232,9 +256,11 @@ def route(text: str, skills: dict, exclude=(), *, llm_fn: Callable[..., str] | N
 
     cues = [name for name in _cue_names(text) if name in live]
     if cues:
-        if "calc" in cues and re.search(r"\b(?:calculate|solve|derivative|integral|simplify)\b", text, re.I):
+        if "browser" in cues and re.search(r"\b(?:classroom|profile 9|tabs?|open|web)\b", text, re.I):
+            cues.insert(0, cues.pop(cues.index("browser")))
+        elif "calc" in cues and re.search(r"\b(?:calculate|derivative|integral|simplify)\b", text, re.I):
             cues.insert(0, cues.pop(cues.index("calc")))
-        if "reminders" in cues and re.match(r"\s*(?:remind|set (?:a )?(?:timer|alarm)|wake me)\b", text, re.I):
+        if "reminders" in cues and re.search(r"\b(?:remind|set (?:a )?(?:timer|alarm)|wake me|utha dena|alarm)\b", text, re.I):
             cues.insert(0, cues.pop(cues.index("reminders")))
         return {"skill": cues[0], "confidence": 0.92, "source": "shortlist",
                 "scores": [(name, 0.92) for name in cues[:3]]}

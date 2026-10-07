@@ -7,6 +7,7 @@ import importlib
 import importlib.util
 import json
 import os
+import re
 import sys
 
 if "pytest" not in sys.modules:  # every request path imports the skills: a dead console/pipe must never fail a request
@@ -232,16 +233,33 @@ def trace(session, name, label, status="done", **detail):
         fn(type="tool", name=name, label=label, status=status, **detail)
 
 
-YES = {"yes", "y", "yeah", "yep", "go ahead", "do it", "ok", "okay", "confirm", "sure", "proceed",
-       "done", "continue", "solved", "solved it", "ok done", "carry on"}  # the last ones: after a handoff
-NO = {"no", "n", "nope", "cancel", "stop", "don't", "dont", "abort", "never mind", "nevermind"}
+YES = {
+    "yes", "y", "yeah", "yep", "go ahead", "do it", "ok", "okay", "confirm", "sure", "proceed",
+    "done", "continue", "solved", "solved it", "ok done", "carry on", "approved", "approval",
+    "i approve", "giving approval", "giving you approval", "i am giving you approval",
+    "haan kar do", "kar do", "haan", "jee", "ji", "ji haan", "jee haan", "yes please",
+    "yes go ahead", "yes do it", "go for it", "please proceed", "please do it",
+}
+NO = {"no", "n", "nope", "cancel", "stop", "don't", "dont", "abort", "never mind", "nevermind", "mat karo", "nahin", "nahi"}
+
+_YES_PAT = re.compile(
+    r"\b(?:i(?:'m|\s+am)?\s+(?:giving\s+you\s+)?approval|giving\s+approval|approved|confirm(?:ed)?|"
+    r"go\s+ahead|proceed|haan\s+kar\s+do|kar\s+do|yes\s+please|yes\s+go\s+ahead)\b",
+    re.I,
+)
+_NO_PAT = re.compile(r"\b(?:cancel|stop|don'?t|abort|never\s*mind|mat\s+karo|nahin|nahi)\b", re.I)
 
 
 def answer_of(text):
     """'yes' / 'no' / None for a reply to a skill's yes/no question. None = the owner moved on to
     something else: the skill drops its question and the message is routed normally."""
-    t = text.strip().lower().strip(" .!")
-    return "yes" if t in YES else "no" if t in NO else None
+    t = (text or "").strip().lower().strip(" .!")
+    if t in YES or _YES_PAT.search(t):
+        if not _NO_PAT.search(t):
+            return "yes"
+    if t in NO or _NO_PAT.search(t):
+        return "no"
+    return None
 
 
 def ask_first(session, skill, question, action):

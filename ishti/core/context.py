@@ -136,10 +136,20 @@ class ContextAssembler:
         remaining = self.max_total_chars - sum(len(m["content"]) for m in out)
         old_budget = min(6000, remaining // 2) if old else 0
         recent_budget = remaining - old_budget
-        # Keep every recent role while reserving enough space for older evidence.
-        per_recent = min(self.max_msg_chars, max(1, recent_budget // max(1, len(recent))))
-        recent_out = [self._clip(m, per_recent, query) for m in recent]
-        remaining -= sum(len(m["content"]) for m in recent_out)
+        # Check if query is a follow-up ("short notes", "summarize", "solve it", "send this text")
+        is_follow_up = bool(re.search(r"\b(?:short notes|notes|summari[sz]e|summary|solve|solve it|send this|send this text|explain|read this|dataset|it|this)\b", query, re.I))
+        recent_out = []
+        for i, m in enumerate(recent):
+            content_len = len(m.get("content", ""))
+            # If this is the recent user message containing a pasted document/block, allocate up to 2x budget
+            if is_follow_up and m.get("role") == "user" and content_len > 250 and (i >= len(recent) - 2):
+                doc_limit = min(content_len, self.max_msg_chars * 2, max(500, remaining))
+                clipped = self._clip(m, doc_limit, query)
+            else:
+                per_msg = min(self.max_msg_chars, max(1, remaining // max(1, len(recent) - i)))
+                clipped = self._clip(m, per_msg, query)
+            recent_out.append(clipped)
+            remaining -= len(clipped["content"])
         if old:
             older_summary = self._summarize_old(old, query, min(6000, remaining))
             if older_summary:
@@ -170,6 +180,11 @@ class ContextAssembler:
         matches = list(re.finditer(r"[^\W_]{3,}", content)) if terms else []
         positions = [m.start() for m in matches if m.group().casefold() in terms]
         if not positions:
+            # Document follow-ups: "short notes", "summarize", "solve it", "send this text", etc.
+            # must preserve the document content from chat context, not truncate to a 300-char stub!
+            follow_up = re.search(r"\b(?:short notes|notes|summari[sz]e|summary|solve|solve it|send this|send this text|explain|read this|dataset)\b", query, re.I)
+            if follow_up or len(content.splitlines()) > 5:
+                return content[:limit]
             return summarize_tool_output(content, max(1, limit - 4))[:limit]
         # Centre on the densest cluster rather than blindly preserving the prefix
         # of a long pasted message or tool result.

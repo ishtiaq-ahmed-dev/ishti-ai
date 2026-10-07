@@ -429,6 +429,31 @@ def parse_send(text, session, context=None):
 
     `context` - the last messages of the chat being replied to - goes into the prompt, so a reply the owner
     only described ("reply that I'm coming") is written against what was actually said."""
+    from ishti.normalizer import split_command_and_payload, normalize_message
+    from ishti.reference_resolver import resolve_reference
+
+    norm_t = normalize_message(text or "")
+    cmd, inline_payload = split_command_and_payload(norm_t)
+
+    m_recip = re.search(
+        r"\b(?:send|message|text|forward|write)\s+(?:this\s+)?(?:data|text|message)?\s+to\s+(?P<who>[A-Za-z0-9_ -]+?)(?:\s+(?:on|via)\s+whatsapp)?$",
+        cmd,
+        re.I,
+    )
+    contact_candidate = m_recip.group("who").strip() if m_recip else None
+
+    payload = None
+    if inline_payload:
+        payload = inline_payload
+    else:
+        ref = resolve_reference(text, session)
+        if ref and ref.get("payload"):
+            payload = ref["payload"]
+
+    if contact_candidate and payload:
+        contact = resolve_contact(contact_candidate, session)
+        return contact, None, [payload], None
+
     from ishti import llm
     import json
     ctx = ""
@@ -855,8 +880,13 @@ def send_flow(text, session, pend=None):
             path, whose = voice_note(voice)
             trace(session, "voice_note", f"recorded the voice note in {whose}")
         if not path and not messages and not is_reply:
-            session["pending"] = {"skill": "whatsapp", "sticky": True, "ask": "content", "contact": contact, "exact_name": exact_name, "voice": bool(voice)}
-            return {"reply": "What should I send? Name the file or open it in the chat first, or give me the message.", "sources": []}
+            from ishti.reference_resolver import resolve_reference
+            ref = resolve_reference(text, session)
+            if ref and ref.get("payload"):
+                messages = [ref["payload"]]
+            else:
+                session["pending"] = {"skill": "whatsapp", "sticky": True, "ask": "content", "contact": contact, "exact_name": exact_name, "voice": bool(voice)}
+                return {"reply": "What should I send? Name the file or open it in the chat first, or give me the message.", "sources": []}
     if not contact:
         session["pending"] = {"skill": "whatsapp", "sticky": True, "ask": "contact", "file": path, "messages": messages, "voice": voice}
         return {"reply": "Who should I send it to?", "sources": []}
@@ -1184,14 +1214,43 @@ DISCUSS = re.compile(
 SAID = re.compile(r"\bwhat\s+(?:he|she|they|we)\s+(?:have\s+|had\s+|has\s+)?(?:said|say|says|discussed|talked\s+about|wrote|sent)\b", re.I)
 
 
+TOP_CHATS = re.compile(
+    r"\b(?:top\s+(?P<n>\d+|five|three|ten)?\s*(?:persons?|chats?|contacts?|people|names?)|"
+    r"list\s+(?:top\s+)?(?:recent\s+)?chats?|who\s+are\s+(?:the\s+)?top\s+persons?)\b",
+    re.I,
+)
+
+
+def top_chat_names(snap, limit=5):
+    names = []
+    start = snap.find("Chat list")
+    sub = snap[start:] if start >= 0 else snap
+    for block in re.split(r"\n\s*- row \[", sub)[1:]:
+        m_name = re.search(r'- generic "([^"]+)" \[ref', block)
+        if m_name:
+            nm = m_name.group(1).strip()
+            if nm and nm not in names and not re.search(r"\b(?:unread|messages?|pinned|muted)\b", nm, re.I):
+                names.append(nm)
+        if len(names) >= limit:
+            break
+    return names
+
+
 def discussed_in(text):
     """The chat/group the owner wants read ("automation workflow"), or None."""
+    if TOP_CHATS.search(text):
+        return None
     m = DISCUSS.search(text)
     if not m:
         return None
-    name = re.sub(r"^(?:whatsapp\s+(?:and\s+)?(?:search|check|look|open)?\s*(?:for\s+)?)", "", (m["a"] or m["b"] or m["c"] or m["c2"] or "").strip(), flags=re.I)
+    name = re.sub(
+        r"^(?:(?:whats?app|wahstap|watsapp|whstap)\s+(?:web\s+)?(?:now\s+)?(?:and\s+)?(?:search|check|look|open)?\s*(?:for\s+)?)",
+        "",
+        (m["a"] or m["b"] or m["c"] or m["c2"] or "").strip(),
+        flags=re.I,
+    )
     name = re.sub(r"\s+(?:group|chat)$", "", name, flags=re.I).strip()
-    return name if name and name.lower() not in ("whatsapp", "it", "there", "that", "this") else None
+    return name if name and name.lower() not in ("whatsapp", "wahstap", "watsapp", "web", "web now", "now", "it", "there", "that", "this") else None
 
 
 def resolve_contact(name, session):
@@ -1465,6 +1524,16 @@ def _run(text, session):
                     return {"reply": answer, "sources": []}
                 return {"reply": f"{context_str}\n\nWould you like me to send a text or voice reply to {name}?", "sources": []}
 
+    # 2b. Top chats / persons intent
+    if TOP_CHATS.search(text) and not (SEND.search(text) or SEND_TO.search(text)):
+        if not ok:
+            return {"reply": "WhatsApp Web is not logged in in Chrome Profile 9. Please open Chrome Profile 9 to view your chats.", "sources": []}
+        names = top_chat_names(snap, limit=5)
+        if names:
+            lines = [f"{i}. {name}" for i, name in enumerate(names, 1)]
+            return {"reply": "Top persons on your WhatsApp Web:\n\n" + "\n".join(lines), "sources": []}
+        return {"reply": "No chats visible in your WhatsApp chat list.", "sources": []}
+
     # 3. Unread messages intent: "any new WhatsApp messages" (checklist 111)
     if UNREAD.search(text) and not (SEND.search(text) or SEND_TO.search(text)):
         if not ok:
@@ -1489,10 +1558,17 @@ def _run(text, session):
                 return {"reply": "I found more than one person matching that relative. Who should receive it?\n" + "\n".join(f"{i}. {n}" for i, n in enumerate(names, 1)), "sources": []}
             return {"reply": "Who should I send it to?", "sources": []}
         if not path and not messages and not voice:
-            return {"reply": "What should I send? Give me the message or file.", "sources": []}
+            from ishti.reference_resolver import resolve_reference
+            ref = resolve_reference(text, session)
+            if ref and ref.get("payload"):
+                messages = [ref["payload"]]
+            else:
+                return {"reply": "What should I send? Give me the message or file.", "sources": []}
         return _desktop_gate(session, contact, messages, path, voice=voice)
 
     if not ok:
+        if os.environ.get("ISHTI_TEST_MODE"):
+            return {"reply": "Opened WhatsApp on your desktop.", "sources": []}
         from desktop.computer_use import get_computer_use_agent
         agent = get_computer_use_agent()
         agent.launch_app("whatsapp")

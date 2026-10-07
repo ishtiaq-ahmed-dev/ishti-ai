@@ -125,11 +125,12 @@ def _rule_tool(request: str, skills: dict):
     whose rule cue is a fallback, not a real action match.
     """
     dec = _route_decision(request, _usable(skills))
-    if dec.get("source") in ("rule", "learned") and dec.get("skill") in skills:
+    if dec.get("skill") in skills:
         skill = dec["skill"]
-        t = skills[skill].manifest.get("tier", "T0")
-        if skill in LIVE_TOOLS or t in ("T1", "T2"):
-            return skill
+        if dec.get("source") in ("rule", "learned", "shortlist", "explicit_directive", "reference_resolved"):
+            t = skills[skill].manifest.get("tier", "T0")
+            if skill in LIVE_TOOLS or t in ("T1", "T2") or dec.get("confidence", 0) >= 0.7:
+                return skill
     return None
 
 
@@ -216,6 +217,50 @@ def _not_a_repeat(reply: str, session) -> str:
 LOST = "Sorry - I lost the thread there. Could you say that once more?"
 
 
+def _deterministic_fallback(request: str, session, skills: dict, tool_log: list, sources: list):
+    """Fallback when model passes fail, repeat or return LOST. Uses rule-based router to invoke live skills."""
+    try:
+        from ishti.tool_routing import route
+        routed = route(request, skills, session=session)
+        if routed and routed.get("skill"):
+            tool_name = routed.get("skill")
+            tool_arg = request
+            if tool_name in _usable(skills):
+                trace(session, "fallback", f"deterministic route to {tool_name}: {tool_arg[:80]}", status="start")
+                res = _run_tool(skills, tool_name, tool_arg, session, tool_log)
+                if isinstance(res, dict):
+                    tool_log.append({"tool": tool_name, "input": tool_arg, "result": str(res.get("reply", res))[:1500], "ok": True})
+                    if res.get("confirm_required") or res.get("execution_blocked"):
+                        return {**res, "sources": sources, "mode": "ARCH2_FALLBACK"}
+                    reply_text = str(res.get("reply") or "").strip()
+                    if reply_text:
+                        return {"reply": reply_text, "sources": sources + res.get("sources", []), "mode": "ARCH2_FALLBACK", "tools": tool_log}
+    except Exception as exc:
+        trace(session, "fallback", f"deterministic route error: {exc}", status="error")
+
+    forced = _rule_tool(request, skills)
+    if forced and forced in _usable(skills) and not any(t.get("tool") == forced for t in tool_log):
+        try:
+            trace(session, "fallback", f"deterministic rule tool {forced}", status="start")
+            res = _run_tool(skills, forced, request, session, tool_log)
+            if isinstance(res, dict):
+                tool_log.append({"tool": forced, "input": request, "result": str(res.get("reply", res))[:1500], "ok": True})
+                if res.get("confirm_required") or res.get("execution_blocked"):
+                    return {**res, "sources": sources, "mode": "ARCH2_FALLBACK"}
+                reply_text = str(res.get("reply") or "").strip()
+                if reply_text:
+                    return {"reply": reply_text, "sources": sources + res.get("sources", []), "mode": "ARCH2_FALLBACK", "tools": tool_log}
+        except Exception as exc:
+            trace(session, "fallback", f"rule tool error: {exc}", status="error")
+    return None
+
+
+TRUTHFUL_FAILURE = (
+    "I was unable to complete your request: the local model repeated previous output without invoking "
+    "a tool, and deterministic skill routing found no direct handler. Please specify the exact command or tool."
+)
+
+
 def _parse_tool_call(text: str):
     """Extract {"tool", "input"} from a model reply; None when the reply is a plain answer.
     jsonio's parser survives fences, chatter and trailing text."""
@@ -272,11 +317,27 @@ def run(request: str, session, skills: dict) -> dict:
         if not call:
             trace(session, "model", "answered directly", status="done")
             clean = _not_a_repeat(reply, session)
-            if clean is LOST and round_no == 0:
-                msgs = dialogue + [{"role": "user", "content": request +
-                    "\nAnswer this request using the conversation evidence; do not copy your last answer."}]
-                continue
-            return {"reply": clean, "sources": sources, "mode": "ARCH2"}
+            if clean is LOST:
+                if round_no == 0:
+                    trace(session, "model", "repeat detected, retrying with smaller prompt", status="retry")
+                    smaller_system = f"You are a helpful assistant. Available tools: {', '.join(_usable(skills))}. Return JSON {{\"tool\": \"<tool_name>\", \"input\": \"<args>\"}} or an answer."
+                    smaller_msgs = [{"role": "user", "content": f"Request: {request}"}]
+                    small_reply = (llm.chat(smaller_msgs, role="main", system=smaller_system, temperature=0.1, max_tokens=256).content or "").strip()
+                    small_call = _parse_tool_call(small_reply)
+                    if small_call:
+                        call = small_call
+                        reply = small_reply
+                    else:
+                        small_clean = _not_a_repeat(small_reply, session)
+                        if small_clean is not LOST and small_clean:
+                            return {"reply": small_clean, "sources": sources, "mode": "ARCH2"}
+                if not call:
+                    fb = _deterministic_fallback(request, session, skills, tool_log, sources)
+                    if fb:
+                        return fb
+                    return {"reply": TRUTHFUL_FAILURE, "sources": sources, "mode": "ARCH2_FALLBACK"}
+            else:
+                return {"reply": clean, "sources": sources, "mode": "ARCH2"}
         name, tool_input = call["tool"], call["input"]
         if name not in _usable(skills):
             trace(session, "tool", f"model asked for unknown tool '{name}'", status="error")
@@ -340,8 +401,18 @@ def run(request: str, session, skills: dict) -> dict:
                               role="main", system=final_system, temperature=0.2, max_tokens=1024).content or final).strip()
     except Exception as _exc:
         swallowed('ishti/arch2/pipeline.py:run', _exc)
-    return {"reply": _not_a_repeat(final, session) if final else "I could not produce an answer - try rephrasing.", "sources": sources,
-            "mode": "ARCH2", "tools": tool_log}
+    final_clean = _not_a_repeat(final, session) if final else ""
+    if final_clean and final_clean is not LOST:
+        return {"reply": final_clean, "sources": sources, "mode": "ARCH2", "tools": tool_log}
+
+    tool_replies = [t["result"] for t in tool_log if t.get("result") and t.get("ok")]
+    if tool_replies:
+        return {"reply": "\n".join(tool_replies), "sources": sources, "mode": "ARCH2", "tools": tool_log}
+
+    fb = _deterministic_fallback(request, session, skills, tool_log, sources)
+    if fb:
+        return fb
+    return {"reply": TRUTHFUL_FAILURE, "sources": sources, "mode": "ARCH2_FALLBACK", "tools": tool_log}
 
 
 if __name__ == "__main__":

@@ -48,6 +48,7 @@ OPS = [
                                   r"(?:project|repo|repository|code|files?|work|everything|pc|computer)\b", I)),
     ("backup", re.compile(r"\b(?P<act>back\s*up|backup|sync|mirror)\s+(?:my\s+|the\s+)?[\"']?(?P<src>[a-z]:[\\/][^\"']+?)[\"']?\s+(?:to|into|with|onto)\s+[\"']?(?P<dst>[a-z]:[\\/]?[^\"']*?)[\"']?\s*$", I)),
     ("empty_bin", re.compile(r"\bempty\s+(?:the\s+|my\s+)?(?:recycle\s+bin|trash)\b", I)),
+    ("delete_referenced", re.compile(r"^\s*(?:please\s+)?(?:all\s+these\s+)?(?:delete|remove|trash)\s+(?:them|these|all\s+these|all\s+of\s+them|the\s+above(?:\s+files)?)\b", I)),
     ("delete", re.compile(r"^\s*(?:please\s+)?(?:delete|remove|trash)\s+(?:the\s+file\s+)?(?P<path>[A-Za-z]:\\.+?)\s*$", I)),
     ("delete_ambiguous", re.compile(r"^\s*(?:please\s+)?(?:delete|remove|trash)\s+(?:that\s+|this\s+|the\s+)?file\b", I)),
     # Checklist phrasings that mean "delete/copy/move something by name" but don't include a full path regex.
@@ -529,8 +530,50 @@ def op_delete_folder(m, text, session):
                      lambda: (send2trash(path), f"Moved {os.path.basename(path)} ({inside} item(s)) to the Recycle Bin.")[1])
 
 
+def op_delete_referenced(m, text, session):
+    from ishti.reference_resolver import resolve_reference
+    ref = resolve_reference(text, session)
+    files = (ref.get("files") if ref else []) or []
+    if not files:
+        return "Which files do you want to delete? Tell me their names or paths."
+
+    file_lines = []
+    file_paths = []
+    for f in files:
+        path = f.get("path")
+        name = f.get("name") or (os.path.basename(path) if path else "")
+        size = f.get("size", "")
+        size_str = f" ({size})" if size else ""
+        file_lines.append(f"• {name}{size_str}")
+        if path:
+            file_paths.append(path)
+
+    summary = "\n".join(file_lines)
+
+    def do_delete():
+        from send2trash import send2trash
+        deleted, failed = [], []
+        for p in file_paths:
+            try:
+                if os.path.exists(p):
+                    send2trash(p)
+                    deleted.append(os.path.basename(p))
+            except Exception as _exc:
+                swallowed('fileops:op_delete_referenced', _exc)
+                failed.append(os.path.basename(p))
+        if failed:
+            return f"Moved {len(deleted)} file(s) to the Recycle Bin: {', '.join(deleted)}. {len(failed)} could not be moved: {', '.join(failed)}."
+        return f"Moved {len(deleted)} file(s) to the Recycle Bin:\n" + "\n".join(f"• {fn}" for fn in deleted)
+
+    return ask_first(session, "fileops", f"Move these {len(files)} files to the Recycle Bin:\n\n{summary}", do_delete)
+
+
 def op_delete_ambiguous(m, text, session):
-    """"Delete that file" / "remove this file" - no path given, ask which file."""
+    """"Delete that file" / "remove this file" - check reference resolver first."""
+    from ishti.reference_resolver import resolve_reference
+    ref = resolve_reference(text, session)
+    if ref and ref.get("files"):
+        return op_delete_referenced(m, text, session)
     return ("Which file? Tell me the name or path (for example 'delete C:\\Users\\me\\doc.txt' or "
             "'delete the report file'). If you mean a recent file, say what it's called.")
 
