@@ -23,7 +23,7 @@ export type StoreRun = {
   chat_id: string;
   state: RunState;
   text: string; // accumulated streamed text (working draft)
-  steps: { kind: "research" | "tool" | "verify"; label: string; n: number; sources: string[]; ts?: number }[];
+  steps: { kind: "research" | "tool" | "verify" | "route" | "skill" | string; label: string; n: number; sources: string[]; ts?: number }[];
   profile?: string;
   error?: string | null;
   started_at?: number | null;
@@ -286,6 +286,11 @@ class ChatStore {
 
   stop() {
     this.generation = 0;
+    // `started` must fall with the stream: React StrictMode runs the App effect mount->cleanup->mount,
+    // so the second start() used to bail out on `started` while an already-bumped generation killed the
+    // first chain's pollEvents - leaving the app with NO event stream (live replies only appeared on
+    // reload). Resetting it lets a later start() re-arm the stream.
+    this.started = false;
     if (this.pollTimer) { clearTimeout(this.pollTimer); this.pollTimer = null; }
   }
 
@@ -448,6 +453,42 @@ class ChatStore {
 
   eventSink: ((ev: { seq: number; type: string; data: any }) => void) | null = null;
 
+  // ---------------- lazy per-run fetch (T2: historic messages after reload) ----------------
+  // A message carries run_id, but the store only holds runs it saw live (or that startup reconcile
+  // returned for the current profile). Older chats fetch their run the first time it renders:
+  // GET /api/runs/{id} cached in `runs`; 404 is remembered in `runMisses` so the UI shows nothing
+  // (never an error), and transient failures may retry on a later render.
+  private runFetches = new Set<string>();
+  private runMisses = new Set<string>();
+
+  runMissed(runId: string): boolean {
+    return this.runMisses.has(runId);
+  }
+
+  async ensureRun(runId: string): Promise<void> {
+    if (!runId || this.runs.has(runId) || this.runFetches.has(runId)) return;
+    this.runFetches.add(runId);
+    try {
+      const r = await getJSON<any>(`/api/runs/${encodeURIComponent(runId)}`);
+      if (!r || !r.run_id) return;
+      const known = this.runs.get(r.run_id);
+      const hydrated: StoreRun = {
+        run_id: r.run_id, chat_id: r.chat_id, state: r.state, text: r.text || "",
+        steps: Array.isArray(r.steps) ? r.steps : [], profile: r.profile,
+        error: r.error, started_at: r.started_at, ended_at: r.ended_at,
+        lastSeq: known?.lastSeq ?? this.lastSeq,
+      };
+      this.runs.set(r.run_id, { ...(known || hydrated), ...hydrated });
+      this.emit();
+    } catch (err) {
+      if (String((err as Error)?.message || "").includes("404")) {
+        this.runMisses.add(runId); // unknown run: stay silent, stop asking
+        this.emit();
+      } else {
+        this.runFetches.delete(runId); // transient: allow a retry on the next render
+      }
+    }
+  }
   // multi-sink fan-out for panels (agents/learning) without extra sockets
   private sinks = new Set<(ev: { seq: number; type: string; data: any }) => void>();
 
