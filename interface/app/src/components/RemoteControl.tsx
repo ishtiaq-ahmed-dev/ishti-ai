@@ -17,6 +17,8 @@ type RemoteStatus = {
   privacy_notice: string;
   recent: { ts: number; action: string; detail: string; channel: string }[];
 };
+type TunnelStatus = { running: boolean; public_url: string; port?: number; last_error?: string };
+type BrowserSession = { id: string; ip: string; device: string; created: number; last_seen: number };
 
 const Card = ({ children, className = "" }: { children: React.ReactNode; className?: string }) => (
   <div
@@ -62,9 +64,17 @@ export function RemoteControl() {
   const [busy, setBusy] = useState(false);
   const [showPolicy, setShowPolicy] = useState(false);
   const [policyText, setPolicyText] = useState("");
+  const [tunnel, setTunnel] = useState<TunnelStatus | null>(null);
+  const [magicLink, setMagicLink] = useState("");
+  const [logSource, setLogSource] = useState<"audit" | "backend" | "wa_bridge">("audit");
+  const [logLines, setLogLines] = useState<string[]>([]);
+  const [sessions, setSessions] = useState<BrowserSession[]>([]);
 
   const refresh = useCallback(() => {
     getJSON<RemoteStatus>("/api/remote/status").then(setSt).catch(() => setSt(null));
+    getJSON<TunnelStatus>("/api/remote/tunnel").then(setTunnel).catch(() => setTunnel(null));
+    getJSON<{ sessions: BrowserSession[] }>("/api/remote/sessions")
+      .then((result) => setSessions(result.sessions || [])).catch(() => setSessions([]));
   }, []);
 
   useEffect(() => {
@@ -169,6 +179,44 @@ export function RemoteControl() {
     }
   };
 
+  const startTunnel = async () => {
+    setBusy(true);
+    try {
+      const next = await postJSON<TunnelStatus>("/api/remote/tunnel/start", { port: 8888 });
+      setTunnel(next); say("Remote tunnel started.");
+    } catch (e) { say(e instanceof Error ? e.message : "Tunnel could not start."); }
+    setBusy(false); refresh();
+  };
+
+  const stopTunnel = async () => {
+    setBusy(true);
+    try { setTunnel(await postJSON<TunnelStatus>("/api/remote/tunnel/stop")); say("Remote tunnel stopped."); }
+    catch { say("Tunnel could not stop."); }
+    setBusy(false); refresh();
+  };
+
+  const createMagicLink = async () => {
+    try {
+      const result = await postJSON<{ url: string }>("/api/remote/magic-link");
+      setMagicLink(result.url); say("One-time login link created (valid for 5 minutes). ");
+    } catch { say("The one-time link can be created only on this PC."); }
+  };
+
+  const refreshLogs = async () => {
+    try {
+      const result = await getJSON<{ lines: string[] }>(`/api/remote/logs?source=${logSource}&lines=200`);
+      setLogLines(result.lines || []);
+    } catch { say("Logs could not be loaded."); }
+  };
+
+  const revokeBrowserSession = async (id: string) => {
+    try {
+      await postJSON("/api/remote/sessions/revoke", { id });
+      say("Browser session revoked.");
+      refresh();
+    } catch { say("Session could not be revoked."); }
+  };
+
   const t = st?.telegram;
   const w = st?.whatsapp;
 
@@ -194,6 +242,52 @@ export function RemoteControl() {
       </div>
 
       <div className="mt-4 space-y-3">
+        <div className="rounded-xl border border-border/60 p-3" data-testid="remote-tunnel">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-foreground">Remote access tunnel</p>
+              <p className="break-all text-[11px] text-muted-foreground">
+                {tunnel?.running ? tunnel.public_url || "Starting…" : "Off — starts only when you press Start on this PC."}
+              </p>
+            </div>
+            {tunnel?.running ? (
+              <button type="button" onClick={stopTunnel} disabled={busy}
+                      className="h-8 rounded-lg border border-border px-3 text-xs disabled:opacity-40">Stop</button>
+            ) : (
+              <button type="button" onClick={startTunnel} disabled={busy}
+                      className="h-8 rounded-lg bg-accent px-3 text-xs font-medium text-accent-foreground disabled:opacity-40">Start tunnel</button>
+            )}
+          </div>
+          {tunnel?.running && tunnel.public_url && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button type="button" onClick={() => navigator.clipboard.writeText(tunnel.public_url)}
+                      className="h-7 rounded-lg border border-border px-2.5 text-[11px]">Copy public URL</button>
+              <button type="button" onClick={createMagicLink}
+                      className="h-7 rounded-lg border border-border px-2.5 text-[11px]">Create one-time login link</button>
+            </div>
+          )}
+          {magicLink && (
+            <div className="mt-2 flex items-center gap-2">
+              <code className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground">{magicLink}</code>
+              <button type="button" onClick={() => navigator.clipboard.writeText(magicLink)}
+                      className="h-7 rounded-lg border border-border px-2 text-[11px]">Copy</button>
+            </div>
+          )}
+          {tunnel?.last_error && <p className="mt-1 text-[11px] text-amber-600">{tunnel.last_error}</p>}
+          <div className="mt-3 border-t border-border/50 pt-2">
+            <p className="text-[11px] font-semibold text-foreground">Signed-in browsers</p>
+            {sessions.length ? sessions.map((session) => (
+              <div key={session.id} className="mt-1 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                <span className="min-w-0 truncate">
+                  {session.device} · {session.ip} · active {new Date(session.last_seen * 1000).toLocaleString()}
+                </span>
+                <button type="button" onClick={() => revokeBrowserSession(session.id)}
+                        className="h-7 shrink-0 rounded-lg border border-border px-2 text-[11px]">Revoke</button>
+              </div>
+            )) : <p className="mt-1 text-[10px] text-muted-foreground">No remote browser sessions.</p>}
+          </div>
+        </div>
+
         {/* Telegram */}
         <div className="rounded-xl border border-border/60 p-3">
           <div className="flex items-center justify-between gap-3">
@@ -324,6 +418,26 @@ export function RemoteControl() {
           <p className="mt-2 text-[11px] text-muted-foreground">
             remote_policy.yaml is edited only here on the PC - a remote message can never change it.
           </p>
+        </div>
+
+        <div className="rounded-xl border border-border/60 p-3" data-testid="remote-logs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-xs font-semibold text-foreground">Logs</p>
+              <p className="text-[11px] text-muted-foreground">Read-only, size-capped and redacted for remote viewing.</p>
+            </div>
+            <div className="flex gap-2">
+              <select value={logSource} onChange={(e) => setLogSource(e.target.value as typeof logSource)}
+                      className="h-8 rounded-lg border border-border bg-background px-2 text-xs">
+                <option value="audit">Audit</option><option value="backend">Backend</option><option value="wa_bridge">WhatsApp bridge</option>
+              </select>
+              <button type="button" onClick={refreshLogs}
+                      className="h-8 rounded-lg border border-border px-3 text-xs">Refresh</button>
+            </div>
+          </div>
+          <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-background p-2 text-[10px] text-muted-foreground">
+            {logLines.length ? logLines.join("\n") : "Press Refresh to load the latest redacted tail."}
+          </pre>
         </div>
 
         {/* Recent remote activity */}

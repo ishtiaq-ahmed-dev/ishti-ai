@@ -67,6 +67,16 @@ if "%1"=="server" (
     exit /b %errorlevel%
 )
 
+if "%1"=="tunnel" (
+    set TUNNEL_ACTION=start
+    if not "%2"=="" set TUNNEL_ACTION=%2
+    set TUNNEL_PORT=8888
+    if not "%3"=="" set TUNNEL_PORT=%3
+    echo [ISHTI] ngrok tunnel: !TUNNEL_ACTION! (local port !TUNNEL_PORT!)...
+    python -m ishti.tunnel !TUNNEL_ACTION! !TUNNEL_PORT!
+    exit /b %errorlevel%
+)
+
 if "%1"=="cli" (
     "%~dp0venv\Scripts\python.exe" "%~dp0orchestrator\startup.py" --cli
     exit /b %errorlevel%

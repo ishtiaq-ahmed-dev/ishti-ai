@@ -1,108 +1,47 @@
-# Remote Access Setup: Cloudflare Tunnel + Cloudflare Access (Zero Trust)
-*Secure, zero-cost remote reachability for ISHTI from your smartphone, tablet, or external laptop without port forwarding or exposing plain ports.*
+# Remote access: ngrok first, Cloudflare optional
 
-> **ISHTI requires a token for every tunnelled request** (cloudflared connects from 127.0.0.1, so
-> ISHTI treats any request carrying `Cf-Connecting-Ip` / `X-Forwarded-For` as remote). The token is
-> in `D:\ISHTI\data\api_token` (created on first start). On your phone, open
-> `https://<your-tunnel-host>/?token=<token>` once; a secure cookie handles the rest. API clients send
-> `Authorization: Bearer <token>`. Keep Cloudflare Access in front as well.
+ISHTI binds to `127.0.0.1`; it does not open a LAN or public listening port. A tunnel is started only after the owner turns **Remote access** on. Proxied requests are never trusted as loopback: the phone must sign in with the owner access key or a five-minute, single-use link.
 
----
+## Option A — ngrok
 
-## Architecture Overview
-```
-[Your Phone / Remote Device]
-             │
-             ▼
-   [Cloudflare Edge] (Cloudflare Zero Trust Access / Email OTP or GitHub Login)
-             │
-             ▼ (Encrypted Outbound Tunnel)
-    [cloudflared daemon] on Windows PC
-             │
-             ▼ (Localhost only)
-   [ISHTI Web UI: http://127.0.0.1:8888]
-```
+1. Install and authenticate ngrok from its official Windows instructions. Keep the authtoken in ngrok's own user configuration; never paste it into ISHTI or a report.
+2. Start ISHTI normally.
+3. On the ISHTI PC, open **Settings > Remote** and press **Start tunnel**.
+4. Copy the displayed `https://…ngrok-free.app` URL.
+5. Either open that URL on the phone and enter the access key, or press **Create one-time login link**, copy it, and open it on the phone within five minutes. The link works once.
+6. Press **Stop** when remote access is no longer needed.
 
----
+The equivalent local commands are:
 
-## 1. Prerequisites (Free Tier)
-1. A free [Cloudflare Account](https://dash.cloudflare.com/).
-2. A domain added to Cloudflare (e.g. `yourdomain.com`).
-3. Cloudflare Zero Trust (free for up to 50 users).
-
----
-
-## 2. Step-by-Step Installation
-
-### Step 1: Install `cloudflared` on Windows
-Run PowerShell as Administrator or standard user:
 ```powershell
-winget install --id Cloudflare.cloudflared
-```
-Verify installation:
-```powershell
-cloudflared --version
+start.bat tunnel start 8888
+start.bat tunnel status
+start.bat tunnel stop
 ```
 
-### Step 2: Authenticate cloudflared with Cloudflare
-```powershell
-cloudflared tunnel login
-```
-*A browser window will open. Select your domain to generate the certificate file.*
+ISHTI launches `ngrok http 127.0.0.1:8888 --log=stdout`, discovers the HTTPS URL through ngrok's loopback agent API, and stops its owned child process during ISHTI shutdown. It never prints or reads the ngrok authtoken.
 
-### Step 3: Create the ISHTI Tunnel
-```powershell
-cloudflared tunnel create ishti-agent
-```
-*Take note of the generated Tunnel ID (UUID) and the JSON credentials file path in `C:\Users\<YourUser>\.cloudflared\<UUID>.json`.*
+On ngrok's free plan, a browser interstitial can appear on the first visit to an endpoint. The owner should continue through it once. Non-browser API clients may send `ngrok-skip-browser-warning`, but ISHTI does not bypass the screen server-side. ngrok's older `--basic-auth` and `--oauth` flags are deprecated; use ngrok Traffic Policy if a second edge authentication layer is desired.
 
-### Step 4: Configure the Tunnel
-Create a configuration file at `D:\ISHTI\remote\config.yml`:
-```yaml
-tunnel: <YOUR-TUNNEL-UUID>
-credentials-file: C:\Users\<YourUser>\.cloudflared\<YOUR-TUNNEL-UUID>.json
+Official references: [HTTP agent command](https://ngrok.com/docs/gateway/agent/cli#ngrok-http), [local agent API](https://ngrok.com/docs/gateway/agent/api#base-url-and-authentication), [tunnel listing](https://ngrok.com/docs/gateway/agent/api#list-tunnels), and [browser warning](https://ngrok.com/abuse#browser-warning).
 
-ingress:
-  - hostname: ishti.yourdomain.com
-    service: http://127.0.0.1:8888
-  - service: http_status:404
-```
+## Session safety
 
-### Step 5: Route DNS Traffic to the Tunnel
-```powershell
-cloudflared tunnel route dns ishti-agent ishti.yourdomain.com
-```
+- The long-lived access key is accepted only in the login form or as an `Authorization: Bearer` credential for scripts. It is never placed in a URL or cookie.
+- Browser cookies contain a random 256-bit session identifier; only its hash and device metadata are stored server-side.
+- Sessions are `HttpOnly`, `SameSite=Lax`, `Secure` over HTTPS, idle-expire after 30 days, and can be revoked individually or all at once from the local PC.
+- Five failed keys lock that source IP for ten minutes. Key rotation and revoke-all are local-desktop-only actions.
+- Keep the public URL private. T2 actions still require the normal explicit yes/no confirmation.
 
-### Step 6: Enforce Cloudflare Access (Authentication Barrier)
-> [!IMPORTANT]
-> Never expose ISHTI without authentication! The confirm-before-consequential action gate prevents accidents, but authentication prevents unauthorized prompt execution.
+The session design follows the [OWASP Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html).
 
-1. Navigate to **Cloudflare Zero Trust Dashboard** > **Access** > **Applications**.
-2. Click **Add an Application** > Select **Self-hosted**.
-3. Set Application Name: `ISHTI Neural Core`.
-4. Set Domain: `ishti.yourdomain.com`.
-5. Under **Policies**:
-   - Policy Name: `Authorized Owner Only`.
-   - Action: `Allow`.
-   - Rule: `Include` > `Emails` > Enter your exact personal email address.
-6. Under **Authentication**:
-   - Enable **One-Time PIN (OTP)** or your OAuth provider (Google/GitHub).
-7. Save Application.
+## Option B — Cloudflare Tunnel
 
----
+Cloudflare remains suitable when the owner already has a managed domain and wants Cloudflare Access in front of ISHTI.
 
-## 3. Starting the Tunnel on Demand
+1. Install and authenticate `cloudflared` using Cloudflare's official instructions.
+2. Create a named tunnel whose ingress target is `http://127.0.0.1:8888`.
+3. Put a Cloudflare Access policy in front of the hostname and allow only the owner's identity.
+4. Open the hostname and use the same ISHTI login page. Do not put the access key in the URL.
 
-To launch the tunnel alongside ISHTI:
-```powershell
-cloudflared tunnel --config D:\ISHTI\remote\config.yml run
-```
-Or start as a Windows Service (optional):
-```powershell
-cloudflared service install
-```
-
-When you visit `https://ishti.yourdomain.com` from your phone:
-1. Cloudflare prompts for your email.
-2. A 6-digit PIN is sent to your inbox.
-3. Upon entering the PIN, you have full, secure, encrypted access to the holographic ISHTI interface!
+Cloudflare headers such as `CF-Connecting-IP` and `X-Forwarded-*` deliberately remove implicit loopback trust, so the ISHTI session is still required behind Cloudflare Access.

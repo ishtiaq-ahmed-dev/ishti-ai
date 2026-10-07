@@ -14,6 +14,7 @@ hashed + in-memory (ishti/api_sessions.py), so a restart invalidates them.
 """
 from __future__ import annotations
 
+import asyncio
 import re
 
 from fastapi import APIRouter, Request
@@ -42,6 +43,51 @@ def _deny():
 
 def _forbidden():
     return JSONResponse({"error": "cross-site request refused"}, status_code=403)
+
+
+@router.get("/api/remote/tunnel")
+async def tunnel_status(request: Request):
+    if not _auth(request):
+        return _deny()
+    from ishti import tunnel
+    return tunnel.status()
+
+
+@router.post("/api/remote/tunnel/start")
+async def tunnel_start(request: Request):
+    if not _origin_ok(request):
+        return _forbidden()
+    if not _auth(request):
+        return _deny()
+    from ishti.web_security import direct_loopback
+    if not direct_loopback(request):
+        return JSONResponse({"error": "Tunnel start is available only from the local desktop"}, status_code=403)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    try:
+        port = int(body.get("port", 8888))
+        from ishti import tunnel
+        result = await asyncio.to_thread(tunnel.start, port)
+        from ishti.channels import policy
+        policy.save({"remote_access_enabled": True})
+        return result
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)[:240]}, status_code=409)
+
+
+@router.post("/api/remote/tunnel/stop")
+async def tunnel_stop(request: Request):
+    if not _origin_ok(request):
+        return _forbidden()
+    if not _auth(request):
+        return _deny()
+    from ishti import tunnel
+    result = await asyncio.to_thread(tunnel.stop)
+    from ishti.channels import policy
+    policy.save({"remote_access_enabled": False})
+    return result
 
 
 @router.get("/api/remote/status")
@@ -235,11 +281,23 @@ def attach(app):
     async def _boot():
         from ishti.channels import service
         service.get().start()  # follows the policy; never raises
+        from ishti.channels import policy
+        if policy.load().get("remote_access_enabled"):
+            try:
+                from ishti import lifecycle, tunnel
+                await asyncio.to_thread(tunnel.start, int(lifecycle._st.get("port") or 8888))
+            except Exception:
+                pass
 
     def _down():
         from ishti.channels import service
         try:
             service.get().stop()
+        except Exception:
+            pass
+        try:
+            from ishti import tunnel
+            tunnel.stop()
         except Exception:
             pass
 
