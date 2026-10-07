@@ -31,6 +31,8 @@ FILLER = cstate.FILLER
 PRODUCT_CODE = cstate.PRODUCT_CODE
 BRAND_WORDS = cstate.BRAND_WORDS
 
+# an explicit verb with its own target is the owner's request: context may be added, never substituted
+ACTION = re.compile(r"\b(?:send|forward|delete|remove|open|call|message|text|email|share|save|rename|move|copy|post|book|pay|buy)\b", re.I)
 AMBIG_ONE = re.compile(r"\b(?:the\s+)?(?:cheapest|best|better)\s+one\b", re.I)
 GREETING_ONLY = re.compile(r"^\s*(?:hi|hello|hey|yo|thanks|thank\s+you|ok(?:ay)?|good\s*(?:morning|evening|night)"
                            r"|salam|aoa|bye)\b[!.?\s]*$", re.I)  # "ishti" alone is NOT a greeting (memory skill)
@@ -111,8 +113,11 @@ class QueryResolver:
                                 trace_note={"why": "ambiguous reference between two topics"})
 
             anchor = st.active_topic or st.last_searches[-1]["query"]
-            tsk = task or st.active_task or "continue on"
-            request = _with_constraints(f"{tsk}: {anchor}", st)
+            if (task or len(text.split()) <= 3) and not ACTION.search(text):  # "go deeper": the anchor IS the request
+                tsk = task or st.active_task or "continue on"
+                request = _with_constraints(f"{tsk}: {anchor}", st)
+            else:                                # "now send this to rayyan on whatsapp": keep the owner's own words
+                request = _with_constraints(f"{text} (regarding: {anchor})", st)
             return Resolved(original=text, request=request[:self.max_chars], changed=True,
                             followup=True, trace_note={"why": "rewritten with the active topic",
                                                        "anchor": anchor})

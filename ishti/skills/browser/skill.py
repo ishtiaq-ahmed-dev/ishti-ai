@@ -844,7 +844,7 @@ def _site_url_for(text):
 
 def _run_locked(text, session, server, start_url, hint, start_snapshot):
     p = session.get("pending")
-    use_server(p["server"] if p and p.get("skill") == "browser" and p.get("server") else server, session, text=text)
+    use_server(p["server"] if p and p.get("skill") == "browser" and p.get("server") else server, session, text)
     if p and p.get("skill") == "browser":
         session["pending"] = None
         answer = answer_of(text)
