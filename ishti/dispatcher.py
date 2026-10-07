@@ -19,9 +19,9 @@ _install_scope()  # per-skill file/network/app limits (A5)
 killswitch.propagate()  # a request's context (kill switch, skill scope, who initiated) follows it into worker threads
 
 from ishti import CONFIG, ROOT
+from ishti.tool_routing import route
 from ishti.facts import get_facts
 from ishti import planner, router as router_mod
-from ishti.router import route
 from ishti.skills import answer_of, ask_first, enable_skill, load_skills, log_need
 from orchestrator.memory.conversation import get_conversation_manager
 from orchestrator.memory.error_logger import ErrorLogger
@@ -430,6 +430,10 @@ def why(dec) -> str:
         return f"You corrected the route: re-running your last request with {skill}."
     if src == "planner":
         return f"Several tasks in one request, so I planned {len(dec.get('steps', []))} steps."
+    if src == "clarify":
+        return "The available evidence is too ambiguous to choose a safe tool and target."
+    if src in ("shortlist", "local_rerank", "preference_hint"):
+        return f"The constrained tool shortlist selected {skill}."
     if src == "plan":
         return f"Plan step {dec.get('step')}: {skill}."
     if src == "escalation":
@@ -1235,7 +1239,9 @@ def _handle(text, sid, conv, s, events, t0, channel):
         if planner.candidate(text, SKILLS, s) and (steps := planner.plan(text, SKILLS)):
             # Only plan if no single skill owns the whole request by rule
             rule_dec = route(text, SKILLS)
-            if rule_dec.get("source") in ("rule", "learned") and rule_dec.get("confidence", 0) >= 0.9:
+            step_skills = {step.get("skill") for step in steps if step.get("skill")}
+            if len(step_skills) < 2 and rule_dec.get("source") in ("rule", "preference_hint") \
+                    and rule_dec.get("confidence", 0) >= 0.9:
                 dec = rule_dec
             else:
                 dec = {"skill": "plan", "confidence": 1.0, "source": "planner", "steps": steps}
@@ -1244,6 +1250,9 @@ def _handle(text, sid, conv, s, events, t0, channel):
             dec = recency_tiebreak(route(text, SKILLS), s.get("last_skill"))
     s["trace"](type="route", skill=dec["skill"], source=dec.get("source"), confidence=dec.get("confidence"),
                why=why(dec), scores=dec.get("scores", []), steps=dec.get("steps", []))
+    if dec.get("clarify"):
+        out = {"reply": str(dec["clarify"]), "sources": []}
+        return _finish(text, sid, conv, s, events, t0, channel, "clarify", out, dec)
     if dec["skill"] == "plan":
         # each step gets its own view (own route, no token stream): independent steps run in parallel
         def run_step(t, d):

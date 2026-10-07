@@ -3,13 +3,27 @@
 Detects explicit corrections ("no use Chrome", "that was wrong"), positive confirmations,
 negative sentiment, and updates lessons, mistake records, and scalar rewards.
 """
+import hashlib
 import os
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional
 
 from ishti.learning import errors, lessons, store
 
 KINDS = ("explicit_correction", "implicit_correction", "positive_confirmation", "negative_reaction")
+REASON_TYPES = (
+    "wrong_tool", "wrong_fact", "too_long", "ignored_context", "hallucinated_action",
+    "wrong_interpretation", "wrong_parameter", "wrong_person", "wrong_file", "wrong_sequence",
+    "wrong_permission", "language_mismatch", "tool_failure", "unknown",
+)
+
+_REASON_PATTERNS = (
+    ("hallucinated_action", re.compile(r"\b(?:claim(?:ed|ing)?|said)\b.{0,50}\b(?:sent|deleted|uploaded|saved|changed|booked|ran|opened)|\b(?:did not|didn't|never)\b.{0,35}\b(?:send|delete|upload|save|change|book|run|open)", re.I)),
+    ("too_long", re.compile(r"\b(?:too long|verbose|wordy|shorter|too much detail|rambl)", re.I)),
+    ("ignored_context", re.compile(r"\b(?:ignored?|missed|forgot)\b.{0,35}\b(?:context|instruction|earlier|previous|said|asked)", re.I)),
+    ("wrong_tool", re.compile(r"\b(?:wrong (?:tool|skill|route)|should (?:have )?(?:use|used)|use .{1,30} instead|search(?:ed)? the web instead)", re.I)),
+    ("wrong_fact", re.compile(r"\b(?:wrong fact|factually|invented|made (?:that|it) up|not true|false|wrong (?:amount|date|name|number|value))\b", re.I)),
+)
 
 _POS = re.compile(
     r"^(?:perfect|great(?:\s+job)?|awesome|thank you|thanks|good job|well done|exactly|spot on|"
@@ -44,6 +58,129 @@ def reward_of(status: str, fb: Optional[Dict[str, Any]] = None) -> float:
         return 0.0
     return 0.0
 
+
+def normalize_prompt(prompt: str) -> str:
+    """Conservative exact-match key: case/spacing/punctuation vary, words do not."""
+    return " ".join(re.findall(r"[^\W_]+|\d+", str(prompt or "").casefold(), re.UNICODE))[:1000]
+
+
+def _prompt_signature(prompt: str) -> str:
+    return hashlib.sha256(normalize_prompt(prompt).encode("utf-8")).hexdigest()[:24]
+
+
+def classify_reason(reason: str = "", error_type: str = "", rating: str = "negative") -> str:
+    """Map owner wording and legacy error names into the stable feedback taxonomy."""
+    legacy = {"wrong_skill": "wrong_tool", "wrong_application": "wrong_tool",
+              "wrong_assumption": "wrong_fact", "owner_feedback": "wrong_interpretation"}
+    kind = legacy.get(str(error_type or ""), str(error_type or ""))
+    if kind in REASON_TYPES:
+        return kind
+    for name, pattern in _REASON_PATTERNS:
+        if pattern.search(str(reason or "")):
+            return name
+    return "unknown" if rating == "positive" else "wrong_interpretation"
+
+
+def _preferred_skill(reason: str = "", explicit: str = "") -> str:
+    candidate = str(explicit or "").strip().lower().replace(" ", "_")
+    if re.fullmatch(r"[a-z][a-z0-9_]{1,50}", candidate):
+        return candidate
+    classified = errors.classify(str(reason or ""))
+    candidate = str((classified or {}).get("correct") or "").strip().lower().replace(" ", "_")
+    if candidate in errors.SKILLS or candidate.endswith("_search"):
+        return candidate
+    low = str(reason or "").lower()
+    if re.search(r"\b(?:use|used|route|routing|skill|tool|instead|search)\b", low):
+        for name in sorted(errors.SKILLS, key=len, reverse=True):
+            if re.search(rf"\b{re.escape(name)}\b|\b{re.escape(name.replace('_', ' '))}\b", low):
+                return name
+        direct = re.search(r"\b(?:use|used|choose|route(?:d)? to)\s+(?:the\s+)?([a-z][a-z0-9_]{1,50})(?:\s+skill)?\b", low)
+        if direct:
+            return direct.group(1)
+    return ""
+
+
+def _upsert_routing_hint(prompt: str, preferred_skill: str, rejected_skill: str = "",
+                         client_id: str = "", source: str = "owner_feedback") -> bool:
+    normalized = normalize_prompt(prompt)
+    if not normalized or not preferred_skill:
+        return False
+    sig = _prompt_signature(normalized)
+    return bool(store.write(
+        "INSERT INTO routing_hints(signature,client_id,prompt,preferred_skill,rejected_skill,evidence,confidence,source,updated,active) "
+        "VALUES(?,?,?,?,?,1,1.0,?,?,1) ON CONFLICT(signature,client_id) DO UPDATE SET "
+        "preferred_skill=excluded.preferred_skill,rejected_skill=excluded.rejected_skill,evidence=routing_hints.evidence+1,"
+        "confidence=1.0,source=excluded.source,updated=excluded.updated,active=1",
+        (sig, str(client_id or ""), normalized, preferred_skill, rejected_skill, source, store.now())))
+
+
+def routing_hint(prompt: str, client_id: str = "") -> Optional[str]:
+    """Return an owner-corrected skill only for the same safely-normalized prompt."""
+    sig = _prompt_signature(prompt)
+    scopes = [str(client_id or "")]
+    if client_id:
+        scopes.append("")  # owner-global hints are safe; another client's hints are never considered
+    for scope in scopes:
+        row = store.row("SELECT preferred_skill FROM routing_hints WHERE signature=? AND client_id=? "
+                        "AND active=1 ORDER BY updated DESC LIMIT 1", (sig, scope))
+        if row and row.get("preferred_skill"):
+            return str(row["preferred_skill"])
+    return None
+
+
+def record_typed(*, prompt: str, route: Any = None, skill: str = "", answer: str = "",
+                 rating: str, reason: str = "", reason_type: str = "", revised_answer: str = "",
+                 session_id: str = "", message_id: str = "", interaction_id: str = "",
+                 client_id: str = "", preferred_skill: str = "", source: str = "owner") -> Dict[str, Any]:
+    """Persist one complete, typed owner signal and immediately expose safe routing corrections."""
+    if rating not in {"positive", "negative", "correction"}:
+        raise ValueError("rating must be positive, negative, or correction")
+    interaction = None
+    if interaction_id:
+        interaction = store.row("SELECT * FROM interactions WHERE id=?", (interaction_id,))
+    if interaction is None and session_id and message_id:
+        interaction = store.row("SELECT * FROM interactions WHERE session_id=? AND message_id=? ORDER BY ts DESC LIMIT 1",
+                                (session_id, message_id))
+    interaction = interaction or {}
+    prompt = str(prompt or interaction.get("request") or "")[:4000]
+    route = route if route is not None else store.js(interaction.get("decision"), {})
+    skill = str(skill or interaction.get("skill") or "")[:120]
+    answer = str(answer or interaction.get("result") or "")[:12000]
+    reason_type = classify_reason(reason, reason_type, rating)
+    preferred_skill = _preferred_skill(reason, preferred_skill)
+    row_id = store.add(
+        "typed_feedback", ts=store.now(), session_id=str(session_id or ""), client_id=str(client_id or ""),
+        message_id=str(message_id or ""), interaction_id=str(interaction_id or interaction.get("id") or ""),
+        prompt=prompt, route=store.dump(route or {}), skill=skill, answer=answer, rating=rating,
+        reason=str(reason or "")[:2000], reason_type=reason_type, revised_answer=str(revised_answer or "")[:12000],
+        status="accepted" if rating == "positive" else "rejected", preferred_skill=preferred_skill,
+        source=str(source or "owner")[:80])
+    if not row_id:
+        return {}
+    if rating in {"negative", "correction"} and reason_type == "wrong_tool" and preferred_skill:
+        _upsert_routing_hint(prompt, preferred_skill, rejected_skill=skill, client_id=client_id, source=source)
+    return store.row("SELECT * FROM typed_feedback WHERE id=?", (row_id,)) or {}
+
+
+def accept_preference_pair(*, prompt: str, route: Any, skill: str, rejected: str, accepted: str,
+                           reason_type: str, accepted_message_id: str, client_id: str = "",
+                           source_feedback_id: Optional[int] = None) -> Dict[str, Any]:
+    """Store the final owner-accepted answer against the immediately rejected predecessor."""
+    if not prompt or not rejected or not accepted or not accepted_message_id:
+        return {}
+    if source_feedback_id is None:
+        prior = store.row("SELECT id FROM typed_feedback WHERE client_id=? AND prompt=? "
+                          "AND rating IN ('negative','correction') ORDER BY ts DESC LIMIT 1",
+                          (str(client_id or ""), str(prompt)[:4000]))
+        source_feedback_id = (prior or {}).get("id")
+    store.write(
+        "INSERT OR IGNORE INTO preference_pairs(ts,client_id,prompt,route,skill,rejected,accepted,reason_type,"
+        "source_feedback_id,accepted_message_id,exported) VALUES(?,?,?,?,?,?,?,?,?,?,0)",
+        (store.now(), str(client_id or ""), str(prompt)[:4000], store.dump(route or {}), str(skill or "")[:120],
+         str(rejected)[:12000], str(accepted)[:12000], classify_reason("", reason_type), source_feedback_id,
+         str(accepted_message_id)))
+    return store.row("SELECT * FROM preference_pairs WHERE accepted_message_id=?", (str(accepted_message_id),)) or {}
+
 def detect(text: str, last_request: str = "", last_skill: str = "",
            pending: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """Scan text for feedback/correction signals."""
@@ -70,7 +207,7 @@ def detect(text: str, last_request: str = "", last_skill: str = "",
             "message": t, "error_type": err["error_type"],
             "incorrect": err.get("incorrect", ""), "correct": err.get("correct", ""),
             "target": err.get("domain") or last_skill or "", "confidence": 0.95,
-            "source": "explicit_user_correction"
+            "source": "explicit_user_correction", "prompt": str(last_request or "")
         }
     return None
 
@@ -79,7 +216,7 @@ def from_correction(text: str, wrong: str, right: str, session: Optional[Any] = 
     return {
         "kind": "explicit_correction", "polarity": "negative", "error_type": "wrong_skill",
         "incorrect": wrong, "correct": right, "message": text, "target": "skill_routing",
-        "confidence": 1.0, "source": "explicit_user_correction"
+        "confidence": 1.0, "source": "explicit_user_correction", "prompt": text
     }
 
 
@@ -140,7 +277,17 @@ def apply(fb: Dict[str, Any], interaction: Optional[Dict[str, Any]] = None,
                 note=" ".join(req_words)[:160]
             )
             effects.append("added_procedural_lesson")
-            
+
+        typed = record_typed(
+            prompt=fb.get("prompt") or (interaction or {}).get("request") or fb.get("message") or "",
+            route=(interaction or {}).get("route") or (interaction or {}).get("decision") or {},
+            skill=(interaction or {}).get("skill") or "", answer=(interaction or {}).get("answer") or
+            (interaction or {}).get("result") or "", rating="correction", reason=fb.get("message") or "",
+            reason_type=err_type, interaction_id=iid, client_id=(interaction or {}).get("client_id") or "",
+            preferred_skill=right if err_type == "wrong_skill" else "", source=fb.get("source") or "owner")
+        if typed:
+            effects.append("recorded_typed_feedback")
+
     return {"effects": effects, "lesson": lesson_out, "ask": None}
 
 

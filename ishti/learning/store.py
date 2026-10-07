@@ -24,7 +24,7 @@ DEFAULTS = {
     "enabled": True,
     "proactive": False,
     "thresholds": {"weak": 0.3, "possible": 0.6, "probable": 0.8, "strong": 0.95},
-    "evidence": {"similar_request": 2, "widen_scope": 3, "candidate_rule": 3, "workflow": 3},
+    "evidence": {"similar_request": 2, "widen_scope": 3, "candidate_rule": 3, "workflow": 2},
     "temporary_ttl_s": 3600,
     "entities": {"ambiguity_margin": 0.2, "min_confidence": 0.6},
     "dataset": {"min_quality": 0.6, "per_skill_cap": 0.4},
@@ -79,6 +79,27 @@ CREATE TABLE IF NOT EXISTS dataset(
   correct TEXT, correction TEXT, reason TEXT, quality REAL, skill TEXT, domain TEXT, source TEXT,
   tags TEXT, exported INTEGER DEFAULT 0);
 CREATE INDEX IF NOT EXISTS ix_dataset_skill ON dataset(skill);
+CREATE TABLE IF NOT EXISTS typed_feedback(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, session_id TEXT, client_id TEXT DEFAULT '',
+  message_id TEXT, interaction_id TEXT, prompt TEXT NOT NULL, route TEXT NOT NULL,
+  skill TEXT NOT NULL, answer TEXT NOT NULL, rating TEXT NOT NULL, reason TEXT NOT NULL,
+  reason_type TEXT NOT NULL, revised_answer TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
+  preferred_skill TEXT NOT NULL DEFAULT '', source TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS ix_typed_feedback_message ON typed_feedback(session_id,message_id);
+CREATE INDEX IF NOT EXISTS ix_typed_feedback_prompt ON typed_feedback(client_id,prompt);
+CREATE TABLE IF NOT EXISTS preference_pairs(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, client_id TEXT DEFAULT '', prompt TEXT NOT NULL,
+  route TEXT NOT NULL, skill TEXT NOT NULL, rejected TEXT NOT NULL, accepted TEXT NOT NULL,
+  reason_type TEXT NOT NULL, source_feedback_id INTEGER, accepted_message_id TEXT UNIQUE,
+  exported INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS routing_hints(
+  signature TEXT NOT NULL, client_id TEXT NOT NULL DEFAULT '', prompt TEXT NOT NULL,
+  preferred_skill TEXT NOT NULL, rejected_skill TEXT NOT NULL DEFAULT '', evidence INTEGER DEFAULT 1,
+  confidence REAL DEFAULT 1.0, source TEXT NOT NULL, updated REAL, active INTEGER DEFAULT 1,
+  PRIMARY KEY(signature,client_id));
+CREATE TABLE IF NOT EXISTS nightly_runs(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, output_dir TEXT, pairs INTEGER, hints INTEGER,
+  lora_path TEXT, few_shots_path TEXT, metadata_path TEXT, status TEXT);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT, updated REAL);
 """
 
@@ -268,7 +289,8 @@ def proactive():
 def forget_everything():
     """The dashboard's nuclear option: drop every learned row (weights untouched, memory untouched)."""
     for t in ("interactions", "tasks", "feedback", "mistakes", "lessons", "lesson_events",
-              "candidates", "workflows", "entities", "entity_mentions", "dataset"):
+              "candidates", "workflows", "entities", "entity_mentions", "dataset", "typed_feedback",
+              "preference_pairs", "routing_hints", "nightly_runs"):
         write(f"DELETE FROM {t}")
     return True
 

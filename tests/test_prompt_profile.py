@@ -1,9 +1,9 @@
 from orchestrator import persona
 
 
-def test_live_prompt_has_protocol_and_profile_layer():
+def test_live_prompt_follows_chat_profile():
     persona.CURRENT_PROFILE.set("business")
     p = persona.build_system_prompt("SIMPLE")
-    assert "Operating protocol" in p and "PROFILE: business" in p and "PROFILE: personal" not in p
+    assert "ACTIVE MODE: BUSINESS" in p and "ACTIVE MODE: PERSONAL" not in p
     persona.CURRENT_PROFILE.set("personal")
-    assert "PROFILE: personal" in persona.build_system_prompt("SIMPLE")
+    assert "ACTIVE MODE: PERSONAL" in persona.build_system_prompt("SIMPLE")

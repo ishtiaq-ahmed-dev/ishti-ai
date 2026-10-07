@@ -39,6 +39,7 @@ MAX_GENERATE_CALLS = 5          # RESEARCH.md R6: <=5 coder calls per skill, spl
 MAX_OUTPUT_TOKENS = 3500        # ... and <=3500 out-tokens per call
 MAX_MODULE_LINES = 300          # one self-contained module per generation
 MAX_TEST_ATTEMPTS = 8           # master prompt: 8 failed attempts on ONE issue -> stop and write NEEDS.md
+_TIER_ORDER = {"T0": 0, "T1": 1, "T2": 2, "T3": 3}
 
 
 
@@ -153,7 +154,8 @@ def write_design(request, feas, res, name, generated=None) -> str:
 
 
 # ------------------------------------------------------------------ stage: the pipeline
-def build(request, session=None, *, llm_fn=None, research_fn=None, gap_fn=None) -> dict:
+def build(request, session=None, *, llm_fn=None, research_fn=None, gap_fn=None,
+          draft_name=None, proposal=None, minimum_tier="T0") -> dict:
     """Run stages 1-7 of the pipeline. -> {"reply", "sources", "stage", "draft", "facts"}.
 
     Every stage is trace()d for the Thinking panel and audit()-logged. Refusals are explicit and name
@@ -161,8 +163,11 @@ def build(request, session=None, *, llm_fn=None, research_fn=None, gap_fn=None) 
     are injectable so the whole pipeline runs offline in tests - no model, no web, no Laya.
     """
     request = str(request or "").strip()
-    name = drafts.name_for(request)
+    session = session if isinstance(session, dict) else {}
+    name = drafts.name_for(draft_name or request)
     facts: dict = {"request": request, "draft": name}
+    if proposal:
+        facts["proposal"] = proposal
     from ishti.audit import context as audit_context
     with audit_context(skill="skill_creator", initiator="instructed", request=request[:300]):
 
@@ -182,6 +187,15 @@ def build(request, session=None, *, llm_fn=None, research_fn=None, gap_fn=None) 
         trace(session, "skill_creator", "checking risk, credentials, money and the VRAM budget",
               status="start")
         feas = design.feasibility(request)
+        minimum_tier = str(minimum_tier or "T0").upper()
+        if minimum_tier == "T3":
+            feas["possible"] = False
+            feas["tier"] = "T3"
+            feas["missing"].append("the repeated workflow contains a blocked T3 skill")
+            feas["reasons"].append("a composed skill may never make a T3 action available")
+        elif _TIER_ORDER.get(minimum_tier, 0) > _TIER_ORDER.get(feas.get("tier", "T0"), 0):
+            feas["tier"] = minimum_tier
+            feas["reasons"].append(f"inherits {minimum_tier} from its highest-risk workflow step")
         facts["feasibility"] = {k: v for k, v in feas.items() if k != "gpu"}
         if not feas["possible"]:
             detail = "; ".join(feas["missing"])[:400]
@@ -201,7 +215,7 @@ def build(request, session=None, *, llm_fn=None, research_fn=None, gap_fn=None) 
                              "note": res.get("note", "")}
         folder = drafts.new_draft(name, request)
 
-        # 4. architecture doc
+        # 4. architecture doc (rewritten after generation with the generated route/description)
         write_design(request, feas, res, name)
         trace(session, "skill_creator", "wrote SKILL_DESIGN.md")
 
@@ -218,6 +232,8 @@ def build(request, session=None, *, llm_fn=None, research_fn=None, gap_fn=None) 
                     "sources": [], "stage": "implement", "draft": name, "facts": facts}
         with open(os.path.join(folder, "skill.py"), "w", encoding="utf-8") as f:
             f.write(gen["skill_py"])
+        _merge_generated_manifest(folder, name, request, gen, feas, proposal=proposal)
+        write_design(request, feas, res, name, generated=gen)
 
 
         # 6. static scan + dependency vetting BEFORE anything is installed or run
@@ -282,6 +298,8 @@ def build(request, session=None, *, llm_fn=None, research_fn=None, gap_fn=None) 
                     "stage": "package", "draft": name, "facts": facts}
         m = pkg["manifest"]
         facts["package"] = {"version": m.get("version"), "status": m.get("status"), "tier": m.get("tier")}
+        if proposal:
+            drafts.record(name, status="proposed", proposal=proposal)
         scan_txt = "; ".join(sorted({f"{x.get('file')}: {x.get('detail')}" for x in findings}))[:300]
         hard = last.get("runs", [{}])[-1].get("hard_limits", "?")
         review = (f"**New skill: {name}** v{m.get('version')} - {m.get('description')}\n"
@@ -308,8 +326,141 @@ def build(request, session=None, *, llm_fn=None, research_fn=None, gap_fn=None) 
         return gated
 
 
+def _workflow_steps(proposal) -> tuple[list[dict], str]:
+    """Normalize a learned tool sequence without accepting arbitrary executable content."""
+    raw = proposal.get("steps") if isinstance(proposal, dict) else None
+    if not isinstance(raw, (list, tuple)) or len(raw) < 2:
+        return [], "a workflow proposal needs at least two ordered tool steps"
+    if len(raw) > 12:
+        return [], "a workflow proposal may contain at most 12 tool steps"
+    out = []
+    for i, step in enumerate(raw, 1):
+        if isinstance(step, str):
+            tool, detail = step.strip(), ""
+        elif isinstance(step, dict):
+            tool = str(step.get("tool") or step.get("skill") or "").strip()
+            detail = str(step.get("input") or step.get("request") or "").strip()[:300]
+        else:
+            return [], f"workflow step {i} is not a tool name or typed step"
+        tool = tool.lower().replace("-", "_")
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", tool):
+            return [], f"workflow step {i} has an invalid tool name"
+        out.append({"tool": tool, "input": detail})
+    return out, ""
+
+
+def _known_skill_tiers() -> dict[str, str]:
+    """Read manifest tiers without importing skills (imports can run dependency probes)."""
+    found = {}
+    root = os.path.join(ROOT, "ishti", "skills")
+    for base, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if not d.startswith("_")]
+        if "manifest.json" not in files:
+            continue
+        try:
+            with open(os.path.join(base, "manifest.json"), encoding="utf-8") as f:
+                manifest = json.load(f)
+            skill_name = str(manifest.get("name") or "")
+            if skill_name:
+                found[skill_name] = str(manifest.get("tier") or "T1").upper()
+        except (OSError, ValueError):
+            continue
+    return found
+
+
+def propose_workflow(proposal, session=None, *, llm_fn=None, research_fn=None, gap_fn=None) -> dict:
+    """Draft a reusable skill after the same multi-step workflow succeeded at least twice.
+
+    ``proposal`` is typed data: ``{"name": str, "steps": [tool | {tool,input}], "count": int}``.
+    The normal creator pipeline still scans, vets, runs three green tests and packages the result
+    DISABLED. It only creates the standard T2 installation prompt; activation remains a separate,
+    explicit owner-confirmed operation handled by ``enable <name> skill``.
+    """
+    if not isinstance(proposal, dict):
+        return {"reply": "I ignored an invalid workflow proposal: expected a typed record.", "sources": [],
+                "stage": "proposal", "draft": "", "facts": {"eligible": False}}
+    try:
+        count = int(proposal.get("count") or 0)
+    except (TypeError, ValueError):
+        count = 0
+    steps, reason = _workflow_steps(proposal)
+    if count < 2:
+        reason = "the workflow must succeed at least twice before it can be proposed as a skill"
+    name = drafts.name_for(proposal.get("name") or "repeated workflow")
+    if reason:
+        return {"reply": f"Not proposing a skill yet: {reason}.", "sources": [], "stage": "proposal",
+                "draft": "", "facts": {"eligible": False, "count": count, "reason": reason}}
+
+    tiers = _known_skill_tiers()
+    unknown = [s["tool"] for s in steps if s["tool"] not in tiers]
+    if unknown:
+        reason = "unknown tool(s) in the recorded sequence: " + ", ".join(sorted(set(unknown)))
+        return {"reply": f"I did not draft this workflow: {reason}.", "sources": [], "stage": "proposal",
+                "draft": "", "facts": {"eligible": False, "count": count, "reason": reason}}
+    minimum_tier = max((tiers[s["tool"]] for s in steps), key=lambda t: _TIER_ORDER.get(t, 1))
+    normalized = {"name": name, "steps": steps, "count": count, "status": "proposed"}
+    sequence = "; ".join(f"{i}. {s['tool']}" + (f" — {s['input']}" if s["input"] else "")
+                         for i, s in enumerate(steps, 1))
+    request = (f"Create a reusable orchestration skill named {name} for a workflow that completed "
+               f"successfully {count} times. Preserve this exact tool sequence: {sequence}. "
+               "Delegate each step to the named existing skill; do not bypass any skill permission or confirmation gate.")
+    forced_gap = lambda _request: {  # the individual tools exist; the missing capability is their reusable composition
+        "gap": True, "reason": f"the {len(steps)}-step sequence repeated {count} times",
+        "clarify": None, "route": {"skill": None, "confidence": 1.0, "source": "workflow_history"},
+        "recurring": [normalized],
+    }
+    return build(request, session, llm_fn=llm_fn, research_fn=research_fn,
+                 gap_fn=gap_fn or forced_gap, draft_name=name, proposal=normalized,
+                 minimum_tier=minimum_tier)
+
+
 
 # ------------------------------------------------------------------ helpers
+def _safe_generated_scope(value, tier) -> dict:
+    """Keep generated permissions narrow; model output never grants wildcards or parent/absolute paths."""
+    value = value if isinstance(value, dict) else {}
+    writes = []
+    for item in value.get("write") or []:
+        item = str(item).strip().replace("\\", "/").strip("/")
+        if item == "data" or item.startswith("data/"):
+            writes.append(item)
+    nets = []
+    for item in value.get("net") or []:
+        item = str(item).strip().lower()
+        if re.fullmatch(r"[a-z0-9.-]+(?::\d{1,5})?", item) and "*" not in item and ".." not in item:
+            nets.append(item)
+    return {"write": list(dict.fromkeys(writes)), "net": list(dict.fromkeys(nets)),
+            "apps": bool(value.get("apps")) if tier == "T2" else False}
+
+
+def _merge_generated_manifest(folder, name, request, generated, feas, *, proposal=None) -> dict:
+    """Persist vetted generator metadata instead of silently packaging the placeholder manifest.
+
+    The creator previously vetted the generated description/route/dependencies, then discarded all of
+    them and packaged ``new_draft``'s placeholder. Tier remains deterministic and generated scope is
+    narrowed before it reaches disk.
+    """
+    path = os.path.join(folder, "manifest.json")
+    with open(path, encoding="utf-8") as f:
+        manifest = json.load(f)
+    spec = generated.get("manifest") or {}
+    manifest["name"] = name
+    manifest["description"] = str(spec.get("description") or request)[:400]
+    manifest["route"] = str(spec.get("route") or request)[:400]
+    manifest["tier"] = feas.get("tier", "T1")
+    manifest["scope"] = _safe_generated_scope(spec.get("scope"), manifest["tier"])
+    packages = []
+    for entry in spec.get("python_packages") or []:
+        package = str(entry.get("name") if isinstance(entry, dict) else entry).partition("==")[0].strip()
+        if re.fullmatch(r"[A-Za-z0-9_.-]+", package):
+            packages.append(package)
+    manifest.setdefault("needs", {})["python"] = list(dict.fromkeys(packages))
+    if proposal:
+        manifest["workflow_proposal"] = proposal
+    drafts._write(path, manifest)
+    return manifest
+
+
 def _read_code(folder) -> str:
     try:
         with open(os.path.join(folder, "skill.py"), encoding="utf-8") as f:
@@ -505,4 +656,3 @@ if __name__ == "__main__":
           "(call cap + line cap), full pipeline offline (research -> design -> generate -> scan -> vet "
           "-> 3 green sandbox runs -> packaged DISABLED with the owner's yes still pending), T3 refused "
           "by name, existing skill left alone, nothing installed into the real skill tree")
-

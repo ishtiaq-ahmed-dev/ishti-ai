@@ -110,6 +110,11 @@ def task_end(task_id: str, status: str, correction: str = "",
         set_clauses = [f"{k}=?" for k in fields.keys()]
         args = list(fields.values()) + [task_id]
         store.write(f"UPDATE tasks SET {', '.join(set_clauses)} WHERE task_id=?", tuple(args))
+        if str(status or "").lower() in {"success", "succeeded", "ok", "done"}:
+            # Workflow mining is part of the task lifecycle, not a best-effort
+            # caller convention. It remains fail-soft and never affects the reply.
+            from ishti.learning import workflows
+            workflows.record(task_id)
     except Exception as _exc:
         swallowed('ishti/learning/observe.py:task_end', _exc)
 

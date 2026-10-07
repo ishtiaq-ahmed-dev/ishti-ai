@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from ishti.core.logutil import swallowed
 from orchestrator.memory.conversation import get_conversation_manager
 
@@ -83,20 +84,31 @@ def submit(session_id: str, message_id: str, rating: str, reason: str = "") -> d
     # The next turn must see the corrected transcript, not an already rejected
     # answer left in the in-memory session window.
     try:
-        from ishti import dispatcher
         from ishti.core.context import normalize_history
-        with dispatcher._SESSIONS_LOCK:
-            runtime = dispatcher.SESSIONS.get(session_id)
-            if runtime is not None:
-                runtime["history"] = normalize_history(manager.get_messages(session_id))[-dispatcher.RUNTIME_MESSAGES:]
-                runtime["history_truncated"] = len(manager.get_messages(session_id)) > dispatcher.RUNTIME_MESSAGES
+        # The live API already has dispatcher loaded. A direct/offline feedback job must not
+        # bootstrap every skill (or attempt dependency setup) merely to update saved metadata.
+        dispatcher = sys.modules.get("ishti.dispatcher")
+        if dispatcher is not None:
+            with dispatcher._SESSIONS_LOCK:
+                runtime = dispatcher.SESSIONS.get(session_id)
+                if runtime is not None:
+                    runtime["history"] = normalize_history(manager.get_messages(session_id))[-dispatcher.RUNTIME_MESSAGES:]
+                    runtime["history_truncated"] = len(manager.get_messages(session_id)) > dispatcher.RUNTIME_MESSAGES
     except Exception:
         # The saved rating and revision remain authoritative after a restart.
         swallowed("answer_feedback.refresh_context")
     learning_recorded = False
+    typed_record = {}
+    preference_pair = {}
     if not saved["duplicate"]:
         try:
             from ishti.learning import feedback
+            metadata = message.get("metadata") or {}
+            typed_record = feedback.record_typed(
+                prompt=request, route=metadata.get("route") or {}, skill=metadata.get("skill") or "chat",
+                answer=str(message.get("content", "")), rating=rating, reason=reason or issue,
+                revised_answer=revision, session_id=session_id, message_id=message_id,
+                client_id=str(metadata.get("client_id") or ""), source="owner_button")
             feedback.apply({"kind": "positive_confirmation" if rating == "positive" else "negative_reaction",
                 "polarity": rating, "message": reason or ("Owner liked this exact answer" if rating == "positive" else "Owner disliked this exact answer"),
                 "target": (message.get("metadata") or {}).get("skill") or "chat",
@@ -106,7 +118,37 @@ def submit(session_id: str, message_id: str, rating: str, reason: str = "") -> d
                 "source": "owner_button", "confidence": 1.0 if reason else 0.8},
                 interaction={"id": message_id, "request": request,
                              "skill": (message.get("metadata") or {}).get("skill") or "chat"})
-            learning_recorded = True
+            learning_recorded = bool(typed_record)
+
+            # A positive rating on a generated revision closes the loop. Preserve the
+            # rejected predecessor verbatim and pair it with the final accepted answer.
+            parent_id = metadata.get("revision_of")
+            if rating == "positive" and parent_id:
+                session = manager.load_session(session_id) or {}
+                messages = session.get("messages") or []
+                rejected = next((row for row in messages if row.get("id") == parent_id), None)
+                root = rejected
+                seen = set()
+                while root and root.get("id") not in seen and (root.get("metadata") or {}).get("revision_of"):
+                    seen.add(root.get("id"))
+                    ancestor = (root.get("metadata") or {}).get("revision_of")
+                    prior = next((row for row in messages if row.get("id") == ancestor), None)
+                    if prior is None:
+                        break
+                    root = prior
+                rejected_meta = (rejected or {}).get("metadata") or {}
+                root_meta = (root or {}).get("metadata") or {}
+                rejected_feedback = rejected_meta.get("feedback") or {}
+                preference_pair = feedback.accept_preference_pair(
+                    prompt=request, route=root_meta.get("route") or {},
+                    skill=root_meta.get("skill") or metadata.get("skill") or "chat",
+                    rejected=str((rejected or {}).get("content") or ""),
+                    accepted=str(message.get("content") or ""),
+                    reason_type=feedback.classify_reason(
+                        rejected_feedback.get("reason") or rejected_feedback.get("diagnosis") or "",
+                        rating="negative"), accepted_message_id=message_id,
+                    client_id=str(root_meta.get("client_id") or metadata.get("client_id") or ""),
+                    source_feedback_id=None)
         except Exception:
             swallowed("answer_feedback.record_learning")
     try:
@@ -116,4 +158,5 @@ def submit(session_id: str, message_id: str, rating: str, reason: str = "") -> d
         swallowed("answer_feedback.attribute_rating")
     return {"rating": rating, "message_id": message_id, "revision": saved["revision"],
             "duplicate": saved["duplicate"], "learning_recorded": learning_recorded, "error": error,
-            "diagnosis": issue if issue else None}
+            "diagnosis": issue if issue else None, "typed_feedback_id": typed_record.get("id"),
+            "preference_pair_id": preference_pair.get("id")}

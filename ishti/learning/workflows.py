@@ -18,6 +18,15 @@ def record(task_id: str) -> Optional[Dict[str, Any]]:
     row = store.row("SELECT * FROM tasks WHERE task_id=?", (task_id,))
     if not row or row["final_status"] != "success":
         return None
+    if row.get("source") == "workflow_recorded":
+        raw = store.row("SELECT * FROM workflows WHERE signature=?", (_sig([s.get("tool") for s in store.js(row["steps"], [])
+                                                                            if isinstance(s, dict) and s.get("tool")]),))
+        if raw:
+            out = dict(raw)
+            out["steps"] = store.js(out.get("steps"), [])
+            if int(out.get("count") or 0) >= 2:
+                out["skill_proposal"] = propose_skill_draft(out)
+            return out
     raw_steps = store.js(row["steps"], [])
     tools = [s.get("tool") for s in raw_steps if isinstance(s, dict) and s.get("tool") and s.get("success")]
     if len(tools) < 2:
@@ -35,12 +44,50 @@ def record(task_id: str) -> Optional[Dict[str, Any]]:
         name = row["goal"] or f"Workflow for {tools[0]} -> {tools[-1]}"
         store.add("workflows", signature=sig, name=name[:200], steps=store.dump(tools),
                   count=1, first_seen=now, last_seen=now, status="active", confidence=0.6)
+    store.write("UPDATE tasks SET source='workflow_recorded' WHERE task_id=?", (task_id,))
     r = store.row("SELECT * FROM workflows WHERE signature=?", (sig,))
-    return dict(r) if r else None
+    out = dict(r) if r else None
+    if out and int(out.get("count") or 0) >= 2:
+        out["skill_proposal"] = propose_skill_draft(out)
+    return out
+
+
+def propose_skill_draft(workflow: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Queue a disabled-skill proposal after the same successful tool sequence twice.
+
+    This does not write executable code or enable anything.  The skill_creator owns drafting,
+    vetting and the T2 owner approval path; this row is only its owner-visible handoff.
+    """
+    if not workflow or int(workflow.get("count") or 0) < 2:
+        return None
+    signature = str(workflow.get("signature") or "")
+    existing = store.row("SELECT * FROM candidates WHERE kind='skill_draft' AND signature=? "
+                         "AND status IN ('proposed','confirmed') ORDER BY ts DESC LIMIT 1", (signature,))
+    if existing:
+        out = dict(existing)
+        out["payload"] = store.js(out.get("payload"), {})
+        return out
+    steps = store.js(workflow.get("steps"), []) if isinstance(workflow.get("steps"), str) else workflow.get("steps", [])
+    name = str(workflow.get("name") or "repeated workflow")[:200]
+    payload = {
+        "name": name, "tool_sequence": steps, "successful_runs": int(workflow.get("count") or 0),
+        "skill_creator_request": f"Make yourself able to repeat this verified workflow: {name}",
+        "requires_vetting": True, "enable_tier": "T2", "initial_status": "disabled",
+    }
+    cid = store.add("candidates", ts=store.now(), kind="skill_draft", signature=signature,
+                    payload=store.dump(payload), status="proposed",
+                    question=f"I completed '{name}' twice with the same sequence. Draft it as a reusable skill?",
+                    source="repeated_success", answered=None)
+    row = store.row("SELECT * FROM candidates WHERE id=?", (cid,))
+    if not row:
+        return None
+    out = dict(row)
+    out["payload"] = store.js(out.get("payload"), {})
+    return out
 
 def scan(min_count: Optional[int] = None) -> List[Dict[str, Any]]:
     """Scan workflows that meet the minimum run count threshold."""
-    need = int(min_count or store.evidence().get("workflow", 3))
+    need = int(min_count if min_count is not None else 2)
     rows = store.rows("SELECT * FROM workflows WHERE count >= ? AND status='active'", (need,))
     out = []
     for r in rows:

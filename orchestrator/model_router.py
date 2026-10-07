@@ -213,6 +213,8 @@ class ModelRouter:
         memory_query: str = "",
         temperature: float = 0.2,
         timeout: int = 60,
+        mode: Optional[str] = None,  # None -> the chat's profile (persona.CURRENT_PROFILE / active profile)
+        client_id: Optional[str] = None,
     ) -> str:
         """
         The single entry point to the LLM. Every caller goes through here so that the owner
@@ -221,6 +223,7 @@ class ModelRouter:
         """
         from orchestrator.persona import build_system_prompt
         from orchestrator.memory.user_profile import get_user_memory
+        from ishti.behavior_profiles import inference_facts
 
         memory_block = get_user_memory().format_for_llm(memory_query or user_content)
         system = build_system_prompt(
@@ -228,6 +231,9 @@ class ModelRouter:
             memory_block=memory_block,
             tools_used=tools_used,
             evidence_is_live=evidence_is_live,
+            mode=mode,
+            client_id=client_id,
+            behavior_facts=inference_facts(mode=mode, client_id=client_id),
         )
         if "<<EXTERNAL" in user_content:  # fetched pages are data, never instructions
             from ishti.untrusted import RULE

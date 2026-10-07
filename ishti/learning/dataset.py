@@ -102,9 +102,15 @@ def curate(example_rows: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Di
 
 def export(path: Optional[str] = None, min_quality: Optional[float] = None) -> Tuple[str, int]:
     """Export curated examples to JSONL file."""
-    exp_dir = store.cfg().get("dataset", {}).get("export_dir") or os.path.join(os.path.dirname(store.db_path()), "finetune")
-    os.makedirs(exp_dir, exist_ok=True)
-    out_path = path or os.path.join(exp_dir, "dataset.jsonl")
+    # An explicit test/operator path is authoritative; do not create the
+    # Windows-configured default directory on another host.
+    if path:
+        out_path = os.path.abspath(path)
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    else:
+        exp_dir = store.cfg().get("dataset", {}).get("export_dir") or os.path.join(os.path.dirname(store.db_path()), "finetune")
+        os.makedirs(exp_dir, exist_ok=True)
+        out_path = os.path.join(exp_dir, "dataset.jsonl")
     
     all_rows = rows(limit=5000)
     kept, _ = curate(all_rows)

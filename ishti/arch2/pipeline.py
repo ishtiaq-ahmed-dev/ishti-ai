@@ -134,14 +134,14 @@ def _rule_tool(request: str, skills: dict):
 
 
 def _usable(skills: dict) -> dict:
-    from ishti.skill_execution import available
-    return available(dict(sorted(skills.items())))
+    from ishti.tool_routing import usable_skills
+    return dict(sorted(usable_skills(skills).items()))
 
 
 def _route_decision(request: str, usable: dict) -> dict:
     """The full router decision for this request (rule match + Laya scores). {} on any failure."""
     try:
-        from ishti.router import route as _route
+        from ishti.tool_routing import route as _route
         return _route(request, usable) or {}
     except Exception:
         return {}

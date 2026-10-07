@@ -152,7 +152,7 @@ def test_profile_isolation_and_prompt_layers(fresh_runs):
     a = prompt_compiler.build("business", dynamic="d1")
     b = prompt_compiler.build("business", dynamic="d2")
     assert a.split("CONTEXT")[0] == b.split("CONTEXT")[0]  # byte-stable prefix
-    assert core in a and "CRM" in a and "warm" not in a
+    assert core in a and "CRM" in a and "Warm, casual tone" not in a
     lay = prompt_compiler.layers("personal")
     assert [l["name"] for l in lay["layers"]][:2] == ["core", "profile:personal"]
 

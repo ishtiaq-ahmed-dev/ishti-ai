@@ -19,6 +19,7 @@ report that the caps were NOT enforced - it never pretends the job object ran.
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -46,8 +47,9 @@ def _job_api():
         import win32job
         return win32api, win32job
     except ImportError as exc:
+        fallback = "taskkill" if os.name == "nt" else "process-group kill"
         print(f"[sandbox] pywin32 unavailable ({type(exc).__name__}: {exc}): falling back to plain "
-              f"subprocess + timeout + taskkill - the hard memory/CPU/process caps are NOT enforced")
+              f"subprocess + timeout + {fallback} - the hard memory/CPU/process caps are NOT enforced")
         return None, None
 
 
@@ -90,9 +92,10 @@ def run_script(path, *, timeout_s=120, mem_mb=512, net=False, write_dir=None) ->
         win32job.SetInformationJobObject(job, win32job.JobObjectExtendedLimitInformation, info)
 
     t0 = time.perf_counter()
+    platform_start = ({"creationflags": CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP}
+                      if os.name == "nt" else {"start_new_session": True})
     p = subprocess.Popen([sys.executable, path], cwd=cwd, env=env, stdin=subprocess.DEVNULL,
-                         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                         creationflags=CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP)
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, **platform_start)
     assigned = False
     if job:
         try:  # IMMEDIATELY after Popen: a child spawned before assignment would not inherit the caps
@@ -109,9 +112,14 @@ def run_script(path, *, timeout_s=120, mem_mb=512, net=False, write_dir=None) ->
         killed = True
         if assigned:
             win32job.TerminateJobObject(job, 1)  # the whole job/process tree, not just the direct child
-        else:
+        elif os.name == "nt":
             subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.pid)], capture_output=True,
                            creationflags=CREATE_NO_WINDOW, timeout=30)
+        else:
+            try:
+                os.killpg(p.pid, signal.SIGKILL)  # start_new_session made pid the process-group id
+            except (ProcessLookupError, PermissionError):
+                p.kill()
         try:
             out, err = p.communicate(timeout=15)  # drain the pipes so nothing blocks on a full buffer
         except subprocess.TimeoutExpired:
@@ -136,7 +144,8 @@ def run_script(path, *, timeout_s=120, mem_mb=512, net=False, write_dir=None) ->
         "net_restricted": False,
         "net_note": ("network NOT restricted - the sandbox caps memory/CPU/processes/time only (RESEARCH.md R2); "
                      "use the skill's manifest scope for network policy"),
-        "job": "win32job Job Object" if assigned else "fallback: no Job Object (pywin32 unavailable)",
+        "job": ("win32job Job Object" if assigned else
+                f"fallback: no Job Object ({'taskkill' if os.name == 'nt' else 'process-group kill'})"),
     }
 
 
