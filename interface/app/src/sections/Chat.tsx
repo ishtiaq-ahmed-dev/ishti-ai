@@ -20,6 +20,62 @@ function ago(iso: number) {
   return m < 1 ? "now" : m < 60 ? `${m}m` : m < 1440 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`;
 }
 
+// C1: copy a message's plain text (clipboard API, with an execCommand fallback for older WebView2 builds).
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {}
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+// C1: per-message copy button. A real <button> (keyboard + aria-label) that shows Copied for 1.5 s.
+function CopyMessageButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<number | null>(null);
+  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
+  const onCopy = () => {
+    void copyText(text).then((ok) => {
+      if (!ok) return;
+      setCopied(true);
+      if (timer.current) window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <button
+      type="button"
+      onClick={onCopy}
+      aria-label={copied ? "Copied" : "Copy message"}
+      title={copied ? "Copied" : "Copy message"}
+      data-testid="copy-message"
+      className={cn(
+        "grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted-foreground/70 transition-opacity duration-150",
+        "opacity-0 group-hover/msg:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
+        "hover:text-foreground hover:bg-muted/60 cursor-pointer",
+        copied && "opacity-100 text-accent",
+      )}
+    >
+      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+    </button>
+  );
+}
+
 // Source chips under an answer: fed from the run's research steps (CONTRACT v2 run_step.sources).
 function Sources({ run }: { run?: StoreRun }) {
   const urls = [...new Set((run?.steps || []).flatMap((s) => s.sources))];
@@ -107,16 +163,22 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     return () => window.removeEventListener("ishti-side-chats-width-changed", handleWidthChange);
   }, []);
 
+  // History-panel resize: the pointer is captured on the handle so pointerup/pointercancel always
+  // reach us even when released outside the window; every exit path (pointerup, pointercancel,
+  // lostpointercapture, window blur, unmount) restores body cursor/userSelect. Previously a pointer
+  // released outside the window left text selection disabled for the whole session.
   const startResizing = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsResizing(true);
+    const handle = e.currentTarget as HTMLElement;
     const startX = e.clientX;
     const startWidth = historyWidth;
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
 
     let currentW = historyWidth;
+    let ended = false;
     const onPointerMove = (ev: PointerEvent) => {
       const delta = ev.clientX - startX;
       const maxWidth = Math.max(350, Math.min(550, window.innerWidth * 0.45));
@@ -125,17 +187,33 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
       setHistoryWidth(nextWidth);
       try { localStorage.setItem("ishti-recent-chats-width", String(nextWidth)); } catch {}
     };
-    const onPointerUp = () => {
+    const onResizeEnd = () => {
+      if (ended) return;
+      ended = true;
       setIsResizing(false);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
       window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointerup", onResizeEnd);
+      window.removeEventListener("pointercancel", onResizeEnd);
+      window.removeEventListener("blur", onResizeEnd);
+      handle.removeEventListener("lostpointercapture", onResizeEnd);
+      try { handle.releasePointerCapture(e.pointerId); } catch {}
       try { window.dispatchEvent(new CustomEvent("ishti-side-chats-width-changed", { detail: currentW })); } catch {}
     };
     window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointerup", onResizeEnd);
+    window.addEventListener("pointercancel", onResizeEnd);
+    window.addEventListener("blur", onResizeEnd);
+    handle.addEventListener("lostpointercapture", onResizeEnd);
+    try { handle.setPointerCapture(e.pointerId); } catch {}
   }, [historyWidth]);
+
+  // Belt-and-braces: if Chat unmounts mid-resize (section switch), restore body styles.
+  useEffect(() => () => {
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  }, []);
 
   const [focusedSkill, setFocusedSkill] = useState<string | null>(() => {
     try { return localStorage.getItem("ishti-focused-skill"); } catch { return null; }
@@ -476,12 +554,13 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   const renderMessage = (m: StoreMessage) => (
     <motion.div key={m.message_id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22, ease: "easeOut" }}
-      className={m.role === "user" ? "flex justify-end min-w-0" : "flex gap-3 min-w-0 max-w-full"}>
+      className={m.role === "user" ? "group/msg flex justify-end min-w-0" : "group/msg flex gap-3 min-w-0 max-w-full"}>
       {m.role === "user" ? (
-        <div
-          className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-accent-foreground shadow-xs"
-          style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-leading)" }}
-        >
+        <div className="group/msg flex min-w-0 max-w-full items-center gap-1">
+          <div
+            className="ishti-selectable max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-accent-foreground shadow-xs"
+            style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-leading)" }}
+          >
           {(() => {
             const skillMatch = m.text.match(/^\[skill:([a-z0-9_-]+)\]\s*(.*)$/is);
             if (skillMatch) {
@@ -496,12 +575,14 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
             }
             return m.text;
           })()}
+          </div>
+          <CopyMessageButton text={m.text} />
         </div>
       ) : (
         <>
           <IshtiBrand variant="icon" size={32} className="mt-0.5 shrink-0 shadow-xs" />
           <div
-            className="min-w-0 flex-1 max-w-full overflow-hidden"
+            className="ishti-selectable min-w-0 flex-1 max-w-full overflow-hidden"
             style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-leading)" }}
           >
             {m.run_id && chatStore.runs.get(m.run_id) && <RunThoughts run={chatStore.runs.get(m.run_id)!} />}
@@ -518,6 +599,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               <UnverifiedBanner detail={runUnverified(chatStore.runs.get(m.run_id) || null)} />
             )}
             <div className="mt-1 flex items-center gap-2">
+              <CopyMessageButton text={m.text} />
               {/* WP2: v2 feedback bound to message_id + run_id (replaces the legacy single-chat rating) */}
               {showFeedback && <FeedbackPanel messageId={m.message_id} runId={m.run_id} />}
               {(chatStore.runs.get(m.run_id)?.steps.length || 0) > 0 && (
