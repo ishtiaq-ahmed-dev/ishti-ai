@@ -10,9 +10,41 @@ import { proto } from '@whiskeysockets/baileys';
 import { SecureFiles, encryptedAuth } from '../secure-files.js';
 import { jidOf, describeMessage, MessageStore, sha256, sendContent, ackName } from '../core.js';
 import { createApi } from '../api.js';
+import { ConnectionLifecycle, initialBridgeState, logger } from '../runtime.js';
 const chat = '15550001111@s.whatsapp.net', token = 'test-token-'.repeat(5);
 const message = (id, fromMe = false, body = { conversation: 'Meeting: Tuesday, 10 AM' }) => ({
   key: { remoteJid: chat, id, fromMe }, messageTimestamp: 1700000000, message: body,
+});
+test('Baileys receives a complete pino logger, including complete child loggers', () => {
+  for (const candidate of [logger, logger.child({ test: true })]) {
+    assert.equal(typeof candidate.level, 'string');
+    for (const name of ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'child']) assert.equal(typeof candidate[name], 'function');
+  }
+  assert.doesNotThrow(() => logger.child({ socket: 'fake' }).debug('pair success recv'));
+});
+test('connection lifecycle restarts once for 515 and retains the paired identity', () => {
+  const state = initialBridgeState({ registered: true, me: { id: chat } }), timers = [], reconnects = [];
+  const life = new ConnectionLifecycle({ state, reasons: { loggedOut: 401, badSession: 500, connectionReplaced: 440,
+    restartRequired: 515, timedOut: 408, connectionLost: 408 }, reconnect: () => reconnects.push(true),
+    setTimer: (fn, delay) => { timers.push({ fn, delay }); return timers.length; }, clearTimer: () => {} });
+  assert.equal(life.update({ connection: 'close', lastDisconnect: { error: { output: { statusCode: 515 } } } }).action, 'restart');
+  assert.equal(state.me, chat); assert.equal(state.pairingState, 'paired'); assert.equal(timers[0].delay, 0);
+  timers[0].fn(); assert.equal(reconnects.length, 1);
+  assert.equal(life.update({ connection: 'close', lastDisconnect: { error: { output: { statusCode: 515 } } } }).action, 'stop');
+});
+test('QR timeout reports expiry, backs off, refreshes, and stops at the retry cap', () => {
+  let now = 100, reconnects = 0; const state = initialBridgeState(), timers = [];
+  const life = new ConnectionLifecycle({ state, reasons: { loggedOut: 401, badSession: 500, connectionReplaced: 440,
+    restartRequired: 515, timedOut: 408, connectionLost: 408 }, reconnect: () => reconnects++, maxQrRetries: 2,
+    clock: () => now, setTimer: (fn, delay) => { timers.push({ fn, delay }); return timers.length; }, clearTimer: () => {} });
+  let result = life.update({ connection: 'close', lastDisconnect: { error: { output: { statusCode: 408 } } } });
+  assert.equal(result.action, 'retry_qr'); assert.equal(result.delay, 2000); assert.equal(state.pairingState, 'qr_expired');
+  timers.at(-1).fn(); assert.equal(reconnects, 1);
+  now = 200; life.update({ qr: 'fresh' }); assert.equal(state.pairingState, 'waiting_for_scan'); assert.equal(state.qrAt, 200);
+  result = life.update({ connection: 'close', lastDisconnect: { error: { output: { statusCode: 408 } } } });
+  assert.equal(result.delay, 4000);
+  result = life.update({ connection: 'close', lastDisconnect: { error: { output: { statusCode: 408 } } } });
+  assert.equal(result.action, 'stop'); assert.match(state.lastError, /expired/i);
 });
 async function harness(t, options = {}) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ishti-wa-test-'));
