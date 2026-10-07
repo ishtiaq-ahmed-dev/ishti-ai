@@ -278,7 +278,12 @@ class ChatStore {
       if (d.events.length || since === 0 || !wasLive) this.emit();  // an empty long-poll changes nothing: no re-render
     } catch {
       this.pollFailures += 1;
-      if (this.pollFailures >= 2) this.connection = "reconnecting";
+      // Emit on the transition: without it the header kept showing "Local · private · ready"
+      // through a dropped connection until some other event happened to re-render the app.
+      if (this.pollFailures >= 2 && this.connection !== "reconnecting") {
+        this.connection = "reconnecting";
+        this.emit();
+      }
     }
     const backoff = this.pollFailures ? Math.min(4000, 500 * this.pollFailures) : 0;  // long-poll: re-ask at once
     this.pollTimer = window.setTimeout(() => this.pollEvents(this.lastSeq), backoff);
