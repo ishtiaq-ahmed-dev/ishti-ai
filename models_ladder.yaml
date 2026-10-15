@@ -1,4 +1,4 @@
-# ISHTI model ladders - read by ishti/vram.py (the VRAM governor). Documented in MODEL_DECISIONS.md.
+# ISHTI model ladders - read by ishti/vram.py (the VRAM governor). Documented in docs/arch/gpu-vram-governor.md.
 #
 # A ladder is an ordered list of rungs for one role, best first. "Auto-adjust" = move a role to a lighter rung
 # (a smaller size/quant variant that is INSTALLED); weights are never modified or re-quantized. A rung that is not
@@ -7,12 +7,13 @@
 # PARAMETER num_ctx differs) - because Ollama's OpenAI-style endpoint ignores per-request options and would reload
 # the model back to its default every call. Never set num_gpu: partial offload is a hard failure.
 #
-# Every number in MODEL_DECISIONS.md was measured on this PC (RTX 5070 Ti 16 GB) - see `python -m ishti.vram_calibrate`.
+# Historical values below target an RTX 5070 Ti 16 GB; recalibrate this PC with `python -m ishti.vram_calibrate`.
+# A historical measurement is not a clean-machine or current-performance guarantee.
 
 budget_pct: 80            # everything resident on the GPU (all users: Windows, browser, voice, Ollama) stays under this % of VRAM
 safety_margin_mb: 128     # kept free on top of a model's measured footprint (Ollama's sizes are exact; 512 made the 14B fail admission at 78.5% used)
 ollama_headroom_mb: 1536   # free VRAM that must remain after a load: Ollama/llama.cpp needs 1 GiB (LLAMA_ARG_FIT_TARGET) and predicts ~240 MiB high;
-                          # below it Ollama evicts an idle model or splits the new one (verified in its debug log, see MODEL_DECISIONS.md)
+                          # below it Ollama evicts an idle model or splits the new one (verified in its debug log, see docs/arch/gpu-vram-governor.md)
 transient_limit_pct: 95   # loading the lighter model BEFORE unloading the heavier one is only allowed up to this % of VRAM
 hysteresis_s: 90          # VRAM must have stayed free this long before a role moves back up a rung
 unknown_headroom: 1.35    # a model never measured loads only if free VRAM >= (its estimate * this); then it is measured

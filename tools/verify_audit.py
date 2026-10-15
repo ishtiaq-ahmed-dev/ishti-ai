@@ -1,4 +1,7 @@
-"""Verify docs/build/AUDIT_LOG.jsonl (hash chain). Exit 0 = intact. Same check as `python tools/audit_log.py verify`."""
+"""Verify docs/build/AUDIT_LOG.jsonl (hash chain). Exit 0 = intact. Same check as `python tools/audit_log.py verify`.
+
+Note: `docs/build/` is retired in this tree, so with no log present this reports an intact empty chain
+rather than a missing store - see the caution in tools/audit_log.py."""
 import os
 import sys
 

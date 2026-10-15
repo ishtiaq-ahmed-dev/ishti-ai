@@ -83,7 +83,8 @@ def sample():
         try:
             s["cpu_pct"] = psutil.cpu_percent(interval=None)
             vm = psutil.virtual_memory()
-            s["ram"] = {"used_mb": vm.used // (1024 * 1024), "total_mb": vm.total // (1024 * 1024)}
+            s["ram"] = {"used_mb": vm.used // (1024 * 1024), "available_mb": vm.available // (1024 * 1024),
+                        "total_mb": vm.total // (1024 * 1024)}
             names = [p.info["name"] or "" for p in psutil.process_iter(attrs=["name"])]
             s["procs"] = {"total": len(names),
                           "ishti": sum(1 for n in names if "ishti" in n.lower()),

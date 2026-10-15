@@ -25,9 +25,9 @@ if hasattr(sys.stderr, "reconfigure"):
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY = sys.executable
 
-CORE = ["audit", "killswitch", "scope", "untrusted", "health", "facts", "semantic", "corrections", "reflex", "planner",
-        "router", "llm", "ftlog", "rgraph", "gpu", "models", "duck", "diarize", "ocr", "clone", "manage", "wake",
-        "talk", "voice"]
+CORE = ["audit", "killswitch", "scope", "untrusted", "health", "facts", "semantic", "corrections", "reflex",
+        "llm", "ftlog", "rgraph", "gpu", "models", "duck", "diarize", "ocr", "clone", "manage", "wake",
+        "talk", "voice"]  # ishti.router / ishti.planner were removed (ARCHITECTURE.md 5); keep this list to live modules
 # Modules whose docstring documents `Self-check: python <path>`: verify THAT exact command too, so a
 # missing repo-root bootstrap (ModuleNotFoundError when run as a script) is caught here, not by a human.
 DOC_SELFCHECKS = [
@@ -38,8 +38,10 @@ DOC_SELFCHECKS = [
     "orchestrator/install_ops.py", "orchestrator/plan_view.py", "orchestrator/quality_gate.py",
 ]
 SLOW = {"ishti.check", "ishti.wake", "ishti.voice", "ishti.diarize", "ishti.clone", "ishti.manage", "ishti.llm",
-        "ishti.ocr", "ishti.semantic", "skill:browser", "skill:gemini", "skill:media", "skill:security",
+        "ishti.ocr", "ishti.semantic",        "skill:browser", "skill:gemini", "skill:media", "skill:security",
         "skill:skillsmith", "skill:speedtest", "skill:markets", "skill:shopping", "skill:travel", "skill:weblayout",
+        "skill:braintrain", "skill:meta",  # the two slowest skill self-checks (~65-80 s: live measurements)
+
         "test:test_stt_accuracy", "test:test_stt_threads", "test:test_browser_tabs", "test:test_voice_note_generation",
         "test:test_whatsapp_context", "test:test_multitopic", "test:test_lifecycle", "test:test_capcut_skill"}
 
@@ -53,7 +55,9 @@ def items():
     out += [(f"skill:{s}", [PY, "-m", f"ishti.skills.{s}.skill"]) for s in skills]
     for f in sorted(os.listdir(os.path.join(ROOT, "tests"))):
         if f.startswith("test_") and f.endswith(".py"):
-            out.append((f"test:{f[:-3]}", [PY, os.path.join(ROOT, "tests", f)]))
+            # These are pytest modules (fixtures, sys.path bootstrap): run them through the project's runner,
+            # not as plain scripts - `python tests/test_x.py` fails on `import ishti` and on every fixture arg.
+            out.append((f"test:{f[:-3]}", [PY, "-m", "pytest", os.path.join("tests", f), "-q", "-p", "no:cacheprovider"]))
     return out
 
 

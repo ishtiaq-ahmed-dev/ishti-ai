@@ -126,3 +126,6 @@ pytest-timeout==2.4.0
 #     Add it with:  venv\Scripts\python -m pip install scrapegraphai==1.76.0
 # pyinstaller: only needed to rebuild ISHTI.exe (ISHTI.spec).
 # Fine-tuning (orchestrator\finetune.py) needs datasets, trl and unsloth; install them yourself if you ever want it.
+
+# IANA timezone data for business-local dates on Windows
+tzdata==2026.5

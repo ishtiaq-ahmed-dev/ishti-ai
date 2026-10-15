@@ -25,6 +25,8 @@ from desktop import timeline, window_state
 PORT = 8888
 URL = f"http://127.0.0.1:{PORT}"
 ICON_PATH = os.path.join(ROOT, "assets", "ishti.ico")
+# How long the splash may stay up while the backend boots before the dashboard is shown anyway (desktop/app_window.py).
+BOOT_WAIT_S = 120
 
 _shutting_down = False
 
@@ -276,9 +278,38 @@ class MainApi:
         return {"width": w.width, "height": w.height, "x": w.x, "y": w.y, "maximized": _remember["maximized"]} if w else {}
 
     def on_ready(self):
-        """splash.html reports a ready backend: go to the dashboard (normally already done by _open_dashboard)."""
+        """splash.html reached 100 %: go to the dashboard (the one place the owner switches over).
+
+        Deferred by a moment: navigating inside the JS call destroys the page before pywebview can hand the
+        result back, which surfaced as "_returnValuesCallbacks.on_ready... is not a function" (2026-10-13)."""
+        def go():
+            try:
+                if self._win:
+                    self._win.load_url(URL)
+            except Exception:
+                swallowed('desktop/app_window.py:on_ready')
         if self._win:
-            self._win.load_url(URL)
+            threading.Timer(0.25, go).start()
+
+    def boot_state(self):
+        """The splash's own progress source (GET /api/ready), so it shows the real stage and percentage.
+
+        The splash runs from file://, and the backend refuses it: the fetch would be cross-origin (no CORS
+        headers) and the server's origin check answers 403 "foreign origin" to a null origin - /ws/events
+        too (verified against the running server, 2026-10-13). That is why the splash sat at 0 % until the
+        window was replaced. Python has no such restriction, so the splash asks the bridge instead.
+        Returns a persisted terminal watchdog error if the backend could not start."""
+        try:
+            import requests
+            return requests.get(f"{URL}/api/ready", timeout=(0.3, 2)).json()
+        except Exception as exc:
+            from ishti import lifecycle
+            try:
+                message = lifecycle.registry(port=PORT).get("boot_error")
+                return {"ready": False, "stage": "backend_up", "progress": 0, "error": message} if message else {}
+            except OSError:
+                swallowed("desktop/app_window.py:boot_error", exc)
+                return {}
 
     def view_log(self):
         log_path = os.path.join(os.environ.get("LOCALAPPDATA", ""), "ISHTI", "logs", "ishti.log")
@@ -288,9 +319,16 @@ class MainApi:
     def retry_boot(self):
         try:
             import requests
-            requests.post(f"{URL}/api/ready/retry", timeout=2)
-        except Exception:
-            swallowed('desktop/app_window.py:retry_boot:289')
+            response = requests.post(f"{URL}/api/ready/retry", timeout=2)
+            response.raise_for_status()
+            return response.json()
+        except Exception as exc:
+            from ishti.watchdog import owner_retry
+            try:
+                return owner_retry(PORT)
+            except (OSError, RuntimeError):
+                swallowed('desktop/app_window.py:retry_boot', exc)
+                return {"retried": False, "error": "Close and reopen ISHTI after checking the log."}
 
 
 # ---- window geometry memory (desktop/window_state.py): saved on resize/move (debounced) and on close
@@ -347,22 +385,44 @@ def _create_main_window(main_api, url):
     return win
 
 
-def _open_dashboard(win):
-    """Runs once the GUI loop is up: the splash is already on screen. The moment the backend's HTTP server answers
-    (it binds ~1 s after launch; the models keep loading in the background, the dashboard shows that), switch the
-    window to the dashboard. Short connect timeouts: a closed loopback port takes ~2 s to refuse on Windows."""
+def _open_dashboard(win, wait_s=BOOT_WAIT_S):
+    """Runs once the GUI loop is up: the splash is already on screen, showing the boot stages and their real
+    percentage through MainApi.boot_state(). This thread only covers what the splash cannot.
+
+    It used to swap the window the moment /api/health answered - which is ~1 s in, BEFORE a single boot stage
+    has finished - so the owner only ever saw the 0 % the splash starts at and then the app (2026-10-13).
+    Now the splash owns the handover (it calls on_ready() at 100 %); this thread navigates only when the boot
+    never reports ready or an error inside the budget, where a stuck splash would be worse than the
+    dashboard's own boot panel. Short connect timeouts: a closed loopback port takes ~2 s to refuse on Windows."""
     import requests
-    deadline = time.time() + 120
+    deadline = time.time() + wait_s
+    answered = False
     while time.time() < deadline:
         try:
             if requests.get(f"{URL}/api/health", timeout=(0.3, 2)).ok:
                 timeline.mark("backend_answering")
-                win.load_url(URL)
-                return
+                answered = True
+                break
         except Exception:
             swallowed('desktop/app_window.py:_open_dashboard:359')
         time.sleep(0.1)
-    # backend never answered: stay on the splash, whose error state offers retry / view log
+    if not answered:
+        return  # backend never answered: stay on the splash, whose error state offers retry / view log
+    while time.time() < deadline:
+        try:
+            snap = requests.get(f"{URL}/api/ready", timeout=(0.3, 2)).json()
+        except Exception:
+            swallowed('desktop/app_window.py:_open_dashboard:ready')
+            snap = {}
+        if snap.get("ready"):
+            time.sleep(2.0)  # the splash hands over at 100 %; only step in if that did not happen
+            if not (win.get_current_url() or "").startswith(URL):
+                win.load_url(URL)  # no JS bridge / the page failed: never leave the owner on a splash
+            return
+        if snap.get("error"):
+            return  # a failed boot belongs on the splash: its error card has retry and view log
+        time.sleep(0.5)
+    win.load_url(URL)  # boot never finished reporting: the dashboard shows where it is
 
 
 def run_app_window():

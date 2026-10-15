@@ -11,6 +11,7 @@ import json
 import time
 import asyncio
 import secrets
+import threading
 import re
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -43,6 +44,9 @@ app = FastAPI(title="ISHTI Personal AI Assistant")
 async def _bad_json_body(_req, _exc):
     # One guard for every handler that does `await req.json()`: a malformed body is the caller's error.
     return JSONResponse({"error": "Request body must be valid JSON."}, status_code=400)
+from ishti.business.api import router as business_api
+app.include_router(business_api)
+
 app.include_router(ishti_api)  # /api/chat, /api/skills, /api/facts (the dispatcher)
 
 app.add_middleware(SelectiveGZipMiddleware)  # 1.02 MB JS -> ~290 KB, 107 KB CSS -> ~16 KB on the wire
@@ -70,6 +74,30 @@ API_TOKEN = _api_token()
 def authorized(conn) -> bool:
     """Trust a same-origin direct loopback UI, or an authenticated caller."""
     return dashboard_authorized(conn, API_TOKEN)
+
+
+def _start_local_search():
+    """Start the local SearXNG (Docker) the app actually searches through.
+
+    Only orchestrator/startup.py's [1b] ever called ensure_searxng(), and the desktop launch
+    (desktop/launcher.py -> python -m ishti) does not go through it - so on a PC where the container had never
+    been created, search stayed down for days while the health loop put a ConnectionError in the owner's bell
+    on every launch (owner report 2026-10-13). create=True is the documented one-time setup: it starts Docker
+    Desktop, pulls the image once, and afterwards just starts the existing container. Off the critical path:
+    it runs on a thread and a failure only costs the fallback providers."""
+    def run():
+        try:
+            from tools.web.search import ensure_searxng
+            if ensure_searxng(wait_s=180, create=True):
+                print("[ISHTI] local search (SearXNG) is up on 127.0.0.1:8890")
+            else:
+                print("[ISHTI] local search (SearXNG) could not be started; web search uses the fallback providers")
+        except Exception as exc:
+            print(f"[ISHTI] local search (SearXNG) could not be started ({type(exc).__name__}: {exc}); "
+                  "web search uses the fallback providers")
+
+    import threading
+    threading.Thread(target=run, daemon=True, name="searxng-start").start()
 
 
 @app.middleware("http")
@@ -267,6 +295,11 @@ async def _capture_loop():
     global MAIN_LOOP
     MAIN_LOOP = asyncio.get_running_loop()
     from ishti import self_heal
+    from ishti.business import runtime as business_runtime, engine as business_engine
+    from ishti import killswitch as business_killswitch
+    if not os.environ.get("ISHTI_TEST_MODE") and os.environ.get("ISHTI_BUSINESS_DESK", "1") != "0":
+        business_runtime.start()
+        business_killswitch.on_kill(lambda: business_engine.pause() or "business observation paused")
     self_heal.ensure_loop()  # idles until the owner turns Auto-Heal ON
     from ishti import CONFIG
     from ishti.skills.reminders.skill import start as start_reminders
@@ -298,6 +331,7 @@ async def _capture_loop():
     from ishti import health, killswitch
     from ishti.talk import talker as _pc_talker
     health.start(lambda m: announce(m, kind="alert"))  # A1: degrading components are flagged before they fail
+    _start_local_search()  # SearXNG in Docker: without it every search falls back and the health loop flags it
     killswitch.on_kill(lambda: _pc_talker().stop() and "PC speech")  # A2: whatever the PC is saying stops
     if not os.environ.get("ISHTI_WATCHDOG"):  # no watchdog process: the hotkey lives here (works unless this process hangs)
         try:
@@ -308,6 +342,12 @@ async def _capture_loop():
     if CONFIG["voice"].get("wake_enabled"):
         from ishti import mic_control
         mic_control.apply_on_startup()  # starts the wake listener ONLY if the owner left mic ON (default OFF)
+
+
+@app.on_event("shutdown")
+def _stop_business_observer():
+    from ishti.business import runtime as business_runtime
+    business_runtime.stop()
 
 
 async def broadcast_event(event_type: str, data: Dict[str, Any]):
@@ -459,16 +499,64 @@ async def kill_endpoint(req: Request):
 # POST /api/shutdown, /api/ready, /api/vram, /ws/events ...: ishti/lifecycle_api.py (docs/API_CONTRACT.md), attached below.
 
 
+@app.get("/api/diagnostics/calls")
+async def diagnostic_calls():
+    from ishti import calltrace, background
+    return {"requests": list(calltrace.RECENT), "background": background.snapshot()}
+
+
+@app.get("/api/setup")
+async def setup_get():
+    """The first-run choice: this PC (Local) or a cloud API. chosen=False means the owner has not picked yet."""
+    from ishti import llm, setup_choice
+    return {**setup_choice.state(llm.api_settings().get("api_key_env", "ISHTI_API_KEY")), "provider_now": llm.provider()}
+
+
+@app.post("/api/setup")
+async def setup_post(req: Request):
+    """Save the owner's choice. The API key is never sent here: it is read from the environment variable named in config."""
+    from ishti import setup_choice
+    body = await req.json()
+    try:
+        if body.get("api_key"):
+            from ishti.files_api import _not_direct
+            if _not_direct(req.scope):
+                return JSONResponse({"error": "Credentials may only be set from this PC's window."}, status_code=403)
+            setup_choice.save_key(str(body.get("api_provider", "")), body["api_key"])
+        d = setup_choice.save(str(body.get("provider", "")), str(body.get("api_provider", "")), str(body.get("model", "")),
+                              credential_source="keyring" if body.get("api_key") else None)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except Exception:
+        return JSONResponse({"error": "The OS credential store could not save the key. Use the configured environment variable instead."}, status_code=503)
+    return JSONResponse({"saved": True, "choice": d})
+
+
+_REMOTE_HEALTH = {"value": {"available": False}, "at": 0.0, "busy": False}
+
+
+async def _refresh_remote_health():
+    """The remote-channel probe makes a network call (the WhatsApp bridge). It runs in a worker thread, never on the event
+    loop: a probe on the loop stalled every request while the bridge was down, so the boot health check never got an answer."""
+    _REMOTE_HEALTH["busy"] = True
+    try:
+        from ishti.channels import service as _remote_service
+        _REMOTE_HEALTH["value"] = await asyncio.to_thread(lambda: _remote_service.get().health())
+    except Exception:
+        _REMOTE_HEALTH["value"] = {"available": False}
+    finally:
+        _REMOTE_HEALTH["at"] = time.time()
+        _REMOTE_HEALTH["busy"] = False
+
+
 @app.get("/api/health")
 async def health_endpoint():
     """Liveness for the watchdog (answering at all = not hung) + the latest health-loop snapshot."""
     from ishti import health, lifecycle
-    try:  # remote-control channels (docs/API_CONTRACT.md §11): running/stopped, never raises here
-        from ishti.channels import service as _remote_service
-        remote = _remote_service.get().health()
-    except Exception:
-        remote = {"available": False}
-    return {"ok": True, "state": lifecycle.state(), "remote": remote, **health.snapshot()}
+    # remote-control channels (docs/API_CONTRACT.md §11): the last probe answers at once; a stale one is refreshed in the background
+    if not _REMOTE_HEALTH["busy"] and time.time() - _REMOTE_HEALTH["at"] > 5:
+        asyncio.ensure_future(_refresh_remote_health())
+    return {"ok": True, "state": lifecycle.state(), "remote": _REMOTE_HEALTH["value"], **health.snapshot()}
 
 
 # ---------------------------------------------------------------- Connectors
@@ -566,15 +654,7 @@ async def inputs_clipboard_test():
         return JSONResponse({"ok": False, "error": f"Clipboard unavailable: {exc}"}, status_code=503)
 
 
-@app.get("/api/inputs/screen")
-async def inputs_screen_test():
-    """A real capture test (size only; the image is discarded, never stored or sent)."""
-    try:
-        from PIL import ImageGrab
-        img = await asyncio.to_thread(lambda: ImageGrab.grab(all_screens=True))
-        return JSONResponse({"ok": True, "available": True, "detail": f"Screen capture works ({img.width}x{img.height}, all monitors)"})
-    except Exception as exc:
-        return JSONResponse({"ok": False, "available": False, "error": f"Screen capture unavailable: {exc}"}, status_code=503)
+
 
 
 @app.get("/api/status")
@@ -692,52 +772,28 @@ async def self_heal_trigger():
     return JSONResponse(res)
 
 
-# ---- Architecture control (ARCH1 dispatcher vs ARCH2 two-pass brain) -------------------------
-@app.get("/api/arch")
-async def arch_state():
-    """Which pipeline is active + the memory store's live stats (the dashboard's Architecture card)."""
-    from ishti.arch2 import registry
-    out = registry.describe()
+# ---- Memory maintenance (the one architecture's memory store) ---------------------------------
+@app.get("/api/memory/stats")
+async def memory_stats():
+    from ishti.memstore import memory as amem
     try:
-        from ishti.arch2 import memory as amem
-        out["memory"] = amem.stats()
+        return JSONResponse(amem.stats())
     except Exception as exc:
-        out["memory"] = {"error": str(exc)}
-    try:
-        from ishti.arch2 import pipeline as apipe
-        from ishti import llm
-        out["models"] = {"main": llm.model_for("main"), "validation": llm.model_for("validation")}
-        out["tool_rounds"] = apipe.MAX_TOOL_ROUNDS
-    except Exception:
-        out["models"] = {}
-    return JSONResponse(out)
+        return JSONResponse({"error": str(exc)})
 
 
-@app.post("/api/arch/switch")
-async def arch_switch(req: Request):
-    """{"backend": "arch1" | "arch2"} - the Settings -> Architecture card's switch."""
-    from ishti.arch2 import registry
-    body = await req.json()
-    try:
-        d = registry.set_active(str(body.get("backend", "")), by="dashboard")
-    except ValueError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=400)
-    await broadcast_event("arch_state", d)
-    return JSONResponse(d)
-
-
-@app.post("/api/arch/memory/promote")
+@app.post("/api/memory/promote")
 async def arch_memory_promote():
     """Run the observation->semantic promotion now (normally automatic at the thresholds)."""
-    from ishti.arch2 import memory as amem
+    from ishti.memstore import memory as amem
     promoted = amem.promote_observations()
     return JSONResponse({"promoted": len(promoted), "items": [p["content"] for p in promoted]})
 
 
-@app.post("/api/arch/memory/decay")
+@app.post("/api/memory/decay")
 async def arch_memory_decay():
     """Run a decay pass now: stale low-importance memories are marked needs_confirmation (never deleted)."""
-    from ishti.arch2 import memory as amem
+    from ishti.memstore import memory as amem
     flagged = amem.decay()
     return JSONResponse({"flagged": len(flagged), "items": [r["content"] for r in flagged]})
 
@@ -1202,9 +1258,9 @@ async def websocket_endpoint(websocket: WebSocket):
     def push(m):
         loop.call_soon_threadsafe(_put, m)
 
-    events.subscribe(push)
-    recv_task = None
+    recv_task = get_task = None
     try:
+        events.subscribe(push)
         await _send_websocket(websocket, json.dumps({
             "type": "connected",
             "data": {"message": "ISHTI Neural Core Connected."}
@@ -1239,11 +1295,15 @@ async def websocket_endpoint(websocket: WebSocket):
     except (WebSocketDisconnect, RuntimeError):
         return
     finally:
-        if recv_task and not recv_task.done():
-            recv_task.cancel()
         events.unsubscribe(push)
         if websocket in active_websockets:
             active_websockets.remove(websocket)
+        tasks = [task for task in (recv_task, get_task) if task is not None]
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
 
 
@@ -1829,7 +1889,7 @@ async def learning_ask():
 async def memory_people(limit: int = 200):
     """Person records with relationship + confidence + needs_confirmation (C2/C5)."""
     try:
-        from ishti.arch2 import people
+        from ishti.memstore import people
         return {"people": people.list_people(limit)}
     except Exception as exc:
         return _learning_fail(exc)
@@ -1860,7 +1920,7 @@ async def memory_graph(person: str = "", limit: int = 60):
 async def memory_conflicts(limit: int = 50):
     """Contradiction records (D5) + the deletion audit log (H2: that a forget happened)."""
     try:
-        from ishti.arch2 import memory
+        from ishti.memstore import memory
         return {"conflicts": memory.conflicts(limit), "forget_audit": memory.forget_audit_log(limit)}
     except Exception as exc:
         return _learning_fail(exc)
@@ -1874,7 +1934,7 @@ async def memory_conflict_resolve(conflict_id: int, req: Request):
         keep = str(body.get("keep", "new")).strip().lower()
         if keep not in ("new", "old"):
             raise ValueError("keep must be 'new' or 'old'")
-        from ishti.arch2 import memory
+        from ishti.memstore import memory
         return {"resolved": bool(memory.resolve_conflict(conflict_id, keep=keep,
                                                          note=str(body.get("note", ""))[:200]))}
     except Exception as exc:
@@ -1885,7 +1945,7 @@ async def memory_conflict_resolve(conflict_id: int, req: Request):
 async def memory_person_confirm(name: str):
     """HITL: the owner confirms who this person is (clears needs_confirmation)."""
     try:
-        from ishti.arch2 import people
+        from ishti.memstore import people
         return {"confirmed": bool(people.confirm(name))}
     except Exception as exc:
         return _learning_fail(exc)
@@ -1899,7 +1959,7 @@ async def memory_person_forget(name: str, req: Request):
         body = await _learning_body(req)
         if not _learning_bool(body.get("confirm"), False):
             raise ValueError("this permanently deletes data - send confirm=true")
-        from ishti.arch2 import memory
+        from ishti.memstore import memory
         res = memory.forget_hard(name)
         return {"forgotten": True, "memories": res["memories"], "entities": res["entities"],
                 "edges": res["edges"], "audit_id": res["audit_id"]}
@@ -1933,7 +1993,7 @@ async def memory_backup():
     """Consistent online backups of both memory stores (A3)."""
     try:
         from ishti.core import vault
-        from ishti.arch2 import memory
+        from ishti.memstore import memory
         from ishti import rgraph
         return {"backups": [vault.backup(memory.db_path()), vault.backup(rgraph.DB_PATH)]}
     except Exception as exc:
@@ -1961,7 +2021,7 @@ async def memory_training_dry_run():
         return _learning_fail(exc)
 
 
-# ---- Prompt 3: skills registry, multi-agent, tasks, telemetry, leads, flowise ---------------
+# ---- Skills registry, tasks, telemetry, leads ---------------
 p3_api = APIRouter()
 
 
@@ -1984,26 +2044,11 @@ async def skill_set_enabled(name: str, req: Request):
     """Enable/disable one skill (?domain=1 for a whole domain)."""
     try:
         body = await _learning_body(req)
-        from ishti.skills import registry as REG, load_skills
-        REG.reset_cache()
+        from ishti.skills import registry as REG
         return REG.set_enabled(name, _learning_bool(body.get("enabled"), True),
                                is_domain=_learning_bool(body.get("domain"), False))
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=400)
-
-
-@p3_api.get("/api/agents")
-async def agents_overview():
-    """Agent roster + live performance (C2/C8)."""
-    try:
-        import ishti.agents as A
-        from ishti import runs
-        roster = [{"id": k, "goal": v["goal"], "skills": v["skills"],
-                   "state": runs.AGENT_STATE.get(k, {}).get("state", "idle"),
-                   "detail": runs.AGENT_STATE.get(k, {}).get("detail", "")} for k, v in A.AGENTS.items()]
-        return {"agents": roster, "perf": A.perf(), "budget": A._budget()}  # a LIST: the contract and both panels expect it
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
 
@@ -2089,18 +2134,7 @@ async def leads_export(req: Request):
         return JSONResponse({"error": str(exc)}, status_code=400)
 
 
-@p3_api.get("/api/flowise/flows")
-async def flowise_flows():
-    """E1: configured? + the chatflows available for intent binding."""
-    try:
-        from ishti import flowise_client as FC
-        ok, detail = FC.health()
-        return {"configured": FC.configured(), "health": detail, "flows": FC.list_flows()}
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=400)
-
-
-app.include_router(p3_api)  # /api/skills/* /api/agents /api/tasks /api/metrics /api/telemetry/* /api/eval /api/leads /api/flowise
+app.include_router(p3_api)  # /api/skills/* /api/tasks /api/metrics /api/telemetry/* /api/eval /api/leads
 app.include_router(learning_api)  # /api/learning/* + /api/memory/* - learning & memory dashboards
 
 from ishti import files_api  # /api/upload, /api/reveal
@@ -2108,6 +2142,17 @@ files_api.attach(app)
 
 # ---------------------------------------------------------------- Media Vault & CRM Endpoints
 _VAULT_APPROVALS = {}
+_VAULT_APPROVALS_LOCK = threading.RLock()
+_VAULT_APPROVAL_MAX = 256
+
+
+def _vault_sweep(now):
+    # Exact expiry is invalid. Bound live approvals as well as expired ones (fail closed).
+    for token, row in list(_VAULT_APPROVALS.items()):
+        if row["expires"] <= now:
+            _VAULT_APPROVALS.pop(token, None)
+    while len(_VAULT_APPROVALS) >= _VAULT_APPROVAL_MAX:
+        _VAULT_APPROVALS.pop(next(iter(_VAULT_APPROVALS)))
 
 
 def _vault_target(body):
@@ -2117,13 +2162,19 @@ def _vault_target(body):
 
 def _vault_prepare(target):
     token = secrets.token_urlsafe(24)
-    _VAULT_APPROVALS[token] = {"target": target, "expires": time.monotonic() + 120.0}
+    with _VAULT_APPROVALS_LOCK:
+        now = time.monotonic()
+        _vault_sweep(now)
+        _VAULT_APPROVALS[token] = {"target": target, "expires": now + 120.0}
     return {"approval_token": token, "target": target, "expires_in_s": 120}
 
 
 def _vault_consume(target, token):
-    row = _VAULT_APPROVALS.pop(str(token or ""), None)
-    if not row or row["target"] != target or row["expires"] < time.monotonic():
+    with _VAULT_APPROVALS_LOCK:
+        now = time.monotonic()
+        row = _VAULT_APPROVALS.pop(str(token or ""), None)
+        _vault_sweep(now)
+    if not row or row["target"] != target or row["expires"] <= now:
         return False
     return True
 
@@ -2274,6 +2325,15 @@ lifecycle_api.attach(app)
 
 from ishti import privacy_api  # noqa: E402  /api/privacy: outbound ledger + Internet switch + egress guard (docs/SAFETY.md)
 privacy_api.attach(app)
+
+from ishti import version as product_version  # noqa: E402  /api/version: version + source revision (ishti/version.py)
+
+
+@app.get("/api/version")
+async def get_version():
+    """The product version and the source hash this process was started from. No machine paths leave here."""
+    return product_version.info()
+
 
 from ishti.channels import api as remote_api  # noqa: E402  /api/remote/* + channel boot/stop (docs/API_CONTRACT.md §11)
 remote_api.attach(app)

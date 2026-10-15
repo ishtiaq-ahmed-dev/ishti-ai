@@ -67,7 +67,7 @@ def bench_skills_load(n=3):
 def bench_route(n=300):
     """router.route() on a rule-matched text with the real skill table (manifest statuses honoured)."""
     from ishti.skills import load_skills
-    from ishti.router import route
+    from ishti.tool_routing import route
     skills = load_skills()
     text = "what's the weather in peshawar tomorrow"  # a rule-matched request on the real table
     return timed(lambda: route(text, skills), n), len(skills)

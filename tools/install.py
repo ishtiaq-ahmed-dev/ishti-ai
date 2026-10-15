@@ -37,7 +37,42 @@ MIN_OLLAMA = (0, 34, 2)       # models_ladder.yaml: the planner's architecture n
 MIN_FREE_GB = 25              # README: ~25 GB free (packages ~8 GB + models ~12 GB + room to breathe)
 WHISPER_GB = 1.6              # tests/download_whisper_turbo.py: model.bin is about 1.6 GB
 YES = False
-TOTAL_STEPS = 8
+TOTAL_STEPS = 9
+INSTALL_MODE = "local"
+WITH_VOICE = False
+
+
+def configure_install(args):
+    """Choose before package/model downloads; stdlib only, never stores a key."""
+    global REQS, INSTALL_MODE, WITH_VOICE
+    path = os.path.join(ROOT, "data", "setup.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            saved = json.load(f)
+    except (OSError, ValueError):
+        saved = {}
+    mode = args.provider or os.environ.get("ISHTI_LLM_PROVIDER") or saved.get("provider")
+    if mode not in ("local", "api"):
+        if not args.yes and not args.check and sys.stdin.isatty():
+            answer = input("  Model mode: 1 Local (NVIDIA/models), 2 Cloud API (your key, no GPU) [1]: ").strip()
+            mode = "api" if answer == "2" else "local"
+        else:
+            mode = config().get("llm", {}).get("provider", "local")
+    INSTALL_MODE = mode
+    WITH_VOICE = args.voice
+    REQS = os.path.join(ROOT, "requirements-api.txt" if mode == "api" else "requirements.txt")
+    if args.check:
+        return
+    cfg = config().get("llm", {}).get("api", {})
+    choice = {"provider": mode, "saved_at": time.time()}
+    if mode == "api":
+        choice.update(api_provider=args.api_provider or saved.get("api_provider") or cfg.get("provider", "openai"),
+                      model=args.model or saved.get("model") or cfg.get("model", ""))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(choice, f, indent=2)
+    os.replace(path + ".tmp", path)
+    say(f"  Selected {mode.upper()} mode; voice downloads {'enabled' if WITH_VOICE else 'optional, skipped'}.")
 
 for _s in (sys.stdout, sys.stderr):
     try:
@@ -184,7 +219,7 @@ def installed_dists():
 def missing_packages():
     have = installed_dists()
     miss = [n for n, _ in requirement_pins() if norm(n) not in have]
-    if "chatterbox_tts" not in have:     # installed in its own step (--no-deps), see requirements.txt
+    if INSTALL_MODE == "local" and WITH_VOICE and "chatterbox_tts" not in have:     # installed in its own step (--no-deps), see requirements.txt
         miss.append("chatterbox-tts")
     return miss
 
@@ -342,24 +377,25 @@ def check():
         row(not miss, "program parts installed" if not miss else f"{len(miss)} program parts missing, for example: {', '.join(miss[:4])}")
         row(os.path.isfile(STAMP) and open(STAMP).read().strip() == requirements_hash(),
             "program parts match requirements.txt", required=False)
-    exe = ollama_exe()
-    ver = ollama_version(exe) if exe else None
-    row(bool(exe), "Ollama is installed" if exe else "Ollama is not installed (https://ollama.com/download)")
-    if exe and ver:
-        row(ver >= MIN_OLLAMA, f"Ollama version {'.'.join(map(str, ver))}" + ("" if ver >= MIN_OLLAMA else
-            f" is too old, please update (need {'.'.join(map(str, MIN_OLLAMA))} or newer)"))
-    row(ollama_tags() is not None, "Ollama is running now (ISHTI starts it by itself when needed)", required=False)
-    try:
-        for role, n, _, _, _, have in model_plan(installed_models(), mem):
-            row(have, f"AI model for {role}: {n}" + ("" if have else " - not downloaded yet"))
-        v = config()["voice"]
-        kok = os.path.join(v["kokoro_dir"], v["kokoro_model"])
-        row(os.path.isfile(kok), "voice files (spoken answers)", required=False)
-        row(os.path.isdir(v["whisper_model"]), "speech recognition model (microphone)", required=False)
-        row(ROOT.lower() in json.dumps(config()).replace("\\\\", "\\").lower(), "settings point at this folder")
-    except Exception as exc:
-        log(traceback.format_exc())
-        row(False, f"could not read settings or models ({exc})")
+    if INSTALL_MODE == "local":
+        exe = ollama_exe()
+        ver = ollama_version(exe) if exe else None
+        row(bool(exe), "Ollama is installed" if exe else "Ollama is not installed (https://ollama.com/download)")
+        if exe and ver:
+            row(ver >= MIN_OLLAMA, f"Ollama version {'.'.join(map(str, ver))}" + ("" if ver >= MIN_OLLAMA else
+                f" is too old, please update (need {'.'.join(map(str, MIN_OLLAMA))} or newer)"))
+        row(ollama_tags() is not None, "Ollama is running now (ISHTI starts it by itself when needed)", required=False)
+        try:
+            for role, n, _, _, _, have in model_plan(installed_models(), mem):
+                row(have, f"AI model for {role}: {n}" + ("" if have else " - not downloaded yet"))
+            v = config()["voice"]
+            kok = os.path.join(v["kokoro_dir"], v["kokoro_model"])
+            row(os.path.isfile(kok), "voice files (spoken answers)", required=False)
+            row(os.path.isdir(v["whisper_model"]), "speech recognition model (microphone)", required=False)
+            row(ROOT.lower() in json.dumps(config()).replace("\\\\", "\\").lower(), "settings point at this folder")
+        except Exception as exc:
+            log(traceback.format_exc())
+            row(False, f"could not read settings or models ({exc})")
     row(os.path.isfile(os.path.join(desktop_dir(), "ISHTI.lnk")), "ISHTI icon on the desktop")
     say("\nAll good - ISHTI is ready." if not problems else
         f"\n{problems} thing(s) need attention. Double-click install.bat to fix them (it is safe to run again).")
@@ -368,7 +404,7 @@ def check():
 
 # ----------------------------------------------------------------------------- phase 1
 def phase1():
-    say("ISHTI setup - this takes a while the first time (about 20-40 minutes, mostly downloading).")
+    say("ISHTI setup - installing the selected components; Local mode also downloads models.")
     say("You can leave it running. It is safe to close this window and run install.bat again later.\n")
     log(f"python {sys.version}; root {ROOT}")
 
@@ -388,16 +424,20 @@ def phase1():
         return 1
     say("  Dashboard files: OK")
     free = free_gb()
-    if free < MIN_FREE_GB and not os.path.isfile(STAMP):
-        say(f"  Only {free:.0f} GB free on this drive; ISHTI needs about {MIN_FREE_GB} GB (programs plus AI models).")
+    required_gb = MIN_FREE_GB if INSTALL_MODE == "local" else 5
+    if free < required_gb and not os.path.isfile(STAMP):
+        say(f"  Only {free:.0f} GB free on this drive; ISHTI needs about {required_gb} GB (programs plus AI models).")
         if not ask("  Continue anyway?", default=False):
             say("  Free some space (or move this folder to a bigger drive) and run install.bat again.")
             return 1
     else:
         say(f"  Free disk space: {free:.0f} GB: OK")
-    name, mem = gpu()
-    say(f"  Graphics card: {name} ({mem / 1024:.0f} GB): OK" if name else
-        "  No NVIDIA graphics card found. ISHTI will still install, but it will be very slow without one.")
+    if INSTALL_MODE == "local":
+        name, mem = gpu()
+        say(f"  Graphics card: {name} ({mem / 1024:.0f} GB): OK" if name else
+            "  No NVIDIA graphics card found. Local inference requires supported hardware; choose API mode for this PC.")
+    else:
+        say("  API mode: no NVIDIA graphics card is required.")
     if not webview2_installed():
         say("  Microsoft Edge WebView2 (draws the ISHTI window) is missing.")
         if ask("  Install it now with winget (small download)?"):
@@ -417,7 +457,7 @@ def phase1():
             return 1
         say("  Created.")
 
-    step(3, "Installing ISHTI's program parts (about 5 GB download, the longest step)")
+    step(3, "Installing the selected ISHTI components")
     if os.path.isfile(STAMP) and open(STAMP).read().strip() == requirements_hash() and not missing_packages():
         say("  Already installed.")
     else:
@@ -430,7 +470,7 @@ def phase1():
             say("  The programs could not be installed. Please check your internet connection and run install.bat again")
             say("  (nothing is lost: it continues where it stopped). Details: install.log")
             return 1
-        if "chatterbox_tts" not in installed_dists():     # own-voice feature; --no-deps on purpose (see requirements.txt)
+        if INSTALL_MODE == "local" and WITH_VOICE and "chatterbox_tts" not in installed_dists():     # own-voice feature; --no-deps on purpose (see requirements.txt)
             if pip_install(["--no-deps", "chatterbox-tts==0.1.7"], "own-voice add-on") != 0:
                 say("  (The optional 'speak in my own voice' add-on could not be installed. Everything else will work.)")
         with open(STAMP, "w") as f:
@@ -441,7 +481,8 @@ def phase1():
     fix_config_paths()
 
     # phase 2 needs the venv's packages (requests, ishti.manage, win32com)
-    return subprocess.call([VPY, os.path.abspath(__file__), "--finish"] + (["--yes"] if YES else []))
+    return subprocess.call([VPY, os.path.abspath(__file__), "--finish", "--provider", INSTALL_MODE]
+                           + (["--voice"] if WITH_VOICE else []) + (["--yes"] if YES else []))
 
 
 def pip_install(args, label):
@@ -520,38 +561,43 @@ def phase2():
     from ishti import manage    # the same download code the Settings page uses
     log("phase 2")
 
-    step(5, "Ollama (runs the AI models on your PC)")
-    exe = ollama_exe()
-    while not exe:
-        say("  Ollama is not installed yet. It is a free program that runs the AI models on your own PC.")
-        say("  1. Open https://ollama.com/download  2. Download and run the Windows installer  3. Come back to this window.")
-        if YES or not sys.stdin.isatty():
-            return 1
-        if input("  Press Enter when Ollama is installed (or type Q and Enter to stop): ").strip().lower() == "q":
-            say("  Stopped. Run install.bat again after installing Ollama.")
-            return 1
+    if INSTALL_MODE == "local":
+        step(5, "Ollama (runs the AI models on your PC)")
         exe = ollama_exe()
-    ver = ollama_version(exe)
-    while ver and ver < MIN_OLLAMA:
-        say(f"  Your Ollama ({'.'.join(map(str, ver))}) is too old for ISHTI's AI model. Please update it from https://ollama.com/download")
-        if YES or not sys.stdin.isatty():
+        while not exe:
+            say("  Ollama is not installed yet. It is a free program that runs the AI models on your own PC.")
+            say("  1. Open https://ollama.com/download  2. Download and run the Windows installer  3. Come back to this window.")
+            if YES or not sys.stdin.isatty():
+                return 1
+            if input("  Press Enter when Ollama is installed (or type Q and Enter to stop): ").strip().lower() == "q":
+                say("  Stopped. Run install.bat again after installing Ollama.")
+                return 1
+            exe = ollama_exe()
+        ver = ollama_version(exe)
+        while ver and ver < MIN_OLLAMA:
+            say(f"  Your Ollama ({'.'.join(map(str, ver))}) is too old for ISHTI's AI model. Please update it from https://ollama.com/download")
+            if YES or not sys.stdin.isatty():
+                return 1
+            wait_key("  Press Enter when it is updated: ")
+            ver = ollama_version(ollama_exe())
+        say(f"  Ollama {'.'.join(map(str, ver)) if ver else ''}: OK")
+        ok, ours = start_ollama()
+        if not ok:
+            say("  Ollama would not start. Open the Ollama app from the Start menu once, then run install.bat again.")
             return 1
-        wait_key("  Press Enter when it is updated: ")
-        ver = ollama_version(ollama_exe())
-    say(f"  Ollama {'.'.join(map(str, ver)) if ver else ''}: OK")
-    ok, ours = start_ollama()
-    if not ok:
-        say("  Ollama would not start. Open the Ollama app from the Start menu once, then run install.bat again.")
-        return 1
-    try:
-        step(6, "Downloading the AI models ISHTI needs on its first run")
-        if not models_step(manage):
-            return 1
-        step(7, "Voice files (spoken answers and the microphone)")
-        voice_step(manage)
-    finally:
-        if ours:
-            ours.terminate()    # we started it for the install only; ISHTI starts and stops its own when it runs
+        try:
+            step(6, "Downloading the AI models ISHTI needs on its first run")
+            if not models_step(manage):
+                return 1
+            step(7, "Voice files (spoken answers and the microphone)")
+            if WITH_VOICE:
+                voice_step(manage)
+        finally:
+            if ours:
+                ours.terminate()    # we started it for the install only; ISHTI starts and stops its own when it runs
+
+    else:
+        say("  API mode: Ollama, CUDA models and voice downloads are not needed.")
 
     step(8, "Putting the ISHTI icon on your desktop")
     code, out = run_logged([VPY, os.path.join(ROOT, "desktop", "create_shortcut.py")], cwd=ROOT)
@@ -667,8 +713,13 @@ def main():
     ap.add_argument("--check", action="store_true", help="read-only report; exit 0 if everything is in place, else 1")
     ap.add_argument("--yes", action="store_true", help="answer every question with its default")
     ap.add_argument("--finish", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--provider", choices=("local", "api"), help="choose before installing components")
+    ap.add_argument("--api-provider", choices=("openai", "anthropic", "gemini", "openrouter"))
+    ap.add_argument("--model", help="API model chosen by the owner")
+    ap.add_argument("--voice", action="store_true", help="download optional voice assets in Local mode")
     a = ap.parse_args()
     YES = a.yes
+    configure_install(a)
     if a.check:
         global LOG
         LOG = None

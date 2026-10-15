@@ -53,18 +53,33 @@ def create_searxng() -> bool:
         venv/Scripts/python -c "from tools.web.search import create_searxng; print(create_searxng())"
     """
     import secrets
+    inspected = _docker("inspect", "--format", "{{.State.Running}}", SEARXNG_CONTAINER)
+    if inspected.returncode == 0:
+        return inspected.stdout.strip() == "true" or _docker("start", SEARXNG_CONTAINER).returncode == 0
+    if "no such" not in (inspected.stderr or "").lower():
+        return False
     secret_path = os.path.join(ROOT_DIR, "data", "searxng_secret")
     os.makedirs(os.path.dirname(secret_path), exist_ok=True)
     if not os.path.isfile(secret_path):
-        with open(secret_path, "w", encoding="utf-8") as f:
-            f.write(secrets.token_hex(32))
+        try:
+            with open(secret_path, "x", encoding="utf-8") as f:
+                f.write(secrets.token_hex(32))
+        except FileExistsError:
+            # Another process created the persistent secret; use its bytes.
+            time.sleep(0.05)
     with open(secret_path, encoding="utf-8") as f:
         secret = f.read().strip()
+    if not re.fullmatch(r"[0-9a-f]{64}", secret):
+        return False
     port = SearxngSearchProvider.URL.rsplit(":", 1)[-1]
     r = _docker("run", "-d", "--name", SEARXNG_CONTAINER, "--restart", "unless-stopped",
                 "-p", f"127.0.0.1:{port}:8080", "-v", f"{os.path.join(ROOT_DIR, 'ishti', 'searxng')}:/etc/searxng",
                 "-e", f"SEARXNG_SECRET={secret}", "searxng/searxng", timeout=900)
-    return r.returncode == 0
+    if r.returncode == 0:
+        return True
+    # Another process may have atomically claimed the name while docker run was in flight.
+    check = _docker("inspect", "--format", "{{.State.Running}}", SEARXNG_CONTAINER)
+    return check.returncode == 0 and (check.stdout.strip() == "true" or _docker("start", SEARXNG_CONTAINER).returncode == 0)
 
 
 def ensure_searxng(wait_s: float = 90, create: bool = False) -> bool:

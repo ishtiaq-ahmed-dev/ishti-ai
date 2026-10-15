@@ -4,7 +4,13 @@
   python tools/audit_log.py verify                                                  recompute the chain (exit 1 on any break)
 
 Each line is {"i","ts","actor","event","refs","prev","hash"}; hash = sha256(prev + canonical JSON of the other fields),
-so editing, deleting or reordering any earlier line breaks every hash after it. tools/verify_audit.py is the same check."""
+so editing, deleting or reordering any earlier line breaks every hash after it. tools/verify_audit.py is the same check.
+
+CAUTION: the store path below points into `docs/build/`, which this tree has retired. `add()` calls
+`makedirs`, so the directory is recreated on first write and the log reappears as untracked files
+rather than erroring. This tool and its store belong to the Prompt 1-7 build workflow, which is over:
+repoint the path or retire the tool deliberately (see docs/OWNER_LOOP.md, "Open, unverified").
+"""
 import hashlib
 import json
 import os

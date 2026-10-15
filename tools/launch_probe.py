@@ -86,13 +86,7 @@ def main(argv):
         time.sleep(0.1)
     out["launcher_marks"] = {k: round(v - t0, 2) for k, v in timeline.read().items()}
     time.sleep(1.0)
-    w = main_window()
-    if w and "--shot" in argv:
-        import win32gui
-        from PIL import ImageGrab
-        win32gui.SetForegroundWindow(w["hwnd"])
-        time.sleep(0.5)
-        ImageGrab.grab(win32gui.GetWindowRect(w["hwnd"])).save(argv[argv.index("--shot") + 1])
+    w = main_window()  # timings only: no screenshot is taken
     print(json.dumps(out))
     if "--keep" not in argv:
         try:

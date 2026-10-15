@@ -49,7 +49,8 @@ def main(tag):
     n = len(rows) // 4
     first, last = rows[:n], rows[-n:]
     dur = round(rows[-1]["ts"] - rows[0]["ts"], 0)
-    out = {"tag": tag, "duration_s": dur, "samples": len(rows)}
+    out = {"tag": tag, "duration_s": dur, "samples": len(rows),
+           "attribution": "ram_used_mb and procs_total are SYSTEM-wide, not ISHTI RSS. They cannot establish a process leak."}
     for k, name in (("vram", "vram_used_mb"), ("ram", "ram_used_mb"), ("procs", "procs_total")):
         a, b = avg(q(first, k)), avg(q(last, k))
         out[name] = {"first_quarter_avg": a, "last_quarter_avg": b,

@@ -254,7 +254,7 @@ def clean():
     f = facts_mod.Facts()
     print("  [+] Initialized data/ishti.db (tables: facts, route_log)")
 
-    import ishti.arch2.memory as arch2_mem
+    import ishti.memstore.memory as arch2_mem
     arch2_mem._conn = None
     c = arch2_mem.conn()
     print("  [+] Initialized data/arch2_memory.db (tables: memories, entities, observations)")
