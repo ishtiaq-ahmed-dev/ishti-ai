@@ -17,4 +17,4 @@
 FROM maternion/spark-x2.5:4b-f16
 PARAMETER num_ctx 8192
 # keep_alive is per-request, not a Modelfile parameter: ISHTI's models.used() re-posts
-# keep_alive -1 for the pinned planner role (MODEL_DECISIONS.md).
+# keep_alive -1 for the pinned planner role.

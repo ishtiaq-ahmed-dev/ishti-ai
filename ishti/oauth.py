@@ -512,7 +512,11 @@ def disconnect(service: str) -> str:
     with _service_lock(service):
         data = _load(service)
         try:
-            os.remove(_path(service))
+            # Token lifecycle is a first-party connector operation. Limit the
+            # trusted write context to this exact validated service token file.
+            from ishti import audit
+            with audit.context(skill=None):
+                os.remove(_path(service))
         except FileNotFoundError:
             swallowed('ishti/oauth.py:disconnect:508')
     revoked = False

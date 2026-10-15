@@ -4,7 +4,7 @@ ISHTI already CREATES skills (skillsmith: coder writes manifest+skill.py, scanne
 self-checked) and RECORDS usage (facts.log_route). What this module adds is the full LIFECYCLE
 around that, so nothing is generated-and-forgotten:
 
-  discovery    scan route_log + NEEDS.md for recurring "no skill handled this" requests
+  discovery    scan the route log (ROUTE_DB) for recurring "no skill handled this" requests
   practice     run a candidate skill's self-check AND its labelled routing cases; record the score
   distill      write/refresh the skill's own memory file (skills/<name>/.memory.md) with
                lessons learned from corrections and failures
