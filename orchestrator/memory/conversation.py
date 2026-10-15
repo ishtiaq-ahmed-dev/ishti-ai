@@ -106,7 +106,8 @@ class ConversationManager:
 
         # Auto-update session title if it's the first user message
             if role == "user" and session.get("title") in ["New Conversation", "New Session", "Untitled"]:
-                clean_title = re.sub(r"[^a-zA-Z0-9\s]+", "", content).strip()
+                # \w+ keeps non-Latin titles ("نامہ" etc.) instead of blanking them like [^a-zA-Z0-9] did
+                clean_title = " ".join(re.findall(r"\w+", str(content or ""), flags=re.UNICODE))
                 session["title"] = (clean_title[:38] + "...") if len(clean_title) > 38 else (clean_title or "Conversation")
 
             self._save_session(session_id, session)
@@ -248,12 +249,16 @@ class ConversationManager:
 
     def rename_session(self, session_id: str, title: str) -> Optional[str]:
         """Set a chat's title (one line, max 80 chars). Returns the saved title, or None if the chat is gone."""
-        session = self.load_session(session_id)
+        sid = str(session_id or "")
         clean = re.sub(r"\s+", " ", str(title or "")).strip()[:80]
-        if not session or not clean or "/" in session_id or "\\" in session_id:
+        if not sid or not clean or "/" in sid or "\\" in sid:
             return None
-        session["title"] = clean
-        self._save_session(session_id, session)
+        with self._write_lock:  # without the lock a concurrent add_message's whole session gets overwritten
+            session = self.load_session(sid)
+            if not session:
+                return None
+            session["title"] = clean
+            self._save_session(sid, session)
         return clean
 
     def trash(self, ids) -> str:

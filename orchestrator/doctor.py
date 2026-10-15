@@ -170,8 +170,8 @@ class IshtiDoctor:
     def check_models(self):
         print("\n--- [4] Local Models & Reasoning ---")
         router = ModelRouter()
-        # The configured name may be stale (NEEDS.md N6: config.json still names a 19 GB MoE that is
-        # not installed). Ping the model ISHTI would actually serve: the first installed ladder rung.
+        # The configured name may be stale (config.json has named a 19 GB MoE that is not installed).
+        # Ping the model ISHTI would actually serve: the first installed ladder rung.
         primary = router.get_model("primary")
         installed = router.get_installed_models()
         if primary not in installed:
@@ -345,7 +345,7 @@ class IshtiDoctor:
             self._log_result("Services", "ISHTI Web HUD Server", False, "Offline (will auto-launch on startup)", is_warning=True)
 
     def check_end_to_end_capabilities(self):
-        """The real request path: dispatcher -> router -> skills, against a throwaway memory."""
+        """The real request path: dispatcher -> tool routing -> skills, against a throwaway memory."""
         print("\n--- [11] ISHTI core (dispatcher, routing, skills) ---")
         import tempfile
         from ishti import CONFIG
@@ -357,13 +357,17 @@ class IshtiDoctor:
             with scratch_memory():
                 import ishti.facts as facts
                 facts._facts = None
-                from ishti import dispatcher, router
+                from ishti import dispatcher
+                from ishti import tool_routing as router  # ishti/router.py was removed; this replaced it
                 broken = {n: s.problem for n, s in dispatcher.SKILLS.items() if s.status == "broken"}
                 self._log_result("Core", "Skills loaded", not broken,
                                  f"{len(dispatcher.SKILLS)} skills" + (f", broken: {broken}" if broken else ""))
                 d = router.route("tell me a joke", dispatcher.SKILLS)
-                self._log_result("Core", "Laya router", d["source"] == "laya" and not router.laya_error,
-                                 router.laya_error or f"{d['skill']} in {d['ms']} ms", is_warning=True)
+                # Deterministic by construction: ishti.tool_routing makes no model call, so there is no
+                # checkpoint to be missing and no router error to report. The one thing worth flagging is
+                # a request no rule claimed - source "default" means the shortlist fell through to chat.
+                self._log_result("Core", "Rule routing", d["source"] != "default",
+                                 f"{d['skill']} via {d['source']}", is_warning=True)
                 for text, skill, expect in [
                     ("Project DoctorTest is on D: at D:\\Projects\\DoctorTest", "memory", "Saved"),
                     ("where is the doctortest project?", "memory", "D:\\Projects\\DoctorTest"),
