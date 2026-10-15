@@ -411,10 +411,11 @@
   <script>
     const startTime = performance.now();
     const MIN_DISPLAY_MS = 1400; // Smooth ~1.4s display, comfortable animated intro
+    const POLL_MS = 400;         // how often the bridge is asked for the boot state
     let isCompleted = false;
     let pollInterval = null;
-    let ws = null;
     let lastStage = "";
+    let gotState = false;        // the backend answered at least once (its boot state drives everything after that)
 
     const stageEl = document.getElementById("stage-text");
     const percentEl = document.getElementById("progress-percent");
@@ -501,38 +502,26 @@
       }, remaining);
     }
 
+    // This page is loaded from file://, and the backend refuses a null origin (403 "foreign origin"; a
+    // cross-origin fetch would be blocked anyway). Python is not subject to either, so the progress comes
+    // through the pywebview bridge (MainApi.boot_state) instead of fetching the backend directly.
     async function checkReady() {
+      const api = window.pywebview && window.pywebview.api;
+      if (!api || !api.boot_state) return; // the bridge arrives with pywebviewready
       try {
-        const res = await fetch("http://127.0.0.1:8888/api/ready", { cache: "no-store" });
-        if (res.ok) {
-          const data = await res.json();
+        const data = await api.boot_state();
+        if (data && data.stages) {
+          gotState = true;
+          if (!data.error) hideError();
           updateProgress(data.stage, data.progress, data.error, data.stages, data.ready);
+          return;
         }
       } catch (err) {
-        const elapsed = (performance.now() - startTime) / 1000;
-        if (elapsed > 40) {
-          showError("Still starting", "ISHTI is taking longer than usual. You can wait a bit longer, or check the log.");
-        }
+        /* a bridge hiccup is not worth an error card on its own */
       }
-    }
-
-    function connectWebSocket() {
-      try {
-        ws = new WebSocket("ws://127.0.0.1:8888/ws/events");
-        ws.onmessage = (event) => {
-          try {
-            const payload = JSON.parse(event.data);
-            if (payload.type === "boot_stage") {
-              const d = payload.data || {};
-              updateProgress(d.label || d.stage, d.progress, d.error, null, d.done && d.stage === "ready");
-            } else if (payload.type === "error") {
-              const d = payload.data || {};
-              updateProgress(d.stage, 0, d.message);
-            }
-          } catch (e) {}
-        };
-        ws.onerror = () => {};
-      } catch (e) {}
+      if (!gotState && (performance.now() - startTime) / 1000 > 40) {
+        showError("Still starting", "ISHTI is taking longer than usual. You can wait a bit longer, or check the log.");
+      }
     }
 
     function viewLog() {
@@ -545,15 +534,16 @@
 
     function retryBoot() {
       hideError();
-      fetch("http://127.0.0.1:8888/api/ready/retry", { method: "POST" }).catch(() => {});
+      // Through the bridge only: the same POST from this file:// page is refused (403 foreign origin).
       if (window.pywebview && window.pywebview.api && window.pywebview.api.retry_boot) {
         window.pywebview.api.retry_boot();
       }
     }
 
-    // Startup bootstrap
-    connectWebSocket();
-    pollInterval = setInterval(checkReady, 300);
+    // Startup bootstrap: the bridge is injected after load, so start asking when pywebview says it is ready
+    // (and once immediately, in case it already is).
+    window.addEventListener("pywebviewready", checkReady);
+    pollInterval = setInterval(checkReady, POLL_MS);
     checkReady();
   </script>
 </body>

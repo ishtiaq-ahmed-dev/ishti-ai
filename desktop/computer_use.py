@@ -33,11 +33,6 @@ except ImportError:
     pyautogui = None
 
 try:
-    from PIL import ImageGrab
-except ImportError:
-    ImageGrab = None
-
-try:
     import psutil
 except ImportError:
     psutil = None
@@ -178,55 +173,6 @@ class ComputerUseAgent:
         os.makedirs(self.data_dir, exist_ok=True)
 
     # -------------------------------------------------------------
-    # 1. SCREEN AWARENESS & SCREENSHOTS
-    # -------------------------------------------------------------
-    def capture_screen(self, filename: str = "desktop_state.png") -> str:
-        """Captures primary desktop screenshot and returns file path."""
-        out_path = os.path.join(self.data_dir, filename)
-
-        if ImageGrab is not None:
-            try:
-                screenshot = ImageGrab.grab()
-                screenshot.save(out_path)
-                print(f"[ComputerUse] Captured desktop screenshot: {out_path}")
-                return out_path
-            except Exception as e:
-                print(f"[ComputerUse] ImageGrab failed ({e}), trying PyAutoGUI...")
-
-        if pyautogui is not None:
-            try:
-                screenshot = pyautogui.screenshot()
-                screenshot.save(out_path)
-                return out_path
-            except Exception as e:
-                print(f"[ComputerUse] PyAutoGUI grab failed ({e}), trying PowerShell...")
-
-        try:
-            ps_script = f"""
-            Add-Type -AssemblyName System.Windows.Forms
-            Add-Type -AssemblyName System.Drawing
-            $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-            $bitmap = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height
-            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-            $graphics.CopyFromScreen($screen.X, $screen.Y, 0, 0, $bitmap.Size)
-            $bitmap.Save('{out_path}')
-            $graphics.Dispose()
-            $bitmap.Dispose()
-            """
-            subprocess.run(["powershell", "-Command", ps_script], check=True, timeout=5)
-            return out_path
-        except Exception as e:
-            print(f"[ComputerUse] PowerShell screen capture failed: {e}")
-            # If all else fails, create a placeholder status image
-            try:
-                from PIL import Image, ImageDraw
-                img = Image.new("RGB", (1280, 720), color=(15, 23, 42))
-                d = ImageDraw.Draw(img)
-                d.text((50, 50), f"ISHTI Desktop Monitor - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", fill=(56, 189, 248))
-                img.save(out_path)
-                return out_path
-            except Exception:
-                return out_path
 
     def get_screen_size(self) -> Tuple[int, int]:
         """Returns screen width and height."""
@@ -469,81 +415,6 @@ class ComputerUseAgent:
     # -------------------------------------------------------------
     # 4. MOUSE, KEYBOARD & HOTKEY AUTOMATION
     # -------------------------------------------------------------
-    def mouse_click(self, x: int, y: int, button: str = "left", clicks: int = 1) -> bool:
-        """Clicks at coordinates on screen."""
-        if pyautogui is None:
-            return False
-        try:
-            pyautogui.click(x=x, y=y, button=button, clicks=clicks)
-            return True
-        except Exception as e:
-            print(f"[ComputerUse] Mouse click failed: {e}")
-            return False
-
-    def mouse_move(self, x: int, y: int, duration: float = 0.2) -> bool:
-        """Smoothly moves mouse to coordinate."""
-        if pyautogui is None:
-            return False
-        try:
-            pyautogui.moveTo(x, y, duration=duration)
-            return True
-        except Exception as e:
-            print(f"[ComputerUse] Mouse move failed: {e}")
-            return False
-
-    def keyboard_type(self, text: str, interval: float = 0.01) -> bool:
-        """Types string text into current focused application."""
-        if pyautogui is None:
-            return False
-        try:
-            pyautogui.write(text, interval=interval)
-            return True
-        except Exception as e:
-            print(f"[ComputerUse] Keyboard typing failed: {e}")
-            return False
-
-    def keyboard_hotkey(self, *keys: str) -> bool:
-        """
-        Executes keyboard shortcut combination.
-        e.g. keyboard_hotkey('ctrl', 's') or keyboard_hotkey('alt', 'tab')
-        """
-        if pyautogui is None:
-            return False
-        try:
-            pyautogui.hotkey(*keys)
-            return True
-        except Exception as e:
-            print(f"[ComputerUse] Keyboard hotkey failed: {e}")
-            return False
-
-    def press_key(self, key: str) -> bool:
-        """Presses a single key (e.g. 'enter', 'esc', 'tab', 'backspace')."""
-        if pyautogui is None:
-            return False
-        try:
-            pyautogui.press(key)
-            return True
-        except Exception as e:
-            print(f"[ComputerUse] Key press failed: {e}")
-            return False
-
-    def mouse_drag(self, x: int, y: int, button: str = "left", duration: float = 0.5) -> bool:
-        """Drags mouse to coordinate across screens."""
-        if pyautogui is None:
-            return False
-        try:
-            pyautogui.dragTo(x, y, button=button, duration=duration)
-            return True
-        except Exception as e:
-            print(f"[ComputerUse] Mouse drag failed: {e}")
-            return False
-
-    def run_multi_screen_automation(self, objective: str, max_steps: int = 15, dry_run: bool = False) -> Dict[str, Any]:
-        """Runs the continuous Perceive-Plan-Act multi-screen visual OS automation loop."""
-        from ishti.automation.multi_screen_agent import get_multi_screen_agent
-        agent = get_multi_screen_agent(dry_run=dry_run)
-        return agent.run_loop(objective, max_steps=max_steps)
-
     # -------------------------------------------------------------
     # 5. WINDOW MANAGEMENT
     # -------------------------------------------------------------
@@ -653,7 +524,5 @@ if __name__ == "__main__":
     agent = ComputerUseAgent()
     print("Screen size:", agent.get_screen_size())
     print("Telemetry:", agent.get_system_telemetry())
-    shot = agent.capture_screen("test_shot.png")
-    print("Screenshot exists:", os.path.exists(shot))
     search = agent.search_pc("python", max_results=3)
     print(f"Found {len(search)} files matching 'python'")
