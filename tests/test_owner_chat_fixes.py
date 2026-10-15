@@ -1,6 +1,6 @@
 """Regressions from the owner's real chats: WhatsApp opens once and a new command is never read as a contact name, pronouns resolve
 to the last chat, spoken replies drop URLs and stay short, a hypothetical sum is arithmetic (not the expense log)."""
-from ishti import router
+from ishti import tool_routing as router
 from ishti.skills.calc import skill as calc
 from ishti.skills.whatsapp import skill as wa
 from ishti.talk import Sentences, speakable

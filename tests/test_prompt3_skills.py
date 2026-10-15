@@ -165,84 +165,6 @@ class _FakeSkill:
         return {"reply": self.answer, "sources": [{"id": 1, "url": "https://s.example", "title": "src"}]}
 
 
-def test_multiagent_end_to_end():
-    import ishti.agents as A
-    skills = {"web_search": _FakeSkill("The answer is 42, per source."),
-              "desktop": _FakeSkill("Screenshot taken."),
-              "chat": _FakeSkill("The synthesis is ready."),
-              "dev": _FakeSkill("Patch written.")}
-    # decomposition returns valid agent assignments (LLM or deterministic fallback)
-    subs = A.decompose("research GPU prices and take a screenshot of the dashboard", skills)
-    assert subs and all(s["agent"] in A.AGENTS for s in subs), subs
-    # C4 contract + fan-out: with a DETERMINISTIC decomposition (injected), the supervisor
-    # dispatches each subtask to its own agent
-    received = []
-    def spy_run(agent, task, sk, session, bb, budget, depth=0):
-        received.append((agent, task))
-        return {"reply": f"{agent} did: {task[:30]}", "sources": []}
-    real_run, real_decomp = A._run_agent, A.decompose
-    A._run_agent = spy_run
-    A.decompose = lambda request, sk: [
-        {"agent": "researcher", "task": "research GPU prices", "criteria": "prices found"},
-        {"agent": "pc_control", "task": "take a screenshot of the dashboard", "criteria": "screenshot taken"}]
-    try:
-        out = A.run("research GPU prices and take a screenshot of the dashboard",
-                    {"id": "masess", "trace": lambda **k: None}, skills)
-    finally:
-        A._run_agent, A.decompose = real_run, real_decomp
-    assert out["mode"] == "MULTI_AGENT" and out["reply"]
-    agents_used = {a for a, _t in received}
-    assert "researcher" in agents_used and "pc_control" in agents_used, received
-    # C6: a failing agent escalates with the exact reason — never a silent stop
-    fail_skills = {"web_search": _FakeSkill("", fail=True)}
-    r = A._run_agent("researcher", "find things", fail_skills,
-                     {"id": "fx", "trace": lambda **k: None}, {"entries": {}},
-                     {"max_iterations": 2, "timeout_s": 5, "max_tool_calls": 5, "max_total_tokens": 9999})
-    assert r.get("escalated") and "iteration limit" in r["reply"], r
-    # C8: performance tracked
-    assert A.perf()
-
-
-# ------------------------------------------------------------------ flowise (E1)
-def test_flowise_adapter_and_profile():
-    from ishti.core.settings import get_settings_service
-    import ishti.flowise_client as FC
-    # reset the precondition: another test in the full run may have set integrations.flowise_url
-    get_settings_service().update({"integrations": {"flowise_url": "", "flowise_flows": {}}})
-    assert FC.configured() is False
-    get_settings_service().update({"integrations": {
-        "flowise_url": "http://127.0.0.1:39999",
-        "flowise_flows": {"research gpus": "flow-research", "translate": "flow-tr"}}})
-    assert FC.configured()
-    assert FC.pick_flow("please research gpus now") == "flow-research"
-    assert FC.pick_flow("translate this") == "flow-tr"
-    assert FC.pick_flow("unrelated") == ""  # 2 flows bound: no blind default
-    # dead endpoint: breaker fallback, never raises
-    out = FC.run_flow("flow-research", "hi")
-    assert out.get("error") and out["reply"] == ""
-    ok, detail = FC.health()
-    assert ok is False and detail
-    # the dispatcher's flowise_flow path answers the bind-missing case without a server
-    from ishti.core.architectures import get_registry
-    reg = get_registry()
-    before = reg.active()
-    assert reg.set_active("flowise_flow", by="test", run_health_check=False).get("switched") is True
-    import ishti.dispatcher as D
-    saved = {k: getattr(D, k) for k in ("_remember", "_ftlog", "_learn", "_learn_turn", "_arch2_consolidate")}
-    for k in saved:
-        setattr(D, k, lambda *a, **k: None)
-    try:
-        res = D.handle("a request no flow is bound to", session_id="flowp3")
-        assert res["skill"] == "flowise" and ("no flow" in res["final_answer"].lower()
-                                              or "unreachable" in res["final_answer"].lower()
-                                              or "couldn't answer" in res["final_answer"].lower()), res["final_answer"][:160]
-    finally:
-        for k, fn in saved.items():
-            setattr(D, k, fn)
-        reg.set_active(before, by="test", run_health_check=False)
-
-
-# ------------------------------------------------------------------ find_leads (E4)
 def test_find_leads_pipeline_offline():
     import ishti.leads as L
     import ishti.skills.find_leads.skill as FL
@@ -304,7 +226,7 @@ def test_telemetry_metrics_and_eval():
                               if t["type"] in ("factcheck", "terminal_parse", "task")])
     assert res["passed"] == res["total"], res
     # agent perf + queue depth surface in metrics (H2)
-    assert "agents" in m and "queue" in m
+    assert "queue" in m
 
 
 # ------------------------------------------------------------------ F4: regressions
@@ -321,19 +243,6 @@ def test_f4_context_resolution_through_all_paths():
     out = QueryResolver().resolve("cheapest price?", st)
     assert not out.ambiguous, out
     assert "wh-1000xm5" in out.request.lower(), out.request
-    # multi-agent path: sub-agents receive the state summary (C4) — asserted with a spy
-    import ishti.agents as A
-    seen_tasks = []
-    real = A._run_agent
-    A._run_agent = lambda agent, task, sk, session, bb, budget, depth=0: (
-        seen_tasks.append((agent, task)), {"reply": "ok", "sources": []})[1]
-    skills = {"web_search": _FakeSkill("x"), "chat": _FakeSkill("y")}
-    try:
-        A.run("continue the sony research", {"id": sid, "trace": lambda **k: None}, skills)
-    finally:
-        A._run_agent = real
-    assert seen_tasks, "orchestrator must have dispatched at least one subtask"
-    # background path: task snapshot keeps its own topic (tested fully in its own test)
 
 
 if __name__ == "__main__":
@@ -341,10 +250,8 @@ if __name__ == "__main__":
     test_resilience_classification_retry_breakers()
     test_taskmgr_submit_cancel_pause_idempotency()
     test_background_task_keeps_own_topic()
-    test_multiagent_end_to_end()
-    test_flowise_adapter_and_profile()
     test_find_leads_pipeline_offline()
     test_terminal_sandbox()
     test_telemetry_metrics_and_eval()
     test_f4_context_resolution_through_all_paths()
-    print("[integration] prompt3 OK — registry, resilience, taskmgr, agents, flowise, leads, terminal, telemetry, F4")
+    print("[integration] prompt3 OK — registry, resilience, taskmgr, leads, terminal, telemetry, F4")

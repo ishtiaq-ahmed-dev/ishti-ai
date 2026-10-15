@@ -151,7 +151,7 @@ def enabled() -> bool:
     if os.environ.get("ISHTI_VAULT") == "0":
         return False  # test escape hatch: force-off wins over config
     try:
-        from ishti.arch2.memory import MEM
+        from ishti.memstore.memory import MEM
         return bool(MEM().get("encrypt_at_rest", False)) or os.environ.get("ISHTI_VAULT") == "1"
     except Exception:
         return os.environ.get("ISHTI_VAULT") == "1"
@@ -186,7 +186,7 @@ def _reencrypt(conn: sqlite3.Connection, spec: dict, direction: str) -> dict:
 
 def set_enabled(on: bool) -> dict:
     """Turn field encryption on (encrypt everything) or off (decrypt everything), in place."""
-    from ishti.arch2 import memory
+    from ishti.memstore import memory
     from ishti import rgraph
     out = {"vault": "on" if on else "off"}
     with _lock:
@@ -223,7 +223,7 @@ def export_all(out_path: str | None = None, include_private: bool = True) -> str
     """The owner's portable backup: one ZIP with decrypted JSON of both stores + a manifest.
     (Values are decrypted — the owner already has the key; this file is the sensitive one.)
     include_private=False drops kin/family facts for a shareable subset."""
-    from ishti.arch2 import memory
+    from ishti.memstore import memory
     from ishti import rgraph
     out = out_path or os.path.join(
         ROOT, "data", "backups", f"ishti-memory-export-{time.strftime('%Y%m%d_%H%M')}.zip")
@@ -264,7 +264,7 @@ def _looks_private(text: str) -> bool:
 def import_all(zip_path: str, replace: bool = False) -> dict:
     """Restore an export ZIP. replace=True empties the stores first; otherwise rows merge
     (existing ids win). Returns what landed."""
-    from ishti.arch2 import memory
+    from ishti.memstore import memory
     from ishti import rgraph
     counts = {"memories": 0, "entities": 0, "edges": 0}
     with zipfile.ZipFile(zip_path) as z:
@@ -353,7 +353,7 @@ if __name__ == "__main__":
     assert decrypt_text(tok) == "Ahmed is my brother"
     assert decrypt_text("plain") == "plain" and encrypt_text(tok) == tok  # idempotent, passthrough
     # real stores, round trip + search
-    import ishti.arch2.memory as M
+    import ishti.memstore.memory as M
     import ishti.rgraph as R
     tmp = tempfile.mkdtemp(prefix="ishti_vault_")
     M.db_path = lambda: os.path.join(tmp, "m.db")

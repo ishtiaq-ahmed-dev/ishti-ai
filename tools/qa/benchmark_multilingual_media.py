@@ -1,4 +1,4 @@
-"""Benchmark runner for the local synthetic media corpus (NEEDS.md Item 3).
+"""Benchmark runner for the local synthetic media corpus.
 
 Honest by construction: a metric is only reported as *measured* when a real
 media asset exists and the local model actually produced a hypothesis for it.

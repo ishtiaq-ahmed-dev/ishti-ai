@@ -102,7 +102,10 @@ def inspect_turn(request: str, reply: str, skill: str, dec: dict, session: dict,
         prev_user = None
         for m in reversed(history[:-1]):
             if m.get("role") == "user":
-                prev_user = m.get("content", "").strip()
+                content = m.get("content", "").strip()
+                if content == req_str:
+                    continue  # the live history already holds the current turn - look further back
+                prev_user = content
                 break
 
         if prev_user:

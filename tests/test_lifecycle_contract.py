@@ -100,6 +100,28 @@ def test_health(backend):
     assert check("health", d) == [] and d["ok"] is True and d["state"] == "ready"
 
 
+def test_version_matches_contract(backend):
+    """GET /api/version (ishti/version.py): the build this server is, and the sha256 of its source.
+
+    The hash is stamped, not compared against this process's own - the two would only have to agree if
+    nothing the run writes were inside the covered directories, which is not something this test can
+    promise. What it does check is that the endpoint reports a real version, a 64-hex digest and an
+    honest revision status, because a number that cannot name its build is not evidence."""
+    from ishti import version as product_version
+    d = get("/api/version")
+    assert check("version", d) == []
+    assert d["version"] == product_version.__version__ and d["name"] == "ISHTI"
+    assert len(d["source_hash"]) == 64 and all(c in "0123456789abcdef" for c in d["source_hash"])
+    assert d["revision_status"] in ("clean", "dirty", "unknown")
+    assert (d["revision"] is None) == (d["revision_status"] == "unknown"), "no git means no revision"
+    assert "ishti" in d["source_hash_covers"]
+    # Nothing here may carry a machine path: version.py deliberately leaves out sys.executable, because
+    # on Windows that is a path with the owner's user name in it, and this endpoint answers on loopback
+    # to anything that can reach the port (including the WebView2 UI).
+    assert "\\" not in d["platform"] and "\\" not in d["python"], "no machine path may leave here"
+    assert all(("\\" not in p and "/" not in p) for p in d["source_hash_covers"]), "directory names only"
+
+
 def test_ready_matches_contract(backend):
     d = get("/api/ready")
     assert check("ready", d) == []

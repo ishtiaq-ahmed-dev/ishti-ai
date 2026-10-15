@@ -195,7 +195,9 @@ def op_tests(m, text, session):
     elif any(os.path.isdir(os.path.join(path, d)) for d in ("tests", "test")) or os.path.isfile(os.path.join(path, "pytest.ini")):
         cmd = [sys.executable, "-m", "pytest", "-q", "--maxfail=5"]
     elif os.path.isfile(os.path.join(path, "ishti", "check.py")):
-        cmd = [sys.executable, "-m", "ishti.check", "--no-laya"]
+        # No --no-laya: the flag went with the Laya routing checkpoint, and ishti.check's routing eval is
+        # deterministic now, so there is nothing to skip.
+        cmd = [sys.executable, "-m", "ishti.check"]
     else:
         return f"I don't see a test setup in {name} (no tests/ folder, pytest.ini or npm test)."
     trace(session, "tests", f"{' '.join(cmd[-3:])} in {name}", status="start")

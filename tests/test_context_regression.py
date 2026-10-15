@@ -129,25 +129,6 @@ def test_t4_resolver_after_30_turns(mgr):
 
 
 # ------------------------------------------------------------------ T5
-def test_t5_state_survives_architecture_switch(mgr):
-    sid = "t5"
-    feed(mgr, sid, "Search about Sony WH-1000XM5")
-    before = mgr.get(sid).active_topic
-    # the switch itself (offline profile; health checks skipped for determinism)
-    from ishti.core.architectures import ArchitectureRegistry
-    reg = ArchitectureRegistry()
-    target = "memory_augmented" if reg.active() != "memory_augmented" else "simple_voice"
-    res = reg.set_active(target, by="test", run_health_check=False)
-    assert res.get("switched") is True, res
-    # same manager, same session id -> topic intact
-    after = mgr.get(sid).active_topic
-    assert after == before and "wh-1000xm5" in after.lower()
-    r = QueryResolver().resolve("find the cheapest price", mgr.get(sid))
-    assert "WH-1000XM5" in r.request
-    # restore
-    reg.set_active("router_single_agent", by="test", run_health_check=False)
-
-
 def test_t5_state_store_reloads(mgr):
     """The state store round-trips (a restart = a fresh manager over the same store)."""
     sid = "t5b"

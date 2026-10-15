@@ -98,14 +98,12 @@ def read_all(url, session):
 
 
 def looked_at(session):
-    """Screenshot + local vision model, for pages whose content isn't in the DOM text (charts, canvas)."""
-    from ishti.skills.browser.skill import screenshot
-    path = screenshot(f"extract_{int(time.time())}.png")
-    if not path:
-        return ""
-    from ishti.skills.video.pro import look
-    trace(session, "vision", "the page is mostly visual - reading a screenshot", status="done")
-    return look(path, "List every item visible on this page with its details, one per line.").get("text", "")
+    """The page has little DOM text (charts, canvas): its accessibility text is read instead of a screenshot."""
+    from ishti.skills.browser.skill import page_snapshot_text
+    text = page_snapshot_text()
+    if text.strip():
+        trace(session, "read", "the page is mostly visual - reading its page text", status="done")
+    return text
 
 
 def rows_from(chunks, fields, text, session):

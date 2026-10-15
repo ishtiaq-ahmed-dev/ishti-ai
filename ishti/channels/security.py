@@ -1,6 +1,7 @@
 """Channel security: pairing, allowlist, DPAPI secret store, rate limiting, lock state.
 
-Feeds WP-A2 (IMPLEMENTATION_PLAN.md). Design: RESEARCH.md R4 (Security-Gate agent).
+The design briefs this was built from (`IMPLEMENTATION_PLAN.md` WP-A2, `RESEARCH.md` R4) have been
+retired; the guarantees below are the contract and are enforced by this module.
 
   - The bot token lives ONLY in Windows Credential Manager via DPAPI (win32crypt, CurrentUser).
     Never in config files, env, logs, git. Plaintext exists in memory while in use only.

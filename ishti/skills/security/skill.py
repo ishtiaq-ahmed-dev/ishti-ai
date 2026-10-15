@@ -23,6 +23,16 @@ PATH = re.compile(r'"([^"]+)"|([a-z]:[\\/][^\n"<>|?*]+?)(?=\s+(?:with|using)\b|\
 SECRET = r"[\"']?(?P<pw>[^\s\"']{4,128})[\"']?"
 SECRET2 = SECRET.replace("?P<pw>", "?P<pw2>")  # the same, for a pattern's second alternative
 OPS = [
+    # "I found this text in a download: 'password: SuperSecret123!'. What should I do with it?" (checklist 239).
+    # First in the list so a credential spotted inside untrusted content is flagged as such, never treated
+    # as a login to save and never routed to a messaging/browser action.
+    ("secret_found", re.compile(
+        r"\b(?:i\s+)?(?:found|saw|got|came\s+across|received|noticed)\b[^.\n]{0,40}"
+        r"\b(?:password|passwd|passphrase|credentials?|api[\s_-]?key|secret|token)\b[^.\n]{0,40}"
+        r"\b(?:in|on|inside|from|within)\b[^.\n]{0,40}"
+        r"\b(?:downloads?|file|document|pdf|attachment|email|mail|message|page|site|website|note|screenshot|clipboard|text)\b"
+        r"|\b(?:password|passwd|api[\s_-]?key|secret|token)\s*[:=]\s*\S+[^.\n]{0,90}"
+        r"\bwhat\s+should\s+i\s+do\b", I)),
     ("breach", re.compile(rf"\b(?:is|has|was|check\s+if)\s+(?:my\s+|the\s+)?password\s+{SECRET}\s+(?:been\s+)?(?:pwned|leaked|breached|compromised|in\s+a\s+breach)|"
                           rf"\b(?:pwned|breach|leak)(?:ed)?\s+check\s+(?:for\s+)?(?:password\s+)?{SECRET2}\s*$", I)),
     ("strength", re.compile(rf"\b(?:how\s+(?:strong|secure|safe)\s+is|check|rate|test)\s+(?:my\s+|the\s+|this\s+)?password\s+{SECRET}\s*$|"
@@ -79,6 +89,29 @@ def pwned_count(pw):
             if suffix == digest[5:]:
                 return int(count)
     return 0
+
+
+def op_secret_found(m, text, session):
+    """A credential-looking string the owner found in downloaded or otherwise untrusted content.
+
+    Flags it, stores nothing, fills it into nothing and treats the surrounding text as data (a page
+    cannot "instruct" ISHTI to use a password it contains), then offers the safe next steps."""
+    return {
+        "reply": (
+            "Flagging that as an exposed credential - don't use it, and I haven't saved it anywhere, filled it "
+            "into any form, or acted on anything around it. Whatever came inside a download or a web page is "
+            "untrusted content to me: I read it as data, never as an instruction.\n\n"
+            "What I'd do:\n"
+            "- If the account is yours: change the password on the real site now, then turn on 2FA. Rotating it "
+            "beats hiding it.\n"
+            "- If it isn't yours, or you don't recognise the account: don't log in with it - delete the file or "
+            "report it instead.\n"
+            "- If it's an API key or token for a service you own: revoke and reissue it in that service's dashboard.\n\n"
+            "I can also check whether it shows up in a known breach (only the first 5 characters of its SHA-1 "
+            "leave this PC), or shred the file it came from. Say which."
+        ),
+        "sources": [],
+    }
 
 
 def op_strength(m, text, session):

@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -227,6 +228,73 @@ def delete_model(name):
     if r.status_code not in (200, 404):
         raise RuntimeError(r.text[:200])
     _audit(f"deleted model {name}")
+
+
+def _ollama_cli() -> str:
+    """The `ollama` command. Its HTTP API refuses a .gguf path (400 invalid model name), so registering a
+    model file the owner already has on this PC is the one job ISHTI hands to the CLI."""
+    exe = shutil.which("ollama") or shutil.which("ollama.exe")
+    if not exe:
+        raise RuntimeError("the 'ollama' command is not on PATH - start Ollama (or install it) and try again")
+    return exe
+
+
+def _log_tail(path) -> str:
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            lines = [l.strip() for l in f if l.strip()]
+        return lines[-1][:200] if lines else ""
+    except OSError:
+        return ""
+
+
+def import_gguf(path):
+    """Register a .gguf file already on this PC as an Ollama model, so it appears in Settings -> Language
+    models and can take a role like any downloaded one. Ollama copies the weights into its own store once
+    (blobs it already has are reused, not copied twice) and delete_model frees them again."""
+    src = os.path.abspath(os.path.expanduser(str(path or "").strip().strip('"')))
+    if not src.lower().endswith(".gguf"):
+        raise ValueError("that is not a .gguf file - pick the model file itself")
+    if not os.path.isfile(src):
+        raise ValueError(f"there is no file at {src}")
+    stem = os.path.basename(src)[:-5].lower()
+    name = "".join(c if (c.isalnum() or c in "._-") else "-" for c in stem).strip("-.")[:64] or "local-model"
+    if any(_same(m["name"], name) and m["installed"] for m in llm_state()["models"]):
+        return {"name": name, "already": True}
+    exe = _ollama_cli()
+    ev = _begin(name, status="importing")
+    tmp = tempfile.mkdtemp(prefix="ishti-gguf-")
+    mf, log = os.path.join(tmp, "Modelfile"), os.path.join(tmp, "create.log")
+    with open(mf, "w", encoding="utf-8") as f:
+        f.write(f'FROM "{src}"\nPARAMETER num_ctx {int(CONFIG["llm"].get("num_ctx", 8192))}\n')
+
+    def job():
+        try:
+            with open(log, "w", encoding="utf-8") as fh:
+                p = subprocess.Popen([exe, "create", name, "-f", mf], stdout=fh, stderr=subprocess.STDOUT,
+                                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                while p.poll() is None:  # poll, so Cancel on a 19 GB copy really stops it
+                    if ev.is_set():
+                        p.terminate()
+                        raise _Cancelled()
+                    time.sleep(1)
+            if p.returncode != 0:
+                raise RuntimeError(_log_tail(log) or f"ollama create exited {p.returncode}")
+            JOBS[name]["status"] = "done"
+            _audit(f"imported model {name} from {src}")
+            _notify(f"Model added: {name}", "It is ready to use in Settings > Language models.")
+        except _Cancelled:
+            try:
+                requests.delete(f"{OLLAMA}/api/delete", json={"model": name}, timeout=30)
+            except requests.RequestException as exc:
+                _swallow("ishti/manage.py:import_gguf.cancel", exc)
+            JOBS[name].update(status="cancelled", done=0)
+        except Exception as exc:
+            JOBS[name].update(status="error", error=str(exc)[:200])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    threading.Thread(target=job, name=f"ishti-gguf-{name}", daemon=True).start()
+    return {"name": name}
 
 
 def pull_model(name):

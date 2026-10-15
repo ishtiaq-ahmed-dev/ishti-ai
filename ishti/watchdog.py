@@ -3,7 +3,7 @@
   python -m ishti.watchdog [port]
 - starts the server (python -m ishti <port>) and polls GET /api/health every 10 s
 - the server exited -> restart; 3 failed health polls in a row (after startup) -> it's hung: kill its process tree,
-  restart. Crash loop (5 restarts in 10 min) -> wait 5 min, log it to NEEDS.md.
+  restart once per 10 minutes. Another failure -> stop, persist one splash error and require an owner retry.
 - data/stop.flag (stop.bat writes it) -> stop the server and exit instead of restarting
 - the global hotkey (config "kill_hotkey", default Ctrl+Alt+Q) -> POST /api/kill; if the server doesn't answer
   within 2 s it is hung: its whole process tree is killed and it restarts clean
@@ -37,10 +37,34 @@ def log(msg):
     line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}"
     print(f"[watchdog] {msg}", flush=True)
     try:
-        with open(LOG, "a", encoding="utf-8") as f:
-            f.write(line + "\n")
+        import logging
+        from logging.handlers import RotatingFileHandler
+        handler = RotatingFileHandler(LOG, maxBytes=5_000_000, backupCount=3, encoding="utf-8")
+        try:
+            handler.handle(logging.LogRecord("watchdog", logging.INFO, "", 0, line, (), None))
+        finally:
+            handler.close()
     except OSError as _exc:
         swallowed('ishti/watchdog.py:log', _exc)
+
+
+_owner_retry_lock = threading.Lock()
+
+
+def owner_retry(port=8888):
+    """Only the native owner's Retry button calls this after a terminal watchdog failure."""
+    from ishti import lifecycle
+    with _owner_retry_lock:
+        reg = lifecycle.registry(port=port)
+        if not reg.get("boot_error"):
+            return {"retried": False, "error": "No terminal startup error is recorded. Wait or reopen ISHTI."}
+        if lifecycle._alive(reg.get("watchdog_pid"), "python", reg.get("watchdog_ct")):
+            return {"retried": False, "error": "The previous supervisor is still running."}
+        flags = (getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+                 | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+        proc = subprocess.Popen([sys.executable, "-m", "ishti.watchdog", str(port)], cwd=ROOT, creationflags=flags)
+        lifecycle.registry({"boot_error": None, "watchdog_pid": proc.pid, "watchdog_ct": lifecycle.created(proc.pid)}, port=port)
+        return {"retried": True}
 
 
 class Watchdog:
@@ -74,16 +98,19 @@ class Watchdog:
                 | subprocess.DETACHED_PROCESS
                 | subprocess.CREATE_NEW_PROCESS_GROUP
             )
-        out = self._out()
+        from ishti import lifecycle
+        from ishti.core.runtime_logs import pipe_log
+        os.makedirs(lifecycle.LOG_DIR, exist_ok=True)
+        lifecycle.registry({"boot_error": None}, port=self.port)
         self.proc = subprocess.Popen(
             self.cmd,
             cwd=ROOT,
             env=env,
             creationflags=flags,
-            stdout=out,
+            stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
-        out.close()  # the server holds its own handle
+        pipe_log(self.proc.stdout, os.path.join(lifecycle.LOG_DIR, "launch.log"))
         self.started = time.time()
         log(f"server started (pid {self.proc.pid}) on port {self.port}")
 
@@ -135,12 +162,16 @@ class Watchdog:
             log_need("error", "watchdog", why, f"server restarted ({len(self.restarts)} in 10 min)")
         except Exception as _exc:
             swallowed('ishti/watchdog.py:Watchdog.restart', _exc)
-        if len(self.restarts) >= 5:
-            log("crash loop: 5 restarts in 10 minutes - waiting 5 minutes before trying again")
-            time.sleep(300)
-            self.restarts.clear()
+        if len(self.restarts) >= 2:
+            from ishti import lifecycle
+            message = f"ISHTI could not stay running on port {self.port}. Automatic retries stopped. Check the log and the port, then retry or reopen ISHTI."
+            lifecycle.registry({"boot_error": message}, port=self.port)
+            log(message)
+            self.kill_tree()
+            return False
         self.kill_tree()
         self.start()
+        return True
 
     def stop_gracefully(self):
         """A stop was requested (data/stop.flag): ask the server to shut down properly and give it time to flush its data
@@ -176,15 +207,19 @@ class Watchdog:
                 return
             if self.proc.poll() is not None:
                 why = "hard kill from the kill switch" if self.hard_killed.is_set() else f"server exited (code {self.proc.returncode})"
+                if self.hard_killed.is_set():
+                    self.restarts.clear()  # the owner's explicit hotkey is a fresh recovery request
                 self.hard_killed.clear()
-                self.restart(why)
+                if not self.restart(why):
+                    return
                 misses, last_poll = 0, time.time()
             elif time.time() - last_poll >= POLL_S:
                 last_poll = time.time()
                 if time.time() - self.started > GRACE_S:
                     misses = 0 if self.healthy() else misses + 1
                     if misses >= HUNG_AFTER:
-                        self.restart(f"server not answering for {misses * POLL_S} s (hung)")
+                        if not self.restart(f"server not answering for {misses * POLL_S} s (hung)"):
+                            return
                         misses = 0
             if once:
                 return
@@ -200,7 +235,7 @@ if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] == "--self-test"
     wd = Watchdog(59998, cmd=[sys.executable, fake])
     POLL_S = 2
     import ishti.skills
-    ishti.skills.log_need = lambda *a: None  # the test's fake crash must not reach the real NEEDS.md
+    ishti.skills.log_need = lambda *a: None  # the test's fake crash must not reach the real needs log
     wd.start()
     first = wd.proc.pid
     time.sleep(2)

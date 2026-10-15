@@ -113,9 +113,10 @@ def test_download_size_cap(tmp_path, monkeypatch):
                 yield b"x" * (64 * 1024)
 
     monkeypatch.setattr(requests_mod, "get", lambda *a, **k: FakeResp())
+    dest = tmp_path / "downloads"  # own folder: the shared test fixture keeps facts.db beside tmp_path's files
     with pytest.raises(ValueError, match="cap"):
-        m.download("https://example.com/ep.mp3", str(tmp_path), max_bytes=128 * 1024)
-    assert list(tmp_path.iterdir()) == [], "oversized partial download must be removed"
+        m.download("https://example.com/ep.mp3", str(dest), max_bytes=128 * 1024)
+    assert list(dest.iterdir()) == [], "oversized partial download must be removed"
 
 
 # ---------------------------------------------------------------- T-R28 / T-R24: format + update

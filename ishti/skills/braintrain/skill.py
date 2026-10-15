@@ -23,8 +23,11 @@ STATUS = re.compile(r"\b(?:brain|fine[-\s]?tun\w*|training)\s+(?:training\s+)?(?
 EXPORT = re.compile(r"\bexport\b.*\b(?:training|dataset|fine[-\s]?tun)\w*|\b(?:training|brain)\s+data\s+export\b", I)
 TRAIN = re.compile(r"\b(?:fine[-\s]?tune|train)\b.*\b(?:brain|yourself|my\s+data|on\s+my\s+data|adapter)\b|"
                    r"\bbrain\s+training\s+(?:job|run|start)\b", I)
+# The bare-word form ("...gate") matched any sentence containing the word - "jot down the gate code",
+# "open the gate" - and routed it to fine-tune evaluation. Require a verb or "regression" before eval/gate.
 EVAL = re.compile(r"\bevaluat\w*\b.*\b(?:fine[-\s]?tun\w*|adapter|candidate|brain)\b|"
-                  r"\b(?:run\s+)?(?:the\s+)?(?:regression\s+)?(?:eval|gate)\b", I)
+                  r"\b(?:run|check|show|start|evaluate|eval)\s+(?:the\s+|a\s+)?(?:regression\s+)?(?:eval|gate)\b|"
+                  r"\bregression\s+(?:eval|gate)\b", I)
 PROMOTE = re.compile(r"\bpromote\b.*\b(?:adapter|fine[-\s]?tun\w*|candidate)\b", I)
 ROLLBACK = re.compile(r"\broll\s?back\b.*\b(?:adapter|fine[-\s]?tun\w*|brain)\b|\brestore\s+the\s+previous\s+adapter\b", I)
 

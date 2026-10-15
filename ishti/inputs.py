@@ -67,9 +67,6 @@ def channels() -> list:
     out.append({"id": "files", "name": "Files & documents", "icon": "file", "kind": "always_on",
                 "detail": "Drop a PDF, image, audio or document into the chat and ISHTI reads it.",
                 "state": "on", "source": "chat upload", "action": "upload"})
-    out.append({"id": "screen", "name": "Screen & window", "icon": "screen", "kind": "opt_in",
-                "detail": "Read or drive a window when you ask.",
-                "state": "ready", "source": "screen_understand / desktop", "action": "test_screen"})
     out.append({"id": "clipboard", "name": "Clipboard", "icon": "clip", "kind": "opt_in",
                 "detail": "Read what you copied, when you ask.",
                 "state": "ready", "source": "clipboard store", "action": "test_clipboard"})

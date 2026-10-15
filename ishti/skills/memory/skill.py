@@ -234,16 +234,51 @@ def _forget_person(t, session):
              f"No other person was touched.")
 
 
+def _name_like(value) -> bool:
+    """Does this value read as a person's name ("Dr. Farooq") rather than a preference or a status?"""
+    v = str(value or "").strip()
+    if not v or len(v) > 60:
+        return False
+    parts = v.split()
+    return 1 <= len(parts) <= 4 and parts[0][:1].isupper()
+
+
 def _person_desc_matches(desc):
     """Resolve a person named by role/relationship ("my cardiologist collaborator") to the known
     people it could mean. Delegates to arch2.people.find_by_description (entity rows + relationship
-    graph). Returns display names (never a guess when more than one matches - the caller asks)."""
+    graph), and also searches the FACTS table - that is where this skill's own saves live, so a role
+    that exists only there ("Remember that Dr. Farooq is my cardiologist collaborator" stores
+    entity/attribute/value, no arch2 entity row) still resolves instead of reporting "nobody stored"
+    about a person the owner just saved (checklist 237). Returns display names (never a guess when
+    more than one matches - the caller asks)."""
+    out = set()
     try:
-        from ishti.arch2 import people as P
-        return sorted({(e.get("display") or e["name"]) for e in P.find_by_description(desc)})
+        from ishti.memstore import people as P
+        out |= {(e.get("display") or e["name"]) for e in P.find_by_description(desc)}
     except Exception as _exc:
         swallowed('ishti/skills/memory/skill.py:_person_desc_matches', _exc)
-        return []
+    try:
+        from ishti.memstore.people import _DESC_STOP
+        from ishti.facts import get_facts
+        words = [w for w in re.findall(r"[a-z]{4,}", (desc or "").lower()) if w not in _DESC_STOP]
+        f = get_facts()
+        with f.lock:
+            rows = f.db.execute("SELECT key, entity, attr, value FROM facts").fetchall()
+        for key, entity, attr, value in rows:
+            blob = f"{key} {entity} {attr} {value}".lower()
+            if not (words and any(w in blob for w in words)):
+                continue
+            name = str(entity or key).strip()
+            # same sentence, either way round: entity "Dr. Farooq" + attribute "cardiologist
+            # collaborator", or the owner with that attribute set to "Dr. Farooq" (the model decides).
+            # In the second shape the person is the VALUE.
+            if not name or name.lower() == "owner":
+                name = str(value or "").strip() if _name_like(value) else ""
+            if name:
+                out.add(name)
+    except Exception as _exc:
+        swallowed('ishti/skills/memory/skill.py:_person_desc_matches:facts', _exc)
+    return sorted(out)
 
 
 def _really_delete(name, session):
@@ -251,7 +286,7 @@ def _really_delete(name, session):
     best-effort vector snippets (arch2.memory.forget_hard). Reports the real counts so the owner can
     see it was removed, not just hidden, and never claims more than actually went."""
     try:
-        from ishti.arch2 import memory as M
+        from ishti.memstore import memory as M
         res = M.forget_hard(name)
     except Exception as exc:
         return R(f"I could not complete the deletion of {name.title()}: {type(exc).__name__}: {exc}. "
@@ -259,10 +294,27 @@ def _really_delete(name, session):
     m = res.get("memories", 0)
     e = res.get("entities", 0)
     ed = res.get("edges", 0)
+    # The facts table is a store of its own: "Remember that Dr. Farooq is my cardiologist
+    # collaborator" lives there, and forget_hard only covers the arch2 memory/entity/graph stores -
+    # skipping it would leave the person readable and the deletion incomplete (checklist 237).
+    facts_removed = 0
+    try:
+        from ishti.facts import get_facts
+        f = get_facts()
+        with f.lock, f.db:
+            keys = [r[0] for r in f.db.execute(
+                "SELECT key FROM facts WHERE lower(entity)=? OR lower(key)=?",
+                (name.strip().lower(), name.strip().lower())).fetchall()]
+            for k in keys:
+                facts_removed += f.db.execute("DELETE FROM facts WHERE key=?", (k,)).rowcount
+    except Exception as _exc:
+        swallowed('ishti/skills/memory/skill.py:_really_delete:facts', _exc)
     trace(session, "save", f"hard-deleted everything about {name}")
     return R(f"Deleted everything about {name.title()}: {m} memory record(s), {e} entity record(s), "
-             f"{ed} relationship-graph link(s), plus any stored conversation snippet that mentioned them. "
-             f"This is a real removal from all stores (memory, entity table and relationship graph), not just "
+             f"{ed} relationship-graph link(s), {facts_removed} saved fact(s), plus any stored conversation "
+             f"snippet that mentioned them. "
+             f"This is a real removal from all stores (memory, entity table, facts table and relationship "
+             f"graph), not just "
              f"hidden. The deletion event itself is logged - without the deleted content.")
 
 
@@ -328,7 +380,10 @@ def _extract(t, session):
 def run(text, session):
     t, facts = text.strip(), get_facts()
     p = session.get("pending")
-    if p and p.get("skill") == "memory":
+    # Only a candidate/delete-all question is answered here. Other memory gates (e.g. the "forget this
+    # fact?" yes/no) carry no candidates, and treating them as a selection crashed with KeyError when the
+    # owner's next message was not yes/no - so an unrelated message just drops the question and routes on.
+    if p and p.get("skill") == "memory" and ("candidates" in p or "delete_all" in p):
         session["pending"] = None
         return _pending(t, p, session)
     if _saved_location(t):
@@ -401,7 +456,11 @@ if __name__ == "__main__":
     assert "Saved" in run("1", s)["reply"] and F.get_facts().get("eagle")["location"].endswith("eagle-project")
     assert run("where is Paris?", s) is None, "general questions fall through"
     assert match("open falcon") and not match("open notepad") and not match("open github.com")
-    assert "Forgot" in run("forget eagle", s)["reply"] and not F.get_facts().get("eagle")
+    r = run("forget eagle", s)  # forgetting a saved fact is owner-gated (ask_first), never silent
+    assert "(yes/no)" in r["reply"] and s["pending"]["skill"] == "memory", r
+    assert F.get_facts().get("eagle"), "the fact survives until the owner confirms"
+    s["pending"]["action"]()  # the owner says yes
+    assert not F.get_facts().get("eagle"), "the fact is gone after confirmation"
 
     # 138: "forget everything about my cousin Bilal" routes to THIS skill, so the scoped delete happens
     # here: only that person's link in the relationship graph (+ their own facts) goes, the real count is

@@ -1,13 +1,12 @@
 {
   "name": "desktop",
   "version": "1.0.0",
-  "description": "Desktop & OS control: minimize/maximize/close windows, clipboard, screenshots and screen reading (local vision), volume/mute, brightness, running processes and ending them, installing/uninstalling/updating apps with winget, lock/sleep/restart/shut down. Anything that can lose work or change the system asks first.",
-  "route": "control the PC itself: windows, clipboard, screenshot, read the screen, volume, brightness, processes, install/uninstall/update apps, lock/sleep/shutdown",
+  "description": "Desktop & OS control: minimize/maximize/close windows, clipboard, volume/mute, brightness, running processes and ending them, installing/uninstalling/updating apps with winget, lock/sleep/restart/shut down. Anything that can lose work or change the system asks first.",
+  "route": "control the PC itself: windows, clipboard, volume, brightness, processes, install/uninstall/update apps, lock/sleep/shutdown",
   "needs": {
     "python": [
       "pygetwindow",
       "pyperclip",
-      "mss",
       "pycaw",
       "screen_brightness_control",
       "psutil"

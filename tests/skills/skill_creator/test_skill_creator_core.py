@@ -248,7 +248,7 @@ def test_disabled_skill_is_never_routed_then_works_after_the_owner_says_yes(sand
 
     from ishti.core.settings import get_settings_service
     from ishti.skills import load_skills
-    import ishti.router as router
+    import ishti.tool_routing as router
 
     name = "sc_demo_scratch"
     installed = os.path.join(ROOT, "ishti", "skills", name)
@@ -263,7 +263,8 @@ def test_disabled_skill_is_never_routed_then_works_after_the_owner_says_yes(sand
         assert reg["ok"] is True and reg["status"] == "disabled", reg
 
         dec = router.route("demooflife", load_skills())
-        assert dec["skill"] != name, f"a DISABLED skill was routed to: {dec}"
+        # offered for enabling (the dispatcher asks the owner first), never run silently
+        assert dec["skill"] != name or dec.get("needs_enable"), f"a DISABLED skill ran silently: {dec}"
 
         en = drafts.enable(name)
         assert en["ok"] is True, en
@@ -275,7 +276,7 @@ def test_disabled_skill_is_never_routed_then_works_after_the_owner_says_yes(sand
             last = drafts.note_failure(name, f"boom {i}")
         assert last["auto_disabled"] is True, last
         dec3 = router.route("demooflife", load_skills())
-        assert dec3["skill"] != name, f"an auto-disabled skill was routed to: {dec3}"
+        assert dec3["skill"] != name or dec3.get("needs_enable"), f"an auto-disabled skill ran silently: {dec3}"
     finally:
         shutil.rmtree(installed, ignore_errors=True)
         shutil.rmtree(folder, ignore_errors=True)

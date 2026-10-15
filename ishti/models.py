@@ -29,7 +29,9 @@ _last_used = {}
 _eviction_timers = {}
 
 
-_conn_cache = {}
+from ishti.core.sqlite_cache import ThreadConnections
+
+_conn_cache = ThreadConnections()
 
 
 def _db():
@@ -37,7 +39,7 @@ def _db():
     measured (~12 ms -> ~0 ms): connect + CREATE TABLE + an ALTER probe on every call was paid on the
     reply path (models.used() runs for every LLM request). WAL + synchronous=NORMAL drop the fsync:
     this is usage telemetry, not owner data."""
-    key = (threading.get_ident(), DB)
+    key = (threading.current_thread(), DB)
     c = _conn_cache.get(key)
     if c is None:
         os.makedirs(os.path.dirname(DB), exist_ok=True)

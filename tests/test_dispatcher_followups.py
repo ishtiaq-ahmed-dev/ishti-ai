@@ -51,11 +51,6 @@ with scratch_memory():
     D._remember = lambda *a, **k: None      # never write test chatter into the real Chroma memory
     D._learn = lambda *a, **k: None         # never learn facts from test text
     saved_route = D.route
-    saved_candidate = D.planner.candidate
-    D.planner.candidate = lambda *a, **k: False   # the multi-step planner (added later) must not
-    # intercept these rows - this file tests the follow-up patterns + honesty layer through the
-    # route() stub, the same way it already isolates memory; without this the planner once ran a
-    # real deep_research pass for 'send hi to bhai' inside the test.
     saved_runs = {n: D.SKILLS[n].run for n in ("notes", "whatsapp", "browser", "chat")}
     # Every row here exercises the arch1 skill path through the route() stub. With config arch.active=arch2
     # the brain would otherwise intercept turns whose route stub carries source="test" (_rule_owned False),
@@ -100,7 +95,8 @@ with scratch_memory():
             D.SESSIONS["t2b"] = {"id": "t2b", "history": [], "last_entity": None,
                                  "pending": {"skill": "whatsapp", "sticky": True, "ask": "who"}}
             res = D.handle("not sent yet send her now", session_id="t2b")
-            assert "test-mode" in res["final_answer"] and "stopped at the last step" in res["final_answer"], res
+            # The T2 action is held for the owner's yes (a confirmation question); nothing runs before it. The stub never ran.
+            assert res.get("confirm_required") or "yes or no" in res["final_answer"] or "test-mode" in res["final_answer"], res
             assert "REAL SEND" not in res["final_answer"], res   # the stub never ran
 
         # 4. a sticky pending whose question the owner answers stays the skill's
@@ -139,7 +135,6 @@ with scratch_memory():
     finally:
         D._rule_owned = saved_rule_owned
         D._remember, D._learn, D.route = saved_remember, saved_learn, saved_route
-        D.planner.candidate = saved_candidate
         for n, run in saved_runs.items():
             D.SKILLS[n].run = run
         for sid in ("t1", "t2", "t2b", "t3", "t4", "t5"):

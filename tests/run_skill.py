@@ -6,6 +6,10 @@ Usage:
     venv\\Scripts\\python tests\\run_skill.py all --runs 1       # every tests/skills/<skill>/
     venv\\Scripts\\python tests\\run_skill.py weather --dry      # show what would run, run nothing
 
+    # machine-readable: write the per-skill detail and a compact aggregate somewhere else, and print
+    # the aggregate instead of the table (tools/evidence.py consumes this)
+    venv\\Scripts\\python tests\\run_skill.py all --json --out reports/skills.json --summary reports/skills_summary.json
+
 Per run it outputs a readable table + JSON, updates reports/test_state.json
 (feature -> status, attempts, last_result, consecutive_green, last_error, timestamp),
 enforces a per-test timeout, sets ISHTI_TEST_MODE=1, samples GPU/VRAM before+after,
@@ -104,6 +108,11 @@ def run_one(skill, runs, timeout_s, dry):
             timeout=timeout_s * 4 + 60, env=env, cwd=ROOT)
         dur = round(time.time() - t0, 1)
         tail = [l for l in (proc.stdout or "").splitlines() if l.strip()][-3:]
+        # pytest exit 5 is "no tests were collected". An empty suite folder is not a broken skill, so
+        # it must not be scored as one - it leaves the denominator (evidence.py counts only graded
+        # suites), the same as a folder that does not exist at all.
+        if proc.returncode == 5:
+            return {"feature": skill, "status": "no-suite", "runs": []}
         passed = proc.returncode == 0
         results.append({
             "run": i + 1, "ok": passed, "exit": proc.returncode, "seconds": dur,
@@ -129,6 +138,28 @@ def update_state(state, res):
     return f
 
 
+def _last_error(res):
+    """The most useful one-liner for a failing skill: the last non-empty pytest output line."""
+    runs = res.get("runs") or []
+    tail = [t for t in (runs[-1].get("tail") or []) if t] if runs else []
+    return (tail[-1] if tail else res["status"])[:200]
+
+
+def summarize(report):
+    """The compact aggregate a machine consumes (--summary, or --json): counts plus the named failures.
+
+    `graded` is the denominator: green + red + SAFETY-FAIL. A `no-suite` folder is not graded, so it
+    can neither inflate nor deflate the pass rate - an empty folder is not a passing skill."""
+    counts = {}
+    for r in report:
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+    graded = counts.get("green", 0) + counts.get("red", 0) + counts.get("SAFETY-FAIL", 0)
+    return {"generated": dt.datetime.now().isoformat(timespec="seconds"), "targets": len(report),
+            "green": counts.get("green", 0), "graded": graded, "counts": counts,
+            "flagged": [{"skill": r["feature"], "status": r["status"], "last_error": _last_error(r)}
+                        for r in report if r["status"] in ("red", "SAFETY-FAIL")]}
+
+
 def main():
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")  # script only: never at import
     ap = argparse.ArgumentParser(description="ISHTI per-skill QA harness")
@@ -136,7 +167,9 @@ def main():
     ap.add_argument("--runs", type=int, default=1)
     ap.add_argument("--timeout", type=int, default=90, help="per-test timeout seconds")
     ap.add_argument("--dry", action="store_true", help="show what would run, run nothing")
-    ap.add_argument("--json", action="store_true", help="JSON output only")
+    ap.add_argument("--json", action="store_true", help="print the aggregate JSON instead of the table")
+    ap.add_argument("--out", help="write the per-skill detail here (default reports/test_state_last_run.json)")
+    ap.add_argument("--summary", help="also write the compact aggregate JSON to this path")
     ap.add_argument("--wait-idle", type=int, default=300, metavar="S",
                     help="wait up to S seconds for the GPU to be at most 60%% full before starting (default 300)")
     ap.add_argument("--force", action="store_true", help="run even if the GPU is busy (results may show GpuBusy failures)")
@@ -175,12 +208,19 @@ def main():
 
     if not args.dry:
         save_state(state)
-    out_path = os.path.join(ROOT, "reports", "test_state_last_run.json")
+    out_path = os.path.abspath(args.out or os.path.join(ROOT, "reports", "test_state_last_run.json"))
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
     json.dump(report, open(out_path, "w", encoding="utf-8"), indent=1)
-    green = sum(1 for r in report if r["status"] == "green")
-    if not args.json:
-        print(f"\nSummary: {green}/{len(report)} green -> state in reports/test_state.json, details in {os.path.basename(out_path)}")
-    sys.exit(0 if green == len(report) and report else 1)
+    summary = summarize(report)
+    if args.summary:
+        os.makedirs(os.path.dirname(os.path.abspath(args.summary)), exist_ok=True)
+        json.dump(summary, open(args.summary, "w", encoding="utf-8"), indent=1)
+    if args.json:
+        print(json.dumps(summary, indent=1))
+    else:
+        print(f"\nSummary: {summary['green']}/{summary['graded']} graded suites green -> "
+              f"state in reports/test_state.json, details in {out_path}")
+    sys.exit(0 if summary["graded"] and summary["green"] == summary["graded"] else 1)
 
 
 if __name__ == "__main__":

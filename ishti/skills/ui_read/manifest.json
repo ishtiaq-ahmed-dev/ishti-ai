@@ -1,0 +1,23 @@
+{
+  "name": "ui_read",
+  "version": "1.0.0",
+  "description": "Reads the named controls of an open PC window (buttons, fields, menu items, labels) through Windows accessibility. No screenshots, no OCR, nothing is clicked or typed.",
+  "route": "what buttons or fields are in the open window, list the controls in Notepad, what can I click in the open app, what is on the screen in that window",
+  "needs": {
+    "python": ["uiautomation"],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 13,
+  "status": "working",
+  "tier": "T0",
+  "laya": false,
+  "scope": {
+    "write": ["data"],
+    "net": [],
+    "apps": false
+  },
+  "category": "System & Desktop",
+  "test_file": "tests/test_ui_access.py"
+}

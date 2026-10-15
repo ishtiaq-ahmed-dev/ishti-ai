@@ -84,6 +84,8 @@ def match(text):
         return False
     if MESSAGING_VERBS.search(text):
         return False
+    if re.search(r"\boutlook\b", text, re.I):
+        return True
     m = VERB.match(text)
     if not m or MULTI_STEP.search(m.group("app")):
         return False
@@ -118,6 +120,10 @@ def run(text, session):
         result = try_request(text, session)
         if result is not None:
             return result
+        if re.search(r"\boutlook\b", text, re.I):
+            lnk = _installed("outlook")
+            if not lnk:
+                return {"reply": "Outlook is not installed on this PC. You can open your Outlook inbox at https://outlook.live.com in the browser.", "sources": []}
         m = VERB.match(text)
         if m and m["app"].lower().strip() in SITES and not WHATSAPP.search(text):
             from ishti.skills.browser import skill as browser

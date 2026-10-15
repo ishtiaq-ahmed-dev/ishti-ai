@@ -35,20 +35,44 @@ def match(text: str) -> bool:
     return has_task_ctrl or has_bg_cancel or has_status or has_monitor
 
 
+def _active() -> list[dict]:
+    from ishti import taskmgr
+    return [x for x in taskmgr.list_tasks() if x["status"] in ("queued", "running", "paused")]
+
+
+def _listing(active: list[dict]) -> str:
+    return ("Still running: " + "; ".join(f"{x['status']}: {x['goal'] or x['id']}" for x in active) + ".") \
+        if active else "Nothing is running in the background right now."
+
+
 def run(text: str, session) -> dict:
     t = (text or "").lower()
-    if "survive" in t or "restart" in t:
-        return {"reply": "Yes, the background monitor persisted and remained active across the app restart.", "sources": []}
-    if "monitor" in t and ("active" in t or "still" in t or "status" in t):
-        return {"reply": "The repo commit monitor is currently active in the background, watching for new commits on the ISHTI repo.", "sources": []}
     from ishti import taskmgr
+    # The answers below must come from the task manager, never from the sentence that was asked:
+    # canned "yes, the monitor is still active" replies claimed background monitoring that had never
+    # been started (checklist 221/223). There IS no scheduler here, so the honest answer is that no
+    # standing monitor exists and that in-memory tasks do not outlive the process.
+    if re.search(r"\bmonitor", t) and re.search(r"\b(?:active|still|status|running|survive|restart)\b", t):
+        active = _active()
+        live = [x for x in active if re.search(r"monitor|watch", x["goal"] or "", re.I)]
+        if live:
+            return {"reply": f"Yes - {len(live)} monitor task(s) still running. " + _listing(live), "sources": []}
+        head = ("No - background tasks live in memory for the run that created them only, so a monitor would not "
+                "have survived the app restart and none is active now. ") \
+            if re.search(r"\b(?:survive|restart)\b", t) else \
+            "No repo (or other) monitor is running - I have no scheduled/standing monitor mechanism, so I never " \
+            "started one. "
+        return {"reply": head + _listing(active), "sources": []}
     reply = taskmgr.handle_command(text)
     if reply is None:
-        rows = taskmgr.list_tasks()
-        active = [x for x in rows if x["status"] in ("queued", "running", "paused")]
+        active = _active()
         reply = ("Background tasks:\n" + "\n".join(
             f"- [{i + 1}] {x['status']}: {x['goal'] or x['id']}" for i, x in enumerate(active))) \
             if active else "No background tasks running. Ask me to research or fetch something and keep chatting."
+    elif reply.startswith("I don't have that task running"):
+        # "cancel the repo-monitoring task from earlier" with no such task: say so AND list what is really
+        # running, instead of only reporting the miss (checklist 222).
+        reply += " " + _listing(_active())
     return {"reply": reply, "sources": []}
 
 
@@ -65,4 +89,11 @@ if __name__ == "__main__":
     out3 = run(f"cancel task {rec['goal']}", {})
     assert "Cancel" in out3["reply"] or "cancel" in out3["reply"].lower(), out3
     assert not match("what's the weather")
-    print("[self-check] taskctl OK — match, list, cancel")
+    # a monitor that was never started must not be reported as running (checklist 221/223)
+    assert taskmgr._WAITING is not None
+    for q in ("Is the repo commit monitor still active?", "Did the background monitor survive the app restart?"):
+        ans = run(q, {})["reply"]
+        assert "No " in ans and "still running" not in ans, (q, ans)
+    miss = run("Cancel the repo-monitoring task from earlier", {})["reply"]
+    assert "Nothing is running in the background" in miss, miss
+    print("[self-check] taskctl OK — match, list, cancel, honest monitor status")

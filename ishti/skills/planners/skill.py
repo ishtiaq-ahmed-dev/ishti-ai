@@ -8,7 +8,7 @@ import os
 import re
 
 from ishti import llm
-from ishti.arch2.jsonio import parse_json
+from ishti.memstore.jsonio import parse_json
 from ishti.untrusted import guard
 from ishti.skills import trace
 

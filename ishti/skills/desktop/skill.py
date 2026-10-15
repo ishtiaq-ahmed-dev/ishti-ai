@@ -1,5 +1,5 @@
-"""Desktop & OS control: windows, clipboard, screenshots and screen reading, volume, brightness, processes,
-software (winget), power. Thin wrappers over pygetwindow/pywin32, pyperclip, mss, pycaw,
+"""Desktop & OS control: windows, clipboard, volume, brightness, processes,
+software (winget), power. Thin wrappers over pygetwindow/pywin32, pyperclip, pycaw,
 screen-brightness-control, psutil and winget. Reading is free; anything that can lose work or change the system
 (close a window, kill a process, install/uninstall, lock/sleep/shut down) goes through the yes/no gate."""
 import datetime as dt
@@ -15,8 +15,6 @@ from ishti.skills.desktop import more
 I = re.I
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 OPS = [  # (name, pattern) - first match wins
-    ("screen_read", re.compile(r"\b(?:read|what(?:'s| is)\s+on|describe|look\s+at)\s+(?:my\s+|the\s+)?screen\b", I)),
-    ("screenshot", re.compile(r"\b(?:take|grab|capture)\s+(?:a\s+)?(?:screenshot|screen\s*shot|screen\s+capture)|\bscreenshot\b", I)),
     ("clipboard_write", re.compile(r"\bcopy\s+(?P<text>.+?)\s+to\s+(?:the\s+|my\s+)?clipboard\b", I)),
     ("clipboard_read", re.compile(r"\b(?:what(?:'s| is)\s+(?:in|on)\s+(?:my\s+|the\s+)?clipboard|read\s+(?:my\s+|the\s+)?clipboard|clipboard\s+content)", I)),
     ("volume", re.compile(r"\b(?:un)?mute\b|\bvolume\b|\bsound\s+(?:up|down)\b|\b(?:louder|quieter)\b", I)),
@@ -63,40 +61,6 @@ def run(text, session):
             return out if isinstance(out, dict) or out is None else {"reply": out, "sources": []}
     return None
 
-
-# ---------------------------------------------------------------- screen
-def _shot(session=None):
-    import mss
-    import mss.tools
-    from ishti.test_mode import scratch_path
-    folder = scratch_path(os.path.join(ROOT, "data", "screenshots"))
-    os.makedirs(folder, exist_ok=True)
-    path = os.path.join(folder, dt.datetime.now().strftime("screen_%Y-%m-%d_%H-%M-%S.png"))
-    with getattr(mss, "MSS", mss.mss)() as s:
-        img = s.grab(s.monitors[0])  # all monitors
-        mss.tools.to_png(img.rgb, img.size, output=path)
-    return path
-
-
-def op_screenshot(m, text, session):
-    return f"Screenshot saved: {_shot()}"
-
-
-def op_screen_read(m, text, session):
-    """Screen reading with the local vision model (Gemma 3): the text on screen and what's going on."""
-    from PIL import Image
-    path = _shot()
-    small = path.replace(".png", "_read.jpg")
-    im = Image.open(path).convert("RGB")
-    im.thumbnail((1600, 1600))
-    im.save(small, quality=88)
-    from ishti.skills.video.pro import look
-    trace(session, "vision", "reading the screen with the local vision model", status="start")
-    seen = look(small, "This is the owner's computer screen. Read the important text on it and say in one or two "
-                       "sentences what is open and happening.")
-    os.remove(small)
-    trace(session, "vision", "done", status="done")
-    return f"{seen.get('text') or 'I could not read it.'}\n\n(Screenshot: {path})"
 
 
 # ---------------------------------------------------------------- clipboard
@@ -413,7 +377,7 @@ def op_power(m, text, session):
 
 
 if __name__ == "__main__":
-    cases = {"take a screenshot": "screenshot", "read my screen": "screen_read", "set volume to 30": "volume",
+    cases = {"set volume to 30": "volume",
              "mute": "volume", "what's in my clipboard": "clipboard_read", "copy hello world to clipboard": "clipboard_write",
              "set brightness to 60": "brightness", "minimize chrome": "window", "close the notepad window": "window",
              "what is using the most memory": "process_top", "kill notepad": "process_kill", "check for updates": "updates",
@@ -427,8 +391,7 @@ if __name__ == "__main__":
     rows = _table("Name   Id               Version    Available  Source\n----------------------------------------------------\n"
                   "CapCut ByteDance.CapCut 8.9.1.3802 9.5.0.4050 msstore\n")
     assert rows == [("CapCut", "ByteDance.CapCut", "8.9.1.3802", "9.5.0.4050")], rows
-    more_cases = {"read the text on my screen": "screen_text", "copy the text from my screen": "screen_text",
-                  "new virtual desktop": "vdesk", "switch to the next desktop": "vdesk", "go to desktop 2": "vdesk",
+    more_cases = {"new virtual desktop": "vdesk", "switch to the next desktop": "vdesk", "go to desktop 2": "vdesk",
                   "close this desktop": "vdesk", "clipboard history": "clip_history", "copy item 3": "clip_history",
                   "list my monitors": "displays", "extend my displays": "displays", "second screen only": "displays",
                   "print queue": "print_queue", "cancel all print jobs": "print_queue",

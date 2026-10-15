@@ -3,6 +3,12 @@ accessed/did recently (permission audit from the route log), which skills get us
 import concurrent.futures as cf
 import datetime as dt
 import json
+
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
 import os
 import re
 import subprocess
@@ -14,6 +20,12 @@ from ishti.skills import needs_path, trace
 from ishti.test_mode import scratch_path
 
 I = re.I
+# Section 33 (checklist 201/202/205): questions about ISHTI's own previous turn. Answered from the
+# recorded route decision and action audit, never by asking a model to describe what it probably did -
+# a guessed trajectory is exactly the failure these checks look for.
+EXPLAIN = re.compile(r"\bwhich\s+skill\s+(?:handled|answered|took|ran|did|was)\b|\bwhich\s+skill\s+was\s+used\b|"
+                     r"\bwhat\s+steps?\s+(?:did|do)\s+you\b|\bwhy\s+did\s+you\s+(?:choose|pick|use|open|run|go\s+with)\b|"
+                     r"\bhow\s+did\s+you\s+(?:find|locate|get|do)\s+that\b|\bwhat\s+were\s+you\s+doing\s+just\s+now\b", I)
 OPS = [
     ("health", re.compile(r"\b(?:skill\s+health|check\s+(?:your|all|the)\s+skills|are\s+(?:all\s+)?(?:your|the)\s+skills\s+(?:ok|working)|self[-\s]?test|diagnose\s+(?:your|the)\s+skills)\b", I)),
     ("needs", re.compile(r"\b(?:what\s+(?:have\s+you|did\s+you)\s+(?:flag|log)(?:ged)?|what(?:'s| is)\s+missing|needs\.md|capability\s+gaps?|what\s+can'?t\s+you\s+do)\b", I)),
@@ -28,6 +40,7 @@ OPS = [
     ("pkg_outdated", re.compile(r"\b(?:outdated|old)\s+(?:python\s+|pip\s+)?packages\b|\b(?:check|any)\s+(?:ishti(?:'s)?\s+)?(?:python\s+|pip\s+)"
                                 r"(?:packages?\s+)?(?:for\s+)?updates\b|\b(?:check\s+)?ishti(?:'s)?\s+(?:python\s+)?packages\s+for\s+updates\b", re.I)),
     ("confirm_profile", re.compile(r"\bconfirm\s+(?:my\s+|the\s+)?(?:owner\s+)?(?:profile|details)\b", I)),
+    ("explain", EXPLAIN),
     ("usage", re.compile(r"\b(?:which|what)\s+skills?\s+(?:do\s+i|did\s+i)\s+use\s+(?:the\s+)?most\b|\bskill\s+usage\b", I)),
     # Self-knowledge (WP-B): identity, live machine facts, model inventory, skill inventory, and the
     # refresh command. Deliberately does NOT take "what can't you do?" - that already answers from
@@ -95,8 +108,8 @@ def _health_disk_get(key):
             d = json.load(f)
         if d.get("key") == key and time.time() - float(d.get("ts", 0)) < 900 and d.get("reply"):
             return str(d["reply"])
-    except (OSError, ValueError, TypeError):
-        pass
+    except (OSError, ValueError, TypeError) as exc:  # no usable cached health reply: the check runs again
+        swallowed("ishti/skills/meta/skill.py:health_disk_get", exc)
     return None
 
 
@@ -107,8 +120,8 @@ def _health_disk_put(key, reply):
         with open(tmp, "w", encoding="utf-8") as f:  # atomic replace: a crash never leaves a half file
             json.dump({"key": key, "ts": time.time(), "reply": reply}, f, ensure_ascii=False)
         os.replace(tmp, _HEALTH_DISK)
-    except OSError:
-        pass
+    except OSError as exc:  # the cache is an optimisation: a failed write only costs a re-check
+        swallowed("ishti/skills/meta/skill.py:health_disk_put", exc)
 
 
 def op_health(text, session):
@@ -255,6 +268,67 @@ def op_usage(text, session):
             counts[skill] = counts.get(skill, 0) + 1
     top = sorted(counts.items(), key=lambda kv: -kv[1])[:12]
     return (f"Skills used in the last 30 days ({len(rows)} requests):\n" + "\n".join(f"- {n}: {c}" for n, c in top)) if top else "No usage yet."
+
+
+def _explained_row():
+    """The owner's previous routed request (route_log) with this turn's own question skipped."""
+    from ishti.facts import get_facts
+    f = get_facts()
+    with f.lock:
+        rows = f.db.execute("SELECT ts, text, skill, confidence, source, detail FROM route_log "
+                            "ORDER BY ts DESC LIMIT 25").fetchall()
+    return next((r for r in rows if r[1] and not EXPLAIN.search(str(r[1]))), None)
+
+
+def _steps_for(request: str, limit: int = 6) -> list[str]:
+    """What actually ran for that request, from the action audit (real calls, not a description)."""
+    from ishti import audit
+    try:
+        rows = audit.query(limit=400)
+    except Exception:  # noqa: BLE001 - a missing audit db must not break the answer
+        return []
+    out = []
+    for _ts, _who, skill, action, _detail, tier, _conf, req, _chan in rows:
+        if str(req or "").strip() != request.strip() or str(action or "").startswith("request:"):
+            continue
+        label = f"{skill or 'ishti'}: {action}"[:150]
+        if label not in out:
+            out.append(label)
+    return out[::-1][:limit]
+
+
+def op_explain(text, session):
+    """"which skill handled that", "what steps did you take", "why did you choose X" - from the record."""
+    t = (text or "").lower()
+    row = _explained_row()
+    if not row:
+        return {"reply": "Nothing is recorded yet - ask me something first and I'll explain exactly how I handled it.",
+                "sources": []}
+    _ts, req, skill, _conf, source, detail = row[0], str(row[1]), row[2], row[3], str(row[4] or ""), row[5]
+    why = ""
+    try:
+        why = str((json.loads(detail or "{}") or {}).get("why") or "")
+    except (TypeError, ValueError) as exc:  # an unreadable detail just has no reason text
+        swallowed("ishti/skills/meta/skill.py:explain_detail", exc)
+    head = (f'Your last request was "{req[:140]}" - it went to the **{skill or "dispatcher"}** skill '
+            f'(decided by: {source or "rule"}{(": " + why) if why else ""}).')
+
+    named = re.search(r"\b(?:choose|pick|use|open|run|go\s+with)\s+(?P<what>[\w .+-]{2,40}?)"
+                      r"(?:\s+(?:just\s+now|instead|over|rather|and\s+not|for\s+that)|[?.!,]|$)", t)
+    if named:
+        what = named.group("what").strip()
+        ran = str(req).lower()
+        used = what.lower() in ran or what.lower() in str(skill or "").lower()
+        # the honest form: name the tool that really ran, and correct the premise when it did not
+        return {"reply": head + (f" It did use {what}. " if used else
+                f" I didn't use {what} for it - no such tool ran, so there is nothing to compare. ") +
+                "That decision comes only from what each skill declares it can do, so I can't claim a "
+                "reason that isn't in the record.", "sources": []}
+
+    steps = _steps_for(req)
+    body = ("\nSteps actually recorded for it:\n" + "\n".join(f"- {s}" for s in steps)) if steps else \
+        "\nNo separate tool steps were logged for it."
+    return {"reply": head + body, "sources": []}
 
 
 def op_confirm_profile(text, session):

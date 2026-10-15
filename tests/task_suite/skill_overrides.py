@@ -7,11 +7,12 @@ task's Expected-action, derived by reading the row, not by keyword guessing.
 
 # Tasks whose checklist row describes a situation/long-horizon condition rather than a single prompt: they
 # cannot be forced in one isolated run. They are still attempted (best-effort prompt) and logged as
-# requires_external_condition, with a manual-test note in NEEDS.md.
+# requires_external_condition; see FIXTURES.md for how those rows are graded and recorded.
 # Rows whose text describes a multi-hour / multi-session / multi-person *situation* rather than a
 # prompt. Each is now turned into a single, runnable prompt (PROMPT_OVERRIDE) that exercises the SAME
 # capability in one turn, so nothing is left blocked. Kept here for the record; the suite no longer
-# forces these to blocked.
+# forces these to blocked - which is why EXTERNAL is empty and the live source of the flag is the
+# `requires_external_condition` field on each case in cases/<id>.json.
 EXTERNAL = set()
 SITUATION_ROWS = {219, 221, 223, 229, 231, 233, 235, 239, 245, 247, 249}
 

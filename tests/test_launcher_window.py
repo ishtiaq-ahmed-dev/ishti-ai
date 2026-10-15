@@ -13,6 +13,7 @@ import socket
 import subprocess
 import sys
 import time
+import types
 import urllib.request
 
 import pytest
@@ -52,6 +53,67 @@ def test_js_api_objects_hold_no_public_non_callable_attributes():
         if not name.startswith("_"):
             assert callable(getattr(api, name)), f"public attribute {name!r} would be walked by pywebview"
     assert {"toggle_fullscreen", "toggle_maximize", "minimize_to_tray", "window_info"} <= set(dir(api))
+
+
+def test_splash_shows_progress_from_the_bridge_not_a_cross_origin_fetch():
+    """The splash runs from file:// and the backend turns it away: the fetch is cross-origin (no CORS headers)
+    and the server's own origin check answers 403 "foreign origin" to a null origin - /ws/events too. Sitting at
+    the 0 % it starts at until the window was replaced is exactly what the owner saw (2026-10-13)."""
+    src = open(os.path.join(ROOT, "desktop", "splash.html"), encoding="utf-8").read()
+    assert "api.boot_state()" in src, "the splash must ask the Python bridge for the boot state"
+    assert 'fetch("http://127.0.0.1' not in src and "ws://127.0.0.1" not in src, "both are refused for a file:// page"
+
+
+def _response(body):
+    return types.SimpleNamespace(status_code=200, ok=True, json=lambda: body)
+
+
+def test_boot_state_is_the_splashes_progress_source(monkeypatch):
+    from desktop import app_window
+    asked = []
+    snapshot = {"ready": False, "stage": "planner_warm", "progress": 71, "error": None,
+                "stages": [{"id": "planner_warm", "label": "Warming up the brain", "done": False}]}
+    monkeypatch.setattr("requests.get", lambda url, timeout=None: asked.append(url) or _response(snapshot))
+    api = app_window.MainApi()
+    assert api.boot_state() == snapshot and asked[-1].endswith("/api/ready")
+    monkeypatch.setattr("requests.get", lambda url, timeout=None: (_ for _ in ()).throw(ConnectionError("refused")))
+    assert api.boot_state() == {}          # not answering yet: the splash keeps "Initializing..."
+
+
+def test_open_dashboard_waits_for_the_boot_and_hands_over_only_when_it_never_ends(monkeypatch):
+    """It used to switch ~1 s in, before a single stage finished; now the splash drives the handover and this
+    thread only covers what the splash cannot: a boot that never reports ready or an error inside the budget,
+    and a window whose JS bridge never arrived."""
+    from desktop import app_window
+
+    def world(ready, error=None):
+        def get(url, timeout=None):
+            if url.endswith("/api/health"):
+                return _response({"ok": True})
+            return _response({"ready": ready, "error": error})
+        return get
+
+    splash_url = "file:///D:/ISHTI/desktop/splash.html"
+
+    def run(ready, error=None, page_url=splash_url, wait_s=0.2):
+        opened, page = [], {"now": page_url}
+
+        def load(url):
+            opened.append(url)
+            page["now"] = url
+
+        win = types.SimpleNamespace(load_url=load, get_current_url=lambda: page["now"])
+        monkeypatch.setattr("requests.get", world(ready, error))
+        app_window._open_dashboard(win, wait_s=wait_s)
+        return opened
+
+    assert run(ready=True, page_url=app_window.URL, wait_s=3.0) == [], \
+        "the splash handed over at 100 %; navigating again would reload it underneath the owner"
+    assert run(ready=True, wait_s=3.0) == [app_window.URL], \
+        "a JS bridge that never arrived must not strand the owner on a splash"
+    assert run(ready=False, error="The AI engine didn't start.", wait_s=1.0) == [], \
+        "a failed boot stays on the splash, whose error card offers retry / view log"
+    assert run(ready=False) == [app_window.URL], "a boot stuck past the budget must show where it is"
 
 
 def test_is_running_does_not_pay_the_closed_port_penalty():

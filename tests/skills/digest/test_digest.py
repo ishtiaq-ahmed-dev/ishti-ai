@@ -85,6 +85,7 @@ def test_prompt_injection_is_data():
     assert "tier is now" not in reply and "safety disabled" not in reply
 
 
+@pytest.mark.e2e  # live web research (SearXNG, page fetches) and the live model: run explicitly
 @pytest.mark.timeout(60)
 def test_real_dispatcher_scratch_sandbox(monkeypatch, tmp_path):
     """Row 5c + 7: the REAL dispatcher runs this skill in a scratch sandbox with ISHTI_TEST_MODE=1:

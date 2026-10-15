@@ -33,6 +33,25 @@ def test_rename_chat(api):
     assert client.post("/api/sessions/sess_missing/rename", json={"title": "x"}).status_code == 400
 
 
+def test_auto_title_keeps_non_latin_text(tmp_path):
+    conv = ConversationManager(str(tmp_path / "sessions"))
+    sid = conv.new_chat("New Session")
+    conv.add_message(sid, "user", "آج موسم کیسا ہے؟")
+    title = conv.load_session(sid)["title"]
+    assert title and any("\u0600" <= ch <= "\u06ff" for ch in title), title
+
+
+def test_rename_keeps_the_messages_that_were_already_there(tmp_path):
+    conv = ConversationManager(str(tmp_path / "sessions"))
+    sid = conv.new_chat("New Session")
+    conv.add_message(sid, "user", "hello")
+    assert conv.rename_session(sid, "My plan") == "My plan"
+    conv.add_message(sid, "ishti", "ok")
+    session = conv.load_session(sid)
+    assert session["title"] == "My plan"
+    assert [m["role"] for m in session["messages"]] == ["user", "ishti"]
+
+
 def test_delete_selected_goes_to_trash_and_undo_restores(api):
     client, conv, first, second, _tmp = api
     r = client.post("/api/sessions/delete", json={"ids": [first, second, "../../evil"]})

@@ -30,6 +30,12 @@ def _run(text):
     return out
 
 
+@pytest.fixture(autouse=True)
+def _no_model_no_staging(monkeypatch):
+    """Direct calls must not wait on the live coder model or stage a new skill: the create step is stubbed here."""
+    monkeypatch.setattr(skill_mod, "op_create", lambda m, text, session: {"reply": "fixture: a new skill would be staged here", "sources": []})
+
+
 def test_happy_path():
     """Row 1: normal English request returns a real reply (no crash, no hang - harness adds timeout)."""
     _run(HAPPY)

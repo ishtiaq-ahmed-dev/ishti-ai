@@ -336,7 +336,7 @@ def test_n8_case34_solve_it_followup():
 
 def test_n8_case35_pipeline_never_returns_lost():
     """Prompt 35: Pipeline never returns LOST on repeated assistant output."""
-    from ishti.arch2.pipeline import _not_a_repeat, LOST, TRUTHFUL_FAILURE
+    from ishti.brain import _not_a_repeat, LOST
     session = {
         "history": [
             {"role": "assistant", "content": "Stopped after browser steps. I've opened Google Classroom."}
@@ -345,6 +345,4 @@ def test_n8_case35_pipeline_never_returns_lost():
     repeat = "Stopped after browser steps. I've opened Google Classroom."
     res = _not_a_repeat(repeat, session)
     assert res == LOST  # internal flag triggers fallback
-    # In run(), TRUTHFUL_FAILURE or fallback is returned, NEVER LOST to user
-    assert TRUTHFUL_FAILURE != LOST
-    assert "Sorry - I lost the thread there" not in TRUTHFUL_FAILURE
+    # brain.run() turns LOST into "no answer" (None): the deterministic route decides, and LOST never reaches the owner

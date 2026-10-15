@@ -45,7 +45,7 @@ rgraph.DB_PATH = os.path.join(SCRATCH, "rgraph.db")
 rgraph._conn = None
 
 try:
-    import ishti.arch2.memory as arch2_mem  # noqa: E402
+    import ishti.memstore.memory as arch2_mem  # noqa: E402
     arch2_mem._conn = None
 except Exception as exc:  # noqa: BLE001
     print(f"[qa5] arch2 memory not redirected: {exc}")

@@ -158,6 +158,8 @@ class Skill:
         self.manifest["folder"] = folder
         self.module = None
         self.problem = ""
+        self.missing_optional = [m for m in self.manifest.get("needs", {}).get("optional_python", [])
+                                 if importlib.util.find_spec(m) is None]
         missing = [m for m in self.manifest.get("needs", {}).get("python", [])
                    if importlib.util.find_spec(m) is None]
         if missing:
@@ -177,7 +179,10 @@ class Skill:
 
     @property
     def status(self):
-        return "broken" if self.problem else self.manifest.get("status", "working")
+        if self.problem:
+            return "broken"
+        status = self.manifest.get("status", "working")
+        return "partial" if status == "working" and self.missing_optional else status
 
     def matches(self, text: str) -> bool:
         fn = getattr(self.module, "match", None)
@@ -194,6 +199,7 @@ class Skill:
             "folder": self.folder,
             "status": self.status,
             "problem": self.problem,
+            "missing_optional": self.missing_optional,
         }
 
 
@@ -216,6 +222,19 @@ def load_skills() -> dict:
                     s = Skill(sub, rel_dir=f"{d}/{sub}")
                     if s.name not in skills:
                         skills[s.name] = s
+    if os.environ.get("ISHTI_INSTRUCTION_SKILLS"):
+        from ishti.instruction_skills import guides, InstructionSkill
+        import yaml
+        try:
+            instruction_records = guides()
+        except (ValueError, OSError, yaml.YAMLError) as exc:
+            log_need("error", "instructions", "load", f"Instruction guides rejected ({type(exc).__name__}); check the selected roots and file format.")
+            instruction_records = {}
+        for record in instruction_records.values():
+            guide = InstructionSkill(record)
+            if guide.name in skills:
+                raise ValueError("Instruction guide collides with a native skill")
+            skills[guide.name] = guide
     return skills
 
 

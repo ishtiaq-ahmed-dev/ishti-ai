@@ -10,6 +10,12 @@ import threading
 from ishti import audit, killswitch, scope, test_mode
 from ishti.core.settings import get_settings_service
 
+try:  # best-effort failure log (never breaks the module if logging is unavailable)
+    from ishti.core.logutil import swallowed
+except Exception:  # pragma: no cover
+    def swallowed(*_a, **_k):
+        return None
+
 NON_RUNNABLE = frozenset(("broken", "draft", "disabled", "retired", "planned"))
 
 
@@ -35,7 +41,25 @@ def refusal(skills, name):
 
 
 def available(skills):
-    return {name: skill for name, skill in skills.items() if not refusal(skills, name)}
+    """Skills eligible to run right now — one Settings read for the whole set.
+
+    refusal() is right for a single skill, but calling it per skill re-dumped the whole
+    Settings model 124 times per request (the routing hot path); the flags are read once here.
+    Any read failure still yields nothing runnable, exactly as refusal() failed closed.
+    """
+    try:
+        flags = get_settings_service().get().get("skills", {})
+    except Exception:
+        return {}
+    disabled = set(flags.get("disabled") or [])
+    domains = set(flags.get("disabled_domains") or [])
+    enabled = set(flags.get("enabled") or [])
+    return {name: skill for name, skill in skills.items()
+            if skill.manifest.get("tier", "T1") in ("T0", "T1", "T2")
+            and skill.status not in NON_RUNNABLE
+            and name not in disabled
+            and skill.manifest.get("category", "General") not in domains
+            and (not enabled or name in enabled)}
 
 
 def _blocked(name, reason):
@@ -100,7 +124,25 @@ specific recipient/action recap. A route value such as 'pending' grants nothing.
                 "sources": [], "confirm_required": True}
     scope.install()
     killswitch.propagate()
-    if skills[name].manifest.get("tier", "T1") == "T2":
+    is_t2 = skills[name].manifest.get("tier", "T1") == "T2"
+    if is_t2 and name == "security":
+        try:
+            from ishti.skills.security.skill import OPS
+            # "I found this text in a download: 'password: ...'. What should I do with it?" is advice about
+            # an exposed credential: nothing is read, sent, encrypted or stored, so gating it behind a
+            # yes/no hid the warning behind a confirmation the owner had no reason to expect (checklist 239).
+            if any(name_ == "secret_found" and rx.search(text) for name_, rx in OPS):
+                is_t2 = False
+        except Exception as exc:  # fail closed: the tier stays T2 when the classifier cannot run
+            swallowed("ishti/skill_execution.py:execute.security", exc)
+    if is_t2 and name == "whatsapp":
+        try:
+            from ishti.skills.whatsapp.skill import UNREAD, READ_CHAT, TOP_CHATS, OPEN_ONLY, SEND, SEND_TO
+            if (UNREAD.search(text) or READ_CHAT.search(text) or TOP_CHATS.search(text) or OPEN_ONLY.search(text)) and not (SEND.search(text) or SEND_TO.search(text)):
+                is_t2 = False
+        except Exception as exc:  # fail closed: a send stays T2 when the classifier cannot run
+            swallowed("ishti/skill_execution.py:execute.whatsapp", exc)
+    if is_t2:
         from ishti.skills import ask_first
         out = ask_first(session, name, f"Run {name} for: {text[:240]}",
                         _once(lambda: _invoke(skills, name, text, session), name))

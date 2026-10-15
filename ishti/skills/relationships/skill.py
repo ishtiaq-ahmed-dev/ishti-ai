@@ -411,8 +411,6 @@ def _describe_people(rgraph, rel, ctx, tail, session):
 def _rel_drop(rgraph, rel, ctx, name, session, _confirmed=False):
     """'my manager is no longer Kamran' - that link goes; the person node and everyone else stay."""
     gone = [e for e in _slot_edges(rgraph, rel, ctx) if _other_end(e) == name.lower()]
-    for e in gone:
-        rgraph.unrelate(e["s_name"], e["rel"], e["d_name"])
     if not gone:
         return {"reply": f"I don't have {name.title()} stored as your {rel}, so there was nothing to "
                          f"remove.", "sources": []}
@@ -420,6 +418,10 @@ def _rel_drop(rgraph, rel, ctx, name, session, _confirmed=False):
         from ishti.skills import ask_first
         return ask_first(session, "relationships", f"Remove {name.title()} as your {rel}?",
                          lambda: _rel_drop(rgraph, rel, ctx, name, session, True))
+    # Delete only AFTER the owner's yes: this used to unrelate before the gate, so the data was already
+    # gone (and the owner could not decline) while the reply still asked for confirmation.
+    for e in gone:
+        rgraph.unrelate(e["s_name"], e["rel"], e["d_name"])
     trace(session, "graph", f"relationship removed: {name.lower()} is no longer {rel}")
     return {"reply": f"Removed: {name.title()} is no longer your {rel} ({len(gone)} link(s) deleted). "
                      f"Everyone else is untouched.", "sources": []}
@@ -487,7 +489,7 @@ def _rel_delete(rgraph, name, rel, session, _confirmed=False):
     #    leave "Removed <nobody> from records." rows in the memory store (checklist 89/187).
     if target is not None:
         try:
-            from ishti.arch2 import memory as a2_mem
+            from ishti.memstore import memory as a2_mem
             a2_mem.semantic(f"Removed {name_clean.title()} from {rel_clean or 'records'}.")
         except Exception:
             swallowed('ishti/skills/relationships/skill.py:_rel_delete:440')
@@ -577,8 +579,8 @@ def _save_explicit_relation(rgraph, rel, name, detail=""):
 
     # Mirror into arch2 memory
     try:
-        from ishti.arch2 import memory as a2_mem
-        a2_mem.entity(name, kind="person", relationship=rel, notes=[detail] if detail else [])
+        from ishti.memstore import memory as a2_mem
+        a2_mem.upsert_entity(name, kind="person", relationship=rel, note=detail or None)
         a2_mem.semantic(f"{name.title()} is my {rel}.")
     except Exception:
         swallowed('ishti/skills/relationships/skill.py:_save_explicit_relation:531')
@@ -933,7 +935,7 @@ def _run_single(text, session):
             if proj.lower() in detail:
                 people.append((e["d_name"].title(), e["rel"]))
         try:
-            from ishti.arch2 import memory as a2_mem
+            from ishti.memstore import memory as a2_mem
             for ent in a2_mem.entities():
                 notes = str(ent.get("notes") or "").lower()
                 ename = (ent.get("name") or ent.get("display") or "").title()
@@ -969,8 +971,8 @@ def _run_single(text, session):
             name = session.get("rel_last") or "Ayesha"
         rgraph.add_preference(name, f"job: {job}", "pos")
         try:
-            from ishti.arch2 import memory as a2_mem
-            a2_mem.entity(name, kind="person", relationship=rel, notes=[f"Job: {job}"])
+            from ishti.memstore import memory as a2_mem
+            a2_mem.upsert_entity(name, kind="person", relationship=rel, note=f"Job: {job}")
             a2_mem.semantic(f"My {rel} {name} is a {job} now.")
         except Exception:
             swallowed('ishti/skills/relationships/skill.py:_run_single:883')
@@ -985,9 +987,9 @@ def _run_single(text, session):
         rgraph.relate("me", "colleague", f"{name} (Azure)", detail="Azure project")
         rgraph.relate("me", "colleague", f"{name} (Zyntiqo)", detail="Zyntiqo")
         try:
-            from ishti.arch2 import memory as a2_mem
-            a2_mem.entity(f"{name} (Azure)", kind="person", relationship="colleague", notes=[f"Colleague from Azure project"])
-            a2_mem.entity(f"{name} (Zyntiqo)", kind="person", relationship="colleague", notes=[f"Colleague from Zyntiqo"])
+            from ishti.memstore import memory as a2_mem
+            a2_mem.upsert_entity(f"{name} (Azure)", kind="person", relationship="colleague", note="Colleague from Azure project")
+            a2_mem.upsert_entity(f"{name} (Zyntiqo)", kind="person", relationship="colleague", note="Colleague from Zyntiqo")
             a2_mem.semantic(f"I have two colleagues named {name}: one from the Azure project and one from Zyntiqo.")
         except Exception:
             swallowed('ishti/skills/relationships/skill.py:_run_single:900')
@@ -1012,7 +1014,7 @@ def _run_single(text, session):
                 if wname not in found and wname.lower() not in ("me", "you"):
                     found.append(wname)
         try:
-            from ishti.arch2 import memory as a2_mem
+            from ishti.memstore import memory as a2_mem
             for ent in a2_mem.entities():
                 if (ent.get("relationship") or "").lower() == rel or (group and group.lower() in str(ent.get("notes") or "").lower()):
                     wname = (ent.get("name") or ent.get("display") or "").title()
@@ -1162,8 +1164,8 @@ def _run_single(text, session):
 
             # Mirror in arch2
             try:
-                from ishti.arch2 import memory as a2_mem
-                a2_mem.entity(new.title(), kind="person")
+                from ishti.memstore import memory as a2_mem
+                a2_mem.upsert_entity(new.title(), kind="person")
                 a2_mem.semantic(f"{new.title()} is {old_display}'s updated full name.")
             except Exception:
                 swallowed('ishti/skills/relationships/skill.py:_run_single:1042')
@@ -1511,8 +1513,11 @@ if __name__ == "__main__":
     assert mgr[0]["detail"] == "the DevOps gig", "the prior project context is kept"
     assert rg.get_node("faisal") is not None and rg.find_matches("faisal") == [], "no duplicate person"
     assert "Faisal" in run("who is my manager", sess)["reply"]
-    r = run("my manager is no longer Faisal", sess)
-    assert "Removed: Faisal is no longer your manager" in r["reply"] and not rg.edges_of("me", rel="manager"), r
+    r = run("my manager is no longer Faisal", sess)  # removal is owner-gated (ask_first), not silent
+    assert "(yes/no)" in r["reply"] and sess["pending"]["skill"] == "relationships", r
+    assert rg.edges_of("me", rel="manager"), "nothing is removed before the owner confirms"
+    sess["pending"]["action"]()  # the owner says yes
+    assert not rg.edges_of("me", rel="manager"), "the link is gone after confirmation"
     r = run("My manager at the DevOps gig is Kamran", sess)
     assert "Noted" in r["reply"] and run("My manager at the DevOps gig changed, it's now someone named "
                                          "Faisal", sess)["reply"].startswith("Updated:")

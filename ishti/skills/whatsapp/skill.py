@@ -1008,69 +1008,10 @@ def _copy_file_clipboard(path):
 
 
 def send_desktop(contact, messages, path, session):
-    """Sends via Windows WhatsApp Desktop app using desktop automation."""
+    """WhatsApp Desktop is never driven blind (keyboard automation cannot prove the recipient). Refused, always:
+    the linked bridge or WhatsApp Web can verify the exact chat."""
     return _out("I did not send through WhatsApp Desktop because I cannot verify the selected recipient there. "
                 "Use the linked bridge or WhatsApp Web for an exact-recipient send.", False)
-    from ishti import test_mode
-    if test_mode.enabled():
-        return test_mode.blocked("whatsapp", f"desktop send to {contact}")
-    if session.get("live_self_test"):
-        return _out("Desktop sending is disabled during self-chat verification because its recipient cannot be verified.", False)
-    from desktop.computer_use import get_computer_use_agent
-    import pyperclip
-
-    agent = get_computer_use_agent()
-    trace(session, "app", "Opening WhatsApp Desktop", status="start")
-
-    # 1. Launch/focus WhatsApp
-    try:
-        os.startfile("whatsapp:")
-    except Exception:
-        agent.launch_app("whatsapp")
-    time.sleep(1.2)
-    agent.focus_window("whatsapp")
-    time.sleep(0.8)
-
-    # 2. Focus search and locate contact
-    trace(session, "contacts", f"Searching for '{contact}' in WhatsApp")
-    agent.keyboard_hotkey("ctrl", "f")
-    time.sleep(0.4)
-    agent.keyboard_hotkey("ctrl", "a")
-    agent.press_key("backspace")
-    time.sleep(0.2)
-
-    agent.keyboard_type(contact)
-    time.sleep(1.2)
-
-    agent.press_key("enter")
-    time.sleep(1.0)
-
-    done = []
-    if path and os.path.isfile(path):
-        trace(session, "upload", f"Attaching {os.path.basename(path)}")
-        if _copy_file_clipboard(path):  # CF_HDROP paste: how the desktop app accepts a file drop
-            agent.keyboard_hotkey("ctrl", "v")
-            time.sleep(1.5)
-            agent.press_key("enter")
-            time.sleep(1.0)
-            done.append(os.path.basename(path))
-        else:
-            return _out(f"I couldn't put {os.path.basename(path)} on the clipboard, so nothing was sent to "
-                        f"{contact} - please attach it in WhatsApp yourself.", False)
-
-    for msg in messages:
-        trace(session, "type", f"Typing: {msg}")
-        pyperclip.copy(msg)
-        agent.keyboard_hotkey("ctrl", "v")
-        time.sleep(0.3)
-        agent.press_key("enter")
-        time.sleep(0.8)
-        done.append(repr(msg) if len(msg) < 60 else "your message")
-
-    trace(session, "send", f"Sent to {contact} on WhatsApp", status="done")
-    items = ", ".join(done) if done else "message"
-    # the desktop app is driven blind (keyboard automation): what went out cannot be confirmed from here
-    return _out(f"Sent {items} to {contact} on WhatsApp.", False)
 
 
 PAIR_WANT = re.compile(r"\b(?:connect|pair|link|scan|qr)\b.*\bwhats?app\b|\bwhats?app\s+(?:connect|pair|link|qr)\b|"
@@ -1333,29 +1274,11 @@ def open_preferred(session, kind=None):
 
 
 def _desktop_gate(session, contact, messages, path, voice=None):
-    """The WhatsApp DESKTOP app is driven blind (keyboard automation), so ISHTI cannot prove afterwards
-    that the right chat received it. That is exactly the case that needs the owner's yes FIRST, with the
-    recipient spelled out - a voice note once reached "Ishtiaq Ahmed" when "Ahmed" was asked for."""
-    return _out("I did not send through WhatsApp Desktop because its selected chat cannot be verified. "
-                "Link the local bridge or open WhatsApp Web and try the exact-recipient approval there.", False)
-    if voice:
-        what = f'voice note: "{voice}"'
-    elif path:
-        what = f"the file {os.path.basename(path)}"
-    else:
-        what = " ".join(messages or []) or "the message"
-
-    def _do_send():
-        p = path
-        if voice and not p:
-            p, _ = voice_note(voice)
-        return send_desktop(contact, messages, p, session)
-
-    return ask_first(session, "whatsapp",
-                     f"Send this to {contact} in the WhatsApp app?\n\n{what}\n\n"
-                     f"I drive that window blind, so please check the name is right.\n\nSend it",
-                     _do_send)
-
+    """The WhatsApp DESKTOP app is driven blind, so ISHTI cannot prove the right chat received a message. Desktop
+    sends are therefore refused (send_desktop). No yes/no is offered for them: that question could only end in the same
+    refusal, and a pending confirmation would leave an action waiting that can never run."""
+    return _out("I did not send through WhatsApp Desktop because I cannot verify the selected recipient there. "
+                "Use the linked bridge or WhatsApp Web for an exact-recipient send.", False)
 
 
 # ---- editing a chat in place: delete, edit, react (T2 - all change what the other person already sees)
@@ -1436,7 +1359,12 @@ def _run(text, session):
     if m_open and not (SEND.search(text) or SEND_TO.search(text)):
         return open_preferred(session, m_open.group("kind"))
 
-    is_send = bool(SEND.search(text) or SEND_TO.search(text) or re.search(r"\b(?:send|message|text|write)\b", text, re.I))
+    # Bulk mark as read intent (checklist 115)
+    if re.search(r"\bmark\b.*\bread\b", text, re.I):
+        return {"reply": "WhatsApp does not expose a bulk control to mark messages as read by label or contact. You can open that chat directly to mark it as read.", "sources": []}
+
+    is_unread = bool(UNREAD.search(text))
+    is_send = not is_unread and bool(SEND.search(text) or SEND_TO.search(text) or re.search(r"\b(?:send|text|write)\b", text, re.I))
     if is_send:
         from ishti import wa_bridge as bridge
         if bridge.connected():
@@ -1487,9 +1415,10 @@ def _run(text, session):
 
     # 2. Direct Read Chat Messages intent: "what did Ali say", "read messages from Ali", "check chat with Bhai"
     if READ_CHAT.search(text) and not (SEND.search(text) or SEND_TO.search(text)):
-        if not ok:
-            return {"reply": "WhatsApp Web is not logged in or ready in Chrome Profile 9 yet (it may need the QR scan). Open it once and link your phone.", "sources": []}
         target_name = read_target(text)
+        if not ok:
+            who = f" to check your chat with {target_name.title()}" if target_name else ""
+            return {"reply": f"WhatsApp Web is not logged in or ready in Chrome Profile 9 yet (it may need the QR scan){who}. Open it once and link your phone.", "sources": []}
         if target_name:
             target_name = resolve_contact(target_name, session)
             if session.get("whatsapp_ambiguous"):

@@ -1,44 +1,20 @@
 {
   "llm": {
+    "provider": "local",
+    "api": {
+      "provider": "anthropic",
+      "base_url": "",
+      "model": "claude-haiku-5-5",
+      "api_key_env": "ISHTI_API_KEY"
+    },
     "base_url": "http://127.0.0.1:11434/v1",
     "models": {
-      "planner": "ishti-spark2.5-q8:4b",
-      "coder": "ishti-qwen2.5-coder:14b",
-      "fast": "laya",
-      "translator": "gemma3:4b"
+      "planner": "qwen3.8-27b-uncensored-q5_k_m:latest",
+      "coder": "qwen3.8-27b-uncensored-q5_k_m:latest",
+      "translator": "qwen3.8-27b-uncensored-q5_k_m:latest"
     },
     "fallback": "ishti-qwen2.5:14b",
     "timeout_s": 120
-  },
-  "arch": {
-    "active": "arch2",
-    "note": "active: arch1 (existing dispatcher) or arch2 (intent-router -> qwen3:14b think/tool loop -> validation -> qwen3:14B final). Switch here, from the dashboard Settings -> Architecture card, or by asking ISHTI. arch2 memory adds a five-table unified store on SQLite + the existing Chroma; nothing else changes.",
-    "arch2": {
-      "models": {
-        "main": "qwen3:14b",
-        "validation": "qwen3:14b",
-        "fallback": "ishti-qwen2.5:14b"
-      },
-      "memory": {
-        "db_name": "arch2_memory.db",
-        "retrieval_k": 6,
-        "max_distance": 0.45,
-        "context_budget_chars": 2600,
-        "confirmation_thresholds": {
-          "temporary": 2,
-          "weak": 5,
-          "probable": 10,
-          "note": "0-2 observations = temporary; 3-5 weak; 6-10 probable; 11+ strong (promoted to semantic memory). Edit freely - nothing is hard-coded."
-        },
-        "decay": {
-          "enabled": true,
-          "run_interval_h": 12,
-          "min_importance_floor": 0.55,
-          "note": "Low-importance, long-unconfirmed memories are marked needs_confirmation (never deleted); importance >= floor is never decayed."
-        }
-      }
-    },
-    "active_profile": "router_single_agent"
   },
   "memory": {
     "db_path": "D:\\ISHTI\\data\\ishti.db",
@@ -83,8 +59,6 @@
     "note": "Reinforcement-like learning: feedback -> lesson -> memory/policy/dataset. Weights are NEVER changed at runtime; offline LoRA/QLoRA only (orchestrator/finetune.py) behind its eval gate. thresholds = confidence bands (spec 11); evidence = how many independent occasions before a lesson widens scope or becomes a candidate rule (spec 9/10); proactive=false means no volunteered suggestions until the owner asks."
   },
   "router": {
-    "use_laya": true,
-    "laya_model": "typed-decisions",
     "min_confidence": 0.2,
     "default_skill": "chat"
   },
@@ -265,6 +239,24 @@
       "client_id": "",
       "client_secret": "",
       "note": "Google Cloud Console -> APIs & Services -> Credentials -> Create OAuth client ID -> Application type **Desktop app**; enable the Gmail API. Desktop client secrets are not secret - they ship with the app - so they live here next to your config."
+    }
+  },
+  "memstore": {
+    "db_name": "arch2_memory.db",
+    "retrieval_k": 6,
+    "max_distance": 0.45,
+    "context_budget_chars": 2600,
+    "confirmation_thresholds": {
+      "temporary": 2,
+      "weak": 5,
+      "probable": 10,
+      "note": "0-2 observations = temporary; 3-5 weak; 6-10 probable; 11+ strong (promoted to semantic memory). Edit freely - nothing is hard-coded."
+    },
+    "decay": {
+      "enabled": true,
+      "run_interval_h": 12,
+      "min_importance_floor": 0.55,
+      "note": "Low-importance, long-unconfirmed memories are marked needs_confirmation (never deleted); importance >= floor is never decayed."
     }
   }
 }

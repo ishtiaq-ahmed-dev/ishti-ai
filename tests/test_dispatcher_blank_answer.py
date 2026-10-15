@@ -48,9 +48,8 @@ def _isolate(monkeypatch):
     the arch2 brain must not take the turn: with config arch.active=arch2 it intercepts whenever
     _rule_owned is False, and the route stub below carries source="test". Pinning _rule_owned True keeps
     the skill path this file is about (same intent as the followups suite's route stub)."""
-    for name in ("_remember", "_learn", "_learn_turn", "_arch2_consolidate", "_ftlog"):
+    for name in ("_remember", "_learn", "_learn_turn", "_memory_extract", "_ftlog"):
         monkeypatch.setattr(D, name, lambda *a, **k: None)
-    monkeypatch.setattr(D.planner, "candidate", lambda *a, **k: False)
     monkeypatch.setattr(D, "_rule_owned", lambda text: True)
 
 

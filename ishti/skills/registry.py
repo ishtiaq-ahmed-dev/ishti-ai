@@ -79,9 +79,16 @@ def records(skills: dict, refresh: bool = False) -> dict:
     """{skill name: record} for the loaded skills (cached; manifests don't change at runtime)."""
     global _cache
     with _lock:
-        if _cache is None or refresh:
+        if skills and (_cache is None or refresh):
             _cache = {name: record_for(s) for name, s in skills.items()}
-        return _cache
+        return _cache or {}
+
+
+def _loaded() -> dict:
+    """The live skill set, loaded on demand: validation must not depend on a caller having
+    primed the record cache first (that coupling made every toggle look like an unknown skill)."""
+    from ishti.skills import load_skills
+    return load_skills()
 
 
 def reset_cache():
@@ -116,7 +123,7 @@ def retrieve(request: str, skills: dict, k: int = 12, domain: str | None = None,
         return []
     scored: dict[str, float] = {}
     try:
-        from ishti.router import route as _route
+        from ishti.tool_routing import route as _route
         usable = {n: s for n, s in skills.items() if n in recs and s.status != "broken"}
         dec = _route(request, usable)
         for n, c in (dec.get("scores") or []):
@@ -151,8 +158,9 @@ def set_enabled(target: str, on: bool, *, is_domain: bool = False) -> dict:
     disabled = list(s.get("disabled") or [])
     domains = list(s.get("disabled_domains") or [])
     if is_domain:
-        from ishti.skills import SKILL_CATEGORIES
-        known = set(SKILL_CATEGORIES.values()) | {r["domain"] for r in (records({}) or {}).values()}
+        from ishti.skills import SKILL_CATEGORIES, CATEGORY_CANON
+        target = CATEGORY_CANON.get(target, target)  # records store canonical domains; a raw category would no-op
+        known = {CATEGORY_CANON.get(v, v) for v in SKILL_CATEGORIES.values()} | {r["domain"] for r in (records({}) or {}).values()}
         if target not in known:
             raise ValueError(f"unknown domain '{target}'")
         if on:
@@ -160,7 +168,10 @@ def set_enabled(target: str, on: bool, *, is_domain: bool = False) -> dict:
         elif target not in domains:
             domains.append(target)
     else:
-        if target not in _cache or not _cache:
+        known = records({}) or {}
+        if target not in known:  # cold or stale cache: rebuild once from disk before refusing
+            known = records(_loaded(), refresh=True)
+        if target not in known:
             raise ValueError(f"unknown skill '{target}' (is it loaded?)")
         if on:
             disabled = [d for d in disabled if d != target]
@@ -197,7 +208,7 @@ if __name__ == "__main__":
     recs = records(skills, refresh=True)
     assert len(recs) == len(skills)
     r = recs["desktop"]
-    assert r["domain"] == "System & Desktop" and r["status"] == "implemented", r
+    assert r["domain"] == "Computer & System" and r["status"] == "implemented", r
     assert r["risk_level"] in ("low", "medium", "high") and r["requires_confirmation"] is False  # T1
     t2 = [x for x in recs.values() if x["requires_confirmation"]]
     assert t2 and all(x["risk_level"] == "high" for x in t2), "T2/T3 -> high risk + confirm"

@@ -18,7 +18,9 @@ THRESHOLDS = {"language": 3, "time_habit": 6, "frequent_task": 5}
 INFER_EVERY = 30
 _URDU_SCRIPT = re.compile(r"[؀-ۿ]")
 _PASHTO_ONLY = re.compile(r"[ټځڅډړږښڼۍېګ]")
-_ROMAN_URDU = re.compile(r"\b(?:kya|hai|nahi|kaise|mujhe|mera|meri|batao|karo|kar|do|acha|theek|aap|tum|yeh|woh|kahan|kab)\b", re.I)
+_ROMAN_URDU = re.compile(r"\b(?:kya|hai|nahi|kaise|mujhe|mera|meri|batao|karo|acha|theek|aap|tum|yeh|woh|kahan|kab)\b", re.I)
+# NOTE: "do"/"kar" were removed - "what do you do" scored 2 matches and every English turn
+# was labelled Roman Urdu after three messages.
 
 
 def _language(text: str) -> str:

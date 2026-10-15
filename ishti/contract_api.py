@@ -11,7 +11,7 @@ import os
 import sys
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -73,6 +73,21 @@ async def chat_delete(chat_id: str):
         return {**out, "trashed": True}
     except ValueError as exc:
         return _bad(str(exc), 404)
+
+
+@router.get("/api/chats/{chat_id}/export")
+async def chat_export(chat_id: str):
+    """The whole chat as Markdown: the owner's messages and ISHTI's replies, in order. Read-only; the owner saves it."""
+    chat = runs.get_chat_for_profile(chat_id)
+    if not chat:
+        return _bad("unknown chat_id", 404)
+    rows = runs.messages_after(chat_id, 0, limit=100000)
+    lines = [f"# {chat.get('title') or 'ISHTI chat'}", ""]
+    for m in rows:
+        who = "You" if m.get("role") == "user" else "ISHTI"
+        lines += [f"**{who}:** {m.get('text') or ''}", ""]
+    return PlainTextResponse("\n".join(lines), media_type="text/markdown; charset=utf-8",
+                             headers={"Content-Disposition": f'attachment; filename="chat-{chat_id}.md"'})
 
 
 @router.get("/api/chats/{chat_id}/messages")
@@ -164,9 +179,11 @@ async def events_since(since_seq: int = 0, limit: int = 2000, wait: float = 0):
     from ishti import profiles
     deadline = time.monotonic() + max(0.0, min(float(wait), 25.0))
     while True:
-        evs = runs.events_since_profile(profiles.load_active(), since_seq, limit)
+        evs, scanned = runs.events_since_profile(profiles.load_active(), since_seq, limit)
         if evs or time.monotonic() >= deadline:
-            return {"events": evs, "last_seq": runs.last_seq()}
+            # Resume point comes from the scan itself (gapless seqs): a re-queried last_seq can
+            # overshoot a concurrently published event, and the client would skip it forever.
+            return {"events": evs, "last_seq": scanned}
         await asyncio.sleep(0.15)
 
 
@@ -362,47 +379,6 @@ async def connector_config(cid: str, req: Request):
             "control_numbers": [str(n) for n in pol.get(key, [])],
             "automation_enabled": bool(pol.get("whatsapp_enabled") and
                                        (pol.get("risk_ack") or {}).get("whatsapp_automation"))}
-
-
-# ---------------------------------------------------------------- agents (14.4)
-
-@router.get("/api/agents")
-async def agents_list():
-    from ishti import agents
-    out = []
-    for aid, spec in agents.AGENTS.items():
-        st = runs.AGENT_STATE.get(aid, {})
-        out.append({"id": aid, "skills": spec.get("skills", []), "goal": spec.get("goal", ""),
-                    "state": st.get("state", "idle"), "detail": st.get("detail", "")})
-    return {"agents": out}
-
-
-@router.get("/api/agents/{aid}/messages")
-async def agent_messages(aid: str):
-    from ishti import agents
-    if aid not in agents.AGENTS:
-        return _bad("unknown agent", 404)
-    return {"agent_id": aid, "messages": runs.AGENT_MESSAGES.get(aid, [])}
-
-
-@router.post("/api/agents/events")
-async def agent_events(req: Request):
-    """The owner's answers to INPUT_REQUIRED prompts (A2A loop closure). The owner is the only
-    T2 authority; the answer flows into the typed agent bus as a result envelope."""
-    body = await _body(req)
-    aid = str(body.get("agent_id") or "")
-    from ishti import agents
-    if aid not in agents.AGENTS:
-        return _bad("unknown agent", 404)
-    text = str(body.get("answer") or body.get("text") or "").strip()
-    if not text:
-        return _bad("answer is required")
-    from ishti import agent_bus
-    agent_bus.publish(f"input.response.{aid}", {"answer": text[:2000], "run_id": str(body.get("run_id") or "")},
-                      sender="owner", type_="result")
-    runs.agent_message(aid, "owner", text[:4000])
-    runs.agent_status(aid, "idle", "owner answered")
-    return {"ok": True, "agent_id": aid}
 
 
 # ---------------------------------------------------------------- learning (14.4)

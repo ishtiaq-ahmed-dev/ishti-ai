@@ -4,7 +4,8 @@ Measured metric (before/after on the fixed mishear set below):
   BEFORE (layer bypassed - what the router saw): coverage as reported by coverage() on raw strings = 0 fixes
   AFTER  (ishti.stt_vocab.apply wired into voice.transcribe): see test_fixed_set_measured_coverage.
 The STT-level English-misheard-as-Urdu/Arabic rate on real audio stays BLOCKED until an owner-approved
-voice test set exists (NEEDS.md N39); this suite measures the correction layer's own contract.
+voice test set exists (still an open measurement gap - see docs/ACCURACY.md section 3); this suite
+measures the correction layer's own contract.
 
 Run: venv\\Scripts\\python -m pytest tests/test_voice_vocabulary.py -q
 """

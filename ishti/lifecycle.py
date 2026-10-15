@@ -4,13 +4,15 @@ The contract is docs/API_CONTRACT.md; the HTTP/WS side is ishti/lifecycle_api.py
 
   boot       stages run in a worker thread, each verified against reality (Ollama answers, memory opens, skills import,
              the planner is FULLY on the GPU and answered, the voice engine is loaded). A stage that fails or stalls turns
-             into a plain-language `error` (with the log path); it is retried, so starting Ollama late heals the boot.
+             into a plain-language `error` (with the log path); one retry is allowed before a stable restart instruction.
   Ollama     if it is not running we start it (hidden, in our Job Object) and it is "ours": we stop it at shutdown. An
              Ollama that was already running is left running (only our models are unloaded from it).
   shutdown   stop intake -> cancel/finish tasks (bounded) -> flush SQLite/Chroma -> stop voice+mic -> unload our models
              (+ stop our Ollama) -> close the MCP/browser servers we opened (never the owner's own Chrome) -> release the
              port -> exit; anything still alive after a bounded time is force-killed (whole tree)."""
+import asyncio
 import faulthandler
+import socket
 import glob
 import io
 import json
@@ -65,16 +67,17 @@ log = logging.getLogger("ishti.lifecycle")
 STAGES = [("backend_up", "Starting ISHTI"), ("ollama_ready", "Waking up the AI engine"), ("memory_loaded", "Loading your memory"),
           ("skills_loaded", "Loading skills"), ("planner_warm", "Warming up the brain"), ("voice_ready", "Getting the voice ready"),
           ("ready", "Ready")]
-FRIENDLY = {"ollama_ready": "The AI engine (Ollama) didn't start. Make sure Ollama is installed, then try again.",
+FRIENDLY = {"backend_up": "The local dashboard did not start. Close ISHTI, check the port shown in the log, and restart.",
+            "ollama_ready": "The AI engine (Ollama) didn't start. Make sure Ollama is installed, then try again.",
             "memory_loaded": "Your memory couldn't be opened.",
             "skills_loaded": "The skills didn't finish loading.",
             "planner_warm": "The assistant's main model couldn't be loaded onto the graphics card.",
             "voice_ready": "The voice engine didn't start (ISHTI works without its voice)."}
-TIMEOUTS = {"backend_up": 60, "ollama_ready": 60, "memory_loaded": 90, "skills_loaded": 180, "planner_warm": 300, "voice_ready": 90}
+TIMEOUTS = {"backend_up": 15, "ollama_ready": 60, "memory_loaded": 90, "skills_loaded": 180, "planner_warm": 300, "voice_ready": 90}
 
 _lk = threading.RLock()
 _st = {"state": "starting", "port": 8888, "t0": time.time(), "done": {}, "error": None, "error_stage": None, "detail": {},
-       "active": set(), "booting": False}
+       "active": set(), "booting": False, "stage_workers": {}}
 _ollama = {"proc": None, "ours": False}
 _server = {"uvicorn": None}
 _accepting = threading.Event()
@@ -95,7 +98,7 @@ def accepting():
 
 
 def ready_snapshot():
-    """GET /api/ready (docs/API_CONTRACT.md §2)."""
+    """GET /api/ready (docs/API_CONTRACT.md Ã‚Â§2)."""
     with _lk:
         stages = [{"id": i, "label": lab, "done": bool(_st["done"].get(i)),
                    "status": "done" if _st["done"].get(i) else "error" if _st["error_stage"] == i else "loading" if i in _st["active"] else "pending"}
@@ -153,6 +156,9 @@ class _Stream(io.TextIOBase):
         with self.lk:  # several threads print at once: keep whole lines together
             self.buf += s
             *lines, self.buf = self.buf.split("\n")
+            while len(self.buf) > 16_384:
+                lines.append(self.buf[:16_384])
+                self.buf = self.buf[16_384:]
         for line in lines:
             if line.strip():
                 logging.getLogger("stdout" if self.level == logging.INFO else "stderr").log(self.level, line.rstrip())
@@ -197,7 +203,10 @@ def setup_logging():
     sys.stdout = _Stream(logging.INFO, sys.__stdout__ if sys.__stdout__ and sys.__stdout__.isatty() else None)
     sys.stderr = _Stream(logging.ERROR, sys.__stderr__ if sys.__stderr__ and sys.__stderr__.isatty() else None)
     try:
-        faulthandler.enable(open(os.path.join(LOG_DIR, "crash.log"), "a", buffering=1))
+        from ishti.core.runtime_logs import rotate_closed
+        crash_path = os.path.join(LOG_DIR, "crash.log")
+        rotate_closed(crash_path)
+        faulthandler.enable(open(crash_path, "a", buffering=1))
     except Exception:
         pass
 
@@ -217,16 +226,16 @@ def single_instance(port):
         return True
     for _ in range(40):  # the first instance may still be starting: wait for it to listen
         try:
-            requests.post(f"http://127.0.0.1:{port}/api/focus", timeout=2)
-            break
+            if requests.post(f"http://127.0.0.1:{port}/api/focus", timeout=(CONNECT_S, 2)).ok:
+                return False
         except requests.RequestException:
             time.sleep(0.25)
-    return False
+    raise RuntimeError(f"The existing ISHTI instance on port {port} did not respond. Close it and restart; no second backend was started.")
 
 
 # A closed loopback port takes ~2 s to refuse on Windows (measured 2.0 s), so every "is it up yet?" poll against a
 # service that is still starting cost 2 s. An open port accepts in under 10 ms: a 0.3 s connect timeout loses nothing
-# and turns a 2 s poll into a 0.3 s one (Ollama start 7.5 s -> see docs/build/P6_REPORT.md).
+# and turns a 2 s poll into a 0.3 s one (measured Ollama start 7.5 s).
 CONNECT_S = 0.3
 
 
@@ -483,9 +492,9 @@ def _start_ollama(env_extra=None):
     env = {**os.environ, **ollama_env(), **(env_extra or {})}
     if OLLAMA != "http://127.0.0.1:11434":  # a test/alternative port: OLLAMA_HOST tells the server where to listen
         env["OLLAMA_HOST"] = OLLAMA.split("//", 1)[1]
-    out = open(os.path.join(LOG_DIR, "ollama.log"), "a", buffering=1)
-    proc = subprocess.Popen([exe, "serve"], env=env, stdout=out, stderr=subprocess.STDOUT, creationflags=NOWIN)
-    out.close()
+    from ishti.core.runtime_logs import pipe_log
+    proc = subprocess.Popen([exe, "serve"], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=NOWIN)
+    pipe_log(proc.stdout, os.path.join(LOG_DIR, "ollama.log"))
     _ollama.update(proc=proc, ours=True)
     registry({"ollama_pid": proc.pid, "ollama_ct": created(proc.pid), "ollama_url": OLLAMA})
     for _ in range(60):
@@ -552,7 +561,8 @@ def apply_ollama_settings(settings=None, take_over=False):
 
 # ---------------------------------------------------------------- boot
 def _stage_backend():
-    for _ in range(120):
+    deadline = time.monotonic() + TIMEOUTS["backend_up"] - 1
+    while time.monotonic() < deadline and not _shutdown["started"]:
         if _health(_st["port"]):
             return
         time.sleep(0.25)
@@ -560,6 +570,10 @@ def _stage_backend():
 
 
 def _stage_ollama():
+    from ishti import llm
+    if llm.provider() == "api":  # cloud model: the local engine is not used, so it is not started
+        _st["detail"]["ollama"] = "not used (API provider)"
+        return
     try:
         from ishti import privacy
         privacy.silence_ollama_tray()   # the tray app phones ollama.com hourly; ISHTI runs its own `ollama serve`
@@ -607,12 +621,17 @@ LAYA_PEAK_MB = 4000
 
 
 def _stage_planner():
+    from ishti import llm
+    if llm.provider() == "api":  # one tiny call proves the key and model answer before the first request
+        llm.chat([{"role": "user", "content": "Reply with the single word: ok"}], role="planner", system=None, temperature=0, max_tokens=3)
+        _st["detail"]["planner"] = llm.model_for("planner")
+        return
     if not ollama_up():
         raise ConnectionError("Ollama is not answering")
     from ishti import llm, vram
     model = llm.model_for("planner")
     # The routing model (Laya) loads on the GPU in its own thread and peaks at ~3.8 GB while loading (measured,
-    # MODEL_DECISIONS.md). Loading the main model at the same moment would let that peak push it over the VRAM budget and
+    # models_ladder.yaml and docs/arch/gpu-vram-governor.md). Loading the main model at the same moment would let that peak push it over the VRAM budget and
     # the governor would pick a smaller one. So the two overlap only when both fit with room to spare.
     warm = _warm_thread()
     if warm and warm.is_alive():
@@ -635,6 +654,10 @@ def _stage_planner():
 
 
 def _stage_voice():
+    from ishti import llm
+    if llm.provider() == "api":
+        _st["detail"]["voice"] = "optional; enable separately after installing voice components"
+        return
     from ishti import voice
     t = _warm_thread()
     if t:
@@ -652,7 +675,11 @@ NON_FATAL = {"voice_ready"}  # ISHTI works without its voice: report it, don't b
 
 
 def _run_stage(sid):
-    """Run one stage with its timeout. -> None on success, else a plain error message."""
+    """A timed-out native initializer is never started again while it is alive."""
+    workers = _st.setdefault("stage_workers", {})
+    existing = workers.get(sid)
+    if existing and existing[0].is_alive():
+        return f"{FRIENDLY.get(sid, sid)} The previous attempt is still running; restart ISHTI."
     box = {}
 
     def work():
@@ -660,8 +687,9 @@ def _run_stage(sid):
             STAGE_FNS[sid]()
         except Exception as exc:
             box["e"] = exc
-            log.exception("boot stage %s", sid)
+            log.warning("boot stage %s: %s", sid, type(exc).__name__)
     t = threading.Thread(target=work, daemon=True, name=f"boot-{sid}")
+    workers[sid] = (t, box)
     t.start()
     t.join(TIMEOUTS[sid])
     if t.is_alive():
@@ -671,64 +699,67 @@ def _run_stage(sid):
     return None
 
 
-# Stages that do not wait for each other run at the same time: the AI engine -> main model chain, the memory, and the
-# skills -> voice chain. Measured sequential boot was ollama 7.5 + memory 0.3 + skills 8 + planner 4 s.
-CHAINS = [("ollama_ready", "planner_warm"), ("memory_loaded",), ("skills_loaded", "voice_ready")]
-BRAIN_STAGES = ("ollama_ready", "memory_loaded", "skills_loaded", "planner_warm")   # what a request needs before it can be answered
+# Memory/skills/voice native imports are serialized. Ollama model loading happens in its own process.
+# ISHTI_BOUNDED_BOOT=0 is a diagnostic rollback of the stage ordering, not of the retry limit.
+CHAINS = [("ollama_ready", "planner_warm"), ("memory_loaded", "skills_loaded", "voice_ready")]
+BRAIN_STAGES = ("ollama_ready", "memory_loaded", "skills_loaded", "planner_warm")
 NEEDS_NAME = {"ollama_ready": "the AI engine", "memory_loaded": "your memory", "skills_loaded": "the skills", "planner_warm": "the main model"}
 
 
 def _run_chain(chain, timings):
     for sid in chain:
-        attempts, t_stage = 0, time.time()
-        while not _shutdown["started"]:
-            _st["active"].add(sid)
-            _publish_stage(sid)
-            err = _run_stage(sid)
-            if err is None:
-                break
-            attempts += 1
-            if sid in NON_FATAL:  # ISHTI works without it: "ready", with the problem listed in `warnings`
+        if _st["done"].get(sid):
+            continue
+        t_stage = time.monotonic()
+        _st["active"].add(sid)
+        _publish_stage(sid)
+        err = None
+        try:
+            for attempt in range(2):
+                if _shutdown["started"]:
+                    return False
+                err = _run_stage(sid)
+                if err is None or sid in NON_FATAL:
+                    break
+                worker = _st.get("stage_workers", {}).get(sid)
+                if worker and worker[0].is_alive():
+                    break  # no second native import on top of a timed-out one
+                if attempt == 0:
+                    log.warning("boot stage %s will retry once", sid)
+                    time.sleep(1)
+            if err and sid not in NON_FATAL:
+                _fail(sid, err + " Automatic retries stopped; restart ISHTI after correcting the problem.")
+                return False
+            if err:
                 _st.setdefault("warnings", []).append(err)
                 events.publish("error", {"code": "voice_unavailable", "message": err, "stage": sid, "log_path": LOG_FILE})
-                break
-            if "ollama_ready" in chain and sid != "ollama_ready" and not ollama_up():  # the real cause: the AI engine went away
-                _mark("ollama_ready", False)
-                _mark(sid, False)
-                _fail("ollama_ready", "The AI engine (Ollama) stopped responding. Trying to start it again.")
-                while not _shutdown["started"]:
-                    if _run_stage("ollama_ready") is None:
-                        break
-                    time.sleep(5)
-                _mark("ollama_ready")
-                continue
-            _fail(sid, err)
-            time.sleep(min(5 * attempts, 15))
-        _st["active"].discard(sid)
-        if _shutdown["started"]:
-            return
-        timings[sid] = round(time.time() - t_stage, 2)
-        _mark(sid)
+            timings[sid] = round(time.monotonic() - t_stage, 2)
+            _mark(sid)
+        finally:
+            _st["active"].discard(sid)
+    return True
 
 
 def boot():
-    """Run the stage chains side by side; a failure is reported and retried (a late Ollama start, a freed GPU) so booting heals."""
+    """Two attempts per stage, then a stable actionable error; never a false ready."""
     t0, timings = time.time(), {}
     _st["booting"] = True
-    for sid, _label in STAGES[:1]:   # backend_up: our own HTTP server answering
-        _run_chain((sid,), timings)
-    threads = [threading.Thread(target=_run_chain, args=(c, timings), daemon=True, name=f"boot-{c[0]}") for c in CHAINS]
+    if not _run_chain(("backend_up",), timings):
+        return
+    chains = CHAINS if os.environ.get("ISHTI_BOUNDED_BOOT", "1") != "0" else [
+        ("ollama_ready", "planner_warm"), ("memory_loaded",), ("skills_loaded", "voice_ready")]
+    threads = [threading.Thread(target=_run_chain, args=(c, timings), daemon=True, name=f"boot-{c[0]}") for c in chains]
     for t in threads:
         t.start()
     for t in threads:
         t.join()
-    if _shutdown["started"]:
+    if _shutdown["started"] or not all(_st["done"].get(s) for s in STAGE_FNS):
         return
     _mark("ready")
     total = round(time.time() - t0, 1)
     _st["detail"].update(timings=timings, total_s=total)
     _write_boot_metrics(timings, total)
-    log.info("ready in %.1f s (stages ran concurrently): %s", total, timings)
+    log.info("ready in %.1f s: %s", total, timings)
 
 
 def await_brain(on_wait=None, timeout=180):
@@ -748,12 +779,14 @@ def await_brain(on_wait=None, timeout=180):
                 f"done (about {eta} seconds).")
     end = time.time() + timeout
     while time.time() < end and not _shutdown["started"]:
+        if _st["error"]:
+            break
         if all(_st["done"].get(s) for s in BRAIN_STAGES):
             return None
         time.sleep(0.2)
     err = _st["error"] or "it is taking longer than expected"
-    return ("ISHTI has not finished starting up yet (" + err + "). Your message was not lost - try again in a moment; "
-            "the details are in the log (" + LOG_FILE + ").")
+    return ("ISHTI has not finished starting up yet (" + err + "). Your message was not lost. "
+            "Correct the problem, then retry or restart ISHTI. Details are in the log (" + LOG_FILE + ").")
 
 
 def _eta_s(pending):
@@ -786,8 +819,31 @@ def start(port):
     _st["port"] = port
     wd = int(os.environ.get("ISHTI_WATCHDOG_PID") or 0) or None
     registry({"server_pid": os.getpid(), "server_ct": created(os.getpid()), "port": port, "started": time.time(),
-              "watchdog_pid": wd, "watchdog_ct": created(wd) if wd else None})
-    threading.Thread(target=boot, daemon=True, name="boot").start()
+              "watchdog_pid": wd, "watchdog_ct": created(wd) if wd else None, "boot_error": None})
+    if os.environ.get("ISHTI_MEMORY_PROFILE") == "1":
+        from ishti.core.memory_probe import start as start_profile
+        start_profile(os.path.join(LOG_DIR, "memory_growth.json"), lambda: _shutdown["started"])
+    thread = threading.Thread(target=boot, daemon=True, name="boot")
+    _st["boot_thread"] = thread
+    thread.start()
+
+
+def retry_boot():
+    """An explicit owner retry; never overlap a still-running native initializer."""
+    with _lk:
+        thread = _st.get("boot_thread")
+        if _shutdown["started"] or (thread and thread.is_alive()):
+            return {"retried": False, "error": "ISHTI is still starting or shutting down."}
+        if any(worker[0].is_alive() for worker in _st.get("stage_workers", {}).values()):
+            return {"retried": False, "error": "The previous initializer is still running. Close and reopen ISHTI."}
+        if _st["state"] == "ready":
+            return {"retried": False, "message": "ISHTI is already ready."}
+        _st["error"], _st["error_stage"] = None, None
+        _st["done"].pop("ready", None)
+        thread = threading.Thread(target=boot, daemon=True, name="boot-retry")
+        _st["boot_thread"] = thread
+        thread.start()
+        return {"retried": True}
 
 
 # ---------------------------------------------------------------- shutdown
@@ -968,6 +1024,60 @@ def _force_exit(why, clean=False):
     os._exit(0)
 
 
+def install_loop_handler(loop):
+    """Quiet only the known Windows disconnect callback; keep every other loop failure visible."""
+    previous = loop.get_exception_handler()
+    if getattr(previous, "_ishti_disconnect_handler", False):
+        return
+    def handler(active_loop, context):
+        exc, handle = context.get("exception"), context.get("handle")
+        if (isinstance(exc, ConnectionResetError)
+                and getattr(exc, "winerror", None) == 10054
+                and "_ProactorBasePipeTransport._call_connection_lost" in repr(handle)):
+            log.debug("Windows client disconnected during transport cleanup")
+            return
+        if previous:
+            previous(active_loop, context)
+        else:
+            active_loop.default_exception_handler(context)
+    handler._ishti_disconnect_handler = True
+    loop.set_exception_handler(handler)
+
+
+def _port_free(port):
+    try:
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", port))
+        return True
+    except OSError:
+        return False
+
+
+def prepare_port(port):
+    """Reclaim only an unhealthy backend with matching registry identity AND listening socket."""
+    if _port_free(port):
+        return
+    reg = registry(port=port)
+    pid, ct = reg.get("server_pid"), reg.get("server_ct")
+    if pid and pid != os.getpid() and ct is not None and not _health(port):
+        try:
+            process = psutil.Process(int(pid))
+            cmd = process.cmdline()
+            ours = ("-m" in cmd and "ishti" in cmd) or any("interface/web_ui/server.py" in c.replace("\\", "/") for c in cmd)
+            same = abs(round(process.create_time(), 2) - float(ct)) < 0.02
+            listens = any(c.status == "LISTEN" and c.laddr.port == port for c in process.net_connections(kind="inet"))
+            if ours and same and listens:
+                kill_tree(int(pid))
+                for _ in range(20):
+                    if _port_free(port):
+                        log.warning("Reclaimed an unresponsive registered ISHTI backend on port %s", port)
+                        return
+                    time.sleep(0.1)
+        except (psutil.Error, TypeError, ValueError) as exc:
+            log.warning("Could not verify stale backend identity: %s", type(exc).__name__)
+    raise RuntimeError(f"Port {port} is already occupied. Close the existing ISHTI instance or free this port, then restart. No unrelated process was stopped.")
+
+
 def serve(app, port):
     """uvicorn with a handle we can stop gracefully (release_ports step) - replaces uvicorn.run()."""
     import importlib.util
@@ -978,8 +1088,13 @@ def serve(app, port):
     http = "httptools" if importlib.util.find_spec("httptools") else "auto"
     cfg = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", timeout_graceful_shutdown=3,
                          http=http, timeout_keep_alive=65)
-    srv = uvicorn.Server(cfg)
+    class IshtiServer(uvicorn.Server):
+        async def serve(self, *args, **kwargs):
+            install_loop_handler(asyncio.get_running_loop())
+            return await super().serve(*args, **kwargs)
+    srv = IshtiServer(cfg)
     _server["uvicorn"] = srv
+    prepare_port(port)
     srv.run()
     # A graceful shutdown stops uvicorn as one of its steps and then finishes (registry, remaining children, os._exit) in its
     # own thread. If this main thread simply returned, the interpreter could end first and abandon that daemon thread mid-way

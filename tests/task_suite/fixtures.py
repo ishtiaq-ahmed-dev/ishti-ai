@@ -18,7 +18,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, ROOT)
 
 from ishti import rgraph  # noqa: E402
-from ishti.arch2 import memory as M  # noqa: E402
+from ishti.memstore import memory as M  # noqa: E402
 
 # (name, relationship, [(rel, target, kind)], extra semantic line for entity-card tasks)
 PEOPLE = [

@@ -1,7 +1,10 @@
-"""Run the 250 per-task cases (tests/task_suite/cases/<id>.json) through the real dispatcher.
+"""Run the per-task cases (tests/task_suite/cases/<id>.json) through the real dispatcher.
 
-Reuses the tested harness in run_tasks.py (run_route / run_live) but loads the 250 case files and
-writes reports/task_suite250_<mode>.{json,md}. Also updates the status column of TASK_INDEX.md.
+The name says 250 and the reports are still written as task_suite250_*, but the case directory has
+grown to 300; this runner loads whatever is in cases/ and grades all of it.
+
+Reuses the tested harness in run_tasks.py (run_route / run_live) and writes
+reports/task_suite250_<mode>.{json,md}. Also updates the status column of TASK_INDEX.md.
 
     --mode route|live   --ids 1,2,3   --timeout 200   --no-index
 """
@@ -108,7 +111,7 @@ def main():
     for r in rows:
         if r["id"] in ext:
             r["verdict"] = "blocked"
-            r["why"] = "requires an external condition (situation/long-horizon row) - see NEEDS.md"
+            r["why"] = "requires an external condition (situation/long-horizon row) - see tests/task_suite/FIXTURES.md"
         elif args.mode == "live":
             reply = (r.get("reply") or "")
             low = reply.lower()
@@ -117,7 +120,7 @@ def main():
             if r["verdict"] == "fail" and "timeout" in (r.get("why") or "").lower():
                 r["verdict"] = "blocked"
                 r["why"] = ("operation exceeded the per-case timeout under the isolated test harness "
-                            "(long-running by nature); verify manually - see NEEDS.md")
+                            "(long-running by nature); verify manually - see tests/task_suite/FIXTURES.md")
             # A real defect marker: the skill raised instead of answering.
             elif "skill failed" in low or "traceback" in low:
                 r["verdict"] = "fail"
@@ -132,7 +135,7 @@ def main():
                     "didn't surface a confident source", "didn't turn up", "isn't surfacing",
                     "came back empty", "searches came back empty", "no solid")):
                 r["verdict"] = "blocked"
-                r["why"] = "environment: local search backend (SearXNG) unavailable - see NEEDS.md"
+                r["why"] = "environment: local search backend (SearXNG) unavailable - see tests/task_suite/FIXTURES.md"
     base, counts = write_report(rows, args.mode)
     if not args.no_index and args.mode in ("route", "live"):
         update_index(rows)

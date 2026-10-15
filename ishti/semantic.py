@@ -3,7 +3,6 @@ conversation. Fuzzy by nature, so it always ranks below the exact fact store."""
 import time
 import uuid
 
-import chromadb
 import requests
 
 from ishti import CONFIG
@@ -20,6 +19,9 @@ _EMBED_CACHE = {}
 
 def embed(texts):
     cfg = CONFIG["memory"]
+    from ishti import embeddings
+    if embeddings.backend() == "lexical":
+        return embeddings.lexical(texts)
     from ishti import calltrace, models
     key = (cfg["embed_model"], tuple(texts))
     hit = _EMBED_CACHE.get(key)
@@ -29,7 +31,7 @@ def embed(texts):
     models.used(cfg["embed_model"])
     with calltrace.timed("embed", cfg["embed_model"], n=len(texts)):
         r = keepalive.post(f"{cfg['embed_url']}/api/embed",
-                           json={"model": cfg["embed_model"], "input": texts}, timeout=60)
+                           json={"model": cfg["embed_model"], "input": texts}, timeout=15)
         r.raise_for_status()
     out = r.json()["embeddings"]
     if len(_EMBED_CACHE) >= 256:   # ponytail: drop-oldest, not true LRU; a 256-entry cache of short strings never matters more
@@ -53,8 +55,11 @@ class Semantic:
             os.makedirs(self.path, exist_ok=True)
             for attempt in range(3):
                 try:
+                    import chromadb
                     client = chromadb.PersistentClient(path=self.path, settings=chromadb.Settings(anonymized_telemetry=False, is_persistent=True))
-                    self._col = client.get_or_create_collection("memory", metadata={"hnsw:space": "cosine"})
+                    from ishti import embeddings
+                    collection = "memory_lexical_v1" if embeddings.backend() == "lexical" else "memory"
+                    self._col = client.get_or_create_collection(collection, metadata={"hnsw:space": "cosine"})
                     return self._col
                 except Exception:
                     if attempt == 2:
@@ -83,9 +88,14 @@ _sem_path = None
 
 def get_semantic(path: str = None) -> Semantic:
     global _sem, _sem_path
-    cur_path = path or CONFIG["memory"]["chroma_dir"]
+    from ishti import embeddings
+    cur_path = (path or CONFIG["memory"]["chroma_dir"]) + ("_lexical_v1" if embeddings.backend() == "lexical" else "")
     if _sem is None or _sem_path != cur_path:
-        _sem = Semantic(cur_path)
+        if embeddings.backend() == "lexical":
+            from ishti.lexical_store import LexicalStore
+            _sem = LexicalStore(cur_path + "_sqlite")
+        else:
+            _sem = Semantic(cur_path)
         _sem_path = cur_path
     return _sem
 

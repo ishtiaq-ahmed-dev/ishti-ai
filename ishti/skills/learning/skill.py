@@ -1,5 +1,8 @@
 """Learning skill: natural language querying and inspection of learned lessons, mistakes, and settings."""
+import json
+import os
 import re
+import time
 from typing import Any, Dict, Optional
 
 from ishti.learning import dashboard, errors, lessons, store
@@ -16,6 +19,37 @@ OPS = [
     # actually-learned patterns, or an honest "nothing stood out". Never an invented suggestion.
     ("today_review", re.compile(r"\b(?:would\s+you\s+have\s+suggested|any\s+suggestions?\s+for\s+me|suggest(?:ed|\s+anything)?\s+anything\s+for\s+me|suggested\s+anything\s+(?:for\s+me\s+)?today|what\s+would\s+you\s+(?:have\s+)?suggest)\b", re.I)),
 ]
+
+def _export_preferences() -> Dict[str, Any]:
+    """Write the learned preferences and active lessons to a real JSON file and report that real file.
+
+    The previous reply announced data/learned_preferences.json without writing anything at all, so the
+    owner was told an export existed that did not (checklist 242). Now the file is written (or the write
+    failure is reported) and the reply names the path and the true counts."""
+    from ishti import CONFIG
+    from ishti.facts import get_facts
+    owner = {k: v for k, v in get_facts().get("owner").items() if k != "entity"}
+    prefs = {k: v for k, v in owner.items() if k.startswith("prefers_")}
+    active = [{k: l.get(k) for k in ("kind", "statement", "confidence", "scope", "context")}
+              for l in lessons.active(limit=200)]
+    # same root the manifest's write scope "data" resolves against (scope.DATA)
+    path = os.path.join(os.path.dirname(CONFIG["memory"]["db_path"]), "learned_preferences.json")
+    payload = {"exported_at": time.strftime("%Y-%m-%d %H:%M"),
+               "learned_preferences": prefs, "active_lessons": active}
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+    except OSError as exc:
+        return {"reply": f"I couldn't write the export to {path}: {type(exc).__name__}: {exc}", "sources": []}
+    if not prefs and not active:
+        return {"reply": f"Wrote {path}, but there is nothing learned yet, so it holds no preferences and no "
+                         f"lessons. It fills up as you tell me how you like things done.", "sources": []}
+    shown = "\n".join(f"- {k}: {v}" for k, v in list(prefs.items())[:10]) \
+        or f"(no prefers_* preferences yet; {len(active)} learned lesson(s))"
+    return {"reply": f"Wrote {path} (readable JSON) with {len(prefs)} learned preference(s) and "
+                     f"{len(active)} active lesson(s).\nLearned preferences:\n{shown}", "sources": []}
+
 
 def match(text: str) -> bool:
     if re.search(r"\b(?:machine\s+learning|studied|course|progress)\b", text, re.I):
@@ -45,7 +79,7 @@ def run(text: str, session: Optional[Any] = None) -> Dict[str, Any]:
                 store.set_setting("proactive", False)
                 return {"reply": "Proactive learning disabled. I will only learn silently without asking unprompted questions.", "sources": []}
             if name == "export":
-                return {"reply": "Exported your learned preferences as a readable file: data/learned_preferences.json. Format: JSON with all preference rules and confidence levels.", "sources": []}
+                return _export_preferences()
             if name == "remember_tool":
                 m = rx.search(text)
                 tool = m.group("tool") if m else "this new tool"

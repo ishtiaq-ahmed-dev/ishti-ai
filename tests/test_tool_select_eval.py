@@ -7,11 +7,11 @@ import re
 from pathlib import Path
 
 from ishti import tool_routing as decision_loop
-from ishti import router as legacy_router
+from ishti import tool_routing as legacy_router
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EVAL = ROOT / "docs" / "audit" / "tool_select_eval.json"
+EVAL = ROOT / "tests" / "fixtures" / "tool_select_eval.json"  # the 120-prompt labelled routing set
 TARGETS = {
     "weather", "web_search", "calc", "calendar", "reminders", "files", "fileops", "whatsapp", "email",
     "budget", "writing", "study", "travel", "shopping", "markets", "docs", "pdftables", "chart", "memory",
@@ -97,15 +97,11 @@ def test_120_prompt_eval_measures_routing_improvement(monkeypatch):
     covered = {skill for row in rows for skill in row["expected"] if skill != "clarify"}
     assert len(covered) >= 20 and TARGETS <= covered
 
-    monkeypatch.setattr(legacy_router, "laya", lambda: None)
-    before = measure(legacy_router.route)
-    # The offline measurement must never wake the local LLM. Low confidence is
-    # represented by a clarification instead of a guessed tool.
-    after = measure(lambda text, skills: decision_loop.route(text, skills, llm_fn=lambda *_a, **_k: "{}"))
-    print(json.dumps({"before": {k: before[k] for k in ("correct", "total", "accuracy")},
-                      "after": {k: after[k] for k in ("correct", "total", "accuracy")}}, sort_keys=True))
-    assert after["correct"] > before["correct"]
-    assert after["accuracy"] >= 0.85
+    # The one routing layer, measured offline: it never calls a model. Low confidence is a clarification, and the
+    # single decision step (ishti/brain.py) takes it from there.
+    result = measure(lambda text, skills: decision_loop.route(text, skills))
+    print(json.dumps({k: result[k] for k in ("correct", "total", "accuracy")}, sort_keys=True))
+    assert result["accuracy"] >= 0.85, result["misses"][:10]
 
 
 def test_shortlist_contains_only_routable_and_survives_bad_matcher():

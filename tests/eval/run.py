@@ -20,7 +20,10 @@ from tests.eval.harness import SUITES, concise_table, run_suites  # noqa: E402
 
 
 def safe_output_dir(raw: str | None) -> Path:
-    path = (Path(raw) if raw else ROOT / "docs" / "audit").resolve()
+    # reports/ is gitignored, so a number produced here has to be copied into a tracked file
+    # (docs/EVIDENCE.md, docs/ACCURACY.md) before it can be quoted. This used to default to
+    # docs/audit/, a directory that no longer exists, so a plain run would create it again.
+    path = (Path(raw) if raw else ROOT / "reports").resolve()
     root = ROOT.resolve()
     try:
         path.relative_to(root)

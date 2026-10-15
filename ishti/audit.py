@@ -25,7 +25,9 @@ _local = threading.local()
 _lock = threading.Lock()
 
 
-_conn_cache = {}
+from ishti.core.sqlite_cache import ThreadConnections
+
+_conn_cache = ThreadConnections()
 
 
 def _db():
@@ -35,7 +37,7 @@ def _db():
     so connections leaked until GC. The cache key includes the path because tests re-point DB.
     check_same_thread=False: the connection stays owned by its creating thread's cache slot.
     """
-    key = (threading.get_ident(), DB)
+    key = (threading.current_thread(), DB)
     c = _conn_cache.get(key)
     if c is None:
         with context(skill=""):

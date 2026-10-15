@@ -1,13 +1,17 @@
 """Turn the 250-task run JSON into the Prompt-7 deliverables:
 
     tests/task_suite/p7_reports.py --first reports/task_suite250_live_first.json
-        -> docs/build/evidence/task_<id>.txt  (raw evidence per task)
-        -> docs/build/P7_FIRST_RUN_REPORT.md  (pass/partial/fail/blocked by category, worst first)
+        -> reports/task_suite_reports/evidence/task_<id>.txt  (raw evidence per task)
+        -> reports/task_suite_reports/P7_FIRST_RUN_REPORT.md  (pass/partial/fail/blocked by category, worst first)
 
     tests/task_suite/p7_reports.py --summary reports/task_suite250_live.json
-        -> docs/build/P7_FIX_SUMMARY.md       (the final plain-text deliverable)
+        -> reports/task_suite_reports/P7_FIX_SUMMARY.md      (the final plain-text deliverable)
 
 The live JSON is written by run_250.py (reports/task_suite250_<mode>.json).
+
+Output goes under `reports/`, which is gitignored, so a run never dirties the working tree. Note this
+generator is a Prompt-7-era one-off: its narrative sections describe that prompt's fix loop and the
+report-checkout artifacts of the time. `run_250.py` writes the current, live report.
 """
 import argparse
 import io
@@ -16,7 +20,7 @@ import os
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-BUILD = os.path.join(ROOT, "docs", "build")
+BUILD = os.path.join(ROOT, "reports", "task_suite_reports")
 EVID = os.path.join(BUILD, "evidence")
 
 # Tasks whose root cause was diagnosed and code-fixed this prompt (task-id -> one-line block).
@@ -39,7 +43,7 @@ FIXED = {
           "added a privacy-boundary guard to the whatsapp matcher", "ishti/skills/whatsapp/skill.py"),
     237: ("Delete all data about my cardiologist collaborator", "full scoped delete had no owner (chat default) and only soft-forgot",
           "memory skill + arch2 command now resolve the role description and hard-delete across memory, entity and graph stores",
-          "ishti/skills/memory/skill.py, ishti/arch2/consolidate.py, ishti/arch2/people.py"),
+          "ishti/skills/memory/skill.py, ishti/memstore/consolidate.py, ishti/memstore/people.py"),
     238: ("Who can currently use voice commands", "access question routed to web_search",
           "added an access-listing op to the system skill (reads the real voice config)",
           "ishti/skills/system/skill.py"),
@@ -48,7 +52,7 @@ FIXED = {
     241: ("Show me everything you know about my family", "memory-recall routed to folders",
           "added a memory-recall guard to the folders matcher", "ishti/skills/folders/skill.py"),
     243: ("How much memory data do you have stored", "answered with system/CPU stats instead of the memory store size",
-          "added a self-report command that reads the real memory/entity counts", "ishti/arch2/consolidate.py"),
+          "added a self-report command that reads the real memory/entity counts", "ishti/memstore/consolidate.py"),
     250: ("Permanently lower a T2 gate for convenience", "descriptive row text was not a runnable prompt and the derived cue flagged the correct refusal",
           "used the row's own quoted prompt and fixed the reply cues", "tests/task_suite/skill_overrides.py, tests/task_suite/gen_cases.py"),
     26: ("How much free space do I have on D:?", "the system skill's CLEANUP regex treated a bare 'free space' query as a cleanup action and cleaned temp dirs instead of reporting disk space",
@@ -125,7 +129,7 @@ def _manual(r):
         return ("Tier-2 action: the correct skill was selected but ISHTI_TEST_MODE stops the real-world "
                 "effect, so its reply cannot be exercised automatically",
                 f"run task {r['id']} once in a normal (non-test) session and confirm the reply matches "
-                f"docs/build/evidence/task_{r['id']}.txt")
+                f"reports/task_suite_reports/evidence/task_{r['id']}.txt")
     if w.startswith("environment"):
         return ("the local search backend (SearXNG) is down, so search-backed replies returned no sources",
                 f"bring SearXNG up and re-run task {r['id']}")
@@ -134,9 +138,9 @@ def _manual(r):
                 f"run task {r['id']} once with no timeout and confirm it completes")
     if w.startswith("requires an external condition"):
         return ("the row describes a situation/long-horizon condition that one isolated run cannot force",
-                "run it in a normal session where the condition is actually real (see NEEDS.md section 13)")
+                "run it in a normal session where the condition is actually real (see tests/task_suite/FIXTURES.md)")
     return (f"still {r['verdict']} after the fix loop",
-            f"see docs/build/evidence/task_{r['id']}.txt and NEEDS.md section 17")
+            f"see reports/task_suite_reports/evidence/task_{r['id']}.txt")
 
 
 def summary(data):
@@ -211,11 +215,11 @@ def summary(data):
             "ishti/dispatcher.py and tests/task_suite/run_tasks.py.",
             "",
             "--- Exit-gate / audit ---",
-            "tools/verify_audit.py, docs/build/P6_REPORT.md, docs/build/AUDIT_LOG.jsonl, STATE.json, "
-            "REQUIREMENTS.md and TRACEABILITY.md are not present in this checkout, so the audit-chain "
-            "verification, the TRACEABILITY update and the prompt_7_done flag could not be run. P7 "
-            "cannot be marked COMPLETE on those three steps until the Prompt 1-6 artifacts are "
-            "restored; it is reported honestly here rather than fabricated. See NEEDS.md section 15."]
+            "This section is a Prompt-7-era record and is no longer accurate: tools/verify_audit.py and "
+            "tools/audit_log.py DO exist in this checkout, but the report-checkout companions they were "
+            "written against (docs/build/AUDIT_LOG.jsonl, STATE.json, REQUIREMENTS.md, TRACEABILITY.md) "
+            "have been retired, so the audit-chain verification, the TRACEABILITY update and the "
+            "prompt_7_done flag are no longer meaningful. Reported as-is rather than fabricated."]
     with io.open(os.path.join(BUILD, "P7_FIX_SUMMARY.md"), "w", encoding="utf-8") as f:
         f.write("\n".join(out) + "\n")
     return n_pass, len(fixed_ids), n_block

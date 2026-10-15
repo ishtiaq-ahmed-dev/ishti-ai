@@ -17,7 +17,7 @@ import re
 def confidence_floor() -> float:
     """'Enough confidence' = the ROUTER's own configured threshold, never an invented number.
 
-    `ishti/router.py:104` accepts a Laya decision at `router.min_confidence` (0.2 in config.json), and
+    `ishti/tool_routing.py` accepts a rule or shortlist decision at `router.min_confidence` (0.2 in config.json), and
     this repo's own RuntimeWarning says Laya's confidences are uncalibrated - so a second, private floor
     would quietly re-decide what 'owning a request' means. Gap detection defers to the same number
     routing already uses, so the two can never disagree.
@@ -38,7 +38,7 @@ def route_answer(request, skills=None, route_fn=None):
     """
     try:
         if route_fn is None:
-            from ishti import router as router_mod
+            from ishti import tool_routing as router_mod
             if skills is None:
                 from ishti.dispatcher import SKILLS as skills   # already-loaded registry
             route_fn = router_mod.route

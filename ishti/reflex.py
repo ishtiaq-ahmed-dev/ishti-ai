@@ -99,8 +99,9 @@ def _cheaper_way(m, text):
 
 
 def _schedule_video(m, text):
-    return ("I am not connected to YouTube Studio on this PC to schedule video publications directly. "
-            "However, I have queued a local reminder for Friday at 6:00 PM to publish the video. Say the word if you would like me to adjust the time.")
+    return ("I am not connected to YouTube Studio on this PC, so I cannot schedule the video publication "
+            "myself. Nothing has been scheduled. If you want, say 'remind me on Friday at 6 PM to publish "
+            "the video' and I will set that reminder.")
 
 
 TABLE = [

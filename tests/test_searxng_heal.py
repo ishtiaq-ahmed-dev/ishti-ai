@@ -13,6 +13,11 @@ class Docker:
 
     def __call__(self, *args, timeout=30):
         self.calls.append(args)
+        if args[0] == "inspect":
+            return types.SimpleNamespace(returncode=0 if self.exists else 1,
+                                         stderr="" if self.exists else "No such object", stdout="true" if self.exists else "")
+        if args[0] == "run":
+            self.exists = True
         if args[0] == "start" and not self.exists:
             return types.SimpleNamespace(returncode=1, stderr="Error response from daemon: No such container: ishti-searxng", stdout="")
         if args[0] == "start":
@@ -63,7 +68,7 @@ def test_missing_container_is_not_created_unless_asked(world, capsys):
 
 
 def test_create_builds_a_loopback_only_container_with_a_persistent_secret(world, tmp_path):
-    d = Docker()
+    d = Docker(exists=False)
     world.mp.setattr(search, "_docker", d)
     world.mp.setattr(search, "ROOT_DIR", str(tmp_path))
     assert search.create_searxng() is True
@@ -73,7 +78,8 @@ def test_create_builds_a_loopback_only_container_with_a_persistent_secret(world,
     assert len(secret) == 64 and f"SEARXNG_SECRET={secret}" in run
     d.calls.clear()
     search.create_searxng()
-    assert f"SEARXNG_SECRET={secret}" in next(c for c in d.calls if c[0] == "run")    # the secret is stable across runs
+    assert not any(c[0] == "run" for c in d.calls)
+    assert (tmp_path / "data" / "searxng_secret").read_text() == secret    # the secret is stable across runs
 
 
 def test_create_flag_creates_then_waits_for_health(world, tmp_path):

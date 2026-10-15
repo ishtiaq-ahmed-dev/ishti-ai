@@ -36,6 +36,48 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def _offline_network_boundary(request, monkeypatch):
+    """Offline evaluation cannot talk to a real model/provider. Local fixtures still work.
+
+    Activated explicitly by the offline runner; e2e-marked tests keep their own live setup.
+    SDK/HTTP fakes bypass sockets and remain testable. An accidental model call fails closed.
+    """
+    import ipaddress
+    import errno
+    import os
+    import socket
+    from urllib.parse import urlsplit
+    if os.environ.get('ISHTI_OFFLINE_EVAL') != '1' or request.node.get_closest_marker('e2e'):
+        yield
+        return
+    model_ports = {11434, urlsplit(os.environ.get('ISHTI_OLLAMA_URL', 'http://127.0.0.1:11434')).port or 11434}
+    connect = socket.socket.connect
+    connect_ex = socket.socket.connect_ex
+    def check(address):
+        if not isinstance(address, tuple) or len(address) < 2:
+            return
+        try:
+            loopback = ipaddress.ip_address(address[0]).is_loopback
+        except ValueError:
+            loopback = address[0] == 'localhost'
+        if not loopback or address[1] in model_ports:
+            raise ConnectionRefusedError(errno.ECONNREFUSED,
+                                         'Offline evaluation blocked a real network/model connection; inject a fixture')
+    def guarded_connect(sock, address):
+        check(address)
+        return connect(sock, address)
+    def guarded_connect_ex(sock, address):
+        try:
+            check(address)
+        except ConnectionRefusedError:
+            return errno.ECONNREFUSED
+        return connect_ex(sock, address)
+    monkeypatch.setattr(socket.socket, 'connect', guarded_connect)
+    monkeypatch.setattr(socket.socket, 'connect_ex', guarded_connect_ex)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _scratch_facts_store(request, tmp_path):
     """Never write test data into the owner's real store (ishti.db).
 
@@ -70,7 +112,6 @@ collect_ignore = [
     "test_client_isolation.py",
     "test_dispatcher_followups.py",
     "test_multitopic.py",
-    "test_planner_messenger.py",
     "test_shutdown_cleanliness.py",
     "test_stt_threads.py",
     "test_vram_governor_pressure.py",

@@ -28,10 +28,18 @@ Nothing here deletes or overwrites existing owner data; `--clean` removes only t
 - Tasks **133–149** are themselves memory-seeding instructions ("My brother's name is Bilal,
   remember that"). Run in task-id order, each creates the record the following task queries, so no
   extra fixture is needed for them beyond the seeds above.
-- Tasks **219, 221, 223, 229, 231, 233, 235, 239, 245, 247, 249** are marked
-  `requires_external_condition`: their rows describe a *situation* (a multi-hour soak, a real second
-  person replying on WhatsApp, a live market move) that cannot be forced in one isolated run. They
-  are attempted and logged `blocked`, with a manual-test note in `NEEDS.md`.
+- Tasks **219, 221, 223, 229, 231, 233, 235, 239, 245, 247, 249** were originally rows describing a
+  *situation* (a multi-hour soak, a real second person replying on WhatsApp, a live market move)
+  rather than a single prompt. Each has since been rewritten into one runnable turn that exercises
+  the same capability (`skill_overrides.PROMPT_OVERRIDE`), so they are graded like any other row and
+  are no longer forced to `blocked`. The `requires_external_condition` field still exists on every
+  case file and would force its row to `blocked`, but it is currently `false` on all 300.
+- Two conditions do still grade `blocked` rather than `fail`, because neither is a defect this fix
+  loop can close: a per-case **timeout** on a genuinely long-running operation, and an **unavailable
+  environment** dependency (the local SearXNG search backend). Both reasons name this file, and the
+  reason is recorded against the row in the run report (`reports/task_suite250_<mode>.json`) and in
+  `TASK_INDEX.md`. Whatever ISHTI itself could not do is written to the runtime gap log instead —
+  `data/needs_runtime.md` (`ishti/skills/__init__.py:needs_path`), never a repo document.
 - Tasks that need a live WhatsApp/email thread with a second human are exercised through the
   dispatcher with `ISHTI_TEST_MODE=1` (T2 side effects blocked); the action/routing and the reply
   are graded, and the "a human must reply" half is noted where it applies.

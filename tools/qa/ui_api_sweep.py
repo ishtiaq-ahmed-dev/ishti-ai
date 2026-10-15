@@ -6,7 +6,7 @@ What it does
   3. Fuzz every non-destructive write route with a valid body and several invalid bodies,
      recording status + latency.
   4. Watch the server log for new tracebacks and attribute them to the sweep.
-  5. Write docs/audit/qa_api_sweep.json and append defects to docs/audit/qa_defects.json.
+  5. Write reports/qa/qa_api_sweep.json and append defects to reports/qa/qa_defects.json.
 
 Safety (higher priority than literal coverage):
   Routes that would control the PC, the app lifecycle, remote channels, external connectors,

@@ -14,14 +14,15 @@ def test_allow_t3_schema_matches_what_the_dispatcher_reads():
     assert PrivacySettings(allow_t3={"deploy": True}).allow_t3.get("deploy") is True
 
 
-def test_arch2_first_pass_prompt_tells_the_model_to_use_tools_for_live_data_and_exact_solvers():
-    """Owner-decided follow-up of the arch1/arch2 comparison: arch2 answered a weather question from memory and tried
-    to solve a sudoku itself. The prompt must still format cleanly (no stray braces) with both rules present."""
-    from ishti.arch2 import pipeline
-    text = pipeline.SYSTEM_PASS1.format(tools="- weather: ...", context="(none)")
-    assert "ALWAYS call a tool" in text and "never answer from memory" in text
-    assert "call it instead of doing the task yourself" in text
-    assert "resolve it from the conversation first" in text  # pronoun resolution ("send him X")
+def test_brain_prompt_tells_the_model_to_use_tools_for_live_data_and_exact_solvers():
+    """The one decision prompt must still format cleanly (no stray braces) with the rules that matter: live data goes to a
+    tool, a listed tool beats doing the task itself, and follow-ups resolve from the conversation."""
+    from ishti import brain
+    text = brain.SYSTEM.format(tools="- weather: ...", context="(none)")
+    assert "never answer them from memory" in text
+    assert "Use only the tool names listed below" in text
+    assert "Resolve follow-ups" in text
+    assert '"calls"' in text
 
 
 def test_every_skill_loads():

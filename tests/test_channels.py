@@ -2,7 +2,7 @@
 all against the mock Telegram Bot API (tests/mock_telegram.py) - fully offline.
 
 Run: venv\\Scripts\\python -m pytest tests/test_channels.py -v
-A real bot re-runs the same suite once NEEDS.md N22 (token) is provided.
+A real bot re-runs the same suite once a Telegram bot token is provided.
 """
 import os
 import sys

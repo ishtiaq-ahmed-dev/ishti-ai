@@ -140,15 +140,9 @@ def _notifications(text):
 
 
 def _arch():
-    """The active architecture profile, read live from config - never guessed (checklist #190)."""
-    from ishti import CONFIG
-    arch = CONFIG.get("arch") or {}
-    active = str(arch.get("active") or "arch1")
-    other = "arch1" if active == "arch2" else "arch2"
-    what = {"arch1": "the classic dispatcher pipeline (rule + skill routing)",
-            "arch2": "the agent brain (intent router -> think/tool loop -> validation -> final answer)"}.get(active, "")
-    return {"reply": f"Active architecture profile: **{active}**" + (f" - {what}" if what else "") +
-                      f". The other profile on this machine is {other}; say \"switch to {other}\" to change it.",
+    """ISHTI has one architecture: rules first, then one model call that picks the tool(s) or answers (ishti/brain.py)."""
+    return {"reply": "ISHTI runs one architecture: deterministic rules and guards first, then one model call that "
+                     "chooses the skill(s) or answers directly. Each tool still passes its scope and approval gates.",
             "sources": []}
 
 

@@ -116,27 +116,23 @@ def test_chat_retry_preserves_older_context(monkeypatch):
     assert all("Irfan" in "\n".join(m["content"] for m in messages) for messages in seen)
 
 
-def test_arch2_both_passes_keep_older_context(monkeypatch):
-    from ishti.arch2 import pipeline
-    from ishti import llm
-    monkeypatch.setattr(pipeline.retrieval, "assemble_context", lambda _text: "")
-    monkeypatch.setattr(pipeline, "_tool_manifests", lambda *a: "fixture")
-    monkeypatch.setattr(pipeline, "_rule_tool", lambda *a: None)
-    monkeypatch.setattr(pipeline, "trace", lambda *a, **k: None)
-    monkeypatch.setattr(pipeline, "_run_tool", lambda *a: {"reply": "fixture read", "sources": []})
+def test_brain_keeps_older_context_in_its_one_call(monkeypatch):
+    from ishti import brain, llm
+    from ishti.memstore import retrieval
+    from ishti import skill_execution
+    monkeypatch.setattr(retrieval, "assemble_context", lambda *a, **k: "")
+    monkeypatch.setattr(skill_execution, "execute", lambda *a, **k: {"reply": "fixture read", "sources": []})
     monkeypatch.setattr(llm, "style", lambda: "style")
     monkeypatch.setattr(llm, "model_for", lambda _role: "fixture")
-    monkeypatch.setattr(llm, "ask", lambda *a, **k: '{"ok": true}')
     monkeypatch.setattr(cstate, "get_manager", lambda: cstate.ConversationStateManager(cstate.MemoryStore()))
     seen = []
     def chat(messages, **kwargs):
         seen.append(messages)
-        return SimpleNamespace(content='{"tool":"fixture", "input":"read"}' if len(seen) == 1
-                               else "Your brother is Irfan.")
+        return SimpleNamespace(content="Your brother is Irfan.")
     monkeypatch.setattr(llm, "chat", chat)
     history = dialogue(80)
     history[0]["content"] = "My brother is Irfan."
-    pipeline.run("Who is my brother?", {"id": "scratch", "history": history},
-                 {"fixture": SimpleNamespace(status="ok", manifest={"tier": "T1"})})
-    assert len(seen) == 2
-    assert all("Irfan" in "\n".join(m["content"] for m in messages) for messages in seen)
+    skills = {"fixture": SimpleNamespace(status="ok", manifest={"tier": "T1", "description": "fixture"})}
+    brain.run("Who is my brother?", {"id": "scratch", "history": history}, skills)
+    assert len(seen) == 1, "one model call per turn"
+    assert "Irfan" in "\n".join(m["content"] for m in seen[0])

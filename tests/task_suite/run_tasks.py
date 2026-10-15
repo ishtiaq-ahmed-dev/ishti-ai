@@ -45,7 +45,7 @@ _TASK_SUITE_ISOLATION_PATCHED = True
 def route_of(text):
     try:
         from ishti.dispatcher import SKILLS
-        from ishti.router import route
+        from ishti.tool_routing import route
         d = route(text, SKILLS)
         return d.get("skill"), d.get("source"), d.get("confidence")
     except Exception as exc:

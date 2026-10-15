@@ -15,7 +15,9 @@ FILLER = {"the", "my", "project", "folder", "repo", "directory", "dir", "a", "an
 
 
 def norm(name: str) -> str:
-    words = re.findall(r"[a-z0-9]+", name.lower())
+    # Unicode-aware ([^\W_]+ keeps letters/digits from every script, so Urdu/Pashto names
+    # are not silently collapsed onto one empty key).
+    words = re.findall(r"[^\W_]+", str(name or "").casefold(), re.UNICODE)
     return " ".join([w for w in words if w not in FILLER] or words)
 
 
@@ -40,8 +42,13 @@ class Facts:
                 ts REAL, text TEXT, skill TEXT, confidence REAL, source TEXT, detail TEXT)""")
 
     def set(self, entity: str, attr: str, value: str):
-        """Upsert. Returns the previous value (None if new)."""
-        k = self.find(entity) or norm(entity)
+        """Upsert. Returns the previous value (None if new).
+
+        The write key is exact/normalized only. Fuzzy matching belongs to reads: with the old
+        `find()` here, "Sara" (ratio 0.89 to "Sarah") silently overwrote Sarah's values."""
+        k = self._exact_key(entity) or norm(entity)
+        if not k:
+            return None
         with self.lock, self.db:
             row = self.db.execute("SELECT value FROM facts WHERE key=? AND attr=?", (k, attr)).fetchone()
             prev = row[0] if row else None
@@ -62,14 +69,23 @@ class Facts:
 
     def find(self, name: str):
         """Exact key, then spacing-insensitive, then close spelling. None if unknown."""
-        k, keys = norm(name), self.keys()
+        k = self._exact_key(name)
+        if k:
+            return k
+        keys = self.keys()
+        close = difflib.get_close_matches(norm(name), keys, n=1, cutoff=0.85)
+        return close[0] if close else None
+
+    def _exact_key(self, name: str):
+        """Exact or spacing-insensitive key match only (no fuzzy spelling)."""
+        k = norm(name)
+        if not k:
+            return None
+        keys = self.keys()
         if k in keys:
             return k
         squashed = {x.replace(" ", ""): x for x in keys}
-        if k.replace(" ", "") in squashed:
-            return squashed[k.replace(" ", "")]
-        close = difflib.get_close_matches(k, keys, n=1, cutoff=0.85)
-        return close[0] if close else None
+        return squashed.get(k.replace(" ", ""))
 
     def get(self, name: str) -> dict:
         """{'entity': display name, attr: value, ...} or {} if unknown."""

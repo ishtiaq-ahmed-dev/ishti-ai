@@ -170,11 +170,15 @@ def _log(host, port, who, allowed, reason):
         row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(now)), "host": host, "port": port,
                "who": who, "allowed": allowed, "reason": reason}
         try:
-            os.makedirs(os.path.dirname(LEDGER_PATH), exist_ok=True)
-            if os.path.exists(LEDGER_PATH) and os.path.getsize(LEDGER_PATH) > LEDGER_MAX:
-                os.replace(LEDGER_PATH, LEDGER_PATH + ".1")
-            with open(LEDGER_PATH, "a", encoding="utf-8") as f:
-                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            from ishti import audit
+            # This metadata-only first-party ledger is not a skill output. Drop
+            # only the skill identity for this exact write, never for the action.
+            with audit.context(skill=None):
+                os.makedirs(os.path.dirname(LEDGER_PATH), exist_ok=True)
+                if os.path.exists(LEDGER_PATH) and os.path.getsize(LEDGER_PATH) > LEDGER_MAX:
+                    os.replace(LEDGER_PATH, LEDGER_PATH + ".1")
+                with open(LEDGER_PATH, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(row, ensure_ascii=False) + "\n")
         except OSError:
             pass  # the ledger must never break the action itself
 
@@ -287,7 +291,30 @@ def _caller():
     return "?"
 
 
-def decide(host):
+@contextlib.contextmanager
+def inference(endpoint):
+    """Narrow grant for the selected model endpoint, never a general download grant.
+
+    Keep this context alive until a streaming response is closed. Redirects must be
+    disabled by the client. The Internet switch and telemetry denylist still win.
+    """
+    from urllib.parse import urlsplit
+    from ishti import audit
+    url = urlsplit(endpoint)
+    host = (url.hostname or "").lower().rstrip(".")
+    local = host in ("localhost", "127.0.0.1", "::1")
+    if not host or url.username or url.password or url.query or url.fragment or url.scheme not in ("http", "https"):
+        raise ValueError("The model endpoint must be a URL without credentials, query or fragment.")
+    if url.scheme != "https" and not local:
+        raise ValueError("Remote model endpoints require HTTPS.")
+    port = url.port or (443 if url.scheme == "https" else 80)
+    if not internet():
+        raise EgressBlocked("Cloud inference is disabled while the Internet switch is OFF.")
+    with audit.context(inference_endpoint=(host, port)):
+        yield
+
+
+def decide(host, port=None):
     """-> (allowed, who, reason) for an external host in the current thread's context."""
     h = host.lower().rstrip(".")
     ctx = _ctx()
@@ -297,6 +324,11 @@ def decide(host):
         return False, who or f"library:{_caller()}", "known telemetry/analytics endpoint"
     if not internet():
         return False, who or f"library:{_caller()}", "internet switch is OFF"
+    endpoint = ctx.get("inference_endpoint")
+    if endpoint:
+        if h == endpoint[0] and (port is None or port == endpoint[1]):
+            return True, "model-provider", "explicitly selected inference endpoint"
+        return False, "model-provider", "outside selected inference endpoint"
     if grant:
         return True, f"owner:{grant}", "owner-started download"
     if skill:
@@ -335,7 +367,7 @@ def _enforce(host, port, via):
     _tl.busy = True
     try:
         name = getattr(_tl, "names", {}).get(host) or _resolved.get(host) or host
-        allowed, who, reason = decide(name)
+        allowed, who, reason = decide(name, port)
         _log(name, port, who, allowed, reason)
         if allowed:
             return

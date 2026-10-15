@@ -1,10 +1,9 @@
 """FIX-7 regression (QA prompt 3 soak): done-task records must not pin unbounded results.
 
-Measured: 12 background tasks returning 200 KB dicts -> RSS 18 -> 2,860 MB, because
-taskmgr keeps up to MAX_TASKS=60 done records and stored the FULL return value on the
-record (list_tasks serializes every record for /api/tasks). The bounded preview keeps
-every observed reader working (meta skill truncates to 120 chars; agents read subtask
-results from their OWN live reference via wait_all before trimming, not from the record).
+taskmgr keeps completed records for /api/tasks. These tests prove bounded result and
+closure retention with synthetic payloads. The historical multi-GB RAM attribution has
+not been causally reproduced; 12 x 200 KB alone cannot explain that magnitude. Callers
+needing a full result must keep their own reference or persist the output separately.
 Hermetic: uses the real taskmgr with tiny fakes, no LLM/network.
 """
 import os
@@ -63,3 +62,46 @@ def test_wait_all_caller_still_gets_full_result():
     import json
     assert len(json.dumps(done[0].get("result") or "")) < 20_000
     taskmgr.TASKS.pop(rec["id"], None)
+
+
+def test_completed_task_does_not_keep_a_large_callable_closure_alive():
+    import gc
+    import weakref
+    class Payload:
+        pass
+    payload = Payload()
+    payload.data = "private synthetic payload" * 50_000
+    reference = weakref.ref(payload)
+    rec = taskmgr.submit(lambda t, kept=payload: "bounded answer", goal="qa-fix7 closure", sid="qa_fix7")
+    del payload
+    taskmgr.wait_all([rec["id"]], timeout=15)
+    deadline = time.time() + 3
+    while "_fn" in rec and time.time() < deadline:
+        time.sleep(0.01)
+    gc.collect()
+    assert rec["status"] == "done" and "_fn" not in rec
+    assert reference() is None, "completed records must release callable-captured data"
+    taskmgr.TASKS.pop(rec["id"], None)
+
+
+def test_priority_queue_runs_the_callable_of_the_selected_record(monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    gate = threading.Event()
+    started = threading.Event()
+    order = []
+    def blocker(t):
+        started.set()
+        gate.wait(5)
+    with ThreadPoolExecutor(1) as pool:
+        monkeypatch.setattr(taskmgr, "_EXECUTOR", pool)
+        active = taskmgr.submit(blocker, goal="qa-fix7 active")
+        assert started.wait(2)
+        low = taskmgr.submit(lambda t: order.append("low"), goal="qa-fix7 low", priority="low")
+        high = taskmgr.submit(lambda t: order.append("high"), goal="qa-fix7 high", priority="high")
+        gate.set()
+        assert len(taskmgr.wait_all([active["id"], low["id"], high["id"]], timeout=15)) == 3
+    assert order == ["high", "low"]
+    for rec in (active, low, high):
+        assert rec["status"] == "done" and "_fn" not in rec
+        taskmgr.TASKS.pop(rec["id"], None)

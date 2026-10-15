@@ -46,7 +46,7 @@ rgraph.DB_PATH = os.path.join(SCRATCH, "rgraph.db")
 rgraph._conn = None
 
 try:
-    import ishti.arch2.memory as arch2_mem  # noqa: E402
+    import ishti.memstore.memory as arch2_mem  # noqa: E402
     arch2_mem._conn = None
 except Exception as exc:  # noqa: BLE001
     print(f"[qa4] arch2 memory not redirected: {exc}")
@@ -63,6 +63,10 @@ def _rec(kind: str, detail: str) -> None:
 from ishti import dispatcher as d  # noqa: E402
 
 GATE = "(yes/no)"
+
+# Tasks that remove or overwrite stored data. They may only run against a scratch store set
+# (ISHTI_TEST_MODE=1 ISHTI_SCRATCH=1 ISHTI_SCRATCH_DIR=...), never the owner's real data/ dir.
+DESTRUCTIVE = {237}
 
 
 def run_turn(sid: str, text: str, timeout: int = 150) -> dict:
@@ -92,6 +96,12 @@ def run_turn(sid: str, text: str, timeout: int = 150) -> dict:
 
 def run_task(task: dict) -> dict:
     """Run this task's turns in one session; auto-answer T2 gates with 'no'."""
+    if task["id"] in DESTRUCTIVE and os.environ.get("ISHTI_SCRATCH") != "1":
+        return {"task": task, "sid": "", "transcript": [{
+            "text": task["turns"][0], "reply": "[harness] refused: needs ISHTI_SCRATCH=1", "skill": None,
+            "mode": None, "verified": None, "sources": 0, "s": 0.0,
+            "error": "destructive task blocked without a scratch store", "i": 0, "notes": [], "auto": False}],
+            "notes": []}
     FIRE.clear()
     sid = f"qa4_{task['id']}"
     transcript = []
@@ -102,7 +112,7 @@ def run_task(task: dict) -> dict:
         step.update(i=i, notes=NOTES[before:], auto=False)
         transcript.append(step)
         if GATE in step["reply"] and not task.get("no_auto_cancel"):
-            step2 = run_turn(sid, "no")
+            step2 = run_turn(sid, "yes" if task.get("auto_yes") else "no")
             step2.update(i=i, notes=NOTES[before:], auto=True)
             transcript.append(step2)
     return {"task": task, "sid": sid, "transcript": transcript, "notes": list(NOTES)[start:]}
@@ -268,6 +278,8 @@ TASKS = [
      "want": [r"export|backup|memory|data|file|json|sqlite|facts|path"], "bad": [],
      "note": "data export confirmation with format/location"},
     {"id": 237, "diff": "Hard", "task": "Scoped deletion of collaborator across all stores",
+     # the requested action IS the deletion, so confirm it (scratch stores only - see DESTRUCTIVE)
+     "auto_yes": True,
      "turns": ["Remember that Dr. Farooq is my cardiologist collaborator",
                 "Delete all data about my cardiologist collaborator, I want it gone completely"],
      "want": [r"delete|removed|cardio|farooq|collaborator|gone|purged|graph|memory"], "bad": [],

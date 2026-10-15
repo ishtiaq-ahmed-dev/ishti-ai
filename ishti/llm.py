@@ -1,5 +1,8 @@
-"""Single entry point to the local LLM (Ollama's OpenAI-compatible /v1 endpoint).
-Model names come from config.json, so models swap without code changes."""
+"""Single entry point to the model. Two providers, one code path:
+- "local": Ollama's OpenAI-compatible /v1 endpoint on this PC (VRAM governed).
+- "api": any OpenAI-compatible cloud endpoint (OpenAI, Anthropic, Gemini, OpenRouter, ...). One model serves every role,
+  so each pass is one model call.
+Provider and model names come from config.json (llm.provider, llm.api); ISHTI_LLM_PROVIDER overrides the provider."""
 import os
 import re
 from types import SimpleNamespace
@@ -8,7 +11,8 @@ from ishti import killswitch
 from ishti import CONFIG
 
 STYLE = (
-    "You are ISHTI, the owner's local-first personal assistant. Model inference runs through the configured local Ollama service; "
+    "You are ISHTI, the owner's personal assistant. Model inference runs through the owner's configured model provider (a local "
+    "Ollama service or a cloud API); "
     "web access and connected services may use the network when their tools are requested.\n"
     "\n"
     "HOW TO UNDERSTAND THE REQUEST\n"
@@ -68,6 +72,51 @@ STYLE = (
 
 _cfg = CONFIG["llm"]
 _client = None
+_api_client = None
+_api_client_key = None  # (base URL, key) the cached API client was built with
+
+# OpenAI-compatible base URLs. api.provider picks one when api.base_url is empty; any other endpoint goes in base_url.
+PROVIDERS = {
+    "openai": "https://api.openai.com/v1",
+    "anthropic": "https://api.anthropic.com/v1/",
+    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
+    "openrouter": "https://openrouter.ai/api/v1",
+}
+
+
+def provider() -> str:
+    """'local' (Ollama on this PC) or 'api' (a cloud model). ISHTI_LLM_PROVIDER overrides; then the owner's first-run
+    choice (data/setup.json); then config.json."""
+    if os.environ.get("ISHTI_LLM_PROVIDER"):
+        return os.environ["ISHTI_LLM_PROVIDER"]
+    from ishti import setup_choice
+    chosen = setup_choice.load()
+    return chosen["provider"] if chosen else _cfg.get("provider", "local")
+
+
+def api_settings() -> dict:
+    """The API settings in effect: config.json, with the owner's first-run choice (provider and model) on top."""
+    cfg = dict(_cfg.get("api") or {})
+    from ishti import setup_choice
+    chosen = setup_choice.load()
+    if chosen and chosen.get("provider") == "api":
+        cfg.update(provider=chosen["api_provider"], model=chosen["model"], base_url="")
+        cfg["credential_source"] = chosen.get("credential_source", "environment")  # the preset URL for that provider
+    return cfg
+
+
+def api_key() -> str:
+    """Read from an environment variable only (name in api.api_key_env); never written to config or logs."""
+    cfg = api_settings()
+    key = os.environ.get(cfg.get("api_key_env", "ISHTI_API_KEY"), "")
+    if key and cfg.get("credential_source") != "keyring":
+        return key
+    try:
+        import keyring
+        return keyring.get_password("ishti-model-provider", cfg.get("provider", "openai")) or ""
+    except Exception:
+        return ""  # the setup UI reports missing credentials; never write a plaintext fallback
+
 # Measured (2026-10-01, -X importtime): `from openai import OpenAI` costs ~589 ms cumulative and was
 # paid by every `import ishti.llm` (26 skill modules import it) even when the request is answered by a
 # reflex/rule route with no LLM call. The client is created on first use instead.
@@ -77,11 +126,28 @@ def _get_client():
     `_client = OpenAI(...)` (which forced the openai package to import at boot); the base URL is read
     per call so ISHTI_OLLAMA_URL set later still applies.
 """
-    global _client
+    global _client, _api_client, _api_client_key
+    if provider() == "api":
+        key = api_key()
+        if not key:
+            raise RuntimeError(f"No API key: set the {api_settings().get('api_key_env', 'ISHTI_API_KEY')} environment variable.")
+        cfg = api_settings()
+        base = cfg.get("base_url") or PROVIDERS.get(cfg.get("provider", "openai"), PROVIDERS["openai"])
+        workspace = (cfg.get("workspace_id") or os.environ.get("ISHTI_ANTHROPIC_WORKSPACE", "")) if cfg.get("provider") == "anthropic" else ""
+        identity = (base, key, workspace) if workspace else (base, key)
+        if _api_client is None or _api_client_key != identity:  # the owner may switch provider: rebuild when the endpoint or key changes
+            from openai import OpenAI
+            import httpx
+            # Never follow a provider redirect with credentials or to a different service.
+            _api_client = OpenAI(base_url=base, api_key=key, timeout=min(float(_cfg["timeout_s"]), 60),
+                                 max_retries=0, http_client=httpx.Client(follow_redirects=False),
+                                 **({"default_headers": {"anthropic-workspace-id": workspace}} if workspace else {}))
+            _api_client_key = identity
+        return _api_client
     if _client is None:
         from openai import OpenAI  # the expensive import moves to first LLM call
         _client = OpenAI(base_url=(os.environ["ISHTI_OLLAMA_URL"].rstrip("/") + "/v1") if os.environ.get("ISHTI_OLLAMA_URL") else _cfg["base_url"],
-                         api_key="ollama", timeout=_cfg["timeout_s"])  # ISHTI_OLLAMA_URL: a second Ollama (tests, another port)
+                         api_key="ollama", timeout=_cfg["timeout_s"], max_retries=0)  # ISHTI_OLLAMA_URL: a second Ollama (tests, another port)
     return _client
 
 _installed = None
@@ -98,7 +164,9 @@ _JUNK = {"thai": re.compile(r"[฀-๿]"), "cjk": re.compile(r"[一-鿿]")}
 
 
 def clean(text: str, context: str = "") -> str:
-    for rx in _JUNK.values():
+    # Script is content, not evidence of corruption: translations often request a
+    # target script in English. Legacy filtering is an explicit rollback option.
+    for rx in (_JUNK.values() if os.environ.get("ISHTI_LEGACY_SCRIPT_FILTER") == "1" else ()):
         if rx.search(text or "") and not rx.search(context):
             text = "\n".join(line for line in text.splitlines() if not rx.search(line))
     return (text or "").strip()
@@ -107,6 +175,8 @@ def clean(text: str, context: str = "") -> str:
 def model_for(role: str) -> str:
     """The model to use for a role right now: the configured one (with fallbacks below), unless the VRAM governor has
     moved the role to a lighter rung (planner downshifted while a heavy job runs, vision tier 2/3)."""
+    if provider() == "api":  # one model for every role: one model call per pass, and no VRAM to govern
+        return api_settings()["model"]
     from ishti import vram
     if role in ("vision2", "vision3"):  # no config entry: the ladder's best installed rung
         rs = vram.rungs(role)
@@ -123,26 +193,14 @@ def model_for(role: str) -> str:
 
 def _configured_for(role: str) -> str:
     """Configured model for a role, falling back when it isn't pulled into Ollama.
-    arch2 (ishti/arch2/*) asks for its own roles ("main", "validation") which live in
-    CONFIG["arch"]["arch2"]["models"], falling back to the planner model."""
+    The single architecture has one decision model: "main" and "validation" (the memory extractor) run on the planner."""
     forced = os.environ.get(f"ISHTI_MODEL_{role.upper()}")  # e.g. ISHTI_MODEL_PLANNER=qwen2.5:3b: pins a role to one model (tests, low-VRAM days)
     if forced:
         return forced
     global _installed
     if role in ("main", "validation"):
-        a2 = (CONFIG.get("arch") or {}).get("arch2", {}).get("models", {})
-        name = a2.get(role) or _cfg["models"].get("planner", _cfg["fallback"])
-        if _installed is None:
-            try:
-                _installed = {m.id for m in _get_client().models.list().data}
-            except Exception:
-                _installed = set()
-        if _installed and name not in _installed and f"{name}:latest" not in _installed:
-            return a2.get("fallback") or _cfg["fallback"]
-        return name
+        role = "planner"
     name = _cfg["models"].get(role, _cfg["fallback"])
-    if role == "fast" or name.lower() in ("laya", "typed-decisions"):
-         return "laya"
     if _installed is None:
         try:
             _installed = {m.id for m in _get_client().models.list().data}
@@ -165,6 +223,29 @@ def _create(**args):
     import requests
     role = args.pop("_role", None)
     recover = args.pop("_recover", True)
+    if provider() == "api":  # a cloud model: no GPU to govern and no local service to restart
+        args.pop("reasoning_effort", None)  # Ollama's "none" is not a value cloud APIs accept
+        from ishti import privacy
+        cfg = api_settings()
+        if cfg.get("provider") == "anthropic":
+            # Newer Claude models reject sub-1 temperatures/top-p overrides.
+            # Omit sampling controls instead of changing the chosen model.
+            args.pop("temperature", None)
+            args.pop("top_p", None)
+        base = cfg.get("base_url") or PROVIDERS.get(cfg.get("provider", "openai"), PROVIDERS["openai"])
+        def generate():
+            with privacy.inference(base):
+                response = _create_call(args, openai)
+                try:
+                    yield from response
+                finally:
+                    close = getattr(response, "close", None)
+                    if close:
+                        close()
+        if args.get("stream"):
+            return generate()
+        with privacy.inference(base):
+            return _create_call(args, openai)
     if role in ("main", "validation"):  # arch2's roles are the planner: same rung, same pinning
         role = "planner"
     lease = None
@@ -231,7 +312,20 @@ def _create(**args):
 
 
 def _create_call(args, openai):
-    return _get_client().chat.completions.create(**args)
+    from ishti import calltrace
+    client = _get_client()
+    left = calltrace.remaining()
+    if left is not None and callable(getattr(client, "with_options", None)):
+        client = client.with_options(timeout=min(left, float(_cfg["timeout_s"])))
+    return client.chat.completions.create(**args)
+
+
+def _usage(response):
+    from ishti import calltrace
+    usage = getattr(response, "usage", None)
+    if usage is not None:
+        calltrace.note("usage", "model", input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+                       output_tokens=getattr(usage, "completion_tokens", 0) or 0)
 
 
 class Cancelled(Exception):
@@ -291,12 +385,20 @@ def _chat(messages, role="planner", system=STYLE, tools=None, temperature=0.3, m
     kw.setdefault("reasoning_effort", "none")
     args = dict(model=model_for(role), messages=msgs, temperature=temperature, max_tokens=max_tokens, _role=role, **kw)
     context = " ".join(str(m.get("content", "")) for m in messages if m.get("role") == "user")
+    from ishti import calltrace
+    calltrace.remaining()
+    if provider() == "api" and api_settings().get("provider") in ("openai", "openrouter"):
+        args["stream_options"] = {"include_usage": True} if not tools else None
+        if args["stream_options"] is None:
+            args.pop("stream_options")
     if tools:
         args["tools"] = tools
     elif on_token:
         text = ""
         killswitch.check()
         for chunk in _create(**args, stream=True):
+            calltrace.remaining()
+            _usage(chunk)
             killswitch.check()  # the kill switch stops generation mid-sentence
             delta = chunk.choices[0].delta.content if chunk.choices else None
             if delta:
@@ -307,11 +409,15 @@ def _chat(messages, role="planner", system=STYLE, tools=None, temperature=0.3, m
     if not tools:  # stream even when nobody listens: the kill switch can stop it at the next token
         text = ""
         for chunk in _create(**args, stream=True):
+            calltrace.remaining()
+            _usage(chunk)
             killswitch.check()
             if chunk.choices and chunk.choices[0].delta.content:
                 text += chunk.choices[0].delta.content
         return SimpleNamespace(content=clean(text, context), tool_calls=None)
-    msg = _create(**args).choices[0].message
+    response = _create(**args)
+    _usage(response)
+    msg = response.choices[0].message
     killswitch.check()
     msg.content = clean(msg.content, context)
     return msg
@@ -337,7 +443,7 @@ def ask(prompt: str, role="planner", system=STYLE, **kw) -> str:
 
 
 if __name__ == "__main__":
-    assert clean("คณะ (委员会)\nThe heading is Example Domain.") == "The heading is Example Domain."
+    assert clean("你好", context="Translate hello into Chinese") == "你好"
     assert clean("你好", context="说中文") == "你好"  # kept when the owner writes that script
     out = ask("Reply with exactly the word: pong", temperature=0)
     assert "pong" in out.lower(), out

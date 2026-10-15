@@ -120,12 +120,6 @@ def metrics() -> dict:
                   for name, v in _stages.items()}
         counters = dict(_counters)
         tokens = dict(_tokens)
-    agents = {}
-    try:
-        from ishti.agents import perf
-        agents = perf()
-    except Exception as _exc:
-        swallowed('ishti/telemetry.py:metrics', _exc)
     queue = {}
     try:
         from ishti import taskmgr
@@ -139,7 +133,7 @@ def metrics() -> dict:
     except Exception:
         sys = {}
     return {"stages": stages, "counters": counters, "tokens": tokens,
-            "agents": agents, "queue": queue, "system": sys}
+            "queue": queue, "system": sys}
 
 
 def recent_spans(limit: int = 100, name: str = "", status: str = "") -> list[dict]:
@@ -163,8 +157,7 @@ DEFAULT_EVAL = [
     {"name": "math_reflex", "type": "reflex", "text": "what is 17 times 23? reply with just the number", "expect": ["391"]},
     {"name": "router_weather", "type": "route", "text": "what's the weather tomorrow?", "expect_skill": "weather"},
     {"name": "router_research", "type": "route", "text": "deep research the internet about GPU prices", "expect_skill": "deep_research"},
-    {"name": "router_desktop", "type": "route", "text": "take a screenshot", "expect_skill": "desktop"},
-    {"name": "multiagent_decompose", "type": "agents", "text": "research the latest GPU prices and take a screenshot of the dashboard", "expect_agents": 2},
+    {"name": "router_desktop", "type": "route", "text": "minimize the notepad window", "expect_skill": "desktop"},
     {"name": "factcheck_supported", "type": "factcheck", "claim": "The battery lasts 30 hours.",
      "hits": [{"url": "https://a.example", "snippet": "battery life is 30 hours"},
               {"url": "https://b.example", "snippet": "rated 30 hours"}], "expect_verdict": "supported"},
@@ -196,17 +189,11 @@ def run_eval(tests: list | None = None) -> dict:
             kind = t.get("type")
             if kind == "route":
                 from ishti.skills import load_skills
-                from ishti.router import route
+                from ishti.tool_routing import route
                 skills = load_skills()
                 dec = route(t["text"], skills)
                 ok = dec.get("skill") == t.get("expect_skill")
                 detail = f"routed to {dec.get('skill')}"
-            elif kind == "agents":
-                import ishti.agents as A
-                subs = A.decompose(t["text"], {"web_search": 1, "desktop": 1, "deep_research": 1,
-                                               "apps": 1, "chat": 1, "dev": 1, "browser": 1})
-                ok = len(subs) >= int(t.get("expect_agents", 1))
-                detail = f"{len(subs)} subtask(s)"
             elif kind == "factcheck":
                 import orchestrator.factcheck as F
                 v = F.check_claim(t["claim"], search_fn=lambda q, k=6: t.get("hits") or [])

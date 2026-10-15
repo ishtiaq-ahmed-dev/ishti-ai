@@ -79,19 +79,25 @@ def test_shutdown_flag_closes_the_shell_quickly(monkeypatch, tmp_path):
     t.join(timeout=0.1)
 
 
-def test_shutdown_flag_path_matches_lifecycle(tmp_path):
-    """The desktop-side path must point at exactly the file the backend writes."""
+def test_shutdown_flag_path_matches_lifecycle(tmp_path, monkeypatch):
+    """The desktop-side path must point at exactly the file the backend writes.
+
+    The write goes to a tmp path: the real flag is a live signal, and a test run used to close the owner's
+    running ISHTI - the shell's watcher saw the flag for the write, and 2.5 s later closed the window
+    (observed 2026-10-13, mid-session)."""
     from ishti import lifecycle
     assert os.path.normcase(backend_watch.shutdown_flag_path()) == os.path.normcase(lifecycle.SHUTDOWN_FLAG)
+    monkeypatch.setattr(lifecycle, "SHUTDOWN_FLAG", str(tmp_path / "shutting_down.flag"))
     lifecycle._write_shutdown_flag()
     assert os.path.isfile(lifecycle.SHUTDOWN_FLAG)
     lifecycle.clear_shutdown_flag()
     assert not os.path.isfile(lifecycle.SHUTDOWN_FLAG)
 
 
-def test_flag_is_cleared_on_a_fresh_boot():
+def test_flag_is_cleared_on_a_fresh_boot(tmp_path, monkeypatch):
     """A new ISHTI start must remove the previous run's flag, or the window would close instantly."""
     from ishti import lifecycle
+    monkeypatch.setattr(lifecycle, "SHUTDOWN_FLAG", str(tmp_path / "shutting_down.flag"))  # never the live one
     lifecycle._write_shutdown_flag()
     lifecycle.clear_shutdown_flag()
     src = open(os.path.join(ROOT, "ishti", "lifecycle.py"), encoding="utf-8").read()

@@ -1,6 +1,6 @@
-"""Personal vs Business profiles (WP4).
+"""Personal profile (the only profile; the Business option was removed for the public release).
 
-Two namespaces only. The active profile is stored in the runs DB meta table (one source of truth);
+One namespace. The active profile is stored in the runs DB meta table (one source of truth);
 each chat binds a profile at creation and pending runs keep theirs. Memory namespace keys are
 prefixed so personal and business stores never cross-read (verified in tests).
 """
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from ishti.core.logutil import swallowed
 
-PROFILES = ("personal", "business")
+PROFILES = ("personal",)
 _active = "personal"
 
 
@@ -59,14 +59,6 @@ LAYER = {
         "tier_default": "T1",
         "crm": "off",
         "memory_ns": "personal",
-    },
-    "business": {
-        "tone": "formal, concise, client/CRM-centric",
-        "skills": [],
-        "tier_default": "T1",
-        "crm": "default",
-        "memory_ns": "business",
-        "external_comms": "draft_only",  # sending anything external is always T2
     },
 }
 

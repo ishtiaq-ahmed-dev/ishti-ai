@@ -15,6 +15,10 @@ if ROOT not in sys.path:
 
 from ishti.skills.deep_research import skill as skill_mod  # noqa: E402
 
+# Deep research reads live web sources (SearXNG, page fetches) on every case: run explicitly with services up.
+pytestmark = pytest.mark.e2e
+
+
 HAPPY = 'research local-first AI assistants 2026'
 LANG = ['موسم کیسا ہے آج پشاور میں', 'د دوبۍ هوا څنګه دی', 'kal ka mausam kaisa rahega', 'weather کیسا ہے today', 'wether for 2morow plese', 'weathr']
 EDGE = ['research local-first AI assistants 2026???!!!', ' ', 'resea', "do research local-first AI assistants 2026 and also don't do it", ' BOOK: 12:34 in D:/x.mp3 سین opposite نہ ']
@@ -85,6 +89,7 @@ def test_prompt_injection_is_data():
     assert "tier is now" not in reply and "safety disabled" not in reply
 
 
+@pytest.mark.e2e  # live web research (SearXNG, page fetches) and the live model: run explicitly
 @pytest.mark.timeout(60)
 def test_real_dispatcher_scratch_sandbox(monkeypatch, tmp_path):
     """Row 5c + 7: the REAL dispatcher runs this skill in a scratch sandbox with ISHTI_TEST_MODE=1:

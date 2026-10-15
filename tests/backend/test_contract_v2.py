@@ -70,12 +70,12 @@ def test_feedback_and_profile(client):
                                               "rating": 9}).status_code == 400
     assert client.get("/api/feedback/stats").json()["total"] == 1
     assert client.get("/api/profile").json()["active"] == "personal"
-    assert client.put("/api/profile", json={"active": "business"}).json()["active"] == "business"
+    assert client.put("/api/profile", json={"active": "business"}).status_code == 400
     assert client.put("/api/profile", json={"active": "chaos"}).status_code == 400
     assert client.put("/api/profile", json={"active": "personal"}).json()["active"] == "personal"
 
 
-def test_connectors_agents_learning_prompt_layers(client):
+def test_connectors_learning_prompt_layers(client):
     rows = client.get("/api/connectors").json()["connectors"]
     assert isinstance(rows, list)
     assert client.get("/api/connectors/whatsapp/status").json()["id"] == "whatsapp"
@@ -83,10 +83,6 @@ def test_connectors_agents_learning_prompt_layers(client):
     assert client.put("/api/connectors/telegram/config",
                       json={"control_numbers": ["+923001234567"]}).json()["saved"] is True
     assert client.put("/api/connectors/ghost/config", json={}).status_code == 400
-    agents = client.get("/api/agents").json()["agents"]
-    assert any(a["id"] == "researcher" for a in agents)
-    assert client.get("/api/agents/researcher/messages").json()["agent_id"] == "researcher"
-    assert client.get("/api/agents/ghost/messages").status_code == 404
     ls = client.get("/api/learning/status").json()
     assert ls["mode"] in ("off", "propose", "auto_t0") and ls["proposals_open"] == 0
     p = runs.add_proposal("demo", skill="demo_skill")

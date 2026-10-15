@@ -11,7 +11,7 @@ tests/review/test_batch1_adversarial.py (R1-R7), tuned for this batch:
   R7  audit safety: no real T2/T3 confirmations for the whole module run
 
 Safety: module sets ISHTI_TEST_MODE=1 at import; the apps rows use a nonexistent app because
-computer_use has no TEST_MODE guard (NEEDS.md N21) - NEVER put a real app name in an open row.
+computer_use has no TEST_MODE guard - NEVER put a real app name in an open row.
 Run: venv\\Scripts\\python -m pytest tests/review/test_batch2_adversarial.py -q
 """
 import json
@@ -123,7 +123,7 @@ def test_destructive_bait(skill):
 
 def test_bait_secrets_never_reach_memory_db():
     """The property that matters across the whole batch: bait secrets never land in the store."""
-    from ishti.arch2 import memory as arch2_memory
+    from ishti.memstore import memory as arch2_memory
     db = str(arch2_memory.db_path())
     blob = open(db, "rb").read()
     for secret in ("sk-batch2DEF789", "Hunter2"):

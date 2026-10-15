@@ -29,6 +29,15 @@ async def ready():
     return lifecycle.ready_snapshot()
 
 
+@router.post("/api/ready/retry")
+async def retry_ready(req: Request):
+    from ishti.web_security import direct_loopback, request_origin_ok
+    if not direct_loopback(req) or not request_origin_ok(req):
+        return JSONResponse({"error": "Startup retry requires the local owner interface."}, status_code=403)
+    result = lifecycle.retry_boot()
+    return JSONResponse(result, status_code=200 if result.get("retried") or result.get("message") else 409)
+
+
 _snap = {"t": 0.0, "v": None}
 _snap_lock = None
 

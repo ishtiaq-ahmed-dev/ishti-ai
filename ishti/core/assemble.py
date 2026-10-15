@@ -116,7 +116,7 @@ def assemble(request: str, *, state_summary: str = "", memories: list | None = N
 def arch2_block(request: str, state_summary: str = "", session_id=None, capture=None) -> str:
     """The RELEVANT-* middle of the template from arch2's own retrievers (pipeline.py's
     context block). Returns the assembled memory context, '' when nothing is relevant."""
-    from ishti.arch2 import retrieval, people
+    from ishti.memstore import retrieval, people
     mems = retrieval.memory_hits(request)
     memories = [m["row"]["content"] for m in mems if m["row"]["type"] != "procedural"]
     procedures = [m["row"]["content"] for m in mems if m["row"]["type"] == "procedural"]

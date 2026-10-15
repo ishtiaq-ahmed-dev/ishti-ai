@@ -122,7 +122,7 @@ class IntentRouterStage(Protocol):
 
 
 class EmbeddingShortlistRouter:
-    """Existing skills + Laya scores (the arch2 shortlist), adapted. Returns
+    """Existing skills ranked by the deterministic shortlist (ishti/tool_routing.py), adapted. Returns
     {intent, skills: [names], confidence, followup, source}."""
 
     def __init__(self, top_k: int = 20, min_confidence: float = 0.2):
@@ -130,9 +130,9 @@ class EmbeddingShortlistRouter:
         self.min_confidence = min_confidence
 
     def route(self, request: str, state_summary: str = "", skills: dict | None = None) -> dict:
-        from ishti.arch2 import pipeline as apipe
+        from ishti.tool_routing import candidate_shortlist
         skills = skills or {}
-        scores = apipe._laya_scores(request, skills) if skills else {}
+        scores = dict(candidate_shortlist(request, skills, limit=self.top_k)) if skills else {}
         ranked = [n for n, _ in sorted(scores.items(), key=lambda kv: -kv[1]) if n in skills]
         top = ranked[:self.top_k]
         conf = float(scores.get(top[0], 0.0)) if top else 0.0
@@ -140,7 +140,7 @@ class EmbeddingShortlistRouter:
         if re.search(r"\b(?:search|research|find|look\s+up|price|compare)\b", request, re.I):
             intent = "information"
         return {"intent": intent, "skills": top, "confidence": conf,
-                "followup": bool(state_summary), "source": "laya+shortlist"}
+                "followup": bool(state_summary), "source": "shortlist"}
 
 
 # ------------------------------------------------------------------ B3 LLM

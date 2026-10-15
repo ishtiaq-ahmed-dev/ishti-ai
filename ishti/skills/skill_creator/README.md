@@ -28,7 +28,7 @@ registration.
 | 5 | Dependency vetting | `vetting.py` | Zero installs. Exact-name + typosquat (`difflib`) → PyPI JSON (licence, release age, sha256, `requires_python`, yanked) → OSV.dev (CVE **and** `MAL-*` malware) → stdlib `ast` risky-call table, merged with `skillsmith.scan`. **Fails closed**: a failed lookup is not vetted. Records everything in `vetting.json`. |
 | 6 | Implement | `skill.py` | One self-contained module (≤300 lines) + manifest, ≤3500 out-tokens per call, ≤5 coder calls, under `vram.admit`. On failure it reports *why* ("the module is N lines (limit 300)"), never just "it failed". |
 | 7 | Sandbox | `sandbox.py` | One `Popen` inside a per-run Windows **Job Object**: 512 MB process / 1 GB job / ≤8 processes / 90 s CPU / 120 s wall, cleaned env, pinned cwd, `CREATE_NO_WINDOW`. `KILL_ON_JOB_CLOSE` means even a crashed supervisor leaves no orphan. |
-| 8 | Test loop | `drafts.py` | Fix → retest until **3 consecutive** greens (a failure resets the counter). 8 attempts on one issue, then stop and log to NEEDS.md. |
+| 8 | Test loop | `drafts.py` | Fix → retest until **3 consecutive** greens (a failure resets the counter). 8 attempts on one issue, then stop and `log_need` to the runtime gap log (`data/needs_runtime.md`). |
 | 9 | Package + register | `drafts.py` | `v0.1.0`, `status: "disabled"`, `author: "ISHTI skill_creator"`, pinned deps, rollback record, README + CHANGELOG. Installation is T2 and goes through `skillsmith.install_folder`. |
 
 ## The rules it cannot break
@@ -80,7 +80,8 @@ venv\Scripts\python tests\run_skill.py skill_creator
   not, ISHTI says so rather than offloading part of a model onto the CPU.
 - Research quality depends on the web being reachable; without it the pipeline continues and states that
   research was not possible.
-- Codegen quality of the local coder model is **not yet measured** for real tasks — see `NEEDS.md`.
+- Codegen quality of the local coder model is **not yet measured** for real tasks — recorded as an
+  explicit measurement gap in [`docs/ACCURACY.md`](../../../docs/ACCURACY.md) §3.
 
-See `CHANGELOG.md` for the version history, and `RESEARCH.md` §R2/R3/R6 for the evidence behind these limits.
+See `CHANGELOG.md` for the version history and for the measured evidence behind these limits.
 

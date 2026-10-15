@@ -3,7 +3,8 @@
 For each rung (at the context the ladder gives it): unload everything, load it, record the real footprint from /api/ps
 (size, size_vram, context) and the GPU's total used memory, run the fixed ISHTI test prompts for quality and tokens/s,
 then unload. Results go to data/vram.db (`model_footprints`, so the governor uses measured numbers from then on) and
-data/vram_calibration.json (the tables in MODEL_DECISIONS.md come from it).
+data/vram_calibration.json. The surviving written record of these measurements is `models_ladder.yaml` and
+`docs/arch/gpu-vram-governor.md`; the older MODEL_DECISIONS.md they once fed has been retired.
 It takes over the GPU for a few minutes: run it with ISHTI stopped.
 
 Thinking models (a `thinking` capability in /api/show, e.g. Spark-X2.5) reason before answering, so the

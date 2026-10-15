@@ -24,10 +24,8 @@ pytestmark = pytest.mark.integration
 
 
 def _isolate(monkeypatch):
-    for name in ("_remember", "_learn", "_learn_turn", "_arch2_consolidate", "_ftlog"):
+    for name in ("_remember", "_learn", "_learn_turn", "_memory_extract", "_ftlog"):
         monkeypatch.setattr(D, name, lambda *a, **k: None)
-    monkeypatch.setattr(D.planner, "candidate", lambda *a, **k: False)
-    monkeypatch.setattr(D, "_arch_registry", lambda: None)   # these ledgers are arch1's: the owner's arch2 setting must not reroute them
     monkeypatch.setattr(D, "preferred_language", lambda: "English")   # the owner's language lock: every reply is checked against it
     monkeypatch.setattr(D, "translate", lambda *a, **k: pytest.fail("an English reply must not go through the translator"))
 
@@ -54,6 +52,7 @@ def test_a_one_skill_request_makes_exactly_one_call(monkeypatch):
 
 def test_a_skill_call_without_a_route_reason_is_flagged(monkeypatch):
     _isolate(monkeypatch)
+    monkeypatch.setattr(D, "_rule_owned", lambda text: True)  # the direct skill path: a route with no reason must be flagged there
     monkeypatch.setattr(D, "route", lambda text, skills, exclude=None: {"skill": "system", "confidence": 1.0, "scores": []})   # no "source"
     monkeypatch.setattr(D.SKILLS["system"], "run", lambda text, s: {"reply": "All fine here, nothing to report.", "sources": [], "no_escalate": True})
     res = _handle("how is my pc", "calls2")
@@ -104,18 +103,6 @@ def test_a_repeated_embedding_is_not_recomputed(monkeypatch):
     assert len(calls) == 1
     summary = calltrace.end()
     assert summary["embed_calls"] == 2 and summary["calls"][1].get("cached") is True
-
-
-def test_planner_prompt_lists_only_relevant_skills():
-    """PERF-8: the multi-task planning prompt carried all 124 skill descriptions (~3,850 tokens) on every request."""
-    from ishti import planner
-    total = len(D.SKILLS)
-    for text, must in (("track subscription netflix 1500 monthly and then show my subscriptions", {"subscriptions"}),
-                       ("open whatsapp and send hi to ali, then tell me my notes", {"whatsapp", "notes"}),
-                       ("check the weather and edit the latest video in downloads", {"weather", "video"})):
-        keep = planner.shortlist(text, D.SKILLS)
-        assert keep is not None and must <= keep, (text, keep)
-        assert len(keep) <= 20 and len(keep) < total / 4, f"{len(keep)} of {total} skills would still be listed"
 
 
 def test_boot_warm_up_makes_no_speculative_network_call():

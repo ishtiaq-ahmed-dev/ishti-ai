@@ -1,5 +1,8 @@
 """Routing accuracy: the in-sample LABELLED set from ishti/check.py plus a HELD_OUT paraphrase set never used to tune rules.
-Run with ISHTI_TEST_MODE=1 and ISHTI_SCRATCH=1: venv/Scripts/python.exe tools/qa/route_eval.py (needs the local planner model for the LLM fallback)."""
+Deterministic and offline: ishti.tool_routing makes no model call, so this needs no GPU, no Ollama and no checkpoint.
+Run with ISHTI_TEST_MODE=1 and ISHTI_SCRATCH=1: venv/Scripts/python.exe tools/qa/route_eval.py
+Writes reports/qa/route_eval.json, which is gitignored; tests/test_tool_select_eval.py is the tracked,
+CI-run equivalent over the 120-prompt fixture."""
 import ast
 import json
 import os
@@ -8,7 +11,6 @@ import time
 
 os.environ.setdefault("ISHTI_TEST_MODE", "1")
 os.environ.setdefault("ISHTI_SCRATCH", "1")
-os.environ["ISHTI_ROUTE_LLM"] = "1"  # test mode skips the LLM routing fallback unless asked
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 HELD_OUT = [
@@ -34,7 +36,8 @@ def main():
     src = open("ishti/check.py", encoding="utf-8").read()
     lab = next(n for n in ast.parse(src).body if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "LABELLED")
     sets = {"in_sample": ast.literal_eval(lab.value), "held_out": HELD_OUT}
-    from ishti import dispatcher as d, router
+    from ishti import dispatcher as d
+    from ishti import tool_routing as router  # ishti/router.py was removed; tool_routing is what replaced it
     report = {}
     for name, rows in sets.items():
         t0, bad = time.time(), []
@@ -47,8 +50,12 @@ def main():
         print(f"{name}: {report[name]['correct']}/{len(rows)} = {report[name]['accuracy']}%")
         for b in bad:
             print("   MISS", b)
-    os.makedirs("docs/audit", exist_ok=True)
-    json.dump(report, open("docs/audit/route_eval.json", "w", encoding="utf-8"), indent=1, ensure_ascii=False)
+    out_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "reports", "qa")
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, "route_eval.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(report, fh, indent=1, ensure_ascii=False)
+    print("wrote", path)
 
 
 if __name__ == "__main__":

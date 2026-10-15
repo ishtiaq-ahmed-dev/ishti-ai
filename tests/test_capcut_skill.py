@@ -6,6 +6,8 @@ draft creation, timeline inspection, text overlays, silence analysis, and proxy 
 import os
 import sys
 
+import pytest
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
@@ -45,6 +47,7 @@ def test_projects_list():
     print("  [✓] Projects listing returned formatted table.")
 
 
+@pytest.mark.e2e  # needs the real CapCut install and writes to its draft store: run explicitly, never in the offline suite
 def test_quickstart_and_timeline():
     print("\n--- 4. Testing Project Quickstart & Timeline Inspection ---")
     ctrl = get_capcut_controller()
@@ -75,6 +78,7 @@ def test_silence_detection():
     print(f"  [✓] Media duration: {res.get('duration')}s, silences detected: {len(res.get('silences', []))}")
 
 
+@pytest.mark.e2e  # needs the real CapCut install and a draft from the test above
 def test_proxy_render():
     print("\n--- 6. Testing Proxy Preview Render ---")
     ctrl = get_capcut_controller()

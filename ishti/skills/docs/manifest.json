@@ -10,13 +10,15 @@
       "pypdfium2",
       "docx",
       "pptx",
-      "pandas",
-      "openpyxl",
-      "matplotlib"
+      "openpyxl"
     ],
     "models": [],
     "mcp": [],
-    "apis": []
+    "apis": [],
+    "optional_python": [
+      "pandas",
+      "matplotlib"
+    ]
   },
   "priority": 23,
   "status": "working",

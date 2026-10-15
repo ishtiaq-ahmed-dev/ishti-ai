@@ -33,6 +33,7 @@ def all_languages_on(monkeypatch):
     voice._lang_applied = 0.0
 
 
+@pytest.mark.e2e
 def test_section_1_model_swap_and_fallbacks():
     print("\n--- [Section 1] Verifying Model Roles & Lightweight MoE/Laya Engine ---")
     planner_model = llm.model_for("planner")
@@ -45,18 +46,23 @@ def test_section_1_model_swap_and_fallbacks():
     print(f"  Fast classifier: {fast_model}")
     print(f"  Translator model: {translator_model}")
 
-    assert fast_model == "laya", f"Fast classifier should be laya, got {fast_model}"
+    # the one architecture has no separate classifier model: the fast role was removed from config
+    assert "fast" not in CONFIG["llm"]["models"], CONFIG["llm"]["models"]
     # the VRAM governor (ishti/vram.py) may have the planner on a lighter rung of its ladder when the GPU is busy (Whisper,
     # a heavy job): any installed rung is a valid planner; only an unrelated model would be wrong
     from ishti import vram
-    allowed = {"qwen3:30b-a3b"} | {r["name"] for r in vram.rungs("planner")}
+    allowed = {llm._configured_for('planner'), "qwen3:30b-a3b"} | {r["name"] for r in vram.rungs("planner")}
     assert planner_model in allowed, f"Unexpected planner model: {planner_model} (allowed: {sorted(allowed)})"
-    assert coder_model in ("qwen3-coder:30b-a3b", "ishti-qwen2.5-coder:14b", "qwen2.5-coder:14b"), f"Unexpected coder: {coder_model}"
-    assert translator_model in ("gemma3:4b", "ishti-qwen2.5:14b"), f"Unexpected translator: {translator_model}"
+    # The owner may explicitly choose another installed coder. Validate the
+    # selected model/ladder contract instead of silently restricting that choice.
+    allowed_coders = {llm._configured_for("coder")} | {r["name"] for r in vram.rungs("coder")}
+    assert coder_model in allowed_coders, f"Unexpected coder: {coder_model}"
+    allowed_translators = {llm._configured_for("translator")} | {r["name"] for r in vram.rungs("translator")}
+    assert translator_model in allowed_translators, f"Unexpected translator: {translator_model}"
 
     # Verify Laya classifies in < 30ms
     t0 = time.time()
-    from ishti import router
+    from ishti import tool_routing as router
     res = router.route("what is the weather today?", dispatcher.SKILLS)
     dt_ms = (time.time() - t0) * 1000
     print(f"  Fast decision (Laya/router) resolved in {dt_ms:.2f} ms -> {res.get('skill')}")
@@ -179,6 +185,7 @@ def test_section_3_live_monitoring():
     print("  [PASS] Passive live conversation monitoring verified.")
 
 
+@pytest.mark.e2e
 def test_multitask_voice_session_sections_1_and_6():
     print("\n--- [Sections 1 & 6] Running Concurrent Multi-Task Voice Session ---")
     initial_free_mb = gpu.free_mb()

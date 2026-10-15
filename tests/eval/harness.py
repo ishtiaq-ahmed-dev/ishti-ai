@@ -162,7 +162,7 @@ def run_understanding() -> dict[str, Any]:
         tool_routing._learned_hint = lambda _text: None
         try:
             decision = tool_routing.route(
-                prompt, skills, session={"history": []}, llm_fn=lambda *_a, **_k: "{}")
+                prompt, skills, session={"history": []})
         finally:
             tool_routing._learned_hint = original_hint
         actual = str(decision.get("skill") or "")

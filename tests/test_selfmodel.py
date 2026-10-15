@@ -22,6 +22,30 @@ from ishti.skills.meta import skill as meta  # noqa: E402
 
 SELF_CHECK_RX = dict(meta.OPS)["self_check"]
 
+
+@pytest.fixture(autouse=True)
+def offline_probe_inputs(request, monkeypatch):
+    """Rendering/refresh contracts use explicit probe inputs; e2e keeps actual hardware/models."""
+    if request.node.get_closest_marker('e2e'):
+        yield
+        return
+    probes = {
+        'os': {'os':'Windows fixture','system':'Windows','tag':'fixture'},
+        'cpu': {'cpu':'fixture CPU','cores':8,'threads':16,'tag':'fixture'},
+        'ram': {'ram_total_gb':64.0,'ram_free_gb':32.0,'ram_percent':50.0,'tag':'fixture'},
+        'disk': {'disk':'fixture','disk_free_gb':100.0,'disk_total_gb':200.0,'tag':'fixture'},
+        'gpu': {'gpu':'RTX fixture','vram_total_mb':16384,'vram_used_mb':1024,'driver':'fixture','tag':'fixture'},
+    }
+    monkeypatch.setattr(sm, 'CHEAP', tuple((key, lambda row=row: dict(row)) for key,row in probes.items()))
+    monkeypatch.setattr(sm, '_cache', {'cheap_ts':0.0,'full_ts':0.0,'data':{},'fp':''})
+    def get(url, **kwargs):
+        from types import SimpleNamespace
+        assert url.endswith(('/api/tags', '/api/ps')), 'Unexpected self-model network probe'
+        models = [{'name':'fixture-planner','size':1024}] if url.endswith('/api/tags') else []
+        return SimpleNamespace(json=lambda: {'models':models})
+    monkeypatch.setattr('requests.get', get)
+    yield
+
 PARAPHRASES = {
     "EN": ["who are you", "whose assistant are you", "what pc are you running on", "your pc specs",
            "what are your specs", "what gpu do i have", "how much ram do i have",
@@ -57,7 +81,7 @@ def test_four_languages_are_covered():
 
 
 # ==================================================== acceptance 10: the answers match live data
-def test_measured_facts_match_this_pc():
+def test_rendered_facts_match_the_probe_inputs():
     data = sm.build(force=True)
     gpu, ram, os_d = data["gpu"], data["ram"], data["os"]
     assert "RTX" in gpu["gpu"] and gpu["vram_total_mb"] > 8000, gpu

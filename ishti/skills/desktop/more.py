@@ -27,7 +27,6 @@ CLIP_DB = scratch_path(os.path.join(ROOT, "data", "clipboard.db"))
 CLIP_KEEP = 100
 
 OPS = [
-    ("screen_text", re.compile(r"\b(?:(?:read|copy|get|grab|extract)\s+(?:all\s+)?(?:the\s+)?text\s+(?:on|from|off)\s+(?:my\s+|the\s+)?screen|ocr\s+(?:my\s+|the\s+)?screen)\b", I)),
     ("vdesk", re.compile(r"\b(?:(?P<act>new|create|add|close|remove)\s+(?:a\s+|this\s+|the\s+)?(?:virtual\s+)?desktop|"
                          r"(?:switch|go|move)\s+to\s+(?:the\s+)?(?:(?P<dir>next|previous|left|right)\s+desktop|desktop\s+(?P<n>\d))|"
                          r"(?P<view>task\s+view|show\s+(?:all\s+)?desktops))\b", I)),
@@ -52,19 +51,7 @@ def match(text):
 
 
 # ---------------------------------------------------------------- screen text (OCR)
-def op_screen_text(m, text, session):
-    from ishti.ocr import ocr_screen
-    found, path = ocr_screen()
-    if not found.strip():
-        return f"I found no text on the screen. (Screenshot: {path})"
-    if re.search(r"\bcopy\b", text, I):
-        import pyperclip
-        pyperclip.copy(found)
-        return f"Copied {len(found.split())} words from the screen to the clipboard."
-    return f"Text on your screen:\n```\n{found[:3000]}\n```"
 
-
-# ---------------------------------------------------------------- virtual desktops
 def _keys(*combo, times=1):
     import pyautogui
     for _ in range(times):

@@ -1,17 +1,16 @@
 """End-to-end check of the core loop against real Ollama/Laya, with a throwaway memory DB.
-    python -m ishti.check            (add --no-laya to skip the router eval)"""
+    python -m ishti.check"""
 import os
-import sys
 import tempfile
+import time
 
 from ishti import CONFIG
 
 tmp = tempfile.mkdtemp()
 CONFIG["memory"].update(db_path=os.path.join(tmp, "t.db"), chroma_dir=os.path.join(tmp, "chroma"))
-if "--no-laya" in sys.argv:
-    CONFIG["router"]["use_laya"] = False
 
-from ishti import dispatcher as d, router  # noqa: E402  (config must be patched first)
+from ishti import dispatcher as d  # noqa: E402  (config must be patched first)
+from ishti import tool_routing as router  # ishti/router.py was removed; tool_routing is what replaced it
 
 # Labelled routing set. Grows into the fine-tuning set for the Laya typed-decisions checkpoint.
 LABELLED = [
@@ -87,7 +86,7 @@ LABELLED = [
     ("download https://example.com/report.pdf", "webtools"), ("watch https://example.com/jobs for changes", "webtools"),
     ("find duplicate files in downloads", "fileops"), ("rename the photos in downloads to trip", "fileops"),
     ("empty the recycle bin", "fileops"),
-    ("take a screenshot", "desktop"), ("set volume to 30", "desktop"), ("install gimp", "desktop"),
+    ("minimize the notepad window", "desktop"), ("set volume to 30", "desktop"), ("install gimp", "desktop"),
     ("lock my pc", "desktop"), ("what is using the most memory", "desktop"),
     ("i study in imsciences", "owner"), ("where i stid ?", "owner"), ("what semester am i in?", "owner"),
     ("why your response is late", "owner"), ("check my whatsap and let me know which chat is unread", "whatsapp"),
@@ -248,7 +247,11 @@ LABELLED = [
 def main():
     bad = [n for n, s in d.SKILLS.items() if s.status == "broken"]
     assert not bad, f"broken skills: {[(n, d.SKILLS[n].problem) for n in bad]}"
-    # E conflict resolution: a near-tie between Laya's top two goes to the skill this chat used last
+    # E conflict resolution: a near-tie between the top two goes to the skill this chat used last.
+    # NOTE: this exercises the tiebreak directly with a synthetic "laya"-sourced decision. The live
+    # router is ishti/tool_routing.py, which never emits source "laya", so the branch this asserts
+    # cannot currently fire in production - see docs/OWNER_LOOP.md. Kept because it pins the
+    # function's contract, not because a live request reaches it.
     tie = {"skill": "web_search", "source": "laya", "scores": [("web_search", 0.51), ("weather", 0.49), ("chat", 0.2)]}
     assert d.recency_tiebreak(tie, "weather")["skill"] == "weather" and d.recency_tiebreak(tie, "chat")["skill"] == "web_search"
     assert d.recency_tiebreak({**tie, "scores": [("web_search", 0.7), ("weather", 0.4)]}, "weather")["skill"] == "web_search"
@@ -262,19 +265,20 @@ def main():
     a["pending"] = {"skill": "video"}
     assert b["pending"] == shared["pending"] and b.get("trace") == "B" and a.get("on_token") is None
 
-    if CONFIG["router"]["use_laya"]:
-        router.route("warm up", d.SKILLS)  # first call loads the checkpoint
-        hits, ms = 0, []
-        for text, want in LABELLED:
-            got = router.route(text, d.SKILLS)
-            hits += got["skill"] == want
-            ms.append(got["ms"])
-            if got["skill"] != want:
-                print(f"  route miss: {text!r} -> {got['skill']} ({got['source']}), want {want}")
-        acc = hits / len(LABELLED)
-        print(f"routing: {hits}/{len(LABELLED)} correct, median {sorted(ms)[len(ms) // 2]} ms")
-        assert acc >= 0.85, f"routing accuracy {acc:.0%} < 85%"
-        assert not router.laya_error, router.laya_error
+    # Routing eval. Deterministic and offline: ishti/tool_routing.py makes no model call, so there is no
+    # checkpoint to warm up, no "ms" on the decision and no router error to assert against. It runs
+    # unconditionally now, because there is nothing left for --no-laya to skip.
+    hits, times = 0, []
+    for text, want in LABELLED:
+        t0 = time.perf_counter()
+        got = router.route(text, d.SKILLS)
+        times.append((time.perf_counter() - t0) * 1000)
+        hits += got["skill"] == want
+        if got["skill"] != want:
+            print(f"  route miss: {text!r} -> {got['skill']} ({got['source']}), want {want}")
+    acc = hits / len(LABELLED)
+    print(f"routing: {hits}/{len(LABELLED)} correct, median {sorted(times)[len(times) // 2]:.2f} ms")
+    assert acc >= 0.85, f"routing accuracy {acc:.0%} < 85%"
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # the checkout, wherever it lives
     drive = root.split(":")[0] + ":"
@@ -285,6 +289,11 @@ def main():
         ("ISHTI is now working", "memory", "is working"),
         ("what's the weather tomorrow?", "weather", "open-meteo"),
         ("what is 17 times 23? reply with just the number", "chat", "391"),
+        # STALE AFTER THE ONE-ARCHITECTURE REWRITE: nothing routes a compound request to a skill named
+        # "plan" any more - the skill in the tree is "planners", and "plan" survives only as a display
+        # branch. Left as-is on purpose rather than guessed at, because the value it should assert can
+        # only be read off a live run. See docs/OWNER_LOOP.md; expect this assertion to be the next
+        # thing that fails here.
         ("how much ram am I using and then tell me the weather tomorrow", "plan", "open-meteo"),
     ]
     try:

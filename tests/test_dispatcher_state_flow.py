@@ -14,6 +14,9 @@ Proves through the LIVE path:
 import os
 import sys
 import tempfile
+import json
+from types import SimpleNamespace
+import re
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -35,7 +38,7 @@ def _patch():
         seen["deep_research"].append(text), {"reply": "REPORT: prices for " + text[:60], "sources": []})[1]
     D.SKILLS["web_search"].run = lambda text, s: (
         seen["web_search"].append(text), {"reply": "FOUND " + text[:60], "sources": []})[1]
-    for name in ("_remember", "_learn", "_learn_turn", "_arch2_consolidate", "_ftlog"):
+    for name in ("_remember", "_learn", "_learn_turn", "_memory_extract", "_ftlog"):
         _saved_hooks[name] = getattr(D, name)
         setattr(D, name, lambda *a, **k: None)
 
@@ -79,28 +82,28 @@ def _run_turns():
         D.handle("cheapest price?", session_id="flow2")
         assert any("S25" in t and "iphone 16" not in t.lower() for t in seen["web_search"]), seen["web_search"]
 
-        # ---- T5: switch architecture mid-chat, the topic survives
-        from ishti.core.architectures import get_registry
-        reg = get_registry()
-        before = reg.active()
-        target = "memory_augmented" if before != "memory_augmented" else "simple_voice"
-        res = reg.set_active(target, by="test", run_health_check=False)
-        assert res.get("switched") is True, res
-        r4 = D.handle("find the cheapest price", session_id="flow1")
-        assert any("WH-1000XM5" in t for t in seen["deep_research"] + seen["web_search"]) or \
-            "WH-1000XM5" in r4["final_answer"], (seen, r4["final_answer"])
-        reg.set_active(before, by="test", run_health_check=False)
-
-        # ---- architecture voice command asks for confirmation (C3)
-        rc = D.handle("switch to simple voice mode", session_id="flow1")
-        assert "yes/no" in rc["final_answer"].lower(), rc["final_answer"]
-        ry = D.handle("yes", session_id="flow1")
-        assert "simple" in ry["final_answer"].lower() or "switched" in ry["final_answer"].lower(), ry["final_answer"]
-        reg.set_active(before, by="test", run_health_check=False)
 
 
-def test_dispatcher_state_flow():
+def test_dispatcher_state_flow(monkeypatch):
     """pytest entry: the whole scripted conversation, one test."""
+    from ishti import llm
+    def decision(messages, **kwargs):
+        # Script only the model response. Real context assembly, workflow, tier and skill paths run.
+        current = messages[-1]['content']
+        context = str(kwargs.get('system', ''))
+        topic = None
+        for message in reversed(messages):
+            match = re.search(r'Samsung S25|iPhone 16|Sony WH-1000XM5', message.get('content', ''), re.I)
+            if match:
+                topic = match.group(0)
+                break
+        if topic is None:
+            match = re.search(r'Samsung S25|iPhone 16|Sony WH-1000XM5', context, re.I)
+            topic = match.group(0) if match else None
+        assert topic, 'The real prompt lost the conversation topic'
+        tool = 'deep_research' if 'deep research' in current.lower() else 'web_search'
+        return SimpleNamespace(content=json.dumps({'calls':[{'tool':tool,'input':f'{current} about {topic}'}]}))
+    monkeypatch.setattr(llm, 'chat', decision)
     _run_all()
 
 

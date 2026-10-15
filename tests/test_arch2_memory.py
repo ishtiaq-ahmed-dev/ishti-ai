@@ -17,11 +17,11 @@ import os
 import sys
 import tempfile
 import time
+import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from ishti.arch2 import registry  # noqa: E402
 
 # ---------------------------------------------------------------- 0. scratch environment
 TMP = tempfile.mkdtemp(prefix="ishti_arch2_test_")
@@ -29,11 +29,10 @@ CFG_PATH = os.path.join(ROOT, "ishti", "config.json")
 with open(CFG_PATH, encoding="utf-8") as f:
     REAL_CFG = f.read()
 
-import ishti.arch2.memory as memory  # noqa: E402
-import ishti.arch2.retrieval as retrieval  # noqa: E402
-import ishti.arch2.consolidate as consolidate  # noqa: E402
-import ishti.arch2.pipeline as pipeline  # noqa: E402
-import ishti.arch2.jsonio as jsonio  # noqa: E402
+import ishti.memstore.memory as memory  # noqa: E402
+import ishti.memstore.retrieval as retrieval  # noqa: E402
+import ishti.memstore.consolidate as consolidate  # noqa: E402
+import ishti.memstore.jsonio as jsonio  # noqa: E402
 
 memory.db_path = lambda: os.path.join(TMP, "arch2_memory.db")
 memory._conn = None
@@ -57,6 +56,12 @@ retrieval.vector_hits = lambda *a, **k: []
 consolidate.memory = memory
 
 
+@pytest.fixture(autouse=True)
+def _offline_reconciliation(monkeypatch):
+    # Reconciliation lazily imports ask_json even in test mode. Never load a live model.
+    monkeypatch.setattr(jsonio, 'ask_json', lambda *args, **kwargs: {'action': 'ADD'})
+
+
 def test_jsonio_parse_hardening():
     """jsonio must survive every malformed shape local models produce."""
     assert jsonio.parse_json('{"a": 1}') == {"a": 1}
@@ -69,8 +74,12 @@ def test_jsonio_parse_hardening():
     assert jsonio.parse_json('{"tool": "x", "input": "y"}') == {"tool": "x", "input": "y"}
 
 
-def test_reconcile_offline_degrades_to_add():
+def test_reconcile_offline_degrades_to_add(monkeypatch):
     """Without a model stack, reconcile must still store (never worse than not storing)."""
+    memory.semantic('Synthetic prior fact for the fallback path.')
+    def unavailable(*args, **kwargs):
+        raise RuntimeError('Offline model fixture unavailable')
+    monkeypatch.setattr(jsonio, 'ask_json', unavailable)
     n_before = len(memory.search(mtype="semantic"))
     r = memory.reconcile("User does morning runs.", source="explicit_user", importance=0.6, confidence=0.9)
     assert r.get("content", "").endswith("runs.") or r.get("action") == "NOOP"
@@ -87,33 +96,6 @@ def teardown_module(module=None):
 
 
 # ---------------------------------------------------------------- 1. registry
-def test_registry_switch_and_persist():
-    d = registry.set_active("arch2", by="test")
-    assert d["active"] == "arch2"
-    disk = json.load(open(CFG_PATH, encoding="utf-8"))
-    assert disk["arch"]["active"] == "arch2", "the switch must survive a restart"
-    assert registry.active() == "arch2"
-    d = registry.set_active("1", by="test")  # alias
-    assert d["active"] == "arch1"
-    try:
-        registry.set_active("arch9")
-        assert False, "unknown arch must raise"
-    except ValueError:
-        pass
-
-
-def test_registry_command():
-    d = registry.set_active("arch1", by="test")
-    assert registry.handle_command("use arch 2") is not None
-    assert registry.active() == "arch2"
-    registry.set_active("arch1", by="test")
-    assert registry.handle_command("what's the weather") is None, "non-command must fall through"
-    assert registry.handle_command("arch " * 5 + "long " * 10) is None, "long sentences aren't commands"
-    # "architecture" contains "arch" as a substring but ARCH_WORD needs the word boundary
-    assert registry.handle_command("what architecture do you use") is None
-
-
-# ---------------------------------------------------------------- 2. memory layers
 def test_four_layers_and_thresholds():
     m1 = memory.semantic("User prefers concise email replies.", source="explicit_user",
                          confidence=0.95, importance=0.8)
@@ -215,47 +197,6 @@ def test_retrieval_relevant_only():
 
 
 # ---------------------------------------------------------------- 4. pipeline offline parts
-def test_pipeline_tool_parsing_and_safety():
-    call = pipeline._parse_tool_call('{"tool": "web_search", "input": "weather in Peshawar"}')
-    assert call == {"tool": "web_search", "input": "weather in Peshawar"}
-    assert pipeline._parse_tool_call('```json\n{"tool": "browser", "input": "open gmail"}\n```') \
-        == {"tool": "browser", "input": "open gmail"}
-    assert pipeline._parse_tool_call('chatter {"tool": "chat", "input": "hi"} done') == {"tool": "chat", "input": "hi"}
-    assert pipeline._parse_tool_call("Sunny, 34 degrees.") is None
-    assert pipeline._parse_tool_call('{"tool": "", "input": "x"}') is None
-    assert pipeline._parse_tool_call('{"tool": null, "input": "x"}') is None
-    assert pipeline._parse_tool_call('not json {') is None
-    assert pipeline._needs_confirmation("send the report to Ahmed")
-    assert pipeline._needs_confirmation("delete that file")
-    assert not pipeline._needs_confirmation("what is the capital of Pakistan")
-    assert not pipeline._needs_confirmation("summarize this document for me")
-
-
-def test_pipeline_shortlist_window():
-    """The spec's intent-router stage: 5-20 skills reach the brain, never all ~50; broken
-    skills never appear; Laya-picked and core tools lead the list."""
-    class FakeSkill:
-        def __init__(self, desc):
-            self.manifest = {"description": desc}
-            self.status = "working"
-    many = {f"skill{i}": FakeSkill(f"tool {i}") for i in range(30)}
-    many.update({"chat": FakeSkill("conversation"), "memory": FakeSkill("facts"),
-                 "web_search": FakeSkill("search"), "browser": FakeSkill("browse")})
-    many["broken_one"] = FakeSkill("broken")
-    many["broken_one"].status = "broken"
-    names = pipeline.shortlist(many, "search the web for weather in Peshawar")
-    assert pipeline.SHORTLIST_MIN <= len(names) <= pipeline.SHORTLIST_MAX, names
-    assert "broken_one" not in names
-    assert {"chat", "memory", "web_search"} <= set(names), "core tools always listed"
-    assert "browser" in names, "laya-rule-picked skills included"
-    # small installs pass through whole
-    small = {"chat": many["chat"], "memory": many["memory"]}
-    assert pipeline.shortlist(small, "hi") == ["chat", "memory"]
-    # unknown-tool recovery text uses the same shortlist
-    assert "web_search" in ", ".join(pipeline.ranked_names(many, "weather"))
-
-
-# ---------------------------------------------------------------- 5. memory commands
 def test_memory_commands():
     memory.semantic("User is Ishtiaq.", source="explicit_user", confidence=1.0, importance=0.9)
     assert "Ishtiaq" in (consolidate.handle_command("what do you remember about me") or "")

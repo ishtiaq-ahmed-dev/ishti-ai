@@ -1,4 +1,4 @@
-"""WhatsApp Web Version-Aware Selector Registry & Self-Chat Safety Policy (NEEDS.md Items 1 & 2).
+"""WhatsApp Web Version-Aware Selector Registry & Self-Chat Safety Policy.
 
 Guarantees:
 1. Dedicated test destination isolation: prevents automated test actions from contacting real people.

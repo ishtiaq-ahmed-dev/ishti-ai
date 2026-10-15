@@ -11,7 +11,7 @@ For every prompt it verifies: a reply arrives, steps are emitted for tool-needin
 a WhatsApp draft asks for confirmation (T2 gate), and repeated client_msg_id never creates a
 second run. Across profiles it verifies isolation: chats/runs/events never cross profiles.
 
-Writes docs/audit/qa_chat_flow.json and appends defects to docs/audit/qa_defects.json.
+Writes reports/qa/qa_chat_flow.json and appends defects to reports/qa/qa_defects.json.
 """
 from __future__ import annotations
 

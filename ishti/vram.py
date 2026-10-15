@@ -58,6 +58,7 @@ _last_heavy_end = 0.0
 _voice_ts, _voice_depth = 0.0, 0
 _fit_since = {}
 _cache = {}
+_swaps = []                         # bounded: host-RAM cost of every model load/unload (swap_cost())
 
 
 def _cached(key, ttl, fn):
@@ -215,14 +216,16 @@ def info(name):
 
 
 # ---------------------------------------------------------------- measured footprints
-_conn_cache = {}
+from ishti.core.sqlite_cache import ThreadConnections
+
+_conn_cache = ThreadConnections()
 
 
 def _db():
     """Cached per-thread connection (Cycle 4, the audit.py pattern): the VRAM governor calls this
     several times per model load (footprints, switches) and each call used to re-connect and re-run
     three CREATE TABLEs + a failing ALTER probe. WAL + synchronous=NORMAL: measurement telemetry."""
-    key = (threading.get_ident(), DB)
+    key = (threading.current_thread(), DB)
     c = _conn_cache.get(key)
     if c is None:
         os.makedirs(DATA, exist_ok=True)
@@ -457,6 +460,7 @@ def _post(path, body, timeout=60):
 
 
 def unload(name, wait_s=20):
+    host_before = _host_mb()
     try:
         _post("/api/generate", {"model": name, "prompt": "", "keep_alive": 0, "stream": False}, 30)
     except requests.RequestException:
@@ -467,6 +471,7 @@ def unload(name, wait_s=20):
             if not any(m["name"] == name for m in ps(True)):
                 time.sleep(0.4)
                 _cache.pop("gpu", None)
+                _record_swap(frm=name, host_mb=_host_mb() - host_before)
                 return True
         except (requests.RequestException, ValueError):
             pass  # can't tell yet: keep waiting
@@ -478,13 +483,74 @@ def load(name, keep_alive):
     """Load `name` and VERIFY it is fully on the GPU. -> (ok, ps entry)."""
     _cache.pop("gpu", None)  # a fresh reading: the delta is only meaningful against the memory used right before this load
     before = gpu()["used_mb"]
+    host_before = _host_mb()
     _post("/api/generate", {"model": name, "prompt": "", "keep_alive": keep_alive, "stream": False}, 300)
     _cache.pop("gpu", None)
     entry = next((m for m in ps(True) if m["name"] == name), None)
     if entry:
         delta = gpu()["used_mb"] - before
         record([entry], delta_mb=delta if delta >= entry["size_vram_mb"] * 0.9 else None)  # a plausible measurement only
+        _record_swap(to=name, host_mb=_host_mb() - host_before, vram_mb=delta)
     return bool(entry and entry["full"]), entry
+
+
+# ---------------------------------------------------------------- host-RAM cost of a swap
+# 2026-10-13 RAM findings: loading a model pulls its file back into Ollama's host working set
+# (measured: 8.7 GB of host RSS for the 14B, +5.1 GB of commit for a 3.1 GB model), so a model that is
+# unloaded and reloaded quickly pays that twice - the avoidable waste this reports.
+def _host_mb():
+    """MB resident in Ollama's manager + model runner: the host half of what a swap costs."""
+    try:
+        import psutil
+        return sum((p.info["memory_info"].rss for p in psutil.process_iter(["name", "memory_info"])
+                    if (p.info.get("name") or "").lower().startswith(("ollama", "llama-server")))
+                   ) // MIB
+    except Exception:                      # cost reporting must never break a load
+        return 0
+
+
+def _record_swap(to=None, frm=None, host_mb=0, vram_mb=0):
+    _swaps.append({"at": round(time.time(), 1), "to": to or "", "frm": frm or "",
+                   "host_mb": int(host_mb), "vram_mb": int(vram_mb)})
+    del _swaps[:-200]                      # bounded: the report is a bill, not a log
+
+
+def swap_cost():
+    """The swap bill for /api/vram: recent swaps with their measured host-RAM cost, plus ROUND TRIPS -
+    a model unloaded and reloaded within swap_cost_window_s pays its file size in host RAM twice."""
+    window = cfg().get("swap_cost_window_s", 180)
+    gone_at = {s["frm"]: s["at"] for s in _swaps if s["frm"]}
+    trips = [{"model": s["to"], "gap_s": round(s["at"] - gone_at[s["to"]], 1), "host_mb": s["host_mb"]}
+             for s in _swaps if s["to"] and s["to"] in gone_at
+             and 0 <= s["at"] - gone_at[s["to"]] <= window]
+    return {"history": _swaps[-20:], "round_trips": trips, "waste_mb": sum(t["host_mb"] for t in trips)}
+
+
+def _headroom_mb():
+    """MB the machine can still give a new model without paging. None = unknown, never refuse."""
+    try:
+        import psutil
+        return psutil.virtual_memory().available // MIB
+    except Exception:
+        return None
+
+
+def _too_costly(peak_mb):
+    """Refuse an OPPORTUNISTIC swap whose host-RAM peak would leave the machine under swap_free_floor_mb.
+    Only upshifts ask: a swap that avoids a partial offload is never refused - that is the governor's
+    whole job.
+    ponytail: one fixed floor against available RAM; swap_free_floor_mb=0 disables it. Upgrade path:
+    price the benefit too (model quality / tok-s) and check commit headroom, not just physical RAM."""
+    floor = cfg().get("swap_free_floor_mb", 2048)
+    head = _headroom_mb()
+    return bool(floor and head is not None and head - peak_mb < floor)
+
+
+def _resident_mb(name):
+    """MiB of `name` currently resident in Ollama (0 when it is not loaded)."""
+    if not name:
+        return 0
+    return next((m["size_mb"] for m in ps(strict=False) if m["name"] == name), 0)
 
 
 def _log_switch(role, frm, to, reason):
@@ -501,7 +567,7 @@ def _log_switch(role, frm, to, reason):
         events.publish("model_switch", ev)
 
 
-def switch_role(role, k, reason):
+def switch_role(role, k, reason, cost_check=False):
     """Move a pinned role to rung k (load lighter first when both fit, else unload heavier first), verified.
     -> True when the role now runs fully on the GPU at rung k. Everything is decided inside the governor lock (a concurrent
     admit can't change the picture in between), and on a failure the role is put back on the rung it was on (its model
@@ -517,6 +583,11 @@ def switch_role(role, k, reason):
             return True
         g = gpu()
         need, _ = need_of(to)
+        if cost_check and need and _too_costly(_resident_mb(frm) + need):
+            peak = _resident_mb(frm) + need
+            print(f"[vram] swap held: {role} -> {to} needs ~{peak} MB of host RAM at once and would leave "
+                  f"under swap_free_floor_mb; staying on {frm or 'nothing'}", flush=True)
+            return False
         transient_ok = g["used_mb"] + need <= g["total_mb"] * cfg().get("transient_limit_pct", 95) / 100
         ka = keep_alive_for(role)
         if to != "laya":
@@ -943,7 +1014,7 @@ def upshift_tick():
                         if not unload(m["name"]):
                             return None
                         _log_switch(role_of(m["name"]) or "model", m["name"], "(unloaded)", "making room for the main model to return")
-                if switch_role(role, k - 1, "GPU memory is free again - back to the better model"):
+                if switch_role(role, k - 1, "GPU memory is free again - back to the better model", cost_check=True):
                     return role
         return None
     finally:
@@ -992,6 +1063,7 @@ def snapshot():
             "violations": [{"name": m["name"], "size_mb": m["size_mb"], "size_vram_mb": m["size_vram_mb"]} for m in loaded if not m["full"]],
             "jobs": {"active": [{"id": j["id"], "what": j["what"], "model": j["model"]} for j in _jobs["active"].values()],
                      "queued": [{"id": j["id"], "what": j["what"], "model": j["model"], "reason": j["reason"], "since": j["since"]} for j in _jobs["queued"].values()]},
+            "swap_cost": swap_cost(),
             "ollama": ollama}
 
 

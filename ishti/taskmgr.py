@@ -89,10 +89,11 @@ def _enqueue(rec: dict):
             with _LOCK:
                 # FIX-7 (QA prompt 3 soak): done records live up to MAX_TASKS (60) and
                 # list_tasks() serializes EVERY record for /api/tasks, so a full result on the
-                # record pins hundreds of MB (measured: 12 x 200 KB dict results -> RSS
-                # 18 -> 2,860 MB; 473-turn soak drifted +3.45 GB). Store a bounded preview.
-                # Callers needing the full value hold their own reference (agents.py fan-out
-                # reads its subtask dict from wait_all's returned record list before trim).
+                # record can retain large outputs. Store a bounded preview.
+                # The historical +3.45 GB attribution was not causally reproduced; the old
+                # 12 x 200 KB arithmetic cannot establish that magnitude. The tests prove
+                # bounded retention, not a reproduced multi-GB leak. A caller needing the
+                # full value must retain its own reference or persist it outside this record.
                 import json as _json
                 try:
                     out_len = len(out if isinstance(out, str) else _json.dumps(out, default=str))
@@ -117,15 +118,19 @@ def _enqueue(rec: dict):
                 rec["status"] = "failed"
                 rec["error"] = f"{type(exc).__name__}: {str(exc)[:300]}"
                 rec["ended"] = time.time()
+        finally:
+            with _LOCK:
+                # A bounded result is ineffective if the record retains a closure holding the full input/result.
+                rec.pop("_fn", None)
 
     with _LOCK:
         _SEQ += 1
         seq = _SEQ
-        _WAITING.append((rec["priority"], seq, rec))
-    _EXECUTOR.submit(_dequeue_then(_run))
+        _WAITING.append((rec["priority"], seq, rec, _run))
+    _EXECUTOR.submit(_dequeue_then())
 
 
-def _dequeue_then(run):
+def _dequeue_then():
     """Priority order at execution time: the executor pool may be busy when a low-priority
     task is enqueued; when a slot frees, the highest-priority waiter runs first."""
 
@@ -133,10 +138,13 @@ def _dequeue_then(run):
         with _LOCK:
             if _WAITING:
                 _WAITING.sort(key=lambda x: (x[0], x[1]))
-                _pri, _seq, rec = _WAITING.pop(0)
+                _pri, _seq, rec, run = _WAITING.pop(0)
                 if rec["status"] == "cancelled":  # cancelled while queued
                     rec["ended"] = time.time()
+                    rec.pop("_fn", None)
                     return
+            else:
+                return
         run()
     return _inner
 

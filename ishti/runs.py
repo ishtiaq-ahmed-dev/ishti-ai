@@ -27,7 +27,10 @@ DB_PATH_OVERRIDE = None
 _lock = threading.RLock()
 _conn = None
 _LISTENER = None  # set by lifecycle_api: fn(event_dict) -> None (fans out to live WS subscribers)
-GEN_LABELS = {"research": 0, "tool": 0, "verify": 0}
+# Step kinds the run records. `route` (the routing decision) and `skill` (which skill took the request)
+# used to be flattened into `tool` with the meaning baked into the label ("Routing: ...", "Using x"),
+# which is why the UI could not tell a decision from a tool call.
+GEN_LABELS = {"research": 0, "tool": 0, "verify": 0, "route": 0, "skill": 0}
 
 STATES = ("queued", "running", "done", "failed", "cancelled")
 
@@ -125,15 +128,19 @@ def events_since(since_seq: int = 0, limit: int = 5000) -> list[dict]:
 
 
 def events_since_profile(profile: str | None = None, since_seq: int = 0,
-                         limit: int = 5000) -> list[dict]:
-    """Return global events plus chat/run events belonging to exactly one profile.
+                         limit: int = 5000) -> tuple[list[dict], int]:
+    """Profile-visible slice of the event log, plus the last raw seq scanned.
 
-    `last_seq` remains global, so a client can advance past hidden rows without learning their
-    contents and will not replay them after a profile switch.
+    The caller must report the scanned seq as the resume point, not a freshly queried
+    `last_seq()`: a publish landing between the scan and the query would make the client
+    skip that event forever. The window end also lets a client advance past hidden rows
+    without learning their contents (and without replaying them after a profile switch).
     """
     wanted = _profiles.valid(profile or _profiles.active())
+    raw = events_since(since_seq, limit)
+    scanned = int(raw[-1]["seq"]) if raw else int(max(0, since_seq))
     out: list[dict] = []
-    for event in events_since(since_seq, limit):
+    for event in raw:
         data = event.get("data") or {}
         event_profile = data.get("profile")
         if not event_profile and isinstance(data.get("message"), dict):
@@ -148,7 +155,7 @@ def events_since_profile(profile: str | None = None, since_seq: int = 0,
             event_profile = (run or {}).get("profile")
         if not event_profile or event_profile == wanted:
             out.append(event)
-    return out
+    return out, scanned
 
 
 def last_seq() -> int:
@@ -279,6 +286,28 @@ def messages_after(chat_id: str, after_seq: int = 0, limit: int = 1000) -> list[
     return [dict(r) for r in rows]
 
 
+def get_message(chat_id: str, message_id: str) -> dict | None:
+    """One message by id. Run execution looks up its own message this way, so long chats whose
+    first-N window no longer contains it still execute the right prompt."""
+    with _lock:
+        row = conn().execute(
+            "SELECT seq, message_id, role, text, run_id, client_msg_id, channel, profile, ts "
+            "FROM messages WHERE chat_id = ? AND message_id = ?",
+            (str(chat_id), str(message_id))).fetchone()
+    return dict(row) if row else None
+
+
+def last_messages(chat_id: str, limit: int = 200) -> list[dict]:
+    """The newest `limit` messages, oldest-first. History restore must start from the END of a
+    chat: paging from seq 0 keeps only the oldest window once a chat outgrows it."""
+    with _lock:
+        rows = conn().execute(
+            "SELECT seq, message_id, role, text, run_id, client_msg_id, channel, profile, ts "
+            "FROM messages WHERE chat_id = ? ORDER BY seq DESC LIMIT ?",
+            (str(chat_id), int(max(1, limit)))).fetchall()
+    return [dict(r) for r in reversed(rows)]
+
+
 def chat_title(text: str) -> str:
     """First line of the first user message, trimmed - the sidebar label (mirrored in chat-store.ts)."""
     t = " ".join(str(text).split())
@@ -296,19 +325,26 @@ def add_user_message(chat_id: str, text: str, client_msg_id: str | None = None,
         raise ValueError("unknown chat_id")
     profile = chat["profile"]
     now = time.time()
+    # NULL, not '': UNIQUE(chat_id, client_msg_id) treats NULLs as distinct, so live/legacy turns
+    # without an id can never collide with each other. '' made every second turn look like a
+    # duplicate of the first and silently dropped it.
+    cid = str(client_msg_id).strip() if client_msg_id else ""
+    cid = cid or None
     with _lock:
         c = conn()
         try:
             cur = c.execute(
                 "INSERT INTO messages(message_id, chat_id, role, text, run_id, client_msg_id, "
                 "channel, profile, ts) VALUES(?,?,?,?,?,?,?,?,?)",
-                (uuid.uuid4().hex[:16], chat_id, "user", text, "", client_msg_id or "", channel,
+                (uuid.uuid4().hex[:16], chat_id, "user", text, "", cid, channel,
                  profile, now))
         except sqlite3.IntegrityError:
+            if cid is None:  # only a real client_msg_id can trip the idempotency constraint
+                raise
             row = c.execute(
                 "SELECT seq, message_id, role, text, run_id, client_msg_id, channel, profile, ts "
                 "FROM messages WHERE chat_id = ? AND client_msg_id = ?",
-                (chat_id, client_msg_id or "")).fetchone()
+                (chat_id, cid)).fetchone()
             c.commit()
             return {"message": dict(row), "duplicate": True}
         c.execute("UPDATE chats SET updated_at = ?, title = CASE WHEN title = 'New chat' THEN ? ELSE title END "
@@ -431,7 +467,7 @@ def run_delta(run_id: str, text: str) -> None:
 
 def run_step(run_id: str, kind: str, label: str, n: int | None = None,
              sources: list | None = None) -> dict:
-    """kind in research|tool|verify. Persisted on the run AND emitted, so replay rebuilds steps."""
+    """kind in route|skill|research|tool|verify. Persisted on the run AND emitted, so replay rebuilds steps."""
     if kind not in GEN_LABELS:
         kind = "tool"
     run = get_run(run_id)
@@ -675,6 +711,12 @@ if __name__ == "__main__":
     assert r["steps"][0]["kind"] == "research" and r["steps"][0]["sources"]
     msgs = messages_after(ch["chat_id"], 0)
     assert [x["role"] for x in msgs] == ["user", "assistant"] and msgs[1]["run_id"] == run["run_id"]
+    # live turns carry no client id: it must store NULL, never "", or UNIQUE(chat_id, client_msg_id)
+    # rejects every message after the first (P0: live-turn history silently dropped)
+    live1 = add_user_message(ch["chat_id"], "same words")
+    live2 = add_user_message(ch["chat_id"], "same words")
+    assert live1["message"]["message_id"] != live2["message"]["message_id"]
+    assert get_message(ch["chat_id"], live1["message"]["message_id"])["text"] == "same words"
     fb = add_feedback(msgs[1]["message_id"], run["run_id"], -1, reasons=["wrong"], comment="x")
     assert add_feedback(msgs[1]["message_id"], run["run_id"], -1)["state"] == "duplicate"
     assert feedback_stats()["neg"] == 1

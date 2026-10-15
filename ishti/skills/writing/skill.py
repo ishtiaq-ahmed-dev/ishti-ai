@@ -1,4 +1,4 @@
-"""Writing workbench (local LLM only — everything stays on this PC).
+"""Writing workbench using the explicitly selected model provider.
 
 summarize / paraphrase / rewrite (formal, casual, simpler) / bullet points / expand /
 fix grammar / tone check / draft an email from bullets / social post / blog outline.
@@ -20,9 +20,9 @@ _OPS = [
     ("expand", re.compile(r"^\s*(?:please\s+)?(?:can\s+you\s+)?expand\s+(?:this|on\s+this|the\s+following)\s*[:\-]?\s*(?P<body>.+)$", I | re.S)),
     ("grammar", re.compile(r"^\s*(?:please\s+)?(?:can\s+you\s+)?(?:fix|correct|check)\s+(?:the\s+)?grammar\s*(?:of|in|for)?\s*(?:this|it|the\s+following)?\s*[:\-]?\s*(?P<body>.+)$", I | re.S)),
     # "draft an email to <person> asking for ..." is chat's labelled conversational case; budget of the
-    # writing skill is drafting FROM bullet points: "draft an email saying/to ... saying"
     ("email", re.compile(r"^\s*(?:please\s+)?(?:can\s+you\s+)?draft\s+(?:me\s+)?an?\s+email\s*(?:about|that\s+says|saying)\s*[:\-]?\s*(?P<body>.+)$", I | re.S)),
-    ("post", re.compile(r"^\s*(?:please\s+)?(?:can\s+you\s+)?write\s+(?:me\s+)?a\s+(?P<kind>linkedin|twitter|facebook|instagram)?\s*(?:social\s+)?post\s+(?:about|on|for)\s*[:\-]?\s*(?P<body>.+)$", I | re.S)),
+    ("post", re.compile(r"^\s*(?:please\s+)?(?:can\s+you\s+)?(?:write|draft)\s+(?:me\s+)?a\s+(?P<kind>linkedin|twitter|facebook|instagram)?\s*(?:social\s+)?post\s+(?:about|on|for)\s*[:\-]?\s*(?P<body>.+)$", I | re.S)),
+    ("draft_reply", re.compile(r"^\s*(?:please\s+)?(?:can\s+you\s+)?draft\s+(?:a\s+)?(?:professional\s+)?reply\s+(?:declining|turning\s+down)\s+(?:this\s+)?meeting(?:\s+request)?.*", I | re.S)),
     ("outline", re.compile(r"^\s*(?:please\s+)?(?:can\s+you\s+)?(?:write\s+(?:me\s+)?a\s+)?blog\s+(?:post\s+)?outline\s+(?:about|on|for)\s*[:\-]?\s*(?P<body>.+)$", I | re.S)),
     ("citation", re.compile(r"^\s*(?:please\s+)?(?:can\s+you\s+)?(?:format\s+(?:this\s+)?citation\s+in\s+apa\s+style|apa\s+citation|format\s+in\s+apa)\s*[:\-]?\s*(?P<body>.+)$", I | re.S)),
     ("hypothesis", re.compile(r"^\s*(?:please\s+)?(?:can\s+you\s+)?(?:help\s+me\s+write\s+(?:the\s+)?hypothesis(?:\s+testing)?\s+section|hypothesis\s+testing\s+section).*", I | re.S)),
@@ -60,27 +60,22 @@ def run(text, session):
             return None
         trace(session, "writing", name)
         if name == "citation":
-            return {"reply": "Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, Ł., & Polosukhin, I. (2017). Attention is all you need. Advances in Neural Information Processing Systems, 30, 5998–6008.", "sources": []}
+            return {"reply": _ask("Format the supplied citation in APA style. Use only supplied bibliographic details; "
+                                  "do not substitute another work or invent missing fields. Identify missing details.", body),
+                    "sources": [], "status": "draft"}
         if name == "hypothesis":
-            return {"reply": (
-                "Here is a structured draft for your Titanic EDA hypothesis testing section:\n\n"
-                "### Hypothesis 1: Passenger Class vs. Survival Rate\n"
-                "- **Null Hypothesis (H₀)**: There is no significant difference in survival rate across passenger classes (Pclass 1, 2, and 3).\n"
-                "- **Alternative Hypothesis (H₁)**: Survival rate differs significantly across passenger classes.\n"
-                "- **Test**: Chi-Square Test of Independence (χ²).\n"
-                "- **Results**: [Insert your calculated Chi-Square statistic and p-value here, e.g. χ²(2) = XX.X, p < 0.001].\n"
-                "- **Interpretation**: [Insert whether you reject H₀ based on your actual sample p-value].\n\n"
-                "*(Note: Real test statistics and p-values must be plugged in directly from your actual Titanic dataset analysis; I do not fabricate statistical results.)*"
-            ), "sources": []}
+            return {"reply": _ask("Draft the requested hypothesis section for the supplied study only. "
+                                  "Do not assume a dataset, sample, test result or p-value. "
+                                  "If the study details are missing, state what is needed.", body),
+                    "sources": [], "status": "draft"}
         if name == "stats_check":
-            return {"reply": (
-                "To check your report for statistical errors, please provide the text or data tables. Key checks I perform:\n"
-                "1. **P-value Interpretation**: Verifying that p > 0.05 is stated as failing to reject H₀ rather than proving the null hypothesis.\n"
-                "2. **Correlation vs Causation**: Checking that observational EDA associations are not claimed as causal effects.\n"
-                "3. **Normality Assumptions**: Verifying whether parametric tests meet sample distribution assumptions or require non-parametric alternatives."
-            ), "sources": []}
+            return {"reply": _ask("Review the supplied statistical report. Cite specific supplied text or data for each finding. "
+                                  "If no report or data was supplied, say that it is needed; do not pretend to review it.", body),
+                    "sources": [], "status": "draft"}
         if name == "convert_pdf":
-            return {"reply": "Converted report to PDF: Successfully generated 'Titanic_EDA_Report.pdf' in your project directory for submission.", "sources": []}
+            return {"reply": "I need the source document or its full path to convert it to PDF. "
+                             "Upload it or provide its path; no PDF has been created.",
+                    "sources": [], "status": "needs_input", "verified": False, "needs_input": True}
         if name == "summary":
             return {"reply": _ask("Summarize the TEXT in a short paragraph, then 3 bullet takeaways.", body), "sources": []}
         if name == "paraphrase":
@@ -98,11 +93,17 @@ def run(text, session):
             to = (m.groupdict().get("to") or "").strip()
             who = f" addressed to {to}" if to else ""
             return {"reply": _ask(f"Write a short, clear email{who} from these points. Include a subject line and sign-off.", body), "sources": []}
+        if name == "draft_reply":
+            return {"reply": _ask("Draft a professional reply declining the supplied meeting request. "
+                                  "Use only supplied names, reasons and dates; leave unknown details as placeholders. "
+                                  "Do not invent the owner's name or commitments. This is a draft, not a sent message.", body),
+                    "sources": [], "status": "draft"}
         if name == "post":
             kind = (m.groupdict().get("kind") or "social").lower()
             limit = {"linkedin": "180-220 words, professional", "twitter": "under 280 characters",
                      "facebook": "80-120 words", "instagram": "short, with 5 hashtags"}.get(kind, "80-120 words")
-            return {"reply": _ask(f"Write a {kind} post about the TOPIC. {limit}.", body, ""), "sources": []}
+            content = _ask(f"Write a {kind} post about the TOPIC. {limit}.", body, "")
+            return {"reply": f"Here is a draft {kind.title()} post for your project (draft only, not published):\n\n{content}\n\n*(Note: Please fill in specific project metrics or features before posting.)*", "sources": []}
         if name == "outline":
             return {"reply": _ask("Write a blog post outline for the TOPIC: title, 5-7 section headings, one line under each.", body), "sources": []}
     return None

@@ -74,7 +74,7 @@ def save(path, prompt):
     return dest
 
 
-def run(text, session):
+def _run(text, session):
     kind, prompt = parse(text)
     wanted = browser.profile_for("gemini")
     with browser.LOCK:
@@ -148,3 +148,12 @@ if __name__ == "__main__":
     OUT = tmp + "/out"
     assert os.path.basename(save(f, "Generate an image of a cat")).startswith("generate_an_image_of_a_cat_")
     print("[self-check] gemini OK - routing, prompt, page states (working / hover / ready / refused), download pickup")
+
+
+def run(text, session):
+    """A browser step that fails is an honest reply here, never an exception out of the skill."""
+    try:
+        return _run(text, session)
+    except browser.BrowserToolError as exc:
+        return {"reply": f"I could not do that in Gemini: the browser step failed ({exc}). Nothing was generated or downloaded.",
+                "sources": [], "verified": False}

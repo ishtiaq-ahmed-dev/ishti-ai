@@ -8,6 +8,7 @@ import os
 import re
 import time
 
+from ishti import CONFIG
 from ishti.facts import get_facts
 
 I = re.I
@@ -30,7 +31,7 @@ TELL = re.compile(r"^(?:(?:and|also|btw|by\s+the\s+way|fyi)[,\s]+)?(?:"
                   r")[^?]*$", I)
 SAVE_MEMORY = re.compile(
     r"\b(?:add|save|store|update|put|write|keep|remember)\s+(?:this|that|it|everything)?\s*(?:in|to|into)?\s*(?:the\s+|your\s+|my\s+)?memory\b"
-    r"|\b(?:remember|note\s+down|make\s+a\s+note)\s+(?:that\s+)?\b", I)
+    r"|\bremember\s+(?:that\s+)?\b", I)  # bare "note ..." phrasings belong to the notes skill, not an owner fact
 ABOUT_ME = re.compile(rf"\bmy\s+(?:{ATTRS}|name|city|country)\b", I)
 # A PERSON is never an owner fact, however loosely TELL/SAVE_MEMORY read the sentence. Both are deliberately
 # wide ("remember that ...", "add my ...") and this skill has the LOWEST priority number, so the router checks
@@ -47,11 +48,24 @@ PERSON = re.compile(
     r"\b(?:brother|sister|father|mother|cousin|uncle|aunt|friend|colleague|classmate|client|manager|boss|bro|bhai)"
     r"(?:'s)?\s+(?:name\s+)?is\b", I)
 VERBS = ("study", "work", "live", "born", "teach", "graduated")
-SELF = re.compile(r"\bwhy\s+(?:are|is|do|did|does|can'?t|cant|won'?t|don'?t|dont|odnt|didn'?t|didnot)\s+(?:you|your|ishti)\b|"
+# A COMPLAINT about ISHTI, not any sentence containing 'why did you' or 'your answers':
+#   "why did you choose Chrome just now instead of Obscura?" is a question about a past routing
+#   decision (the meta skill explains it from the route log), and "keep your answers very concise
+#   from now on" is a standing PREFERENCE (owner.learn saves it). Both used to match here, land in
+#   about_ishti - which appends to data/feedback.md and answers from ISHTI_FACTS - and produce an
+#   answer to neither question (checklist 201, 229).
+SELF = re.compile(r"\bwhy\s+(?:are|is|do|does|can'?t|cant|won'?t|don'?t|dont|odnt)\s+(?:you|your|ishti)\b|"
+                  r"\bwhy\s+did\s+you\s+(?:not|never|fail|ignore|forget|skip|break|miss)\b|"
                   r"\bfix\s+yourself\b|\b(?:can|do|could)\s+you\s+(?:do|perform|handle|run)\s+(?:multiple|parallel|many|several)\b|"
-                  r"\byou\s+(?:do\s+not|don'?t|dont|can'?t|cant|never|didn'?t|didnot)\s+(?:perform|do|have|remember|understand|"
-                  r"work|answer|reply|respond|support)\b|\byour\s+(?:responses?|answers?|speed|skills?|limits?|limitations?)\b", I)
-FEEDBACK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "data", "feedback.md")
+                  r"\byou\s+(?:do\s+not|don'?t|dont|can'?t|cant|never|didn'?t|didnot|not)\s+(?:perform|do|have|remember|understand|"
+                  r"work|answer|reply|respond|support)\b|"
+                  r"\byour\s+(?:responses?|answers?|results?)\s+(?:are|were|is|was|seem|seems|feel|feels|too)\b|"
+                  r"\byour\s+(?:speed|skills?|limits?|limitations?)\b", I)
+# Derive this from the SAME root the manifest's write scope "data" is resolved against (scope.DATA is
+# dirname(CONFIG["memory"]["db_path"])). Building it from __file__ with ".." instead meant a relocated data
+# dir (relocatable installs, and every scratch/test run) pointed the write into the repo's data folder,
+# failing the skill's own scope check and showing the owner a raw ScopeError (checklist 201, 229).
+FEEDBACK = os.path.join(os.path.dirname(CONFIG["memory"]["db_path"]), "feedback.md")
 ISHTI_FACTS = (
     "ISHTI runs fully on the owner's PC: one 14B model on one GPU (Ollama). Simple answers take 1-5 s, web searches "
     "5-25 s, browser tasks 10-40 s because every page step needs the model. Messages sent while it is busy wait in a "

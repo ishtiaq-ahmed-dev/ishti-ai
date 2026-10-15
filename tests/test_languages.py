@@ -103,9 +103,8 @@ def test_urdu_message_with_urdu_off_is_not_translated_and_gets_one_hint(facts, m
     import ishti.dispatcher as D
     import ishti.facts as facts_mod
     from orchestrator.memory.user_profile import scratch_memory
-    for name in ("_remember", "_learn", "_learn_turn", "_arch2_consolidate", "_ftlog"):
+    for name in ("_remember", "_learn", "_learn_turn", "_memory_extract", "_ftlog"):
         monkeypatch.setattr(D, name, lambda *a, **k: None)
-    monkeypatch.setattr(D.planner, "candidate", lambda *a, **k: False)
     monkeypatch.setattr(D, "translate", lambda *a, **k: pytest.fail("Urdu is off: nothing may be translated"))
     monkeypatch.setattr(D, "route", lambda text, skills, exclude=None: {"skill": "chat", "confidence": 1.0, "source": "rule", "scores": []})
     monkeypatch.setattr(D.SKILLS["chat"], "run", lambda text, s: {"reply": "The weather is fine today, with clear skies and a light breeze.", "sources": [], "no_escalate": True})

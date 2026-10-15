@@ -56,6 +56,15 @@ def run(text, session):
     for name, rx in OPS:
         if m := rx.search(text):
             trace(session, "docs", name.replace("_", " "), status="start")
+            import importlib.util
+            optional = {"pdf_tables": ("pandas",), "excel_clean": ("pandas",),
+                        "excel_chart": ("pandas", "matplotlib")}.get(name, ())
+            missing = [module for module in optional if importlib.util.find_spec(module) is None]
+            if missing:
+                return {"reply": "This operation needs optional analysis components: " + ", ".join(missing)
+                                 + ". Basic document reading and creation are still available.",
+                        "sources": [], "status": "blocked", "verified": False,
+                        "execution_blocked": True, "no_escalate": True}
             try:
                 out = globals()["op_" + name](m, text, session)
             except IndexError:  # an op that needs a file found no existing path in the request
@@ -272,21 +281,34 @@ def _word():
     import win32com.client
     pythoncom.CoInitialize()
     w = win32com.client.DispatchEx("Word.Application")
-    w.Visible, w.DisplayAlerts = False, 0
+    try:
+        w.Visible, w.DisplayAlerts = False, 0
+        w.AutomationSecurity = 3  # msoAutomationSecurityForceDisable: never run document macros
+    except BaseException:
+        w.Quit()
+        raise
     return w
 
 
 def docx_to_pdf(src, dst=None):
     dst = dst or (beside(src, "pdf", ".pdf").replace("_pdf.pdf", ".pdf") if not os.path.exists(os.path.splitext(src)[0] + ".pdf")
                   else beside(src, "export", ".pdf"))
-    w = _word()
-    try:
-        doc = w.Documents.Open(os.path.abspath(src), ReadOnly=True)
-        doc.SaveAs2(os.path.abspath(dst), FileFormat=17)  # wdFormatPDF
-        doc.Close(False)
-    finally:
-        w.Quit()
-    return dst
+    def export(temp_path):
+        w, doc = _word(), None
+        try:
+            doc = w.Documents.Open(os.path.abspath(src), ReadOnly=True)
+            doc.SaveAs2(os.path.abspath(temp_path), FileFormat=17)
+        finally:
+            try:
+                if doc is not None:
+                    doc.Close(False)
+            finally:
+                w.Quit()
+        from pypdf import PdfReader
+        with open(temp_path, "rb") as saved:
+            if not PdfReader(saved, strict=True).pages:
+                raise ValueError("The converter produced an empty PDF; no output was published.")
+    return _atomic_unique_save(dst, export)
 
 
 def op_to_pdf(m, text, session):

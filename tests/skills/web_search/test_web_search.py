@@ -15,6 +15,10 @@ if ROOT not in sys.path:
 
 from ishti.skills.web_search import skill as skill_mod  # noqa: E402
 
+# Web search queries the live search service (SearXNG and fallbacks) on every case: run explicitly with services up.
+pytestmark = pytest.mark.e2e
+
+
 HAPPY = 'search for ISHTI local assistant github'
 LANG = ['موسم کیسا ہے آج پشاور میں', 'د دوبۍ هوا څنګه دی', 'kal ka mausam kaisa rahega', 'weather کیسا ہے today', 'wether for 2morow plese', 'weathr']
 EDGE = ['search for ISHTI local assistant github???!!!', ' ', 'searc', "do search for ISHTI local assistant github and also don't do it", ' BOOK: 12:34 in D:/x.mp3 سین opposite نہ ']

@@ -3,7 +3,8 @@
 ## 1.0.0 — 2026-09-30
 
 First release. Built in one pass by the integrator after the research sub-agents' inference quota was
-exhausted (see `NEEDS.md`); architecture and evidence in `IMPLEMENTATION_PLAN.md` and `RESEARCH.md`.
+exhausted. The briefs it was built from (`IMPLEMENTATION_PLAN.md`, `RESEARCH.md`) and the needs log
+(`NEEDS.md`) have since been retired; this README and the module docstrings now carry that content.
 
 ### Added
 - Nine-module self-extending pipeline: gap detection → research → risk/feasibility → design doc →
@@ -40,5 +41,6 @@ exhausted (see `NEEDS.md`); architecture and evidence in `IMPLEMENTATION_PLAN.md
 - `ask_first`'s reply dropped the pipeline's audit facts; they are now carried through the gate.
 
 ### Not in this release
-- No real end-to-end code generation has been measured on the three acceptance tasks (`NEEDS.md`).
+- No real end-to-end code generation has been measured on the three acceptance tasks (still true —
+  recorded as a measurement gap in [`docs/ACCURACY.md`](../../../docs/ACCURACY.md) §3).
 - No `owner_profile.yaml` confirmation (it ships `confirmed: false` on purpose).

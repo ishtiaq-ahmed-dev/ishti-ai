@@ -61,11 +61,14 @@ def _run_one(run_id: str, run: dict, cancelled: threading.Event, t0: float) -> N
                           sources=ev.get("sources"))
         elif kind == "verify":
             runs.run_step(run_id, "verify", ev.get("label") or "verify")
-        elif kind == "route":  # restore the "what I decided" line the old Thinking panel showed
-            runs.run_step(run_id, "tool", "Routing: " + str(ev.get("why") or ev.get("skill") or "choosing a skill")[:200])
+        elif kind == "route":
+            # its own kind, not a `tool` row: the UI draws the routing decision as the Router node and
+            # everything after it hangs off that, which a "Routing: " label inside a tool step could not say.
+            runs.run_step(run_id, "route",
+                          str(ev.get("why") or ev.get("skill") or "choosing a skill")[:200])
         elif kind == "step" and ev.get("status") == "start":
             used.append(str(ev.get("skill") or ""))
-            runs.run_step(run_id, "tool", f"Using {ev.get('skill') or 'skill'}")
+            runs.run_step(run_id, "skill", f"Using {ev.get('skill') or 'skill'}")
         elif kind == "escalate":
             runs.run_step(run_id, "research", str(ev.get("why") or "Trying another way"))
         elif kind == "research_state":
@@ -117,10 +120,8 @@ def _run_one(run_id: str, run: dict, cancelled: threading.Event, t0: float) -> N
 def _text_of(run: dict) -> str:
     """The run stores only ids; the prompt text lives on the user message."""
     from ishti import runs
-    for m in runs.messages_after(run["chat_id"], 0, limit=200):
-        if m["message_id"] == run.get("message_id"):
-            return m["text"]
-    return ""
+    msg = runs.get_message(run["chat_id"], run.get("message_id") or "")
+    return (msg or {}).get("text") or ""
 
 
 if __name__ == "__main__":

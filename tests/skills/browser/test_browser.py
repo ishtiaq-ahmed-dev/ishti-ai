@@ -15,6 +15,15 @@ if ROOT not in sys.path:
 
 from ishti.skills.browser import skill as skill_mod  # noqa: E402
 
+@pytest.fixture(autouse=True)
+def _offline_browser(monkeypatch):
+    """These suites call the skill directly, which would otherwise start a real browser and wait on it. The browser
+    transport is stubbed here, so every case stays offline and answers from the stub."""
+    monkeypatch.setattr(skill_mod, "use_server", lambda *_a, **_k: "fixture")
+    monkeypatch.setattr(skill_mod, "_call", lambda *_a, **_k: "fixture page")
+    monkeypatch.setattr(skill_mod, "_loop", lambda *_a, **_k: {"reply": "fixture reply", "sources": []})
+
+
 HAPPY = 'open example.com in the browser'
 LANG = ['موسم کیسا ہے آج پشاور میں', 'د دوبۍ هوا څنګه دی', 'kal ka mausam kaisa rahega', 'weather کیسا ہے today', 'wether for 2morow plese', 'weathr']
 EDGE = ['open example.com in the browser???!!!', ' ', 'open ', "do open example.com in the browser and also don't do it", ' BOOK: 12:34 in D:/x.mp3 سین opposite نہ ']

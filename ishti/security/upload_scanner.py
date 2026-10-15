@@ -1,4 +1,4 @@
-"""Upload parser isolation and malware scanning policy (NEEDS.md Item 6).
+"""Upload parser isolation and malware scanning policy.
 
 Guarantees:
 1. Never executes uploads (executable formats rejected at entry).

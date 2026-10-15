@@ -6,14 +6,14 @@ it in a sandbox, does the task, and saves a proper new skill - registered DISABL
 after the owner says yes.
 
 This is the ORCHESTRATOR: it reuses what already exists instead of growing a second copy.
-  gap detection     - ishti.skill_lifecycle.discover_gaps + ishti.router.route
+  gap detection     - ishti.skill_lifecycle.discover_gaps + ishti.tool_routing.route
   shape/validation  - ishti.skills.skillsmith.validate / scan / install_folder
   ownership gates   - ishti.skills.ask_first (T2) + ishti.test_mode.guarded (test safety)
   scope             - ishti.scope (one narrow exception for ishti/skills/_drafts)
   model + budget    - ishti.llm.ask(role="coder") under the VRAM governor (ishti.vram.admit)
   logging           - ishti.skills.trace + ishti.audit.record + log_need -> the needs log (data/needs_runtime.md)
 Stages live in their own modules so each is testable alone: gap, research, design, vetting, drafts,
-sandbox. Architecture: IMPLEMENTATION_PLAN.md section 3 (WP-A).
+sandbox. Architecture: the pipeline and stage table in this skill's own README.md.
 
 Routing: `match()` covers ONLY capability-gap phrasings. Plain "create a skill that ..." stays with
 skillsmith (the quick path); this skill is the full pipeline - and the self-check asserts that split so
@@ -35,10 +35,10 @@ MINE = re.compile(r"\b(?:make|get)\s+yourself\s+(?:able\s+to|to)|"
                   r"\badd\s+(?:the\s+)?(?:ability|skill|capability)\s+to\b|"
                   r"\bcreate\s+a\s+new\s+capability\b|\byou\s+(?:still\s+)?can(?:'t|not)\s+|"
                   r"\byou\s+don'?t\s+know\s+how\s+to\b|\bskill\s*creator\b", re.I)
-MAX_GENERATE_CALLS = 5          # RESEARCH.md R6: <=5 coder calls per skill, split anything larger
+MAX_GENERATE_CALLS = 5          # <=5 coder calls per skill, split anything larger
 MAX_OUTPUT_TOKENS = 3500        # ... and <=3500 out-tokens per call
 MAX_MODULE_LINES = 300          # one self-contained module per generation
-MAX_TEST_ATTEMPTS = 8           # master prompt: 8 failed attempts on ONE issue -> stop and write NEEDS.md
+MAX_TEST_ATTEMPTS = 8           # 8 failed attempts on ONE issue -> stop and log_need (data/needs_runtime.md)
 _TIER_ORDER = {"T0": 0, "T1": 1, "T2": 2, "T3": 3}
 
 

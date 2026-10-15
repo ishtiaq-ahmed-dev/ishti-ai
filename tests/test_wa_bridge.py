@@ -97,8 +97,8 @@ def test_test_destination_prefers_explicit_env_then_persisted_file(monkeypatch, 
     monkeypatch.setattr(bridge, 'TEST_DESTINATION_FILE', tmp_path / 'test_destination')
     monkeypatch.delenv('ISHTI_WA_TEST_DESTINATION', raising=False)
     assert bridge.test_destination() == ''
-    (tmp_path / 'test_destination').write_text('+92 300 0000000', encoding='utf-8')
-    assert bridge.test_destination() == '+92 300 0000000'
+    (tmp_path / 'test_destination').write_text('923001234567', encoding='utf-8')
+    assert bridge.test_destination() == '923001234567'
     monkeypatch.setenv('ISHTI_WA_TEST_DESTINATION', '+92 300 0000000')
     assert bridge.test_destination() == '+92 300 0000000'
 

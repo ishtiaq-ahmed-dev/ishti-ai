@@ -67,7 +67,7 @@ def test_end_to_end_baits_never_claim_storage():
 
 def test_db_stays_clean_of_bait_secrets():
     """The property that matters: bait secrets never land in the live memory store."""
-    from ishti.arch2 import memory as arch2_memory
+    from ishti.memstore import memory as arch2_memory
     db = str(arch2_memory.db_path())
     for secret in ("sk-abc123DEF456", "Hunter2"):
         assert secret.encode() not in open(db, "rb").read(), \

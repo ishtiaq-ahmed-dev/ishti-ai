@@ -134,25 +134,15 @@ def test_learning_mode_and_proposals(fresh_runs):
     assert runs.list_proposals("open") == []
 
 
-def test_agent_bus_publish_and_replay(fresh_runs):
-    runs.agent_message("researcher", "orchestrator", "find sources")
-    runs.agent_status("researcher", "running", "step 1")
-    evs = [e for e in runs.events_since(0)
-           if e["type"] in ("agent_message", "agent_status")]
-    assert evs[0]["data"]["text"] == "find sources"
-    assert evs[1]["data"]["state"] == "running"
-    assert runs.AGENT_MESSAGES["researcher"][0]["from"] == "orchestrator"
-
-
-def test_profile_isolation_and_prompt_layers(fresh_runs):
-    ch = runs.new_chat(profile="business")
-    assert runs.chat_profile(ch["chat_id"]) == "business"
-    assert profiles.memory_ns("business") != profiles.memory_ns("personal")
+def test_personal_prompt_layers_are_byte_stable(fresh_runs):
+    ch = runs.new_chat(profile="personal")
+    assert runs.chat_profile(ch["chat_id"]) == "personal"
+    assert profiles.memory_ns("personal") == "profile:personal"
     core = prompt_compiler.CORE
-    a = prompt_compiler.build("business", dynamic="d1")
-    b = prompt_compiler.build("business", dynamic="d2")
+    a = prompt_compiler.build("personal", dynamic="d1")
+    b = prompt_compiler.build("personal", dynamic="d2")
     assert a.split("CONTEXT")[0] == b.split("CONTEXT")[0]  # byte-stable prefix
-    assert core in a and "CRM" in a and "Warm, casual tone" not in a
+    assert core in a
     lay = prompt_compiler.layers("personal")
     assert [l["name"] for l in lay["layers"]][:2] == ["core", "profile:personal"]
 

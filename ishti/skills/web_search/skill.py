@@ -50,6 +50,11 @@ SCHEDULE_COORD = re.compile(
     r"\bthat\s+works\s+for\s+(?:me|us|both|everyone)\b|\bfind\s+a\s+time\b", re.I)
 
 
+
+# Clause split and filler test used to strip greetings from a search query ("Hi, how are you... can you search X").
+_CLAUSE = re.compile(r"\s*(?:,?\s*(?:and\s+(?:also|then)|and|also|then|after\s+that|plus)|[;.!?]+(?:\s+|$))\s*", re.I)
+_SMALLTALK = re.compile(r"^\W*(?:hi|hello|hey|thanks?|thank you|ok(?:ay)?|how are you|good (?:morning|evening|night)|salam|bye)", re.I)
+
 def match(text):
     t = text.strip()
     if MESSAGE_PEOPLE.match(t) or MESSAGE_ANYWHERE.search(t):
@@ -127,8 +132,7 @@ def run(text, session):
                                                      **{k: v for k, v in (data or {}).items() if k in ("queries", "state")})
     # "Hi, how are you ... can you search X": greetings and filler aren't search terms (and "today" in
     # "how can I help you today" became a date)
-    from ishti.planner import CLAUSE, smalltalk
-    kept = [c for c in CLAUSE.split(text) if c and not smalltalk(c)]
+    kept = [c for c in _CLAUSE.split(text) if c and not _SMALLTALK.match(c.strip())]
     text = re.sub(r"^\s*(?:okay|ok|so)?[,\s]*(?:can|could)\s+you\s+(?:please\s+)?(?:search\s+(?:on\s+)?(?:the\s+)?(?:website|web|internet|google)\s*(?:for|what)?\s*)?",
                   "", " ".join(kept) or text, flags=re.I).strip() or text
     query = ground_dates(text)

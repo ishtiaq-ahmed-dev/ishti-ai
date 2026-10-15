@@ -3,8 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from ishti import agents, audit, killswitch, scope, skill_execution as execution, test_mode
-from ishti.arch2 import pipeline
+from ishti import audit, killswitch, scope, skill_execution as execution, test_mode
 from ishti.skills import ask_first
 
 
@@ -16,7 +15,6 @@ def isolated_executor(monkeypatch):
     monkeypatch.setattr(scope, "record", lambda *_a, **_k: None)
     monkeypatch.setattr(scope, "install", lambda: None)
     monkeypatch.setattr(killswitch, "propagate", lambda: None)
-    monkeypatch.setattr(agents, "_perf", lambda *_a: None)
     killswitch.begin()
     yield flags
     killswitch.begin()
@@ -28,8 +26,7 @@ def fake(tier="T1", status="working", run=None, category="General"):
 
 
 @pytest.mark.parametrize("invoke", [
-    lambda skills, s: pipeline._run_tool(skills, "tool", "opaque request", s, []),
-    lambda skills, s: agents._skill_run(skills, "tool", "opaque request", s),
+    lambda skills, s: execution.execute(skills, "tool", "opaque request", s),
 ])
 @pytest.mark.parametrize("tier,status", [("T3", "working"), ("T1", "disabled"),
                                         ("T1", "draft"), ("T1", "broken"), ("invalid", "working")])
@@ -46,7 +43,7 @@ def test_blocked_skills_never_execute(invoke, tier, status):
 def test_setting_flags_filter_and_block_invocation(isolated_executor, flags):
     isolated_executor["skills"] = flags
     skills = {"tool": fake()}
-    assert pipeline._usable(skills) == {}
+    assert execution.available(skills) == {}
     assert execution.execute(skills, "tool", "request", {})["execution_blocked"]
 
 
@@ -58,8 +55,8 @@ def test_settings_failure_denies_execution(monkeypatch):
 
 
 @pytest.mark.parametrize("invoke", [
-    lambda skills, s: pipeline._run_tool(skills, "tool", "request", s, []),
-    lambda skills, s: agents._skill_run(skills, "tool", "request", s),
+    lambda skills, s: execution.execute(skills, "tool", "request", s),
+    lambda skills, s: execution.execute(skills, "tool", "request", s),
 ])
 def test_allowed_skill_gets_own_scope_and_audit_context(invoke, monkeypatch, tmp_path):
     seen = []
@@ -167,8 +164,8 @@ def test_kill_invalidates_pending_without_side_effects(monkeypatch):
 
 
 @pytest.mark.parametrize("invoke", [
-    lambda skills: pipeline._run_tool(skills, "tool", "request", {}, []),
-    lambda skills: agents._skill_run(skills, "tool", "request", {}),
+    lambda skills: execution.execute(skills, "tool", "request", {}),
+    lambda skills: execution.execute(skills, "tool", "request", {}),
 ])
 def test_kill_exception_is_not_swallowed(invoke, monkeypatch):
     from ishti.llm import Cancelled
@@ -176,62 +173,3 @@ def test_kill_exception_is_not_swallowed(invoke, monkeypatch):
     with pytest.raises(Cancelled):
         invoke({"tool": fake()})
 
-
-def test_arch2_returns_confirmation_before_validation(monkeypatch):
-    from ishti import llm
-    monkeypatch.setattr(pipeline.retrieval, "assemble_context", lambda *_a: "")
-    monkeypatch.setattr(pipeline, "_tool_manifests", lambda *_a: "fixture")
-    monkeypatch.setattr(pipeline, "_rule_tool", lambda *_a: None)
-    monkeypatch.setattr(llm, "style", lambda: "fixture")
-    monkeypatch.setattr(llm, "model_for", lambda *_a: "fixture")
-    monkeypatch.setattr(llm, "chat", lambda *_a, **_k: SimpleNamespace(content='{"tool":"tool","input":"opaque"}'))
-    monkeypatch.setattr(llm, "ask", lambda *_a, **_k: pytest.fail("approval entered model validation"))
-    session = {}
-    result = pipeline.run("request", session, {"tool": fake("T2")})
-    assert result["confirm_required"] and session["pending"]["skill"] == "tool"
-
-
-def test_mutating_fanout_stops_at_first_confirmation(monkeypatch):
-    calls = []
-
-    def run_agent(agent, task, skills, session, bb, budget):
-        calls.append(task)
-        return execution.execute(skills, "apps", task, session)
-
-    monkeypatch.setattr(agents, "_run_agent", run_agent)
-    session = {}
-    tasks = [{"agent": "pc_control", "task": t} for t in ("first", "second")]
-    results = agents._fan_out(tasks, {"apps": fake("T2")}, session, {}, {}, 0)
-    assert calls == ["first"]
-    assert results[0]["confirm_required"]
-    assert session["pending"]["request"] == "first"
-
-
-def test_worker_confirmation_adopts_exact_followup_in_owner_session(monkeypatch):
-    monkeypatch.setattr(test_mode, "enabled", lambda: False)
-    calls, owner, child = [], {}, {}
-
-    def prepare(_text, session):
-        return ask_first(session, "tool", "Exact synthetic recipient and text",
-                         lambda: calls.append(1) or "done")
-
-    skills = {"tool": fake("T2", run=prepare)}
-    execution.execute(skills, "tool", "prepare fixture", child)
-    agents._adopt_pending(child, owner)
-    initial = owner.pop("pending")["action"]
-    assert initial()["confirm_required"]
-    assert owner["pending"]["gate"] == "Exact synthetic recipient and text"
-    exact = owner.pop("pending")["action"]
-    assert exact() == "done" and calls == [1]
-    assert exact()["execution_blocked"]
-
-
-def test_agent_top_level_does_not_synthesize_approval(monkeypatch):
-    monkeypatch.setattr(agents, "_budget", lambda: {"pattern": "sequential", "max_subagents": 2})
-    monkeypatch.setattr(agents, "decompose", lambda *_a: [{"agent": "pc_control", "task": "fixture"}])
-    monkeypatch.setattr(agents, "assign", lambda tasks, _skills: tasks)
-    monkeypatch.setattr(agents, "_run_agent", lambda _a, text, skills, session, *_rest:
-                        execution.execute(skills, "apps", text, session))
-    monkeypatch.setattr(agents, "synthesize", lambda *_a: pytest.fail("approval entered synthesis"))
-    result = agents.run("fixture", {}, {"apps": fake("T2")})
-    assert result["confirm_required"] and result["mode"] == "MULTI_AGENT"

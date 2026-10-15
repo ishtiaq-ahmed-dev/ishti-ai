@@ -3,7 +3,12 @@
 Safety rules enforced here, not in each script:
   * the client must be running with ISHTI_TEST_MODE=1 and ISHTI_SCRATCH=1
   * targets must be loopback http(s) only
-  * every artifact is written atomically inside docs/audit/qa_*.json
+  * every artifact is written atomically inside reports/qa/qa_*.json
+
+Artifacts live under `reports/`, which is gitignored, and not under the retired `docs/audit/`: that
+directory no longer exists, so writing there silently recreated it and put QA output back into
+`git status`. The parts of a sweep worth publishing belong in a tracked file, the way
+`tests/fixtures/tool_select_eval.json` carries the routing numbers.
 
 This module never calls product code; it only speaks HTTP to the running scratch server.
 """
@@ -19,7 +24,7 @@ import urllib.parse
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-AUDIT = ROOT / "docs" / "audit"
+AUDIT = ROOT / "reports" / "qa"
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 
 
@@ -40,14 +45,14 @@ def safe_base_url(raw: str) -> str:
 
 
 def repo_output(raw: str) -> pathlib.Path:
-    """Only docs/audit/qa_*.json may be written by this role."""
+    """Only reports/qa/qa_*.json may be written by this role."""
     output = pathlib.Path(raw).resolve()
     try:
         output.relative_to(ROOT)
     except ValueError as exc:
         raise SystemExit("output must stay inside the ISHTI repository") from exc
     if output.parent != AUDIT or not output.name.startswith("qa_"):
-        raise SystemExit("QA artifacts must be docs/audit/qa_*.json")
+        raise SystemExit("QA artifacts must be reports/qa/qa_*.json")
     return output
 
 
@@ -110,7 +115,7 @@ def http(base: str, method: str, path: str, *, body=None, raw_body: bytes | None
 
 
 class DefectStore:
-    """docs/audit/qa_defects.json {id, area, steps, expected, actual, file_guess}."""
+    """reports/qa/qa_defects.json {id, area, steps, expected, actual, file_guess}."""
 
     def __init__(self, path: pathlib.Path | None = None):
         self.path = path or (AUDIT / "qa_defects.json")

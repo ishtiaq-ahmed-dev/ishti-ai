@@ -1,4 +1,4 @@
-"""Aggregate QA results into docs/audit/qa_report.json (tools/qa/qa_report.py).
+"""Aggregate QA results into reports/qa/qa_report.json (tools/qa/qa_report.py).
 
 Reads the latest qa_api_sweep.json and qa_chat_flow.json, appends one snapshot per execution to
 a run history inside qa_report.json, and computes the number of consecutive clean runs at the tail.

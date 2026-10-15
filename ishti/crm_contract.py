@@ -1,4 +1,4 @@
-"""CRM Scope & Data Contract Policy (NEEDS.md Item 5).
+"""CRM Scope & Data Contract Policy.
 
 Guarantees:
 1. Strict separation: Personal contacts (friends, family in rgraph) and Business Clients are partitioned.

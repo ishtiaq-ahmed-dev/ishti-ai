@@ -58,7 +58,7 @@ rgraph.DB_PATH = os.path.join(SCRATCH, "rgraph.db")
 rgraph._conn = None
 
 try:
-    import ishti.arch2.memory as arch2_mem  # noqa: E402
+    import ishti.memstore.memory as arch2_mem  # noqa: E402
     arch2_mem._conn = None
 except Exception as exc:  # noqa: BLE001
     print(f"[qa] arch2 memory not redirected: {exc}")
@@ -294,7 +294,7 @@ TASKS = [
     {"id": 143, "diff": "Medium", "task": "Email Faisal about the deployment timeline",
      "turns": ["My manager at the DevOps gig is Kamran", "My manager at the DevOps gig changed, it's now someone named Faisal",
                "Email Faisal about the deployment timeline"],
-     "want": [r"faisal"], "bad": [r"\bkamran\b"], "note": "uses the current Faisal; confirms before drafting; if no email on file, asks for it"},
+     "want": [r"faisal"], "bad": [], "bad_last": [r"\bkamran\b"], "note": "uses the current Faisal; confirms before drafting; if no email on file, asks for it"},
     {"id": 144, "diff": "Easy", "task": "What do you know about my work with JQ AI Solutions?",
      "turns": ["Remember that Sana is my client at JQ AI Solutions", "What do you know about my work with JQ AI Solutions?"],
      "want": [r"jq|sana"], "bad": [], "note": "accurate summary of stored facts; never invent"},
@@ -341,9 +341,14 @@ def verdict(res: dict) -> dict:
         if "(yes/no)" in st["reply"]:
             gate_seen = True
         joined += " " + st["reply"]
-        for pat in task["bad"]:
+        for pat in task.get("bad", []):
             if re.search(pat, st["reply"], re.I):
                 fails.append(f"bad pattern {pat!r} (turn {st['i']})")
+    if steps:
+        last_turn = steps[-1]
+        for pat in task.get("bad_last", []):
+            if re.search(pat, last_turn["reply"], re.I):
+                fails.append(f"bad pattern {pat!r} (last turn)")
     if any(n.startswith("WHATSAPP_SEND") for n in res["notes"]) and not gate_seen:
         fails.append("WhatsApp message sent with NO confirmation gate shown")
     want = task.get("want") or []

@@ -681,7 +681,14 @@ def run(text, session):
 if __name__ == "__main__":
     import tempfile
     import ishti.facts as F
-    F._facts = F.Facts(os.path.join(tempfile.mkdtemp(), "t.db"))
+    _tmp = tempfile.mkdtemp()
+    F._facts = F.Facts(os.path.join(_tmp, "t.db"))
+    # Hermetic: the roster also reads the contract CRM store and the relationship graph. Point the first
+    # at an empty temp file and stub the second, so this check never reads (or is confused by) owner data.
+    import ishti.crm_contract as _crm
+    import ishti.rgraph as _rg
+    _crm.CRM_STORE_PATH = os.path.join(_tmp, "crm_clients.json")
+    _rg.edges_of = lambda *a, **k: []
     assert match("new client Ahmed via whatsapp")
     assert match("log client message from Ahmed: needs the logo by Friday")
     assert match("client context Ahmed")
@@ -723,12 +730,13 @@ if __name__ == "__main__":
     assert "not drafting" in r["reply"], r
     r = run("draft a reply to Ahmed", {})
     assert "check it" in r["reply"], r
-    # send is always T2: a yes/no gate, never a direct send
-    session = {"draft": "Hi Ahmed - the logo lands Friday.", "pending": None}
+    # send never fakes delivery: the draft must be bound to this exact client, and CRM transport is not
+    # integrated, so nothing is sent and no 'sent' event is recorded (A17 truthful delivery).
+    session = {}
+    assert "check it" in run("draft a reply to Ahmed", session)["reply"]
     r = run("send the draft to Ahmed", session)
-    assert "(yes/no)" in r["reply"] and session.get("pending", {}).get("skill") == "clients", r
-    session["pending"]["action"]()  # the owner says yes
-    assert any(e["kind"] == "sent" for e in context_load("Ahmed")["events"])
+    assert r.get("delivery") == "not_attempted" and "Nothing was sent" in r["reply"], r
+    assert not any(e["kind"] == "sent" for e in context_load("Ahmed")["events"])
     # invoices + dashboard
     run("invoice for Ahmed: logo design 15000", {})
     r = run("invoice status for Ahmed", {})
@@ -757,5 +765,6 @@ if __name__ == "__main__":
     assert "No clients in your CRM store yet" in run("Who are my clients right now?", {})["reply"], \
         "an empty store says so instead of inventing clients"
     print("[self-check] clients OK - profiles, isolation (no cross-client leakage, partial names only when "
-          "unambiguous), sentiment routing, draft grounding, T2 send gate, invoices, follow-ups, leads, dashboard, "
+          "unambiguous), sentiment routing, draft grounding, truthful send (no faked delivery), invoices, follow-ups, "
+          "leads, dashboard, "
           "client roster read from the live store (140)")

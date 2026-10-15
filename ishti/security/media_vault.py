@@ -1,4 +1,4 @@
-"""Encrypted-at-rest Media Vault with Per-Chat Retention and Purge Policy (NEEDS.md Item 7).
+"""Encrypted-at-rest Media Vault with Per-Chat Retention and Purge Policy.
 
 Guarantees:
 1. AES-256-GCM authenticated encryption for all media stored on disk.

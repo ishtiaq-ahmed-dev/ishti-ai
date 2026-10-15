@@ -137,10 +137,10 @@ def run(text, session):
             with browser.LOCK:
                 try:
                     browser.use_server(browser.profile_for("email"), session)  # the login profile (signed in to Google)
-                except RuntimeError as exc:
-                    return {"reply": str(exc), "sources": []}
-                trace(session, "gmail", name)
-                out = globals()["op_" + name](m, text, session)
+                    trace(session, "gmail", name)
+                    out = globals()["op_" + name](m, text, session)
+                except (browser.BrowserToolError, RuntimeError) as exc:
+                    return {"reply": "Gmail isn't connected or not logged in in Chrome Profile 10 (Playwright extension not connected). Please sign in to Gmail in Chrome to access your unread email.", "sources": []}
             return out if isinstance(out, dict) else {"reply": out, "sources": []}
     return None
 

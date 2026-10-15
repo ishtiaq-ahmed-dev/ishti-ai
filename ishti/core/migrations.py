@@ -86,7 +86,7 @@ def pending(conn: sqlite3.Connection, store: str) -> list[dict]:
 # --------------------------------------------------------------------------- schemas
 
 # ---- arch2 memory DB (data/arch2_memory.db): Prompt-2 additions, additive only.
-# v1 baseline is created by ishti.arch2.memory.conn() itself; these add the new tables.
+# v1 baseline is created by ishti.memstore.memory.conn() itself; these add the new tables.
 migration("memory", 1, "conflicts + events (D5, F2 task log)", """
     CREATE TABLE IF NOT EXISTS conflicts(
         id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL,
