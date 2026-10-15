@@ -226,9 +226,18 @@ def py_bind_calls(text):
         if not isinstance(node, ast.Call):
             continue
         fn = node.func
-        name = fn.attr if isinstance(fn, ast.Attribute) else (fn.id if isinstance(fn, ast.Name) else "")
+        # Get the qualified name: module.func or Class.method or just func
+        if isinstance(fn, ast.Attribute):
+            name = fn.attr
+            owner = fn.value
+            owner_name = owner.id if isinstance(owner, ast.Name) else ""
+        elif isinstance(fn, ast.Name):
+            name = fn.id
+            owner_name = ""
+        else:
+            continue
         if name in ("run", "Config"):        # only uvicorn's, not an arbitrary object's .run()/.config()
-            if not (isinstance(fn.value, ast.Name) and fn.value.id == "uvicorn"):
+            if owner_name != "uvicorn":
                 continue
         elif name == "bind":
             if not (node.args and isinstance(node.args[0], (ast.Tuple, ast.List))):
@@ -381,13 +390,14 @@ def check_loopback(drv, sites):
 
 def check_capture(product_hits, tool_hits):
     """No capture API in the product, and screenshots are a refused remote category."""
+    from ishti.core.logutil import swallowed
     gate = os.path.join(ROOT, "ishti", "channels", "gate.py")
     refused = False
     try:
         with open(gate, encoding="utf-8", errors="replace") as fh:
             refused = '("screenshots"' in fh.read()
-    except OSError:
-        pass   # a missing gate.py is not a pass: `refused` stays False and the evidence says so
+    except OSError as exc:
+        swallowed("tools/privacy_report.py:check_capture", exc)
     ev = {"product_hits": product_hits, "tooling_hits": tool_hits, "screenshots_are_a_refused_category": refused,
           "apis_searched": list(CAPTURE_APIS)}
     if product_hits:
