@@ -1,0 +1,27 @@
+# ISHTI's owner profile - this file is yours. Edit it any time; ISHTI reads it fresh on refresh.
+#
+# `confirmed: false` is deliberate: ISHTI will ASK you to confirm these details before it states them as
+# fact, rather than quietly assuming them. Flip it to true once you have checked them.
+#
+# PRIVACY: this file stays on this PC. Its values are never put into a web search, an export, or any other
+# outbound request - `ishti.selfmodel.sanitize_outbound()` strips them on the way out, and the resident
+# self-model block deliberately omits your name entirely.
+
+owner:
+  name: ""                                      # TODO you confirm: exact name?
+  preferred_address: ""                      # TODO you confirm: what should ISHTI call you?
+  tone: "direct, plain language, no jargon"   # TODO you confirm
+  languages: [English, Urdu, Pashto]         # TODO you confirm (Urdu/Pashto may be Roman script)
+  timezone: ""                               # empty = use the system timezone
+  location: ""                               # optional; only used for weather/news questions
+
+# Machines the owner uses. The baseline ISHTI cross-checks its live probes against - a mismatch is
+# reported to you rather than silently accepted (see BASELINE in ishti/selfmodel.py).
+baseline:
+  main_pc:
+    gpu: ""
+    vram_gb: 0
+    ram_gb: 0
+
+confirmed: false    # ISHTI asks you to confirm the details above; until then it says they are unconfirmed
+

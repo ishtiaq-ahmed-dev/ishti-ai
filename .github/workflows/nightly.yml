@@ -1,0 +1,100 @@
+name: Full offline qualification
+on:
+  schedule:
+    - cron: '20 2 * * *'
+  workflow_dispatch:
+    inputs:
+      strict_skills:
+        description: 'Fail if any per-skill suite is red. Off by default: the per-skill baseline on a runner has not been established yet.'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      ISHTI_TEST_MODE: '1'
+      ISHTI_OFFLINE_EVAL: '1'
+      ISHTI_SCRATCH: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: '1'
+      HF_HUB_OFFLINE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install pinned full profile
+        run: python -m pip install -r requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: interface/app/package-lock.json
+      - run: npm ci
+        working-directory: interface/app
+      - run: npm run build
+        working-directory: interface/app
+      - name: All collected offline tests (e2e excluded by pytest.ini)
+        run: python -u -X faulthandler -m pytest tests -q -p no:cacheprovider --junitxml=reports/full-offline.xml
+      - name: Require a complete successful JUnit record
+        if: always()
+        run: python -c "import xml.etree.ElementTree as E; s=list(E.parse('reports/full-offline.xml').getroot().iter('testsuite')); assert s and sum(int(x.get('tests',0)) for x in s)>0; assert all(int(x.get('errors',0))+int(x.get('failures',0))==0 for x in s)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: full-offline-evidence
+          path: reports/full-offline.xml
+
+  # Separate job on purpose: the per-skill suites are slow and independent of the collected suite, so
+  # they get their own timeout and cannot hide its result. pytest.ini excludes tests/skills, so this is
+  # the only place they run - a red suite here is a real finding, not build noise.
+  #
+  # What a runner can and cannot say about these suites, stated so the number is not misread:
+  #   * tests/run_skill.py's GPU guard treats an unreadable nvidia-smi as "no GPU, nothing to protect",
+  #     so this job starts without one - the suites that need a live model still fail on a runner that
+  #     has no Ollama, and that failure is environmental, not a regression.
+  #   * it installs requirements-api.txt, not the 2.5 GB local profile, so a suite whose test imports an
+  #     optional local dependency fails here too.
+  #   * therefore --strict-skills is opt-in (see the workflow_dispatch input above). Turn it on once a
+  #     baseline run has been read. A job that is red for environmental reasons on every run is a gate
+  #     nobody can act on, which is worse than no gate.
+  skills:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      ISHTI_TEST_MODE: '1'
+      ISHTI_SCRATCH: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: python -m pip install -r requirements-api.txt
+      # continue-on-error so a failed check cannot skip the roll-up below - which would lose the skills
+      # number as well. The gate is the explicit step after it, so the job still fails on a failed check.
+      - name: Privacy and egress report (the checks evidence.json folds in)
+        continue-on-error: true
+        run: python -u tools/privacy_report.py --out reports/privacy.json
+      - name: Per-skill suites and the evidence roll-up
+        run: python -u tools/evidence.py --no-core --no-eval --wait-idle 0 ${{ inputs.strict_skills == true && '--strict-skills' || '' }} --out reports/evidence.json
+      - name: Fail on a failed privacy check
+        if: always()
+        run: python -c "import json,os,sys; p='reports/privacy.json'; d=json.load(open(p,encoding='utf-8')) if os.path.exists(p) else {}; c=d.get('checks') or []; bad=[x['check'] for x in c if x['status']!='pass']; print('report present:', bool(c), '| checks not passing:', bad or 'none'); sys.exit(0 if c and not bad else 1)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: skills-evidence
+          path: |
+            reports/evidence.json
+            reports/skills.json
+            reports/skills_summary.json
+            reports/privacy.json

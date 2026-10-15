@@ -1,0 +1,40 @@
+# API/desktop/document core: no CUDA, local language models, STT or TTS.
+# Other skills report their missing optional dependencies in Settings.
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+pydantic==2.12.5
+python-multipart==0.0.32
+requests==2.34.2
+httpx==0.28.1
+openai==2.54.0          # talks to Ollama's OpenAI-compatible endpoint, on this PC only
+mcp==1.28.1
+PyYAML==6.0.3
+keyring==25.7.0
+cryptography==50.0.1
+psutil==7.2.2
+packaging==26.3
+python-dateutil==2.9.0.post0
+pillow==12.3.0
+openpyxl==3.1.5
+python-docx==1.2.0
+python-pptx==1.0.2
+reportlab==5.0.1
+pdfplumber==0.11.10
+pikepdf==10.13.0.post1
+pypdf==6.19.0
+pypdfium2==5.13.0
+py7zr==1.1.3
+beautifulsoup4==4.15.0
+feedparser==6.0.14
+Send2Trash==2.1.0       # "delete" moves files to the Recycle Bin
+pywebview==6.2.1; sys_platform == "win32"
+pythonnet==3.1.0; sys_platform == "win32"   # the window engine behind pywebview; newer 3.2 not tested here
+pywin32==312; sys_platform == "win32"
+comtypes==1.4.17; sys_platform == "win32"
+pystray==0.19.5; sys_platform == "win32"
+pyperclip==1.11.0; sys_platform == "win32"
+pytest==9.1.1
+pytest-timeout==2.4.0
+
+# IANA timezone data for business-local dates on Windows
+tzdata==2026.5

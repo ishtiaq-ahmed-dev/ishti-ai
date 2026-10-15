@@ -1,0 +1,43 @@
+name: Offline core and frontend
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  core:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      ISHTI_TEST_MODE: '1'
+      ISHTI_OFFLINE_EVAL: '1'
+      ISHTI_SCRATCH: '1'
+      ISHTI_LLM_PROVIDER: api
+      ISHTI_SCRATCH_DIR: '${{ github.workspace }}/.ci-scratch'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: python -m pip install -r requirements-api.txt
+      - name: Curated offline core plus the evaluation suites
+        run: python -u -X faulthandler tools/evidence.py --no-skills --out reports/evidence.json
+      - name: Require a complete successful JUnit record
+        if: always()
+        run: python -c "import xml.etree.ElementTree as E; s=list(E.parse('reports/ci-core.xml').getroot().iter('testsuite')); assert s and sum(int(x.get('tests',0)) for x in s)>0; assert all(int(x.get('errors',0))+int(x.get('failures',0))==0 for x in s)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: interface/app/package-lock.json
+      - run: npm ci
+        working-directory: interface/app
+      - run: npm run build
+        working-directory: interface/app
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: offline-core-evidence
+          path: |
+            reports/ci-core.xml
+            reports/evidence.json
