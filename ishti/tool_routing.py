@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Callable, Iterable
+from typing import Iterable
 
 
 NON_ROUTABLE = frozenset({"broken", "draft", "disabled", "retired"})
@@ -35,9 +35,11 @@ _ALIASES = {
     "graph": "chart", "plot": "chart", "timer": "reminders", "alarm": "reminders",
     "schedule": "calendar", "meeting": "calendar", "whatsapp": "whatsapp",
     "classroom": "browser", "calssrom": "browser", "clasrom": "browser",
+    "instagram": "browser", "facebook": "browser", "linkedin": "browser", "outlook": "apps",
 }
 _CUES = (
-    ("browser", re.compile(r"\b(?:classroom|google classroom|google calssrom|google clasrom|web browser|profile 9|tabs?|open .* tabs?)\b", re.I)),
+    ("browser", re.compile(r"\b(?:classroom|google classroom|google calssrom|google clasrom|web browser|profile 9|tabs?|open .* tabs?|instagram|facebook|linkedin)\b", re.I)),
+    ("apps", re.compile(r"\b(?:outlook|notepad|calculator|brave|spotify|discord)\b", re.I)),
     ("pdftables", re.compile(r"\b(?:extract|pull|get|export|turn)\b.{0,55}\btable|\bpdf tables?\b|"
                               r"\btabular data\b.{0,45}\b(?:pdf|csv)\b", re.I)),
     ("chart", re.compile(r"\b(?:bar chart|line (?:chart|graph)|histogram|chart|plot|visuali[sz]e)\b", re.I)),
@@ -48,7 +50,7 @@ _CUES = (
     ("whatsapp", re.compile(r"\bwhats ?app\b|\b(?:family|work) group messages?\b", re.I)),
     ("writing", re.compile(r"\b(?:rewrite|paraphrase|fix the grammar|bullet points?|blog outline|formal tone|"
                             r"draft .{0,20} from (?:these )?(?:notes|bullets)|summari[sz]e this text|short notes|"
-                            r"short answer|notes for this|solve it|solve this)\b", re.I)),
+                            r"short answer|notes for this|solve it|solve this|draft (?:a )?(?:linkedin|social) post|declining (?:this )?meeting)\b", re.I)),
     ("email", re.compile(r"\b(?:gmail|unread (?:mail|email)|search my (?:mail|email)|newest email|email to|"
                           r"read .{0,12}email from|send the approved email)\b", re.I)),
     ("budget", re.compile(r"\b(?:i spent|spending|expenses?|budget limit|dining limit|log (?:salary )?income|"
@@ -62,9 +64,11 @@ _CUES = (
     ("docs", re.compile(r"\b(?:merge .{0,20}pdfs?|convert .{0,30}(?:word|pdf)|powerpoint|word (?:file|document|report)|"
                          r"summari[sz]e this spreadsheet|compare .{0,20}word documents?)\b", re.I)),
     ("calc", re.compile(r"\b(?:derivative|integral|percent|prime factors?|gcd|lcm|"
-                         r"how much .{0,20}cost)\b|(?:\d\s*[+*/=-]\s*\d)", re.I)),
+                         r"how much .{0,20}cost)\b|(?:\d\s*[+*/=-]\s*\d)|"
+                         r"\b\d[\d.,]*\s+(?:plus|minus|times|divided\s+by|multiplied\s+by|over)\s+\d[\d.,]*\b", re.I)),
     ("calendar", re.compile(r"\b(?:calendar|schedule|free slots?|add (?:a )?(?:meeting|event)|cancel .{0,20}event|ics)\b", re.I)),
     ("reminders", re.compile(r"\b(?:remind|reminder|timer|alarm|wake me|utha dena|uthao|yaad dila|alarm lagao)\b", re.I)),
+    ("relationships", re.compile(r"\b(?:brother|sister|mother|father|wife|husband|client|classmate|colleague|cousin|manager|friend)\b", re.I)),
     ("memory", re.compile(r"\b(?:remember that|what do you remember|forget the saved|project .{0,25}(?:status|is in)|"
                            r"update the status of project|where did i store)\b", re.I)),
     ("files", re.compile(r"\b(?:find|locate|where is|search my pc for)\b.{0,70}\b(?:file|folder|pdf|docx|csv|png|"
@@ -125,22 +129,37 @@ def usable_skills(skills: dict, exclude: Iterable[str] = ()) -> dict:
             if name not in blocked and _status(skill) not in NON_ROUTABLE}
 
 
-def _lexical_score(text: str, name: str, skill) -> float:
-    words = _tokens(text)
+_LEXICON: dict[tuple, tuple[set, set, set, tuple]] = {}
+
+
+def _skill_lexicon(name: str, skill) -> tuple[set, set, set, tuple]:
+    """A skill's static lexicon (route/description/name tokens + its multi-word route phrases).
+
+    Cached by the manifest text: it never changes between requests, and rebuilding it for every
+    skill on every request was two thirds of the routing cost (the hot path for every turn).
+    """
     manifest = getattr(skill, "manifest", {}) or {}
-    route_words = _tokens(str(manifest.get("route", "")))
-    desc_words = _tokens(str(manifest.get("description", "")))
-    name_words = _tokens(name.replace("_", " "))
+    route, desc = str(manifest.get("route", "")), str(manifest.get("description", ""))
+    key = (name, route, desc)
+    hit = _LEXICON.get(key)
+    if hit is None:
+        phrases = tuple(b.strip() for b in re.split(r"[,;:]", route.lower()) if len(b.strip().split()) >= 2)
+        hit = (_tokens(route), _tokens(desc), _tokens(name.replace("_", " ")), phrases)
+        _LEXICON[key] = hit
+    return hit
+
+
+def _lexical_score(name: str, skill, *, words: set, cues: set, low: str) -> float:
+    """Per-text values (words/cues/low) are computed once per request by the caller, not per skill."""
+    route_words, desc_words, name_words, phrases = _skill_lexicon(name, skill)
     overlap = len(words & route_words) * 0.13 + len(words & desc_words) * 0.035
     overlap += len(words & name_words) * 0.22
     for cue, target in _ALIASES.items():
         if cue in words and target == name:
             overlap += 0.42
-    phrase = str(manifest.get("route", "")).lower()
-    if any(bit.strip() and len(bit.strip().split()) >= 2 and bit.strip() in text.lower()
-           for bit in re.split(r"[,;:]", phrase)):
+    if any(p in low for p in phrases):
         overlap += 0.35
-    if name in _cue_names(text):
+    if name in cues:
         overlap = max(overlap, 0.92)
     return min(1.0, overlap)
 
@@ -148,9 +167,10 @@ def _lexical_score(text: str, name: str, skill) -> float:
 def candidate_shortlist(text: str, skills: dict, *, exclude: Iterable[str] = (), limit: int = 20) -> list[tuple[str, float]]:
     """Rank an exception-safe, lifecycle-filtered 5-20 skill shortlist."""
     live = usable_skills(skills, exclude)
+    words, cues, low = _tokens(text), set(_cue_names(text)), text.lower()
     ranked = []
     for name, skill in live.items():
-        score = _lexical_score(text, name, skill)
+        score = _lexical_score(name, skill, words=words, cues=cues, low=low)
         if _safe_match(skill, text):
             score = max(score, 1.0)
         if score > 0:
@@ -176,38 +196,6 @@ def _learned_hint(text: str) -> str | None:
         return None
 
 
-def _rerank(text: str, candidates: list[tuple[str, float]], skills: dict,
-            llm_fn: Callable[..., str] | None = None) -> tuple[str | None, float]:
-    if not candidates:
-        return None, 0.0
-    ask = llm_fn
-    if ask is None:
-        try:
-            from ishti import llm
-            ask = llm.ask
-        except Exception:
-            return None, 0.0
-    names = [name for name, _ in candidates[:8]]
-    choices = "\n".join(
-        f"- {name}: {(getattr(skills[name], 'manifest', {}) or {}).get('route', '')}" for name in names
-    )
-    prompt = (
-        "Choose the one best tool for the request from the allowed shortlist. If the target is missing or ambiguous, "
-        "choose clarify. Return JSON only: {\"skill\":\"name|clarify\",\"confidence\":0..1}.\n"
-        f"Allowed tools:\n{choices}\nRequest: {text}"
-    )
-    try:
-        raw = ask(prompt, system=None, temperature=0, max_tokens=80, response_format={"type": "json_object"})
-        data = json.loads(str(raw).strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip())
-        name = str(data.get("skill") or "").strip()
-        confidence = float(data.get("confidence") or 0.0)
-        if name == "clarify":
-            return None, confidence
-        return (name, confidence) if name in names else (None, 0.0)
-    except Exception:
-        return None, 0.0
-
-
 def _clarification(text: str, candidates: list[tuple[str, float]]) -> str:
     names = [name.replace("_", " ") for name, score in candidates[:2] if score > 0]
     if _AMBIGUOUS.search(text):
@@ -217,7 +205,7 @@ def _clarification(text: str, candidates: list[tuple[str, float]]) -> str:
     return "What exact action and target should I use the tool for?"
 
 
-def route(text: str, skills: dict, exclude=(), *, session: dict | None = None, llm_fn: Callable[..., str] | None = None) -> dict:
+def route(text: str, skills: dict, exclude=(), *, session: dict | None = None) -> dict:
     """Select a skill without executing it; low-confidence actions return a clarification."""
     try:
         from ishti.normalizer import normalize_message
@@ -250,6 +238,14 @@ def route(text: str, skills: dict, exclude=(), *, session: dict | None = None, l
                     "scores": [(resolved_skill, 1.0)]}
 
         candidates = candidate_shortlist(text, skills, exclude=exclude)
+        # A skill whose OWN trigger claims this text exactly is not ambiguous, however pronoun-heavy the
+        # sentence is. "I found this text in a download: 'password: ...'. What should I do with it?" was
+        # answered with "Which exact person, item, file, or destination do you mean?" instead of being
+        # flagged as an exposed credential (checklist 239), because this clarification was returned before
+        # any skill's matcher ran - and _rule_owned() then disagreed with the skill's own trigger.
+        for s in sorted(live.values(), key=lambda s: s.manifest.get("priority", 50)):
+            if s.matches(text):
+                return {"skill": s.name, "confidence": 1.0, "source": "rule", "scores": [(s.name, 1.0)]}
         return {"skill": "chat", "confidence": 0.0, "source": "clarify",
                 "clarify": _clarification(text, candidates), "scores": candidates[:3]}
 
@@ -259,7 +255,9 @@ def route(text: str, skills: dict, exclude=(), *, session: dict | None = None, l
 
     cues = [name for name in _cue_names(text) if name in live]
     if cues:
-        if "browser" in cues and re.search(r"\b(?:classroom|profile 9|tabs?|open|web)\b", text, re.I):
+        if "writing" in cues and re.search(r"\b(?:draft|declining)\b", text, re.I):
+            cues.insert(0, cues.pop(cues.index("writing")))
+        elif "browser" in cues and re.search(r"\b(?:classroom|profile 9|tabs?|open|web|instagram|facebook|linkedin)\b", text, re.I):
             cues.insert(0, cues.pop(cues.index("browser")))
         elif "calc" in cues and re.search(r"\b(?:calculate|derivative|integral|simplify)\b", text, re.I):
             cues.insert(0, cues.pop(cues.index("calc")))
@@ -293,11 +291,9 @@ def route(text: str, skills: dict, exclude=(), *, session: dict | None = None, l
             return {"skill": top_name, "confidence": round(top_score, 3), "source": "shortlist",
                     "scores": positive[:3]}
         if _ACTION.search(text):
-            picked, confidence = _rerank(text, positive, skills, llm_fn=llm_fn)
-            if picked and confidence >= 0.65:
-                return {"skill": picked, "confidence": round(confidence, 3), "source": "local_rerank",
-                        "scores": positive[:3]}
-            return {"skill": "chat", "confidence": round(confidence, 3), "source": "clarify",
+            # Ambiguous action: no second model call here. The one decision step (ishti/brain.py) gets these
+            # candidates and picks the tool, or asks the owner which one is meant.
+            return {"skill": "chat", "confidence": 0.0, "source": "clarify",
                     "clarify": _clarification(text, positive), "scores": positive[:3]}
 
     # Timeless questions and conversation stay with chat.  The local reranker is
