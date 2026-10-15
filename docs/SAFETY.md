@@ -29,7 +29,7 @@ Definition used by the code and by the self-description in `ishti/selfmodel.py`:
 Counts in `ishti/skills/*/manifest.json` today (MEASURED): **T0 68, T1 41, T2 15, T3 0**.
 
 - **T0 / T1** run without a question. Their blast radius is bounded by their scope (section 4).
-- **T2** skills: `browser`, `contacts`, `email`, `gemini`, `gitops`, `online_fallback`, `screen_control`, `security`,
+- **T2** skills: `browser`, `contacts`, `email`, `gemini`, `gitops`, `online_fallback`, `security`, `ui_act`,
   `sendlater`, `skill_creator`, `skillsmith`, `terminal`, `trading`, `whatsapp`, `workflows`. The yes/no question is
   raised by the skill through `ask_first` (it stores a pending action; the reply ends with "(yes/no)"). The
   dispatcher's own T2 handling is: the pending question is resolved before anything is routed; the same sensitive
@@ -45,7 +45,7 @@ Counts in `ishti/skills/*/manifest.json` today (MEASURED): **T0 68, T1 41, T2 15
   (`ishti/skills/skill_creator/design.py`).
 - Trading is **paper only**: the `trading` skill (T2) keeps a simulated ledger. A request to connect a real or live
   broker is refused in code and never sent to a model. Real trading would be a T3 design that needs the owner's
-  approval first (`md files/NEEDS.md` #18).
+  approval first.
 
 ## 3. What always asks first
 
@@ -56,7 +56,7 @@ switch also drops pending questions. The gate always runs on the owner's own mes
 
 Actions the T2 skills describe as gated in their manifests (read on 2026-10-02): sending email or WhatsApp messages and
 scheduled sends (`email`, `whatsapp`, `sendlater`); browser clicks that buy, send, submit, post or delete (`browser`);
-real mouse and keyboard control (`screen_control`); running terminal commands, in a restricted subprocess with an
+control of named window controls (`ui_act`, after a yes); running terminal commands, in a restricted subprocess with an
 allow-list (`terminal`); state-changing git commands - add, commit, push, pull, checkout, stash, merge, reset, clean
 (`gitops`); merging contacts (`contacts`); uploading to a third-party online tool (`online_fallback`); generating media in
 the owner's signed-in Gemini session (`gemini`); running saved webhooks (`workflows`); encryption and the credential
@@ -85,7 +85,7 @@ only under `ishti/skills/_drafts`, so a draft cannot make itself live. System pr
 
 MEASURED from the manifests: 12 skills have `net: ["*"]` (`browser`, `deep_research`, `dev`, `digest`, `find_leads`,
 `ledger`, `markets`, `shopping`, `utilities`, `web_fetch`, `web_search`, `webtools`); 7 have `apps: true` (`apps`,
-`capcut`, `desktop`, `desktop_control`, `screen_control`, `terminal`, `video`). Everything else is confined to its
+`capcut`, `desktop`, `terminal`, `ui_act`, `video`). Everything else is confined to its
 declared domains or to no network at all.
 
 Limits, stated plainly:
@@ -126,6 +126,13 @@ It is enforced in code (`ishti/privacy.py`, tests in `tests/test_privacy.py`) an
   the owner's Chrome and native extensions that open their own sockets are outside it; they are covered by settings and by
   `tools/gate_no_cloud.py`, which samples their connections. Docker Desktop's own telemetry cannot be separated from SearXNG's
   traffic: turn "Send usage statistics" off in Docker Desktop. A Windows Firewall rule for `ollama.exe` / Docker would close the rest.
+- **The auditable form of this section.** Everything above is checked, not asserted, by
+  `venv\Scripts\python tools\privacy_report.py`, which writes the tracked
+  [PRIVACY_REPORT.md](PRIVACY_REPORT.md): the guard is installed in a fresh process and an unattributed external connect is
+  made, every host on the telemetry denylist is struck at once inside a skill declaring `scope.net: ["*"]` — with a control
+  host in that same context that must still be allowed, so the check cannot pass by blocking everything — every socket bind
+  in the source is listed with its address, and the capture-API scan is reported. Each of those checks can fail, and the
+  report states what it does not cover instead of implying that it covers it.
 
 ## 6. Audit trail
 
@@ -145,9 +152,12 @@ queryable by voice or text ("what did you do while I was away", "show me today's
 mode with `synchronous=NORMAL`: an app crash loses nothing, a power cut may lose the last few rows (a documented
 choice in the code). The log can be written by ISHTI's own process, so it is evidence of behavior, not tamper-proof.
 
-Separate from this, the *build* history of these documents has a hash-chained log at
-`docs/build/AUDIT_LOG.jsonl`, verified by `tools/verify_audit.py`. It records documentation and launcher work, not
-runtime actions.
+Separate from this, the *build* history of these documents had a hash-chained log at
+`docs/build/AUDIT_LOG.jsonl`, written and verified by `tools/audit_log.py` / `tools/verify_audit.py`.
+It recorded documentation and launcher work, not runtime actions. **`docs/build/` has since been
+retired**, so that log is no longer present; note that `verify_audit.py` reports a *deleted* log as
+"0 entries, chain intact" rather than as missing. The runtime log in the paragraph above is
+unaffected and is the one that matters for behavior.
 
 ## 7. Kill switch
 
@@ -189,10 +199,10 @@ nothing in the chat, only a capped alert to the owner); forwarded content is dat
 default); rate limit; lock state (when locked only `/kill`, `/unlock`, `/status`); a fixed command set; then a
 **remote-forbidden classifier** that refuses, even for the owner, requests to delete files, shut down or restart the PC,
 execute trades or purchases, install or enable skills, change policy or settings, reveal secrets, take over the
-desktop, or take screenshots. T2 replies get Approve/Deny buttons bound to a single-use, expiring approval; the
+desktop. ISHTI does not take screenshots. T2 replies get Approve/Deny buttons bound to a single-use, expiring approval; the
 dispatcher's own gate still has the final say. The bot token is held in Windows Credential Manager via DPAPI.
 Defaults are safe: everything is off except read-only panic commands. The policy file is local-edit-only; no remote
-message can write it. `desktop_control` is never remotely controllable. Contract: [API_CONTRACT.md](API_CONTRACT.md)
+message can write it. `ui_act` is never remotely controllable. Contract: [API_CONTRACT.md](API_CONTRACT.md)
 section 11; setup for tunnelled access: `remote/tunnel_setup.md`.
 
 The local HTTP server trusts only unproxied loopback requests. Anything proxied or non-local must present the token in
@@ -201,7 +211,7 @@ VRAM and focus endpoints also refuse requests that come from foreign web origins
 
 ## 11. Data at rest
 
-`data/` (databases, tokens, logs, models) is git-ignored. The arch2 memory DB and the relationship graph encrypt
+`data/` (databases, tokens, logs, models) is git-ignored. The layered memory DB and the relationship graph encrypt
 sensitive fields (Fernet; key in the OS keychain through `keyring`, or a file under `data/keys/`). The learning DB and
 conversation state are plaintext. Private relationship nodes are never exported to client-facing context or training
 data. Incognito mode makes a conversation write nothing to memory. Secrets typed into a request are masked in history,
@@ -209,11 +219,13 @@ saved chats and the audit log.
 
 ## 12. What this document does not prove
 
-- It describes mechanisms, not guarantees. The last recorded evidence for them is: the offline suite (464 tests
-  collected today with `pytest --collect-only`; 445/445 passed at the 2026-10-02 commit `9e6003b` per
-  `docs/build-history/qa/backend-2026-09-29/TEST_RESULTS.md` PART 3; I did not re-run the suite); the independent
-  security scan in `docs/build-history/repo-integration/REVIEW_SIGNOFF.md` (23 medium, 0 high findings at that date);
-  and `ISHTI_TEST_MODE` safety assertions in `tests/run_skill.py`.
+- It describes mechanisms, not guarantees. The evidence an earlier version of this section cited — a
+  build-history test report and an independent security-scan sign-off — lived under `docs/build-history/`,
+  which is no longer in this tree. **This section therefore currently rests on no re-verifiable
+  security evidence.** The `ISHTI_TEST_MODE` safety assertions still live in `tests/run_skill.py`, and
+  a fresh full offline regression remains an outstanding release gate: see
+  [RELEASE_READINESS.md](RELEASE_READINESS.md) gate 1 and [ACCURACY.md](ACCURACY.md) for what is and
+  is not measured.
 - Real Telegram/WhatsApp end-to-end behavior and live microphone behavior were never verified on this machine (needs the
-  owner's token/pairing and a working input device: `NEEDS.md` N7, N22, N23).
+  owner's token/pairing and a working input device).
 - No external penetration test exists.

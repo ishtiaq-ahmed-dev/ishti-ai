@@ -4,7 +4,7 @@
 // auto-resync on gap). Drafts + scroll positions persisted per chat (survive navigation, reload).
 import { deleteJSON, getJSON, patchJSON, postJSON, putJSON } from "@/lib/api";
 
-export type Profile = "personal" | "business";
+export type Profile = "personal";
 export type RunState = "queued" | "running" | "done" | "failed" | "cancelled";
 
 export type StoreMessage = {
@@ -60,6 +60,7 @@ class ChatStore {
   private pollTimer: number | null = null;
   private started = false;
   private generation = 0; // invalidates in-flight sends on restart
+  private hydrateGen = new Map<string, number>(); // per-chat: a stale hydrate response must not overwrite a newer one
 
   subscribe(fn: Listener): () => void {
     this.listeners.add(fn);
@@ -175,20 +176,43 @@ class ChatStore {
   }
 
   async hydrateMessages(chatId: string) {
+    const gen = (this.hydrateGen.get(chatId) || 0) + 1;
+    this.hydrateGen.set(chatId, gen);
     try {
-      const d = await getJSON<{ messages: StoreMessage[] }>(`/api/chats/${chatId}/messages`);
-      const server = d.messages || [];
+      // Page through the messages endpoint: the server returns the OLDEST window first, so a chat
+      // over one page long would otherwise never show its newest turns after a reload.
+      let server: StoreMessage[] = [];
+      let after = 0;
+      for (let page = 0; page < 50; page++) { // bounded: 50 x 1000 messages
+        const d = await getJSON<{ messages: StoreMessage[] }>(`/api/chats/${chatId}/messages?after_seq=${after}`);
+        const batch = d.messages || [];
+        server = server.concat(batch);
+        if (batch.length < 1000) break;
+        after = batch[batch.length - 1].seq;
+      }
+      if (this.hydrateGen.get(chatId) !== gen) return; // a newer hydrate already landed: it owns the state
       const serverIds = new Set(server.map((m) => m.message_id));
       const local = this.messages.get(chatId) || [];
       // Server rows are authoritative; keep local-only rows (recovered run-* answers and
       // optimistic pending rows until the server acks them). The previous logic rebuilt the
       // list without rows it already had, silently deleting history on every re-hydrate.
-      const acked = (m: StoreMessage) => m.pending && server.some((s) => s.role === m.role && s.text === m.text);
-      const merged = [...server, ...local.filter((m) => !serverIds.has(m.message_id) && !acked(m) && (m.pending || m.message_id.startsWith("run-")))];
+      // A pending row is acked only when the server holds MORE copies of that role+text than the
+      // local acked rows: an older identical message must not make a fresh unacked bubble vanish.
+      const acked = (m: StoreMessage) => {
+        if (!m.pending) return false;
+        const mine = local.filter((l) => l.role === m.role && l.text === m.text && !l.pending && !l.message_id.startsWith("run-"));
+        const theirs = server.filter((s) => s.role === m.role && s.text === m.text);
+        return theirs.length > mine.length;
+      };
+      // A synthetic run-* row is superseded once the server holds the real row for that run:
+      // without this the same answer rendered twice after a later hydrate.
+      const runOnServer = (m: StoreMessage) => !!m.run_id && server.some((s) => !!s.run_id && s.run_id === m.run_id && s.role === m.role);
+      const merged = [...server, ...local.filter((m) => !serverIds.has(m.message_id) && !acked(m) && !runOnServer(m) && (m.pending || m.message_id.startsWith("run-")))];
       merged.sort((a, b) => (a.seq === b.seq ? a.ts - b.ts : a.seq - b.seq));
       this.messages.set(chatId, merged);
       this.emit();
     } catch (err) {
+      if (this.hydrateGen.get(chatId) !== gen) return; // a stale failure must not flag the fresh state
       this.error = err instanceof Error ? err.message : String(err);
       this.emit();
     }
@@ -315,8 +339,13 @@ class ChatStore {
         const chatId = d.chat_id as string;
         const m = d.message as StoreMessage;
         if (!chatId || !m) break;
-        const list = (this.messages.get(chatId) || []).filter(
-          (x) => x.message_id !== m.message_id && !(x.pending && x.text === m.text && m.role === "user"));
+        const list = (this.messages.get(chatId) || []).filter((x) => x.message_id !== m.message_id);
+        if (m.role === "user") {
+          // One acked send replaces ONE optimistic bubble: two identical in-flight sends must not
+          // both disappear when the first ack lands (a failed second POST would lose its bubble).
+          const i = list.findIndex((x) => x.pending && x.text === m.text);
+          if (i >= 0) list.splice(i, 1);
+        }
         list.push(m);
         list.sort((a, b) => a.seq - b.seq);
         this.messages.set(chatId, list);

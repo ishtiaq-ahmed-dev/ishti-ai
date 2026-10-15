@@ -17,7 +17,7 @@ python -m ishti
    └─ orchestrator.memory / response_guard
 └─ ishti.lifecycle           Job Object, registry, boot stages
 └─ interface/web_ui/server   FastAPI app + routers (dispatcher.api, lifecycle_api, remote_api)
-└─ dispatcher.warm_up()      Laya fp16 preload, voice engine preload (background)
+└─ dispatcher.warm_up()      voice engine and model preload (background)
 ```
 
 ## The two kept changes

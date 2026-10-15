@@ -5,7 +5,7 @@
 // #inputs deep links land on this page. Nothing was removed from Inputs.
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Bot, Cable, Check, CheckCircle2, ClipboardCheck, MessageCircle, Mic, MicOff, Monitor, PanelLeft, Play, Plus, QrCode, RefreshCw, Send, Shield, Trash2, Webhook, X, XCircle } from "lucide-react";
+import { Cable, Check, CheckCircle2, ClipboardCheck, MessageCircle, Mic, MicOff, PanelLeft, Plus, QrCode, RefreshCw, Send, Shield, Trash2, Webhook, X, XCircle } from "lucide-react";
 import { getJSON, postJSON, putJSON } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -402,60 +402,6 @@ function McpCard() {
   );
 }
 
-function A2aCard() {
-  const [agents, setAgents] = useState<{ id: string; state: string; goal?: string }[]>([]);
-  const [answer, setAnswer] = useState("");
-  const [pending, setPending] = useState<{ agent_id: string; question: string } | null>(null);
-  const [msg, setMsg] = useState("");
-  const load = useCallback(() => {
-    getJSON<{ agents: { id: string; state: string; goal?: string }[] }>("/api/agents").then((d) => {
-      setAgents((prev) => (same(prev, d.agents || []) ? prev : (d.agents || [])));
-      const asking = (d.agents || []).find((a) => a.state === "input_required");
-      setPending(asking ? { agent_id: asking.id, question: (asking as any).detail || "needs your input" } : null);
-    }).catch(() => {});
-  }, []);
-  usePoll(load, 8000);
-  const submit = async () => {
-    if (!pending || !answer.trim()) return;
-    try {
-      await postJSON("/api/agents/events", { type: "input_response", agent_id: pending.agent_id, answer: answer.trim() });
-      setMsg(`Answer delivered to ${pending.agent_id}.`);
-      setAnswer(""); setPending(null); load();
-    } catch (e) { setMsg(e instanceof Error ? e.message : String(e)); }
-  };
-  return (
-    <div className="rounded-xl border border-border bg-card p-4" data-testid="connector-a2a">
-      <div className="flex items-center gap-2">
-        <Bot className="h-4 w-4 text-violet-500" aria-hidden />
-        <h3 className="text-sm font-bold text-foreground">Agents · A2A</h3>
-        <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">127.0.0.1 only</span>
-      </div>
-      <p className="mt-1 text-xs text-muted-foreground">Process-separate specialists with typed envelopes; input requests land here and in chat.</p>
-      <ul className="mt-2 space-y-1" data-testid="a2a-agents">
-        {agents.slice(0, 6).map((a) => (
-          <li key={a.id} className="flex items-center gap-2 text-xs">
-            <Play className={cn("h-3 w-3", a.state === "running" ? "text-amber-500" : "text-muted-foreground/50")} aria-hidden />
-            <span className="font-mono font-medium text-foreground">{a.id}</span>
-            <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">{a.state}</span>
-          </li>
-        ))}
-        {!agents.length && <li className="text-xs text-muted-foreground">Registry loads when the orchestrator first runs.</li>}
-      </ul>
-      {pending && (
-        <div className="mt-2 rounded-lg border border-sky-500/40 bg-sky-500/10 p-2.5" data-testid="a2a-input-required">
-          <div className="text-xs font-semibold text-foreground">{pending.agent_id} needs your input</div>
-          <p className="mt-0.5 text-[11px] text-foreground">{pending.question}</p>
-          <div className="mt-1.5 flex gap-1.5">
-            <input value={answer} onChange={(e) => setAnswer(e.target.value)} data-testid="a2a-answer"
-                   placeholder="Your answer…" className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs" />
-            <button onClick={() => void submit()} className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-foreground">Answer</button>
-          </div>
-        </div>
-      )}
-      {msg && <p className="mt-2 text-[11px] text-accent" role="status">{msg}</p>}
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------- Inputs (merged section)
 // The old Inputs page, now a section of Connectors (owner request: ONE place for everything
@@ -492,7 +438,6 @@ function InputsPanel() {
     running: boolean; qr_image?: string | null; lastError?: string | null;
   } | null>(null);
   const [clipboardPreview, setClipboardPreview] = useState<string | null>(null);
-  const [screenNotice, setScreenNotice] = useState<string | null>(null);
 
   const load = useCallback(() => {
     getJSON<InputsPayload>("/api/inputs")
@@ -540,12 +485,6 @@ function InputsPanel() {
     catch { setClipboardPreview("Clipboard access ready"); }
   };
 
-  const handleTestScreen = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    try { const res = await getJSON<{ ok: boolean; detail: string }>("/api/inputs/screen"); setScreenNotice(res.detail); }
-    catch { setScreenNotice("Screen perception ready"); }
-  };
-
   const channels = data?.channels ?? [];
   const accounts = channels.filter((c) => c.kind === "account");
   const devices = channels.filter((c) => c.kind !== "account");
@@ -557,7 +496,6 @@ function InputsPanel() {
     const isMic = c.id === "mic";
     const isWa = c.id === "whatsapp";
     const isClip = c.id === "clipboard";
-    const isScreen = c.id === "screen";
     return (
       <div className="w-full text-left rounded-2xl border border-border bg-card/60 p-4 shadow-xs transition-all hover:border-border/90 relative">
         <div className="flex items-start gap-3.5">
@@ -596,12 +534,6 @@ function InputsPanel() {
                     <ClipboardCheck className="h-3 w-3" /><span>Test Read</span>
                   </button>
                 )}
-                {isScreen && (
-                  <button type="button" onClick={handleTestScreen}
-                    className="flex items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-foreground hover:bg-muted/50 cursor-pointer">
-                    <Monitor className="h-3 w-3" /><span>Test Perception</span>
-                  </button>
-                )}
               </div>
             </div>
             <p className="mt-1 text-xs text-muted-foreground leading-relaxed">{c.detail}</p>
@@ -609,11 +541,6 @@ function InputsPanel() {
             {isClip && clipboardPreview && (
               <div className="mt-2.5 rounded-xl border border-border/80 bg-muted/40 p-2 text-xs font-mono text-foreground">
                 <span className="text-[10px] uppercase font-bold text-muted-foreground mr-1.5">Clipboard Content:</span>{clipboardPreview}
-              </div>
-            )}
-            {isScreen && screenNotice && (
-              <div className="mt-2.5 rounded-xl border border-border/80 bg-muted/40 p-2 text-xs font-mono text-emerald-500">
-                <span className="text-[10px] uppercase font-bold text-muted-foreground mr-1.5">Screen Status:</span>{screenNotice}
               </div>
             )}
             <div className="mt-2.5 border-t border-border/50 pt-2 flex items-center justify-between text-[10px] text-muted-foreground font-mono">
@@ -769,7 +696,6 @@ export function ConnectorsPage({ onToggleNav }: { onToggleNav?: () => void }) {
 
       <section className="grid gap-3 md:grid-cols-2">
         <McpCard />
-        <A2aCard />
       </section>
 
       <section className="rounded-xl border border-border bg-card p-4" data-testid="connector-keys">

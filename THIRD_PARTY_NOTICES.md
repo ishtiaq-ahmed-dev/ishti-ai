@@ -19,9 +19,10 @@ Supply-chain note: ECC itself warns to install only from its official channels �
 
 ## 3. hey-jev — NO LICENSE (all rights reserved by default)
 Upstream: https://github.com/henryklunaris/hey-jev @ 24e4b378350d999d2b45ff2549ea039c2bc7863d
-Use: **behaviour reference only** (wake/PTT/dictation/compound/timers/vocabulary flows described in
-`docs/build-history/repo-integration/repos/hey-jev.md`). No source text, assets, or names are copied. Owner outreach for a license
-is recorded in NEEDS.md (N36).
+Use: **behaviour reference only** (wake/PTT/dictation/compound/timers/vocabulary flows). No source text,
+assets, or names are copied. Owner outreach for a license was tracked in the retired `NEEDS.md` (N36);
+that record is no longer in this tree, so it is not re-verifiable here — carry it into the commercial
+review in [docs/COMMERCIAL_READINESS.md](docs/COMMERCIAL_READINESS.md).
 
 ## 4. agent-reach — MIT, (c) 2025 Agent Eyes
 Upstream: https://github.com/Panniantong/agent-reach @ a19a171fa980a0785849596492e0af4db800c82f (tag v1.5.0)
@@ -54,8 +55,8 @@ binaries after a doctor probe, and none is auto-installed (installs are T2-gated
 - `orchestrator/quality_gate.py` uses the ruff already present in the project venv; no npm package
   (`ecc-universal`, `ecc-agentshield`, hookify) is installed or invoked.
 - hey-jev has no license: only generic behaviour patterns (PTT, dictation chunking, duration
-  phrasing) were re-implemented from the public README/description; owner outreach tracked at
-  NEEDS.md N36.
+  phrasing) were re-implemented from the public README/description; owner outreach was tracked in the
+  now-retired `NEEDS.md` N36 (see section 3 above).
 - Local runtimes already owned by ISHTI remain the only STT/TTS/LLM: faster-whisper, Fish Speech
   (if enabled) and Ollama. No cloud STT/LLM/TTS call exists in any new module (gateway refuses
   non-loopback endpoints outright).
@@ -64,7 +65,7 @@ binaries after a doctor probe, and none is auto-installed (installs are T2-gated
 
 # Bundled third-party material used at runtime (merged 2026-10-02 from the former `md files/THIRD_PARTY_NOTICES.md`)
 
-The components below ARE shipped or used by ISHTI (unlike the design-reference repos above). Source of this section: the former `md files/THIRD_PARTY_NOTICES.md`, archived at `docs/build-history/superseded/THIRD_PARTY_NOTICES_md-files-copy.md`.
+The components below ARE shipped or used by ISHTI (unlike the design-reference repos above). This section was merged on 2026-10-02 from a former `md files/THIRD_PARTY_NOTICES.md`; that source copy and its `docs/build-history/` archive have both been retired, so this section is now the record.
 
 ## R1. Rare UI (https://rareui.com)
 Components in `interface/app/src/components/rare/` are from Rare UI (https://github.com/swamimalode07/rare-ui). They are used unmodified, except for small adaptations (Next.js Link replaced with a button), under this license:

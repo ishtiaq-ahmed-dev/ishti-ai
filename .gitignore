@@ -81,3 +81,19 @@ md files/
 # regenerable
 tools/flowise/node_modules/
 _work/
+
+# Public release hygiene: internal working notes and personal runtime files
+NEEDS.md
+PROGRESS.md
+AGENTS.md
+ishti/skills/notes/.memory.md
+# interface/app/dist/ is NOT ignored: install.bat never runs npm, so the built React app is what a
+# downloaded ZIP serves. Rebuild it with `cd interface/app && npm run build` and commit the result.
+data/
+owner_profile.yaml
+ishti/skills/_drafts/
+# Generated run output: tools/evidence.py, tools/privacy_report.py and tests/eval write here, and the
+# tracked human-readable form of each is docs/EVIDENCE.md and docs/PRIVACY_REPORT.md. Git does not
+# untrack on ignore, so the published artifacts already committed under reports/ (the task-suite runs
+# docs/ACCURACY.md quotes, test_state.json) stay tracked - only new output is ignored.
+reports/

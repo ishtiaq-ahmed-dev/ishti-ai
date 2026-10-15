@@ -1,17 +1,19 @@
 import { AnimatePresence, motion } from "motion/react";
-import { Bot, Cpu, GraduationCap, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, Power, Cable, Settings as SettingsIcon, Sparkles, Minimize2, X, Zap } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { Building2, Bot, Cpu, GraduationCap, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, Power, Cable, Settings as SettingsIcon, Sparkles, Minimize2, X, Zap } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { getJSON, postJSON } from "@/lib/api";
+import { FirstRunSetup } from "@/components/FirstRunSetup";
 import { Chat } from "@/sections/Chat";
-import { Settings, Skills, Tasks } from "@/sections/Pages";
-import { ConnectorsPage } from "@/sections/ConnectorsPage";
-import { Learning } from "@/sections/Learning";
+const Settings = lazy(() => import("@/sections/Pages").then(m => ({ default: m.Settings })));
+const Skills = lazy(() => import("@/sections/Pages").then(m => ({ default: m.Skills })));
+const Tasks = lazy(() => import("@/sections/Pages").then(m => ({ default: m.Tasks })));
+const ConnectorsPage = lazy(() => import("@/sections/ConnectorsPage").then(m => ({ default: m.ConnectorsPage })));
+const Learning = lazy(() => import("@/sections/Learning").then(m => ({ default: m.Learning })));
 import { chatStore } from "@/lib/chat-store";
-import { ProfileGate } from "@/components/ProfileGate";
-import { ProfileSwitcher, PromptLayersViewer } from "@/components/ProfileSwitcher";
-import { AgentsPanel } from "@/components/AgentsPanel";
+import { PromptLayersViewer } from "@/components/ProfileSwitcher";
 import { LearningPanel } from "@/components/LearningPanel";
-import { Overview } from "@/sections/Overview";
+const BusinessDesk = lazy(() => import("@/sections/BusinessDesk"));
+const Overview = lazy(() => import("@/sections/Overview").then(m => ({ default: m.Overview })));
 import { NotificationBell } from "@/components/rare/notification-bell";
 import { NotificationPopover, type Notif } from "@/components/NotificationCenter";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -40,9 +42,18 @@ type ShutdownProgress = {
   message: string;
 };
 
+/** GET /api/version (ishti/version.py): what build this server is, and the hash of its source. */
+type VersionInfo = {
+  version: string;
+  revision: string | null;
+  revision_status: string;
+  source_hash: string;
+};
+
 const NAV = [
   { key: "chat", label: "Chat", icon: MessageSquare },
   { key: "overview", label: "Overview", icon: LayoutDashboard },
+  { key: "business", label: "Business Desk", icon: Building2 },
   { key: "connectors", label: "Connectors", icon: Cable },
   { key: "tasks", label: "Tasks", icon: ListChecks },
   { key: "learning", label: "Learning", icon: GraduationCap },
@@ -80,9 +91,8 @@ export default function App() {
   const boot = useBoot();
   // WP1: start the app-level chat store + one shared event stream BEFORE any page mounts.
   useEffect(() => { chatStore.start(); return () => chatStore.stop(); }, []);
-  const [gated, setGated] = useState(() => { try { return !sessionStorage.getItem("ishti-profile-chosen"); } catch { return true; } });
   const [page, setPageState] = useState<Key>(getInitialPage);
-  const [owner, setOwner] = useState("Ishtiaq Ahmed");
+  const [owner, setOwner] = useState("there");
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [unread, setUnread] = useState(0);
   const [showNotifs, setShowNotifs] = useState(false);
@@ -102,6 +112,11 @@ export default function App() {
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const [shutdownProgress, setShutdownProgress] = useState<ShutdownProgress | null>(null);
   const [vram, setVram] = useState<VramData | null>(null);
+  const [build, setBuild] = useState<VersionInfo | null>(null);
+  useEffect(() => {
+    // Asked once: the build cannot change while this page is open. A failure just leaves the line out.
+    getJSON<VersionInfo>("/api/version").then(setBuild).catch(() => {});
+  }, []);
   const [modelSwitchToast, setModelSwitchToast] = useState<ModelSwitchToast | null>(null);
   const [apiError, setApiError] = useState("");
   useEffect(() => {
@@ -238,7 +253,7 @@ export default function App() {
     getJSON<{ facts: Fact[] }>("/api/facts")
       .then((data) => {
         const facts = data?.facts ?? [];
-        setOwner(facts.find((f) => f.entity === "owner" && f.attr === "name")?.value.trim() ?? "Ishtiaq Ahmed");
+        setOwner(facts.find((f) => f.entity === "owner" && f.attr === "name")?.value.trim() || "there");
       })
       .catch((err) => console.warn("[App] Failed to load initial facts:", err));
 
@@ -302,8 +317,6 @@ export default function App() {
                 setModelSwitchToast((cur) => (cur === ev ? null : cur));
               }, 4500);
               try { window.dispatchEvent(new CustomEvent("ishti-models-updated", { detail: d })); } catch {}
-            } else if (msg.type === "arch_state" && msg.data) {
-              try { window.dispatchEvent(new CustomEvent("ishti-arch-state", { detail: msg.data })); } catch {}
             } else if (msg.type === "memory_updated" && msg.data) {
               if (msg.data?.entity === "owner" && msg.data?.attr === "name" && msg.data?.value) {
                 setOwner(String(msg.data.value).trim());
@@ -435,9 +448,9 @@ export default function App() {
 
   return (
     <BootContext.Provider value={boot}>
-    {gated && <ProfileGate onChosen={() => setGated(false)} />}
     <div className="flex h-full p-3 bg-canvas text-foreground transition-colors duration-200">
       <BootPanel boot={boot} />
+      <FirstRunSetup />
       <div className="relative flex min-h-0 flex-1 overflow-hidden rounded-3xl border border-border bg-background shadow-[0_8px_40px_rgba(0,0,0,0.06)] dark:shadow-[0_8px_40px_rgba(0,0,0,0.8)]">
         <AnimatePresence initial={false}>
           {showNav && (
@@ -483,17 +496,13 @@ export default function App() {
                     {owner.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "IA"}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-xs font-semibold leading-tight truncate">{owner === "there" ? "Ishtiaq Ahmed" : owner}</div>
+                    <div className="text-xs font-semibold leading-tight truncate">{owner === "there" ? "You" : owner}</div>
                     <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
                       <span className={`h-1.5 w-1.5 rounded-full ${busy ? "animate-pulse bg-accent" : "bg-emerald-500"}`} />
                       {busy ? "ISHTI is working" : "Online"}</div>
                   </div>
                 </div>
 
-                {/* WP4: Personal/Business mode switch */}
-                <div className="mb-3 flex justify-center">
-                  <ProfileSwitcher />
-                </div>
                 {notificationError && <p role="alert" className="mb-2 px-2 text-[10px] text-danger">Notifications: {notificationError}</p>}
 
                 <div className="scroll-thin flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
@@ -522,8 +531,14 @@ export default function App() {
                     <span>Built and designed by ishtiaq ahmed</span>
                   </div>
                   <p className="mt-1 text-[10.5px] leading-snug text-white/85">
-                    Personal AI Assistant · 100% Local Inference & Neural Privacy
+                    Personal AI Assistant · Your choice of local or cloud models
                   </p>
+                  {build && (
+                    <p className="mt-1 font-mono text-[10px] leading-snug text-white/70"
+                       title={`Source ${build.source_hash} (${build.revision_status})`}>
+                      v{build.version}{build.revision ? ` · ${build.revision}` : ""}
+                    </p>
+                  )}
                 </div>
 
                 {/* Bottom-left Power button & Live VRAM chip */}
@@ -558,8 +573,10 @@ export default function App() {
           <AnimatePresence mode="wait">
             <motion.div key={page} className="h-full overflow-hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}>
+              <Suspense fallback={<div role="status" className="p-4 text-sm text-muted-foreground">Loading page...</div>}>
               {page === "chat" && <Chat owner={owner} onBusy={onBusy} showNav={showNav} onToggleNav={toggleNav} />}
               {page === "overview" && <Overview onToggleNav={toggleNav} />}
+              {page === "business" && <BusinessDesk onToggleNav={toggleNav} />}
               {page === "connectors" && <ConnectorsPage onToggleNav={toggleNav} />}
               {page === "tasks" && <Tasks onToggleNav={toggleNav} />}
               {page === "learning" && <Learning onToggleNav={toggleNav} />}
@@ -571,15 +588,13 @@ export default function App() {
                     <div className="rounded-xl border border-border bg-card p-3">
                       <PromptLayersViewer />
                     </div>
-                    <div className="rounded-xl border border-border bg-card p-3">
-                      <AgentsPanel />
-                    </div>
                     <div className="rounded-xl border border-border bg-card p-3 md:col-span-2">
                       <LearningPanel />
                     </div>
                   </div>
                 </Settings>
               )}
+              </Suspense>
             </motion.div>
           </AnimatePresence>
         </main>

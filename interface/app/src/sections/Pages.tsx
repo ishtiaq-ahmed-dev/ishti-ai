@@ -41,7 +41,6 @@ import {
   Download,
   Building2,
   Users,
-  Workflow,
   Network,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -54,7 +53,6 @@ import { CHAT_FONT_SIZES, getChatFontSize, setChatFontSize, type ChatFontSize } 
 import { cn } from "@/lib/utils";
 import { ModelsCard, VoiceCard, WhisperCard } from "@/components/ModelsVoices";
 // RemoteControl removed (WP5): connector UI lives on the Connectors page only.
-import { ArchitectureCard } from "@/components/ArchitectureCard";
 import { LanguageSettings } from "@/components/LanguageSettings";
 import { PrivacyPanel } from "@/components/PrivacyPanel";
 import { NotificationsPanel } from "@/components/NotificationCenter";
@@ -233,7 +231,7 @@ function CRMAndLeadsPanel() {
       {/* Top Banner & Stats */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl border border-border bg-card p-3 shadow-xs">
-          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Business Clients</div>
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Clients</div>
           <div className="mt-1 text-2xl font-semibold text-foreground">{clients.length}</div>
         </div>
         <div className="rounded-xl border border-border bg-card p-3 shadow-xs">
@@ -309,7 +307,7 @@ function CRMAndLeadsPanel() {
 
         {filteredClients.length === 0 ? (
           <div className="py-6 text-center text-xs text-muted-foreground">
-            {loading ? "Loading clients..." : "No business clients registered yet. Clients are tracked via CRM commands or chat interactions."}
+            {loading ? "Loading clients..." : "No clients registered yet. Clients are tracked via CRM commands or chat interactions."}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -591,7 +589,7 @@ export function Tasks({ onToggleNav }: { onToggleNav?: () => void }) {
         ? "Reminders and timers. Tick a task to mark it done (it moves to Done, nothing disappears); use the icons to snooze, edit or delete. Add more from chat: “remind me at 5pm to …”."
         : tab === "notifications"
         ? "Everything ISHTI told you about — reminders, finished jobs, downloads, alerts and errors."
-        : "Local business CRM and lead pipeline with complete personal vs business data separation."}
+        : "Local client and lead pipeline."}
       onToggleNav={onToggleNav}>
       {error && <div role="alert" className="mb-3 rounded-xl border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>}
       {tab === "tasks" ? (
@@ -1952,77 +1950,6 @@ const CONN_TONE: Record<string, string> = {
   empty: "bg-muted text-muted-foreground border border-border",
 };
 
-function FlowiseCard() {
-  const [data, setData] = useState<{ configured: boolean; health: string; flows: Array<{ id: string; name: string }> } | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const load = () => {
-    setLoading(true);
-    getJSON<{ configured: boolean; health: string; flows: Array<{ id: string; name: string }> }>("/api/flowise/flows")
-      .then(setData)
-      .catch(() => setData(null))
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    load();
-  }, []);
-
-  return (
-    <div className="rounded-xl border border-border bg-card p-4 shadow-xs space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="grid h-8 w-8 place-items-center rounded-lg bg-indigo-500/15 text-indigo-500">
-            <Workflow className="h-4 w-4" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-foreground">Flowise AI Orchestrator</span>
-              <span className={cn(
-                "rounded-full border px-1.5 py-0.5 text-[10px] font-medium",
-                data?.configured ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-500" : "border-border bg-muted/40 text-muted-foreground"
-              )}>
-                {data?.configured ? "configured" : "not configured"}
-              </span>
-            </div>
-            <div className="text-[11px] text-muted-foreground">
-              Visual LLM orchestration flows and chatflow endpoints
-            </div>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={load}
-          className="rounded-lg border border-border p-1 text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
-          title="Refresh Flowise status"
-        >
-          <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-        </button>
-      </div>
-
-      <div className="rounded-lg border border-border/60 bg-background/50 p-2.5 text-xs space-y-1">
-        <div className="text-muted-foreground">
-          Health: <span className="font-mono text-foreground">{data?.health || "Checking Flowise connection..."}</span>
-        </div>
-        <div className="text-muted-foreground">
-          Registered Flows: <span className="font-medium text-foreground">{data?.flows?.length ?? 0}</span>
-        </div>
-      </div>
-
-      {data?.flows && data.flows.length > 0 && (
-        <ul className="space-y-1.5 text-xs">
-          {data.flows.map((f) => (
-            <li key={f.id} className="flex items-center justify-between rounded-lg border border-border/40 bg-card/60 px-2.5 py-1.5">
-              <span className="font-medium text-foreground">{f.name}</span>
-              <span className="font-mono text-[10px] text-muted-foreground">{f.id}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 export function Connectors({ onToggleNav }: { onToggleNav?: () => void }) {
   const [data, setData] = useState<ConnectorsPayload | null>(null);
   const [error, setError] = useState("");
@@ -2258,8 +2185,6 @@ export function Connectors({ onToggleNav }: { onToggleNav?: () => void }) {
           <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
             {rows.map(renderConnector)}
           </div>
-
-          <FlowiseCard />
 
           <p className="text-[11px] text-muted-foreground">{data.note}</p>
         </div>
@@ -3506,7 +3431,7 @@ export function SystemBody() {
   const [activity, setActivity] = useState<{ days: { date: string; count: number }[]; skills: { skill: string; count: number }[] }>();
   const [doctor, setDoctor] = useState<Record<string, Check[]> | null>(null);
   const [running, setRunning] = useState(false);
-  const [healStatus, setHealStatus] = useState<{ enabled: boolean; pending_count: number; last_run?: number } | null>(null);
+  const [healStatus, setHealStatus] = useState<{ enabled: boolean; pending_count: number; last_run?: number; auto_interval_s?: number; auto_cooldown_s?: number } | null>(null);
   const [healing, setHealing] = useState(false);
   const [healReport, setHealReport] = useState<any>(null);
 
@@ -3928,14 +3853,9 @@ export function Settings({ onToggleNav, children }: { onToggleNav?: () => void; 
       }
     >
       <div className="space-y-6">
-        {/* ========================================================
-             SECTION 0: Architecture (arch1 dispatcher vs arch2 two-pass brain)
-             ======================================================== */}
         <LanguageSettings isOpen={expandedCards.language} onToggle={() => toggleCard("language")} />
 
         <PrivacyPanel />
-
-        <ArchitectureCard />
 
         {/* ========================================================
              SECTION 1: Language models

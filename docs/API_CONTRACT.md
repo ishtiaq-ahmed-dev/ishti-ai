@@ -160,6 +160,8 @@ Emitted ~1/sec on change (5s heartbeat) by `ishti.vram.start_sampler()`:
     },
     "violations": [],
     "jobs": { "active": [], "queued": [] },
+    "swap_cost": { "history": [ { "at": 1759132800.0, "to": "ishti-qwen2.5:14b", "frm": "", "host_mb": 869, "vram_mb": 10160 } ],
+                   "round_trips": [], "waste_mb": 0 },
     "ollama": { "version": "0.5.12", "url": "http://127.0.0.1:11434", "ours": true, "env": {} }
   },
   "ts": 1759132806.0
@@ -273,6 +275,7 @@ An Ollama that ISHTI did not start is never stopped (its models are unloaded); t
 
 ### 5.1 Snapshot: `GET /api/vram`
 Returns complete GPU, model, and ladder residency statistics from `ishti.vram.snapshot()` (see Section 3.2.B for response schema).
+`swap_cost` is the host-RAM bill for model swaps (2026-10-13 RAM findings): `history` is the last 20 loads/unloads with their measured MiB cost, `round_trips` are models unloaded and reloaded inside `swap_cost_window_s` (180 s default) - each of those paid its file size twice - and `waste_mb` is that avoidable total. An opportunistic upshift the machine cannot afford (available RAM minus the swap peak under `swap_free_floor_mb`, 2048 default, `0` disables) is refused and logged as `[vram] swap held: ...` instead of loading.
 
 ### 5.2 Footprints: `GET /api/vram/footprints`
 Returns historical measured VRAM footprints stored in SQLite (`vram.db`). `size_vram_mb` is what Ollama reports; `gpu_delta_mb` is how much the whole GPU really grew when the model loaded (larger for vision models, whose projector Ollama does not count) - the governor plans with the larger of the two.
@@ -426,9 +429,8 @@ All child processes spawned by ISHTI are assigned to a Windows Job Object (`JOB_
 ```
 
 <!-- shape:vram -->
-```json
-{"ts": "number", "gpu": "object", "models": "array", "processes": "array", "other_mb": "number", "roles": "object",
- "violations": "array", "jobs": "object", "ollama": "object"}
+```json {"ts": "number", "gpu": "object", "models": "array", "processes": "array", "other_mb": "number", "roles": "object",
+ "violations": "array", "jobs": "object", "swap_cost": "object", "ollama": "object"}
 ```
 
 <!-- shape:vram.gpu -->
@@ -485,6 +487,25 @@ All child processes spawned by ISHTI are assigned to a Windows Job Object (`JOB_
 ```json
 {"settings": "object", "env": "object", "active_env": "object", "ours": "bool", "active": "bool"}
 ```
+
+<!-- shape:version -->
+```json
+{"name": "string", "version": "string", "revision": "string|null", "revision_status": "string", "source_hash": "string",
+ "source_hash_covers": "array", "python": "string", "platform": "string"}
+```
+
+### 9.1 `GET /api/version`
+
+`ishti/version.py` is the single source of truth for the product version and a sha256 over the product
+source, so that any measured number can name the build that produced it. This endpoint returns that
+record unchanged; the dashboard sidebar prints `version` and `revision` from it.
+
+- `revision` is the short git commit, or `null` in a plain ZIP download with no git history.
+- `revision_status` is `clean`, `dirty` (the working tree differs from that commit) or `unknown` (no git).
+- `source_hash` is stable across machines and covers `source_hash_covers`; it changes when any covered
+  file changes, which is the point - a result is only valid for the hash it was measured against.
+- No machine path, hostname or user name is returned. The same block is printed by
+  `python -m ishti --version` without starting the server.
 
 ---
 
@@ -634,7 +655,9 @@ per row). All local-only; none weakens an existing gate.
   other host); decisions append to `data/plan_decisions.json` via `POST /decision`.
 # Targeted contract additions verified 2026-10-04
 
-These additions describe current code; see docs/audit/TEST_RESULTS.md for what has actually run.
+These additions describe current code. Test evidence is not recorded here; see
+[TESTING.md](TESTING.md) for how to run the suite and [RELEASE_READINESS.md](RELEASE_READINESS.md)
+gate 1 for its current status.
 
 | Route | Request | Response and conditions |
 |---|---|---|
@@ -672,14 +695,12 @@ Runs are durable and server-side: the user message is persisted BEFORE generatio
 |---|---|
 | POST /api/feedback | `{message_id, run_id, rating:-1\|0\|1, reasons[], comment, correction}` -> `{feedback_id, state}`; idempotent per `(message_id, run_id, rating)` |
 | GET /api/feedback/stats | `{total, pos, neg, neutral, by_reason:{...}}` |
-| GET /api/profile | `{active:"personal"\|"business"}` |
-| PUT /api/profile | body `{active}` -> `{active}` (emits `profile_changed`) |
+| GET /api/profile | `{active:"personal"}` (personal is the only profile) |
+| PUT /api/profile | body `{active:"personal"}` -> `{active}`; any other value is refused with 400 |
 | GET /api/connectors | `{connectors:[{id,kind,status,configured}]}` — whatsapp, telegram, mcp, a2a, api |
 | POST /api/connectors/{id}/connect · disconnect · test | `{ok, detail}` |
 | GET /api/connectors/{id}/status | `{id, status, detail, paired}` |
 | PUT /api/connectors/{id}/config | `{control_numbers[], policy, ...}` -> `{saved:true}` |
-| GET /api/agents | `{agents:[{id, skills, goal, state}]}` |
-| GET /api/agents/{id}/messages | `{agent_id, messages:[{ts, from, text}]}` |
 | GET /api/learning/status | `{mode, lessons, proposals_open, dataset_rows}` |
 | GET /api/skills/proposals | `{proposals:[{id, title, skill, status, origin}]}` |
 | POST /api/skills/proposals/{id}/approve · reject | `{id, status}` (approve = owner T2 yes) |

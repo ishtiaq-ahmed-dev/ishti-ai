@@ -30,7 +30,7 @@ governor measures, plans and verifies away.
   be picked as idle), admits, releases the lease when the last token streams out.
 - `gpu.slot(need_mb, what)` — one heavy job at a time (semaphore), reserves memory, learns the job's
   real footprint (`learn_job`), never runs "anyway" (that's what split models before).
-- `models.py` — pinned models (planner + Laya) get `keep_alive=-1`; others 10 min idle eviction;
+- `models.py` — the pinned planner model gets `keep_alive=-1`; others 10 min idle eviction;
   every load/unload logged to `data/model_usage.db`.
 - `voice.stt_model` — whisper loads under `gpu.slot(3000, …, for_voice=True)`: voice has priority
   over the planner rung.

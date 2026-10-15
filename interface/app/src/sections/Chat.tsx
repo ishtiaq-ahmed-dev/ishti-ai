@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUp, AudioLines, Briefcase, Check, Copy, Heart, Maximize2, MessageSquare, Mic, Minimize2, Network, PanelLeft, PanelLeftClose, Paperclip, Pencil, Plus, Square, Trash2, X } from "lucide-react";
+import { ArrowUp, AudioLines, Check, Copy, Maximize2, MessageSquare, Mic, Minimize2, Network, PanelLeft, PanelLeftClose, Paperclip, Pencil, Plus, Square, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AgentOrb } from "@/components/AgentOrb";
 import { ActivityGraph, ActivityList, ConversationGraph, type Turn } from "@/components/ActivityGraph";
@@ -291,12 +291,6 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   // Profiles never merge: each chat keeps the profile it was created with (runs, prompt layers
   // and memory namespace follow the chat), and the sidebar shows the two namespaces apart.
   const personalChats = visibleChats.filter((c) => (c.profile || "personal") === "personal");
-  const businessChats = visibleChats.filter((c) => (c.profile || "personal") === "business");
-  const grouped = businessChats.length > 0;
-  const chatGroupSections = [
-    { label: "Personal", icon: "personal", items: personalChats },
-    { label: "Business", icon: "business", items: businessChats },
-  ].filter((g) => g.items.length > 0);
   const allSelected = visibleChats.length > 0 && visibleChats.every((c) => selected.has(c.chat_id));
   const toggleSelected = useCallback((id: string) => {
     setSelected((cur) => {
@@ -329,8 +323,10 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     for (const m of storeMsgs) {
       if (m.role === "user") { lastQuestion = m.text; continue; }
       const r = chatStore.runs.get(m.run_id);
-      const stepLabels = (r?.steps || []).map((s) => s.kind);
-      out.push({ question: lastQuestion, skill: stepLabels.includes("research") ? "research" : stepLabels[0] || null, ms: undefined });
+      const steps = r?.steps || [];
+      // the skill that took the turn, by name ("Using x" rows are the legacy shape of a skill step)
+      const used = steps.find((s) => s.kind === "skill" || /^Using\s/i.test(s.label))?.label.replace(/^Using\s+/i, "");
+      out.push({ question: lastQuestion, skill: used || (steps.some((s) => s.kind === "research") ? "research" : steps[0]?.kind || null), ms: undefined });
     }
     return out;
   })();
@@ -647,7 +643,6 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
 
   const renderChatRow = (c: StoreChat) => {
     const isSelected = activeChatId === c.chat_id;
-    const isBusiness = (c.profile || "personal") === "business";
     return (
       <div
         key={c.chat_id}
@@ -689,13 +684,6 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
           <span className={cn("min-w-0 flex-1 truncate text-[13.5px] leading-snug",
             isSelected ? "text-foreground font-semibold" : "text-foreground/80 group-hover:text-foreground font-medium")}>
             {c.title || "New chat"}
-          </span>
-        )}
-        {isBusiness && (
-          <span title="Business chat — separate profile, prompt layers and memory namespace"
-            data-testid="chat-badge-business"
-            className="shrink-0 inline-flex items-center rounded-full border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-sky-600 dark:text-sky-300">
-            <Briefcase className="h-2.5 w-2.5" aria-hidden />
           </span>
         )}
         {c.unread > 0 && (
@@ -787,20 +775,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               </div>
               <div className="scroll-thin flex-1 min-h-0 space-y-1.5 overflow-y-auto p-2.5">
                 {visibleChats.length ? (
-                  grouped ? (
-                    chatGroupSections.map((g) => (
-                      <div key={g.label} className="space-y-1.5">
-                        <div className="flex items-center gap-1.5 px-1 pt-1.5">
-                          {g.icon === "business"
-                            ? <Briefcase className="h-3 w-3 shrink-0 text-sky-500" />
-                            : <Heart className="h-3 w-3 shrink-0 text-rose-400" />}
-                          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">{g.label}</span>
-                          <span className="h-px flex-1 bg-border/60" />
-                        </div>
-                        {g.items.map((c) => renderChatRow(c))}
-                      </div>
-                    ))
-                  ) : personalChats.map((c) => renderChatRow(c))
+                  personalChats.map((c) => renderChatRow(c))
                 ) : (
                   <div className="rounded-xl border border-dashed border-border/70 p-6 text-center text-xs text-muted-foreground">
                     {chatStore.ready ? (search ? "No chats match that search." : "Your chats appear here.") : "Loading chats…"}
@@ -919,7 +894,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                 ) : boot && !boot.ready ? (
                   <span className="text-muted-foreground">{boot.unreachable ? "Waiting for the server…" : `Starting up · ${boot.progress}% — you can already type`}</span>
                 ) : (
-                  "Local · private · ready"
+                  "Ready"
                 )}
               </div>
             </div>
@@ -990,7 +965,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               <div className="text-center flex flex-col items-center">
                 <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">{greeting}, {owner}</h1>
                 <p className="mt-1.5 text-sm text-muted-foreground max-w-md">
-                  Your private executive AI workstation. What would you like to accomplish today?
+                  Your AI workspace. What would you like to accomplish today?
                 </p>
               </div>
             </div>
@@ -1290,9 +1265,10 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                   <ActivityList runs={graphView === "answer" && graphFor !== "chat" ? [graphRun] : chatRuns} />
                 ) : graphView === "answer" ? (
                   <ActivityGraph
-                    events={(graphRun.steps || []).map((s, i) => ({ t: i * 1000, type: s.kind as "tool", label: s.label, name: s.kind }))}
+                    steps={graphRun.steps || []}
                     request={storeMsgs.find((m) => m.run_id === graphRun.run_id)?.text || ""}
-                    live={graphRun.state === "running" || graphRun.state === "queued"}
+                    state={graphRun.state}
+                    ms={graphRun.started_at && graphRun.ended_at ? (graphRun.ended_at - graphRun.started_at) * 1000 : undefined}
                   />
                 ) : (
                   <ConversationGraph turns={turns} />
@@ -1325,9 +1301,10 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
             <div className="min-h-0 flex-1">
               {graphView === "answer" ? (
                 <ActivityGraph
-                  events={(graphRun.steps || []).map((s, i) => ({ t: i * 1000, type: s.kind as "tool", label: s.label, name: s.kind }))}
+                  steps={graphRun.steps || []}
                   request={storeMsgs.find((m) => m.run_id === graphRun.run_id)?.text || ""}
-                  live={graphRun.state === "running" || graphRun.state === "queued"}
+                  state={graphRun.state}
+                  ms={graphRun.started_at && graphRun.ended_at ? (graphRun.ended_at - graphRun.started_at) * 1000 : undefined}
                   full
                 />
               ) : (

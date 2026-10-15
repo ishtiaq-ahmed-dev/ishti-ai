@@ -16,6 +16,7 @@ import {
   HardDrive,
   Volume2,
   Mic,
+  Plus,
   Check,
   CheckCircle2,
   Radio,
@@ -396,6 +397,11 @@ export function ModelsCard({
 }) {
   const { st, msg, busy, act } = useManage();
   const [showStorage, setShowStorage] = useState(true); // the download list is the point of this card: show it
+  const [gguf, setGguf] = useState(""); // path of a .gguf file on this PC, waiting to be registered
+  const addGguf = () => {
+    const path = gguf.trim();
+    if (path) void act(path, "/api/manage/model", { name: path, action: "import" });
+  };
 
   const activePlanner = st?.llm.roles.planner;
   const installedModels = st?.llm.models.filter((m) => m.installed) ?? [];
@@ -606,6 +612,55 @@ export function ModelsCard({
                           transition={{ duration: 0.2 }}
                           className="overflow-hidden border-t border-border/60"
                         >
+                          {/* A model the owner already has as a .gguf file: registered with Ollama here,
+                              then it is an ordinary row below and can take a role like any other model. */}
+                          <div className="space-y-2 border-b border-border/60 p-3">
+                            <div>
+                              <div className="font-semibold text-foreground text-xs">
+                                Add a model file from this PC
+                              </div>
+                              <div className="text-[11px] text-muted-foreground">
+                                Already downloaded a .gguf file? Paste its path and ISHTI registers it with
+                                Ollama, so it can take a role here. Ollama copies the weights into its own store
+                                once.
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <input
+                                value={gguf}
+                                onChange={(e) => setGguf(e.target.value)}
+                                onKeyDown={(e) => e.key === "Enter" && addGguf()}
+                                placeholder={"D:\\models\\MyModel-Q5_K_M.gguf"}
+                                aria-label="Path to a .gguf model file"
+                                spellCheck={false}
+                                className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2.5 py-1.5 font-mono text-[11px] text-foreground outline-none transition-colors focus:border-accent"
+                              />
+                              <button
+                                type="button"
+                                onClick={addGguf}
+                                disabled={!gguf.trim() || !!busy}
+                                className="flex shrink-0 cursor-pointer items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                {busy === gguf.trim() ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Plus className="h-3.5 w-3.5" />
+                                )}
+                                Add
+                              </button>
+                            </div>
+                            {Object.entries(st.jobs)
+                              .filter(([k]) => !st.llm.models.some((m) => m.name === k))
+                              .map(([k, job]) => (
+                                <div
+                                  key={k}
+                                  className="flex items-center gap-2 text-[11px] text-muted-foreground"
+                                >
+                                  <span className="min-w-0 flex-1 truncate font-mono">{k}</span>
+                                  <Progress job={job} jobKey={k} />
+                                </div>
+                              ))}
+                          </div>
                           <ul className="divide-y divide-border/50 max-h-72 overflow-y-auto scroll-thin">
                             {st.llm.models.map((m) => {
                               const inUse = m.roles.length > 0;

@@ -1,7 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { CheckCircle2, ChevronDown, Loader2, Minus, Plus, RotateCcw, XCircle } from "lucide-react";
 import { useMemo, useRef, useState, type ReactNode } from "react";
-import type { TraceEvent } from "@/lib/api";
 import type { StoreRun } from "@/lib/chat-store";
 
 type Status = "active" | "done" | "error" | "waiting" | "skipped";
@@ -47,41 +46,56 @@ function getNodeColor(n: GNode): string {
   return n.status === "active" ? COLOR.active : COLOR.done;
 }
 
-/** Trace -> tree: You -> (understood as) -> Router/Planner -> skills (groups) -> their tool calls -> Answer. */
-export function buildGraph(events: TraceEvent[], request: string): GNode[] {
+/** One persisted run step (CONTRACT v2 run_step). */
+export type RunStep = { kind: string; label: string; ts?: number; sources?: string[]; n?: number };
+
+/**
+ * A step's real kind. The executor records route/skill/tool/verify/research; rows written before those
+ * kinds existed baked the meaning into the label ("Routing: ...", "Using x"), so read those labels too.
+ */
+function kindOf(s: RunStep): string {
+  if (s.kind !== "tool") return s.kind;
+  if (/^Routing:/i.test(s.label)) return "route";
+  if (/^Using\s/i.test(s.label)) return "skill";
+  return "tool";
+}
+
+/** Real run steps -> tree: You -> Router -> skills (groups) -> their tool calls -> Answer. */
+export function buildGraph(steps: RunStep[], request: string, state?: string, ms?: number): GNode[] {
+  const live = state === "running" || state === "queued";
   const nodes: GNode[] = [{ id: "req", depth: 0, label: "You", sub: request, status: "done" }];
   let router: GNode | undefined;
-  let current: GNode | undefined;
-  let skillCount = 0;
-  for (const e of events) {
-    if (e.type === "tool" && !current && e.name === "understand") {
-      const open = nodes.find((n) => n.id === "understand");
-      if (open) { open.label = e.label ?? open.label; open.status = e.status === "start" ? "active" : "done"; }
-      else nodes.push({ id: "understand", depth: 1, parent: "req", label: e.label ?? "understand", status: "active" });
-    } else if (e.type === "route" && !router) {
-      const planned = e.source === "planner";
-      const how = e.source === "laya" ? `Laya ${Math.round((e.confidence ?? 0) * 100)}%` : e.source ?? "";
-      router = { id: "router", depth: 1, parent: "req", label: planned ? "Planner" : "Router", sub: how, status: "done" };
-      nodes.push(router);
-    } else if (e.type === "step" && e.status === "start") {
-      current = { id: `skill${skillCount++}`, depth: 2, parent: "router", label: e.skill ?? "skill",
-                  sub: (e.why as string | undefined)?.slice(0, 70), status: "active" };
-      nodes.push(current);
-    } else if (e.type === "step" && current) {
-      current.status = e.status === "skip" ? "skipped" : e.status === "error" ? "error" : "done";
-    } else if (e.type === "tool" && current) {
-      const cur = current;
-      const open = [...nodes].reverse().find((n) => n.group === cur.id && n.id.includes(`:${e.name}:`) && n.status === "active");
-      const status: Status = e.status === "start" ? "active" : e.status === "error" ? "error"
-        : e.status === "waiting" ? "waiting" : "done";
-      if (open) { open.label = e.label ?? open.label; open.status = status; }
-      else nodes.push({ id: `${cur.id}:${e.name}:${nodes.length}`, depth: 3, parent: cur.id, group: cur.id,
-                        label: e.label ?? String(e.name), status });
-    } else if (e.type === "done" && current) {
-      nodes.push({ id: "answer", depth: 4, parent: current.id, label: "Answer", sub: `${e.ms} ms`, status: "done" });
+  let skill: GNode | undefined;
+  let last: GNode | undefined;
+  let n = 0;
+  for (const s of steps) {
+    const kind = kindOf(s);
+    let node: GNode;
+    if (kind === "route" && !router) {
+      router = { id: "router", depth: 1, parent: "req", label: "Router",
+                 sub: s.label.replace(/^Routing:\s*/i, "").slice(0, 70), status: "done" };
+      node = router;
+    } else if (kind === "skill") {
+      // a skill is a group: its tool calls fold under it
+      skill = { id: `skill${n++}`, depth: 2, parent: (router ?? nodes[0]).id,
+                label: s.label.replace(/^Using\s+/i, ""), status: "done" };
+      node = skill;
+    } else {
+      // a re-route after an escalation, a tool call, a verification, a research step
+      const parent = skill ?? router ?? nodes[0];
+      node = { id: `step${n++}`, depth: skill ? 3 : 2, parent: parent.id, group: skill?.id,
+               label: s.label, status: "done",
+               sub: s.sources?.length ? `${s.sources.length} source${s.sources.length > 1 ? "s" : ""}` : undefined };
     }
+    nodes.push(node);
+    last = node;
   }
-  if (!router) nodes[0].status = "active";
+  if (last) last.status = state === "failed" ? "error" : live ? "active" : "done";
+  else nodes[0].status = live ? "active" : "done";
+  if (!live) {
+    nodes.push({ id: "answer", depth: last ? 4 : 1, parent: (last ?? nodes[0]).id, label: "Answer",
+                 sub: ms ? `${Math.round(ms)} ms` : undefined, status: state === "failed" ? "error" : "done" });
+  }
   return nodes;
 }
 
@@ -113,9 +127,10 @@ function Zoomable({ children, height }: { children: ReactNode; height: number })
 
 const trunc = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 
-export function ActivityGraph({ events, request, live, full = false }:
-  { events: TraceEvent[]; request: string; live: boolean; full?: boolean }) {
-  const all = useMemo(() => buildGraph(events, request), [events, request]);
+export function ActivityGraph({ steps, request, state, ms, full = false }:
+  { steps: RunStep[]; request: string; state?: string; ms?: number; full?: boolean }) {
+  const live = state === "running" || state === "queued";
+  const all = useMemo(() => buildGraph(steps, request, state, ms), [steps, request, state, ms]);
   const [toggled, setToggled] = useState<Record<string, boolean>>({});
   // a skill's tool calls show while it runs (and in full screen); otherwise they fold into a badge
   const isOpen = (n: GNode) => toggled[n.id] ?? (full || n.status === "active");
