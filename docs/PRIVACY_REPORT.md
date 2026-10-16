@@ -5,9 +5,9 @@ What ISHTI does with your data, checked against the code rather than asserted ab
 | | |
 |---|---|
 | Version | 0.1.0 |
-| Revision | `e4fc379` (dirty) |
-| Source hash | `675ca6091bba878cddae44517848df235bea9bb30583fc5ca0db1ad0ea9db0dc` |
-| Generated | 2026-10-16T02:18:36 |
+| Revision | `8b6c511` (dirty) |
+| Source hash | `45ae2aa19c49c6692c7da1ccc15083536ccfef4927515b405ba1b7611eacaec5` |
+| Generated | 2026-10-16T11:28:43 |
 | Python | 3.11.9 on Windows-10-10.0.26300-SP0 |
 | Result | 4 of 4 checks passed |
 
@@ -28,7 +28,7 @@ What ISHTI does with your data, checked against the code rather than asserted ab
 - The refusal reads: _ISHTI blocked an outbound connection to 93.184.216.34:80 (no skill or owner action is running); nothing was sent. See Privacy in the dashboard or data/outbound.log._
 - Connecting to a telemetry host by name returned **blocked**.
 - One ledger row was written, with fields `['allowed', 'host', 'port', 'reason', 'ts', 'who']` - the host, the port, who asked and why. There is no field for a payload, a URL path or a response, which is the point.
-- The row: `{"ts": "2026-10-16T02:18:34", "host": "i.posthog.com", "port": 443, "who": "library:?", "allowed": false, "reason": "known telemetry/analytics endpoint"}`
+- The row: `{"ts": "2026-10-16T11:28:41", "host": "i.posthog.com", "port": 443, "who": "library:?", "allowed": false, "reason": "known telemetry/analytics endpoint"}`
 
 ### `telemetry_deny` - PASS
 
@@ -40,7 +40,7 @@ What ISHTI does with your data, checked against the code rather than asserted ab
 ### `loopback_bind` - PASS
 
 - 13 bind sites in ISHTI's own source; non-loopback literals: none. Sites: `ishti/lifecycle.py:1089`, `ishti/lifecycle.py:1050`, `ishti/oauth.py:438`, `ishti/oauth.py:441`, `ishti/skills/workflows/skill.py:105`, `desktop/mock_server.py:251`, `orchestrator/plan_view.py:235`, `tests/test_audit_fixes.py:160`, `tests/test_download_cancel.py:44`, `tests/test_keepalive.py:71`, `tests/test_launcher_window.py:123`, `tests/test_launcher_window.py:129`, `tests/backend/test_remote_tunnel.py:44`.
-- `orchestrator/plan_view.py:serve()` refused ['', '0.0.0.0', '192.168.1.10', '::', 'example.com'] at runtime, and its default bind was `http://127.0.0.1:49546/`.
+- `orchestrator/plan_view.py:serve()` refused ['', '0.0.0.0', '192.168.1.10', '::', 'example.com'] at runtime, and its default bind was `http://127.0.0.1:50987/`.
 - 1 site(s) take the host as a parameter rather than a literal (`orchestrator/plan_view.py:235`). The runtime half above exercises `orchestrator/plan_view.py:serve()`; a variable host is listed rather than passed, because a scan of literals cannot see what it is set to at call time.
 
 ### `no_desktop_capture` - PASS
@@ -109,7 +109,7 @@ Telemetry, analytics and crash-reporting endpoints. These are refused even insid
 | Web skills (browser, web_search, web_fetch, markets, ...) | whatever you ask them to open | the query or URL you gave | allowed by design, per manifest scope.net; blocked when the Internet switch is OFF |
 | SearXNG (Docker) | startpage, mojeek, yahoo, bing, qwant, wikipedia | your search terms | owner-initiated through web_search; the container is outside Python's reach |
 
-A live check of the machine this report was generated on found: **Ollama tray app is running** - ACTIVE - quit it (tray icon > Quit) and remove Startup\Ollama.lnk to stop The rows above are the static inventory; this line is an observation, and it changes between runs.
+The same live check found none of the third parties that announce themselves at runtime (Ollama's tray app is not running), so nothing outside the static inventory above was observed on this machine.
 
 ### Environment hardening (25 variables set at import)
 

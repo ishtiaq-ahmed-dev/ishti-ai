@@ -162,6 +162,11 @@ def section_privacy(path):
                             denominator=len(checks)), "detail": detail}
 
 
+def section_skipped(flag):
+    """A source the caller explicitly skipped: not run is a gap, and the report says so as one."""
+    return {"metric": metric(measured=False, reason=f"skipped by {flag}"), "detail": {}}
+
+
 def summarize(sections):
     flat = [{"section": name, **sec["metric"]} for name, sec in sections.items()]
     measured = [m for m in flat if m["status"] == "measured"]
@@ -201,11 +206,12 @@ def markdown(evidence):
         lines.append(f"- {_shown(m)}" + (f"  ({d['seconds']}s)" if d.get("seconds") else ""))
         if name == "core" and d.get("tests"):
             lines.append(f"- tests {d['tests']}, failures {d['failures']}, errors {d['errors']}, skipped {d['skipped']}")
-        if name == "eval":
+        if name == "eval" and d.get("table"):
             lines += ["", "```", (d.get("table") or "").strip(), "```"]
         if name == "skills":
             counts = {k: v for k, v in d.items() if k in ("green", "red", "no-suite", "SAFETY-FAIL")}
-            lines.append(f"- {counts}")
+            if counts:
+                lines.append(f"- {counts}")
             for bad in (d.get("flagged") or []):
                 lines.append(f"- **{bad['status']}** `{bad['skill']}`: {str(bad.get('last_error'))[:180]}")
         lines.append("")
@@ -267,15 +273,21 @@ def main(argv=None):
             print("[evidence] curated offline tests...")
             sections["core"] = section_core(os.path.join(REPORTS, "ci-core.xml"))
             print(f"[evidence]   {_shown(sections['core']['metric'])}")
+        else:
+            sections["core"] = section_skipped("--no-core")
         if not args.no_eval:
             print("[evidence] offline evaluation suites...")
             sections["eval"] = section_eval(args.repeat, os.path.join(REPORTS, "eval_all.json"))
             print(f"[evidence]   {_shown(sections['eval']['metric'])}")
+        else:
+            sections["eval"] = section_skipped("--no-eval")
         if not args.no_skills:
             print(f"[evidence] per-skill suites (up to {args.skill_budget}s)...")
             sections["skills"] = section_skills(args.runs, args.skill_timeout, args.wait_idle,
                                                 args.force_skills, args.skill_budget)
             print(f"[evidence]   {_shown(sections['skills']['metric'])}")
+        else:
+            sections["skills"] = section_skipped("--no-skills")
         sections["privacy"] = section_privacy(os.path.join(REPORTS, "privacy.json"))
 
         evidence = {"schema_version": 1, "generated": dt.datetime.now().isoformat(timespec="seconds"),
