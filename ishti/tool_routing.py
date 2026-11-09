@@ -205,6 +205,35 @@ def _clarification(text: str, candidates: list[tuple[str, float]]) -> str:
     return "What exact action and target should I use the tool for?"
 
 
+_COMPOUND = re.compile(
+    r",?\s*(?:and\s+then|then\s+also|and\s+also|also\s+(?=(?:tell|remind|check|show|send|find|give|fetch|search))"
+    r"|and\s+(?=(?:tell|remind|check|show|send|find|give|fetch|search|book|add|create|make|draft|write|set|list|compare|get|read|open|run))"
+    r"|plus\s+|and\s+what(?:'s| is| are))\s*", re.I)
+
+# Skill pairs that read like two requests but are one task: opening a browser to search, and researching
+# something in order to write it up. Sending these to the model as a compound request split one intention
+# in two (both pairs were labelled single-skill in the routing eval).
+_JOINT_TASKS = frozenset({frozenset({"browser", "web_search"}), frozenset({"deep_research", "docs"})})
+
+
+def _compound_parts(text: str) -> tuple[str, str] | None:
+    """(before, after) when `text` joins two requests ("... and then tell me ..."), else None. The joining
+    words themselves are cut out of both sides, so each part can be routed on its own; a part with fewer
+    than two words is a fragment, not a request."""
+    m = _COMPOUND.search(text or "")
+    if not m:
+        return None
+    before, after = text[:m.start()].strip(" ,.;"), text[m.end():].strip(" ,.;")
+    if len(before.split()) < 2 or len(after.split()) < 2:
+        return None
+    return before, after
+
+
+def _concrete(dec: dict) -> bool:
+    """A decision that names a real tool: not a clarification, not the default fallback."""
+    return bool(dec.get("skill")) and dec.get("source") not in ("default", "clarify")
+
+
 def route(text: str, skills: dict, exclude=(), *, session: dict | None = None) -> dict:
     """Select a skill without executing it; low-confidence actions return a clarification."""
     try:
@@ -252,6 +281,21 @@ def route(text: str, skills: dict, exclude=(), *, session: dict | None = None) -
     hint = _learned_hint(text)
     if hint in live:
         return {"skill": hint, "confidence": 1.0, "source": "preference_hint", "scores": [(hint, 1.0)]}
+
+    # Two requests in one message ("... and then tell me ...") must not be answered by whichever single cue
+    # fires first - "how much ram am I using and then tell me the weather tomorrow" used to run weather and
+    # silently drop the memory question. When both halves each route to a real, different tool, both are
+    # kept in order as a deterministic plan (dispatcher runs them via the workflow executor, no model call).
+    parts = _compound_parts(text)
+    if parts:
+        first, second = (route(part, skills, exclude, session=session) for part in parts)
+        if (_concrete(first) and _concrete(second) and first["skill"] != second["skill"]
+                and frozenset((first["skill"], second["skill"])) not in _JOINT_TASKS):
+            return {"skill": "chat", "confidence": 0.0, "source": "compound",
+                    "scores": [(first["skill"], first.get("confidence", 0.0)),
+                               (second["skill"], second.get("confidence", 0.0))],
+                    "parts": [{"skill": first["skill"], "text": parts[0]},
+                              {"skill": second["skill"], "text": parts[1]}]}
 
     cues = [name for name in _cue_names(text) if name in live]
     if cues:

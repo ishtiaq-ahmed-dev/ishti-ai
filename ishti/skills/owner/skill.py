@@ -290,16 +290,23 @@ def run(text, session):
         return {"reply": f"I can do {sum(len(v) for v in areas.values())} kinds of things, all on this PC:\n" + "\n".join(lines)
                          + "\n\nJust ask in plain words - e.g. \"remind me at 5 to call Ammi\", \"send hi to Ishtiaq on WhatsApp\", "
                            "\"what's the price of bitcoin\". The full list is on the Skills page.", "sources": []}
-    from orchestrator.doctor import IshtiDoctor
-    # Interactive diagnostics must answer within a chat turn: 20 s cap (static checks + bounded live
-    # probes). The DOCTOR tab can afford the full budget; a chat reply cannot (loop-2 fix).
-    report = IshtiDoctor().check_all(budget_s=20)
-    bad = report["errors"] + report["warnings"]
-    return {"reply": ("All checks passed." if not bad else "Issues:\n" + "\n".join(f"- {b}" for b in bad[:8]))
-                     + " Full report: DOCTOR tab.", "sources": []}
+    if DOCTOR.match(t):  # a text this skill does not own is a MISS, never a 20 s full check: every routed
+        # request already matches a specific pattern above, so the old unconditional fallback only ever
+        # fired for direct calls (the QA suites call run() with weather/nonsense rows) - six of those cost
+        # six doctor runs and blew the per-test budget (2026-10-16).
+        from orchestrator.doctor import IshtiDoctor
+        # Interactive diagnostics must answer within a chat turn: 20 s cap (static checks + bounded live
+        # probes). The DOCTOR tab can afford the full budget; a chat reply cannot (loop-2 fix).
+        report = IshtiDoctor().check_all(budget_s=20)
+        bad = report["errors"] + report["warnings"]
+        return {"reply": ("All checks passed." if not bad else "Issues:\n" + "\n".join(f"- {b}" for b in bad[:8]))
+                         + " Full report: DOCTOR tab.", "sources": []}
+    return None
 
 
 if __name__ == "__main__":
     assert match("what do you know about me?")
     assert not match("what is the weather")
+    assert run("kal ka mausam kaisa rahega", {}) is None, "an unowned text must MISS, not run the doctor"
+    assert match("run diagnostics") and DOCTOR.match("run diagnostics")  # the doctor stays reachable
     print("[self-check] owner OK - routing")

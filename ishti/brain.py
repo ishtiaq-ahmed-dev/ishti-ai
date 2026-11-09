@@ -128,12 +128,19 @@ def _run_tool(skills, name, text, session):
         return {"reply": f"The {name} skill failed ({type(exc).__name__}).", "sources": [], "verified": False}
 
 
-def run(text: str, s, skills: dict, hint: dict | None = None) -> dict | None:
+def run(text: str, s, skills: dict, hint: dict | None = None, calls: list[dict] | None = None) -> dict | None:
     """The one model call of a turn. -> {"reply", "sources", "mode", "tools"} or None when the model gave nothing
-    usable (the dispatcher then falls back to the deterministic route). Never raises for a model or skill failure."""
-    from ishti import llm, workflows
+    usable (the dispatcher then falls back to the deterministic route). Never raises for a model or skill failure.
+
+    `calls` is the deterministic shortcut: a compound request whose halves each already routed to their own
+    real tool (tool_routing "compound") passes its steps in here. No model call is made and no shortlist is
+    built; the plan runs through the same executor below, so T2 approval pauses, journaling and resume are
+    identical - only the fabrication risk of a small model answering in prose is gone."""
+    from ishti import llm
     from ishti.core.context import assemble_session_context
 
+    if calls is not None:
+        return _execute_plan(s, skills, calls)
     names = shortlist(skills, text, hint)
     system = llm.style() + "\n\n" + SYSTEM.format(tools=_tool_lines(skills, names), context=_context(text, s) or "(none)")
     dialogue = assemble_session_context(s, text, verbatim_turns=4, max_msg_chars=1400)
@@ -157,13 +164,19 @@ def run(text: str, s, skills: dict, hint: dict | None = None) -> dict | None:
             return None
         return {"reply": answer, "sources": [], "mode": "BRAIN", "tools": []}
 
+    return _execute_plan(s, skills, calls)
+
+
+def _execute_plan(s, skills: dict, calls: list[dict]) -> dict:
+    """Run already-chosen steps through the governed workflow executor (shared by both entry points above).
+
+    Only a new tool plan is walled: a plain answer never overwrote the journal, and walling it too used to
+    brick the chat on every unrelated question until the magic words."""
+    from ishti import workflows
     existing = workflows.load(s)
     if existing and existing["state"] not in ("completed", "cancelled"):
-        # Only a new tool plan is walled: a plain answer above never overwrote the journal, and
-        # walling it too used to brick the chat on every unrelated question until the magic words.
         return workflows.result(existing, {"reply": "A previous workflow remains open. "
                                            "Say 'continue workflow' or 'cancel workflow' before starting another tool plan."})
-
     if len(calls) > workflows.MAX_STEPS:
         return {"reply": f"This request contains {len(calls)} steps; the limit is {workflows.MAX_STEPS}. "
                          "Split the request into smaller groups. No tools were run.",

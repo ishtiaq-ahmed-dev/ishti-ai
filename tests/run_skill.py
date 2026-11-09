@@ -12,7 +12,9 @@ Usage:
 
 Per run it outputs a readable table + JSON, updates reports/test_state.json
 (feature -> status, attempts, last_result, consecutive_green, last_error, timestamp),
-enforces a per-test timeout, sets ISHTI_TEST_MODE=1, samples GPU/VRAM before+after,
+enforces a per-test timeout (150 s default: live browser/LLM rows run 40-90 s warm and the old 90 s
+wall raced the MCP client's own 90 s timeout with zero margin - 2026-10-16), sets ISHTI_TEST_MODE=1,
+samples GPU/VRAM before+after,
 and asserts the audit log shows no real T2 side effects during the run.
 """
 import argparse
@@ -23,9 +25,11 @@ import os
 import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ET
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATE_PATH = os.path.join(ROOT, "reports", "test_state.json")
+JUNIT_DIR = os.path.join(ROOT, "reports", "skill_junit")   # gitignored, like every other report
 
 
 def gpu_sample():
@@ -84,6 +88,50 @@ def audit_forbidden_actions(since_ts):
     return bad
 
 
+def junit_reason(path):
+    """The real failure message for a suite, read from its JUnit XML.
+
+    This used to be "the last non-empty stdout line", which for every red suite was pytest's own
+    progress marker - "!!! stopping after 1 failures !!!" or "+++ Timeout +++". docs/EVIDENCE.md
+    therefore named 22 failing skills and could not say why any one of them failed, so an
+    environmental failure (no Ollama on a runner, a busy GPU) looked identical to a real
+    regression. That is the one thing an evidence report must not do. pytest already writes the
+    message; read it from there, and fall back to the stdout tail only when no JUnit record was
+    written at all (a hard kill).
+    """
+    try:
+        root = ET.parse(path).getroot()
+    except Exception:
+        return ""
+    for case in root.iter("testcase"):
+        for kind in ("failure", "error"):
+            node = case.find(kind)
+            if node is None:
+                continue
+            msg = (node.get("message") or "").strip() or (node.text or "").strip()
+            first = next((ln.strip() for ln in msg.splitlines() if ln.strip()), "")
+            return f"{case.get('name', '?')}: {first}"[:200]
+    return ""
+
+
+def clear_models():
+    """Empty the card before a suite so it loads its own model cold.
+
+    Under ISHTI_TEST_MODE the previous suite's model stays resident for 2m while the next suite loads
+    ITS model - two big models on a 16 GB card means slow generation and a per-test timeout that reads
+    exactly like a broken skill (2026-10-16: extract, meta, mnemonic, owner, web_fetch all failed at
+    the 90 s limit, every one of them starting with >11 GB already held). Reuse the product's own
+    unload; a failure here must never fail the batch.
+    """
+    try:
+        sys.path.insert(0, ROOT)
+        from ishti import vram
+        for m in vram.ps(True):
+            vram.unload(m["name"])
+    except Exception:
+        pass
+
+
 def run_one(skill, runs, timeout_s, dry):
     suite_dir = os.path.join(ROOT, "tests", "skills", skill)
     if not os.path.isdir(suite_dir):
@@ -98,16 +146,22 @@ def run_one(skill, runs, timeout_s, dry):
 
     results = []
     env = dict(os.environ, ISHTI_TEST_MODE="1", PYTHONIOENCODING="utf-8")
+    os.makedirs(JUNIT_DIR, exist_ok=True)
     for i in range(runs):
+        clear_models()
         gpu_before = gpu_sample()
         t0 = time.time()
+        junit_path = os.path.join(JUNIT_DIR, f"{skill}_{i + 1}.xml")
+        if os.path.exists(junit_path):
+            os.remove(junit_path)   # a stale record from an earlier run must not be read as this one's
         proc = subprocess.run(
             [sys.executable, "-m", "pytest", suite_dir, "-q", "--timeout", str(timeout_s),
-             "--no-header", "-x", "--tb=line"],      # pytest-timeout self-registers; -p double-registers
+             "--no-header", "-x", "--tb=line", f"--junitxml={junit_path}"],  # pytest-timeout self-registers; -p double-registers
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=timeout_s * 4 + 60, env=env, cwd=ROOT)
         dur = round(time.time() - t0, 1)
         tail = [l for l in (proc.stdout or "").splitlines() if l.strip()][-3:]
+        reason = junit_reason(junit_path) or (tail[-1] if tail else "")
         # pytest exit 5 is "no tests were collected". An empty suite folder is not a broken skill, so
         # it must not be scored as one - it leaves the denominator (evidence.py counts only graded
         # suites), the same as a folder that does not exist at all.
@@ -117,7 +171,7 @@ def run_one(skill, runs, timeout_s, dry):
         results.append({
             "run": i + 1, "ok": passed, "exit": proc.returncode, "seconds": dur,
             "gpu_before": gpu_before, "gpu_after": gpu_sample(),
-            "tail": tail,
+            "tail": tail, "reason": reason,
         })
     ok_all = all(r["ok"] for r in results)
     return {"feature": skill, "status": "green" if ok_all else "red", "runs": results}
@@ -133,15 +187,20 @@ def update_state(state, res):
         f["last_error"] = None
     else:
         f["consecutive_green"] = 0
-        tails = [t for r in res.get("runs", []) for t in (r.get("tail") or []) if t]
-        f["last_error"] = ("; ".join(tails[-1:]) or res["status"])[:200]
+        f["last_error"] = _last_error(res)
     return f
 
 
 def _last_error(res):
-    """The most useful one-liner for a failing skill: the last non-empty pytest output line."""
+    """The most useful one-liner for a failing skill: the real failure message, not a progress marker."""
     runs = res.get("runs") or []
-    tail = [t for t in (runs[-1].get("tail") or []) if t] if runs else []
+    if not runs:
+        return res["status"][:200]
+    last = runs[-1]
+    reason = (last.get("reason") or "").strip()
+    if reason:
+        return reason[:200]
+    tail = [t for t in (last.get("tail") or []) if t]
     return (tail[-1] if tail else res["status"])[:200]
 
 
@@ -165,7 +224,7 @@ def main():
     ap = argparse.ArgumentParser(description="ISHTI per-skill QA harness")
     ap.add_argument("targets", help="skill name, comma list, or 'all'")
     ap.add_argument("--runs", type=int, default=1)
-    ap.add_argument("--timeout", type=int, default=90, help="per-test timeout seconds")
+    ap.add_argument("--timeout", type=int, default=150, help="per-test timeout seconds")
     ap.add_argument("--dry", action="store_true", help="show what would run, run nothing")
     ap.add_argument("--json", action="store_true", help="print the aggregate JSON instead of the table")
     ap.add_argument("--out", help="write the per-skill detail here (default reports/test_state_last_run.json)")
@@ -203,6 +262,8 @@ def main():
                   f"{(res['runs'] or [{}])[-1].get('seconds', '-')}s")
             for r in res.get("runs", []):
                 if not r["ok"]:
+                    if r.get("reason"):
+                        print(f"        {r['reason'][:150]}")
                     for line in r["tail"]:
                         print(f"        {line[:150]}")
 

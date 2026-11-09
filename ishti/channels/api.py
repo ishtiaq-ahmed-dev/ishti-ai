@@ -302,8 +302,9 @@ def attach(app):
         except Exception as _exc:
             swallowed('ishti/channels/api.py' + ':301', _exc)
 
-    app.on_event("startup")(_boot)
-    app.on_event("shutdown")(_down)
+    # Use router.on_startup/on_shutdown to avoid the on_event deprecation warning in FastAPI >= 0.93.
+    app.router.on_startup.append(_boot)
+    app.router.on_shutdown.append(_down)
 
 
 if __name__ == "__main__":

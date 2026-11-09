@@ -25,14 +25,13 @@ queue_wait_s: 45          # a job that still doesn't fit waits this long (re-che
 roles:
   planner:                # the brain: pinned (keep_alive -1), always resident
     pinned: true
-    min_ctx: 8192         # ISHTI's prompts (system + history + search context) need it: never trade context for room
+    min_ctx: 4096         # ISHTI's prompts (system + history + search context)
     rungs:
-      - {model: "ishti-spark2.5-q8:4b", note: "Spark-X2.5-4B Q8_0 (maternion/spark-x2.5:4b-q8_0), 4.4 GB; built by Settings -> Language models -> Download with the same 8192 context"}
-      - {model: "ishti-spark2.5:4b", note: "Spark-X2.5-4B unquantized F16 (from maternion/spark-x2.5:4b-f16, same weights as HF XHToken/Spark-X2.5-4B-GGUF F16, SHA256 8cecf405...); needs Ollama >= 0.34.2 for the spark2_5 arch; measured 8165 MiB at 8192 ctx"}
-      - {model: "ishti-spark2.5-q4:4b", note: "Spark-X2.5-4B Q4_K_M (maternion/spark-x2.5:4b-q4_K_M), 2.6 GB, for 6 GB cards"}
-      - {model: "ishti-qwen2.5:14b", note: "custom Modelfile (ISHTI system prompt, num_ctx 8192); the owner's model, never modified"}
-      - {model: "qwen2.5:7b", num_ctx: 8192, note: "same family/tool format as the 14B; verified in the Ollama library 4.68 GB"}
-      - {model: "qwen2.5:3b", num_ctx: 8192, note: "last resort; verified in the Ollama library 1.93 GB"}
+      - {model: "qwen3-c4k:14b", note: "Qwen3 14B (9.3 GB), primary planner"}
+      - {model: "deepseek-r1-c4k:8b", note: "DeepSeek R1 8B (5.2 GB), reasoning fallback"}
+      - {model: "maternion/spark-x2.5-c4k:4b-f16", note: "Spark-X2.5-4B F16 (8.2 GB)"}
+      - {model: "gemma3:12b", note: "Gemma3 12B (8.1 GB)"}
+      - {model: "gemma3:4b", note: "Gemma3 4B (3.3 GB)"}
   coder:                  # on demand: 10 min idle -> unloaded
     keep_alive: "10m"
     min_ctx: 4096

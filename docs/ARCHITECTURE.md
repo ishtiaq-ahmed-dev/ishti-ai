@@ -13,7 +13,10 @@ steps in order and stops at the first one that answers:
    language commands.
 2. **Rules (no model).** `ishti/tool_routing.py` picks a skill from its own triggers, cue words, learned corrections
    and the skill shortlist. If a rule owns the request, the skill runs directly through the dispatcher's skill runner.
-   Measured on a labelled set of 120 requests: 114 correct (95%), with no model call.
+   Measured on a labelled set of 331 requests (counted from the source on 2026-10-16). The figure this line
+   used to quote - 114/120, 95% - came from a list less than half that size and has **not** been re-measured
+   against the current one, so do not repeat it as the present accuracy. The eval in `ishti/check.py` is the
+   live gate (bar 85%) and prints its own count, accuracy and median, still with no model call.
 3. **The one model call (`ishti/brain.py`).** For everything a rule does not own, the model sees the conversation, the
    retrieved memory, and up to 12 candidate skills. It replies with either:
    - one or more tool calls, `{"calls": [{"tool": "<exact name>", "input": "<standalone request>"}]}`, or

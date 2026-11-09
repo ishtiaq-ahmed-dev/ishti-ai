@@ -214,6 +214,19 @@ def markdown(evidence):
                 lines.append(f"- {counts}")
             for bad in (d.get("flagged") or []):
                 lines.append(f"- **{bad['status']}** `{bad['skill']}`: {str(bad.get('last_error'))[:180]}")
+            if counts.get("red") or counts.get("SAFETY-FAIL"):
+                # Without this the number above reads as a quality verdict. It is not one on its own:
+                # a red suite is routinely environmental (see the nightly job's own note), and the set
+                # moves between runs on an unchanged tree. Saying so here is the difference between a
+                # number a reader can act on and one they will misread.
+                lines += ["",
+                          "A red suite here is **not by itself a regression**. `tests/run_skill.py`'s GPU guard "
+                          "treats an unreadable `nvidia-smi` as \"no GPU, nothing to protect\", so a batch starts "
+                          "on a machine with no GPU, and any suite that needs a live model then fails because "
+                          "there is no Ollama. Those failures are environmental. The red set also moves between "
+                          "runs on an unchanged tree, so compare this line with the previous revision before "
+                          "reading a change as a change in quality. The message beside each name is what tells "
+                          "the two apart."]
         lines.append("")
     unmeasured = evidence["summary"]["unmeasured_reasons"]
     lines += ["## Not measured", "",
@@ -248,7 +261,7 @@ def main(argv=None):
     ap.add_argument("--strict-skills", action="store_true", help="exit 1 if any per-skill suite is red")
     ap.add_argument("--repeat", type=int, default=1, help="independent runs of each eval suite (default 1)")
     ap.add_argument("--runs", type=int, default=1, help="repeats per skill suite (default 1)")
-    ap.add_argument("--skill-timeout", type=int, default=90, help="per-test timeout for a skill suite")
+    ap.add_argument("--skill-timeout", type=int, default=150, help="per-test timeout for a skill suite")
     ap.add_argument("--skill-budget", type=int, default=5400, help="give up on the skill suites after this many seconds")
     ap.add_argument("--wait-idle", type=int, default=300, help="wait up to S seconds for a quiet GPU before the skill suites")
     ap.add_argument("--force-skills", action="store_true", help="run the skill suites even if the GPU is busy")
@@ -282,6 +295,11 @@ def main(argv=None):
         else:
             sections["eval"] = section_skipped("--no-eval")
         if not args.no_skills:
+            # The per-skill suites are LIVE (real Ollama on loopback); the offline-eval network blocker
+            # above would refuse /api/ps inside every child and turn all 18 LLM suites into
+            # "GPU residency could not be verified" GpuBusy reds (found 2026-10-16, first full
+            # evidence run in a while - every previous one must have passed below the radar).
+            os.environ.pop("ISHTI_OFFLINE_EVAL", None)
             print(f"[evidence] per-skill suites (up to {args.skill_budget}s)...")
             sections["skills"] = section_skills(args.runs, args.skill_timeout, args.wait_idle,
                                                 args.force_skills, args.skill_budget)

@@ -186,19 +186,42 @@ class IshtiDoctor:
                              False, f"ISHTI serves '{ladder[0] if ladder else 'the fallback rung'}' instead", is_warning=True)
             primary = ladder[0] if ladder else next(iter(installed), primary)
         fast = router.get_model("fast")
+        self._log_result("Models", f"Fast Classifier Model ({fast})", True, "Configured for cheap jobs")
 
+        left = self._deadline - time.time()
+        try:  # a cold model load reads ~20 GB off disk (~35 s measured here): under a tight budget the
+              # check skips instead of overrunning it - the budget governs static checks too (2026-10-16)
+            from ishti import vram as ishti_vram
+            resident = {m["name"] for m in ishti_vram.ps(True)}
+            if primary not in resident and left < 40:
+                self._log_result("Models", f"Primary Model ({primary})", True,
+                                 f"skipped: {round(left)} s left is too tight for a cold model load",
+                                 is_warning=True)
+                return
+        except Exception as _exc:
+            swallowed('orchestrator/doctor.py:IshtiDoctor.check_models', _exc)
         try:
-            t0 = time.time()
-            res = requests.post(f"{router.host}/api/generate", json={"model": primary, "prompt": "1+1=", "stream": False}, timeout=10)
-            elapsed = round(time.time() - t0, 2)
-            if res.status_code == 200:
-                self._log_result("Models", f"Primary Model ({primary})", True, f"Responsive in {elapsed}s")
+            # Through the governor, never a raw load: a bare /api/generate makes Ollama force the
+            # configured model onto the card even when it cannot fit - it ends up split between GPU
+            # and CPU (a minute of loading, and still resident after the client gives up). Everything
+            # run afterwards then fights the ghost (2026-10-16: the 27B left ~15 GB resident and every
+            # later QA suite failed at admission). admit() returns the rung ISHTI would really serve;
+            # wait_s=0 because a health check must never sit in the job queue.
+            from ishti import vram as ishti_vram
+            admitted = ishti_vram.admit(primary, role="planner", job="doctor model check", wait_s=0)
+            if not admitted["ok"]:
+                self._log_result("Models", f"Primary Model ({primary})", False, admitted["queued"], is_warning=True)
             else:
-                self._log_result("Models", f"Primary Model ({primary})", False, f"HTTP {res.status_code}")
+                t0 = time.time()
+                res = requests.post(f"{router.host}/api/generate", json={"model": admitted["model"], "prompt": "1+1=", "stream": False}, timeout=30)
+                elapsed = round(time.time() - t0, 2)
+                served = f" (served by {admitted['model']})" if admitted["model"] != primary else ""
+                if res.status_code == 200:
+                    self._log_result("Models", f"Primary Model ({primary}){served}", True, f"Responsive in {elapsed}s")
+                else:
+                    self._log_result("Models", f"Primary Model ({primary}){served}", False, f"HTTP {res.status_code}")
         except Exception as e:
             self._log_result("Models", f"Primary Model ({primary})", False, str(e), is_warning=True)
-
-        self._log_result("Models", f"Fast Classifier Model ({fast})", True, "Configured for cheap jobs")
 
     def check_browser_isolation(self):
         print("\n--- [5] Browser & Profile Isolation ---")

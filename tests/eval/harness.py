@@ -25,18 +25,29 @@ CASE_DIR = ROOT / "tests" / "task_suite" / "cases"
 
 
 def metric(*, measured: bool, value: float | None = None, numerator: int | None = None,
-           denominator: int | None = None, reason: str | None = None) -> dict[str, Any]:
+           denominator: int | None = None, reason: str | None = None,
+           note: str | None = None) -> dict[str, Any]:
+    """One measured-or-unmeasured row.
+
+    `reason` is for a gap - nobody looked, or there is no ground truth. `note` is for the other
+    case: a number that IS measured but is easy to misread, because it counts something other than
+    what its name suggests. Keeping the two apart lets a real measurement carry its own warning
+    instead of relying on the reader to go and find one. A note survives aggregation and is printed
+    with the table, so a number cannot be detached from the caveat that makes it honest.
+    """
     row: dict[str, Any] = {"status": "measured" if measured else "unmeasured"}
     if measured:
         row.update(value=value, numerator=numerator, denominator=denominator)
     else:
         row["reason"] = reason or "No ground truth is available."
+    if note:
+        row["note"] = note
     return row
 
 
-def _ratio(correct: int, total: int) -> dict[str, Any]:
+def _ratio(correct: int, total: int, note: str | None = None) -> dict[str, Any]:
     return metric(measured=True, value=(correct / total if total else None),
-                  numerator=correct, denominator=total)
+                  numerator=correct, denominator=total, note=note)
 
 
 def _case_rows() -> list[dict[str, Any]]:
@@ -186,7 +197,12 @@ def run_understanding() -> dict[str, Any]:
         "suite": "understanding", "case_count": len(rows),
         "metrics": {
             "skill_accuracy": _ratio(skill_correct, skill_total),
-            "intent_accuracy": _ratio(intent_correct, intent_total),
+            "intent_accuracy": _ratio(intent_correct, intent_total, note=(
+                "NOT comparable with skill_accuracy on the row above. This one asks ishti's "
+                "IntentDetector for its own `mode` label and compares it with the expected *skill* name "
+                "through the six pairs in intent_map (weather, deep_research, web_fetch, files, browser, "
+                "video) - two different taxonomies. Only a case expecting one of those six reaches this "
+                "denominator at all, so read the denominator beside the value.")),
             "argument_accuracy": metric(measured=False, reason="The 300-case corpus has no structured expected argument labels."),
             "completion_accuracy": metric(measured=False, reason="Routing-only execution produces no completion outcome."),
             "clarification_accuracy": metric(measured=False, reason="The corpus has no structured clarification-required label."),
@@ -868,16 +884,22 @@ def _aggregate_runs(runs: list[dict[str, Any]]) -> dict[str, Any]:
         metric_names = runs[0]["results"][suite_names.index(suite_name)]["metrics"].keys()
         for metric_name in metric_names:
             values = []
+            note = None
             for run in runs:
                 suite = next(item for item in run["results"] if item["suite"] == suite_name)
                 item = suite["metrics"][metric_name]
+                if note is None:
+                    note = item.get("note")      # a caveat must survive aggregation, or it is lost to the reader
                 if item["status"] == "measured" and item.get("value") is not None:
                     values.append(float(item["value"]))
-            suite_metrics[metric_name] = ({"status": "measured", "median_value": statistics.median(values),
-                                           "measured_runs": len(values), "total_runs": len(runs)}
-                                          if values else {"status": "unmeasured", "measured_runs": 0,
-                                                          "total_runs": len(runs),
-                                                          "reason": "Metric was unmeasured in every run."})
+            row: dict[str, Any] = ({"status": "measured", "median_value": statistics.median(values),
+                                    "measured_runs": len(values), "total_runs": len(runs)}
+                                   if values else {"status": "unmeasured", "measured_runs": 0,
+                                                   "total_runs": len(runs),
+                                                   "reason": "Metric was unmeasured in every run."})
+            if note:
+                row["note"] = note
+            suite_metrics[metric_name] = row
         aggregate["metrics"][suite_name] = suite_metrics
     return aggregate
 
@@ -908,6 +930,7 @@ def run_suites(name: str, *, repeat: int = 1, ollama_ps: bool = False) -> dict[s
 
 def concise_table(report: dict[str, Any]) -> str:
     lines = ["suite          metric                         result", "-------------  -----------------------------  ----------------"]
+    notes = []
     for suite_name, metrics in report["aggregate"]["metrics"].items():
         for name, value in metrics.items():
             if value["status"] == "unmeasured":
@@ -915,5 +938,11 @@ def concise_table(report: dict[str, Any]) -> str:
             else:
                 shown = f"median {value['median_value']:.4f} ({value['measured_runs']} run(s))"
             lines.append(f"{suite_name:<13}  {name:<29}  {shown}")
+            if value.get("note"):
+                notes.append(f"  {name}: {value['note']}")
     lines.append(f"median latency: {report['aggregate']['median_latency_ms']:.3f} ms")
+    if notes:
+        # A number that cannot be read literally must not travel without the sentence that qualifies it.
+        # Dropping the note here is how a table of incompatible metrics ends up quoted as a score.
+        lines += ["", "Notes on the numbers above:"] + notes
     return "\n".join(lines) + "\n"

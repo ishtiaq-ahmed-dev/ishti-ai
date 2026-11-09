@@ -701,7 +701,7 @@ def _run_stage(sid):
 
 # Memory/skills/voice native imports are serialized. Ollama model loading happens in its own process.
 # ISHTI_BOUNDED_BOOT=0 is a diagnostic rollback of the stage ordering, not of the retry limit.
-CHAINS = [("ollama_ready", "planner_warm"), ("memory_loaded", "skills_loaded", "voice_ready")]
+CHAINS = [("ollama_ready", "planner_warm", "skills_loaded"), ("memory_loaded", "voice_ready")]
 BRAIN_STAGES = ("ollama_ready", "memory_loaded", "skills_loaded", "planner_warm")
 NEEDS_NAME = {"ollama_ready": "the AI engine", "memory_loaded": "your memory", "skills_loaded": "the skills", "planner_warm": "the main model"}
 

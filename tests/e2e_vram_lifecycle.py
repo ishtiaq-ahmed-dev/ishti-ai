@@ -4,7 +4,7 @@ the real GPU, Ollama and backend processes and prints its evidence. ISHTI itself
     venv\\Scripts\\python tests\\e2e_vram_lifecycle.py t1a t1b t2 t3 t4 t5 [n] t5b perf
 
   t1a  heavy vision load (default 80% budget) with the planner resident -> planner downshifts, vision loads FULLY, upshift after
-  t1b  same with a 95% budget and the tier required (strict) -> the planner goes down two rungs, the 12B tier loads FULLY
+  t1b  same with a 95% budget and the tier required (strict) -> the planner steps down the ladder, the 12B tier loads FULLY
   t2   VRAM pressure (a GPU hog process + an oversized model): /api/ps never shows a partial offload; the watchdog catches a raw one
   t3   live voice priority: the planner isn't touched by heavy jobs during a voice turn; the STT load may downshift it
   t4   boot while Ollama is killed: /api/ready reports a plain-language error, then recovers
@@ -135,6 +135,9 @@ def t1(strict, budget, name):
     sw, w = switches(), Watch()
     r = vram.admit(vram.rungs("planner")[0]["name"], role="planner", job="start")   # the ladder's top rung (Spark-X2.5 since 2026-09-30)
     assert r["ok"], r
+    # where it settled (a top rung that cannot fit on this card - a 27B on 16 GB - settles lower; every
+    # expectation below is relative to THAT rung, never a hardcoded 0)
+    rung_before = vram.current_rung("planner")
     state_line("planner resident")
     ttft0 = first_token_ms()
     role, model = "vision3", "gemma3:12b"
@@ -156,17 +159,18 @@ def t1(strict, budget, name):
         rung_during = vram.current_rung("planner")
     say(f"  job window {time.time() - t0:.1f} s; planner rung during job: {rung_during}")
     end = time.time() + 120
-    while time.time() < end and vram.current_rung("planner") != 0:
+    while time.time() < end and vram.current_rung("planner") != rung_before:
         time.sleep(1)
-    up = vram.current_rung("planner") == 0
+    up = vram.current_rung("planner") == rung_before
     time.sleep(1.0)
     state_line("after the job")
     viol = w.stop()
-    ok = (bool(h["ok"]) and full and both and "42" in answer and rung_during >= 1 and up and not viol
-          and all(m["full"] for m in vram.ps(True)) and any(m["name"] == vram.rungs("planner")[0]["name"] for m in vram.ps(True)))
+    ok = (bool(h["ok"]) and full and both and "42" in answer and rung_during > rung_before and up and not viol
+          and all(m["full"] for m in vram.ps(True)) and any(vram.role_of(m["name"]) == "planner" for m in vram.ps(True)))
     for s in sw:
         say(f"  model_switch: {s['role']:9} {s['from']} -> {s['to']} | {s['reason']}")
-    record(name, ok, f"loaded {h.get('model')} fully on GPU; planner rung during job {rung_during}, back to rung 0 after {time.time() - t0:.0f} s; "
+    record(name, ok, f"loaded {h.get('model')} fully on GPU; planner rung during job {rung_during} (started {rung_before}), "
+                     f"back to its start rung after {time.time() - t0:.0f} s; "
                      f"vision answer {answer.strip()!r}; {w.n} /api/ps samples, partial offloads: {len(viol)}; peak GPU {w.max_used} MiB "
                      f"({100 * w.max_used // vram.gpu()['total_mb']}%); planner first token {ttft0:.0f} ms")
     return viol
@@ -256,6 +260,7 @@ def t3():
     vram.start_sampler()
     w = Watch()
     assert vram.admit(vram.rungs("planner")[0]["name"], role="planner", job="start")["ok"]
+    rung_before = vram.current_rung("planner")   # a top rung too big for the card settles lower; compare against that
     base = first_token_ms(n=5)
     say(f"  planner first-token latency, idle: {base:.0f} ms")
     res, lat = {}, []
@@ -285,14 +290,14 @@ def t3():
     say(f"  whisper load {load_s:.1f} s; planner rung {rung_after_stt}")
     voice.release_model()  # the STT's idle eviction
     end = time.time() + 90
-    while time.time() < end and vram.current_rung("planner") != 0:
+    while time.time() < end and vram.current_rung("planner") != rung_before:
         time.sleep(1)
-    up = vram.current_rung("planner") == 0
+    up = vram.current_rung("planner") == rung_before
     viol = w.stop()
     # during a voice turn a heavy job is either queued (no room without touching the planner) or served by a LIGHTER tier
-    # of its own ladder (room beside the planner): either way the planner stays on its top rung and keeps its latency
+    # of its own ladder (room beside the planner): either way the planner stays on its rung and keeps its latency
     served_lighter = bool(h["ok"]) and h.get("model") != vram.rungs("vision3")[0]["name"]
-    ok = (rung_during_voice == 0 and (not h["ok"] or served_lighter) and worst <= base * 1.6 + 300 and stt_ok and not viol and up)
+    ok = (rung_during_voice == rung_before and (not h["ok"] or served_lighter) and worst <= base * 1.6 + 300 and stt_ok and not viol and up)
     record("T3 live-voice priority", ok, f"heavy job during a voice turn: {'queued (' + str(h.get('queued'))[:70] + ')' if not h['ok'] else 'loaded ' + str(h.get('model'))}; "
            f"planner untouched (rung {rung_during_voice}); planner first token idle {base:.0f} ms vs worst during the job {worst:.0f} ms; "
            f"whisper loaded in {load_s:.1f} s with planner rung {rung_after_stt} (voice has priority); upshift after STT release: {up}; partial offloads: {len(viol)}")

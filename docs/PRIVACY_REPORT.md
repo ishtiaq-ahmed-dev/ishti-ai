@@ -5,9 +5,9 @@ What ISHTI does with your data, checked against the code rather than asserted ab
 | | |
 |---|---|
 | Version | 0.1.0 |
-| Revision | `a15406e` (dirty) |
-| Source hash | `3ac040c18a94db55de2d67691877ea3ea394fd78a265fb3afc9a8a9071df5977` |
-| Generated | 2026-10-16T11:44:53 |
+| Revision | `fbed0aa` (dirty) |
+| Source hash | `a7596dfbb71d4bf0d73cc054dd5ad6e942c193ef4d3538e3f1836e44a3150f3c` |
+| Generated | 2026-10-16T21:01:23 |
 | Python | 3.11.9 on Windows-10-10.0.26300-SP0 |
 | Result | 4 of 4 checks passed |
 
@@ -28,7 +28,7 @@ What ISHTI does with your data, checked against the code rather than asserted ab
 - The refusal reads: _ISHTI blocked an outbound connection to 93.184.216.34:80 (no skill or owner action is running); nothing was sent. See Privacy in the dashboard or data/outbound.log._
 - Connecting to a telemetry host by name returned **blocked**.
 - One ledger row was written, with fields `['allowed', 'host', 'port', 'reason', 'ts', 'who']` - the host, the port, who asked and why. There is no field for a payload, a URL path or a response, which is the point.
-- The row: `{"ts": "2026-10-16T11:44:50", "host": "i.posthog.com", "port": 443, "who": "library:?", "allowed": false, "reason": "known telemetry/analytics endpoint"}`
+- The row: `{"ts": "2026-10-16T21:00:52", "host": "i.posthog.com", "port": 443, "who": "library:?", "allowed": false, "reason": "known telemetry/analytics endpoint"}`
 
 ### `telemetry_deny` - PASS
 
@@ -40,7 +40,7 @@ What ISHTI does with your data, checked against the code rather than asserted ab
 ### `loopback_bind` - PASS
 
 - 13 bind sites in ISHTI's own source; non-loopback literals: none. Sites: `ishti/lifecycle.py:1089`, `ishti/lifecycle.py:1050`, `ishti/oauth.py:438`, `ishti/oauth.py:441`, `ishti/skills/workflows/skill.py:105`, `desktop/mock_server.py:251`, `orchestrator/plan_view.py:235`, `tests/test_audit_fixes.py:160`, `tests/test_download_cancel.py:44`, `tests/test_keepalive.py:71`, `tests/test_launcher_window.py:123`, `tests/test_launcher_window.py:129`, `tests/backend/test_remote_tunnel.py:44`.
-- `orchestrator/plan_view.py:serve()` refused ['', '0.0.0.0', '192.168.1.10', '::', 'example.com'] at runtime, and its default bind was `http://127.0.0.1:61452/`.
+- `orchestrator/plan_view.py:serve()` refused ['', '0.0.0.0', '192.168.1.10', '::', 'example.com'] at runtime, and its default bind was `http://127.0.0.1:60906/`.
 - 1 site(s) take the host as a parameter rather than a literal (`orchestrator/plan_view.py:235`). The runtime half above exercises `orchestrator/plan_view.py:serve()`; a variable host is listed rather than passed, because a scan of literals cannot see what it is set to at call time.
 
 ### `no_desktop_capture` - PASS
@@ -153,9 +153,23 @@ ISHTI's own UI runs in a WebView2 with these flags (`ishti/privacy.py:WEBVIEW2_A
 
 and with a resolver rule that maps every host except `127.0.0.1` and `localhost` to `~NOTFOUND`. The browser engine that renders the interface therefore cannot resolve a name on the network at all - it is a rendering surface, not a browser.
 
-## Live gate - not run
+## Live gate
 
-This report did not start the backend, so nothing here shows the running server's own sockets. `--live` runs `tools/gate_no_cloud.py`, which does exactly that: it samples every connection of the backend's process tree during boot and under load, and fails on a single external one.
+`tools/gate_no_cloud.py` started the real backend, watched every TCP connection of its process tree and ran local tasks through it: **PASS** (exit 0).
+
+```
+('what is 7 plus 5?', 1.6, 0, '7 plus 5 is 12.')
+('tell me a short fun fact about Peshawar', 1.3, None, 'Something went wrong inside me (RuntimeError: Sens')
+('what time is it', 0.2, 0, "It's 9:01 PM.")
+('how much RAM is free right now', 0.4, 0, '|  | Use | Details |\n|---|---|---|\n| CPU | 26.5% u')
+('list my notes', 0.2, 0, 'Your notes:\n- qa ramp marker probe (13 Oct)\n- qa r')
+('explain what a mutex is in two sentences', 1.9, 0, 'A mutex, short for mutual exclusion object, is a s')
+remote connections seen (backend tree, our Ollama, our WebView2): none
+remote connections of an Ollama ISHTI did not start (informational): none
+egress ledger: allowed external rows 0 | blocked rows 0
+outbound calls in request ledgers: 0
+GATE no-cloud: PASS
+```
 
 ## What this report does not prove
 

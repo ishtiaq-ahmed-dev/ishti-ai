@@ -202,24 +202,30 @@ class DeepResearchEngine:
             return False, "blocked or paywalled"
         if len((page["content"] or "").strip()) < 60:
             return False, "no readable content"
-        from ishti import llm
-        verdict = llm.ask(
-            f"Today is {time.strftime('%d %B %Y')}. Question: {question}\nPage title: {page['title']}\nURL: {page['url']}\n"
-            f"Page text: {fence(page['content'][:1400], page['url'])}\n\nDoes this page contain information that answers the question, about "
-            "the right thing (same product, person, place, event)? Partly is enough. Reply 'yes' or 'no: <reason in "
-            "3-6 words, e.g. wrong product, different person, outdated, only a homepage>'.",
-            system=None, temperature=0, max_tokens=16).strip().lower()
+        from ishti import llm, vram
+        try:
+            verdict = llm.ask(
+                f"Today is {time.strftime('%d %B %Y')}. Question: {question}\nPage title: {page['title']}\nURL: {page['url']}\n"
+                f"Page text: {fence(page['content'][:1400], page['url'])}\n\nDoes this page contain information that answers the question, about "
+                "the right thing (same product, person, place, event)? Partly is enough. Reply 'yes' or 'no: <reason in "
+                "3-6 words, e.g. wrong product, different person, outdated, only a homepage>'.",
+                system=None, temperature=0, max_tokens=16).strip().lower()
+        except vram.GpuBusy:
+            return True, ""  # model busy: keep the page (the doctrine here is lenient) instead of crashing the turn
         if verdict.startswith("no"):
             return False, verdict.split(":", 1)[-1].strip(" .") or "doesn't answer it"
         return True, ""
 
     def _reword(self, question: str, tried: List[str], skipped: List[str]) -> str:
-        from ishti import llm
-        q = llm.ask(
-            f"Today is {time.strftime('%d %B %Y')}. Question: {question}\nSearches already tried: {tried}\n"
-            f"Pages rejected: {skipped[:6]}\nWrite ONE different web search query that is more likely to find a page "
-            "that answers the question (other keywords, add the likely year/place/official site, or make it more "
-            "specific). Output only the query.", system=None, temperature=0.3, max_tokens=30).strip().strip('"')
+        from ishti import llm, vram
+        try:
+            q = llm.ask(
+                f"Today is {time.strftime('%d %B %Y')}. Question: {question}\nSearches already tried: {tried}\n"
+                f"Pages rejected: {skipped[:6]}\nWrite ONE different web search query that is more likely to find a page "
+                "that answers the question (other keywords, add the likely year/place/official site, or make it more "
+                "specific). Output only the query.", system=None, temperature=0.3, max_tokens=30).strip().strip('"')
+        except vram.GpuBusy:  # model busy: fall back to the same plain reword used for unusable output
+            return f"{tried[0]} {time.strftime('%Y')}"
         return q if 2 <= len(q.split()) <= 20 and q not in tried else f"{tried[0]} {time.strftime('%Y')}"
 
     def _localize(self, query: str) -> str:
@@ -413,18 +419,23 @@ class DeepResearchEngine:
     def _synthesize_quick_answer(self, prompt: str, context: List[str], sources: List[Dict[str, Any]],
                                  depth: str = "SIMPLE") -> str:
         today = time.strftime("%A %d %B %Y")
-        answer = self.model_router.generate(
-            f"Today is {today}. Live sources fetched seconds ago:\n" + "\n\n".join(guard(c, "a search result") for c in context)
-            + f"\n\nOwner's question: {prompt}\n\nUse the most recent information in the sources; if a source is "
-              "about an earlier year than the question asks for, say so instead of presenting it as current.\n\n"
-              "Formatting requirements:\n"
-              "- Structure the response cleanly with clear section headings.\n"
-              "- When listing updates, news, or items, summarize each with a clear bold title and bullet point.\n"
-              "- If multiple items, models, or dates are mentioned, include a neat Markdown comparison table summarizing them.\n"
-              "- Do not output raw unformatted text lists or unrequested code blocks.",
-            depth=depth, tools_used=["web_search", "web_fetch"], evidence_is_live=True,
-            memory_query=prompt, timeout=45,
-        )
+        from ishti import vram
+        try:
+            answer = self.model_router.generate(
+                f"Today is {today}. Live sources fetched seconds ago:\n" + "\n\n".join(guard(c, "a search result") for c in context)
+                + f"\n\nOwner's question: {prompt}\n\nUse the most recent information in the sources; if a source is "
+                  "about an earlier year than the question asks for, say so instead of presenting it as current.\n\n"
+                  "Formatting requirements:\n"
+                  "- Structure the response cleanly with clear section headings.\n"
+                  "- When listing updates, news, or items, summarize each with a clear bold title and bullet point.\n"
+                  "- If multiple items, models, or dates are mentioned, include a neat Markdown comparison table summarizing them.\n"
+                  "- Do not output raw unformatted text lists or unrequested code blocks.",
+                depth=depth, tools_used=["web_search", "web_fetch"], evidence_is_live=True,
+                memory_query=prompt, timeout=45,
+            )
+        except vram.GpuBusy as exc:  # the sources were fetched for real; a busy GPU must not crash the turn
+            print(f"[DeepResearch] answer not synthesized: {exc}")
+            answer = ""
         if answer:
             return answer
         bullets = "\n".join([f"- **{s['title']}**: {s['snippet']} ([Source]({s['url']}))" for s in sources[:4]])
@@ -440,16 +451,21 @@ class DeepResearchEngine:
             for e in evidence
         ])
 
-        report = self.model_router.generate(
-            f"Research topic: {topic}\n\n"
-            f"Evidence actually fetched from the web (these are the only sources that exist):\n{evidence_str}\n\n"
-            f"Write the report. Include only the sections the evidence supports - if the evidence "
-            f"does not let you compare options, do not write a comparison section; if the sources do "
-            f"not agree or disagree about anything, do not write a cross-verification section. "
-            f"Cite as [1], [2] using exactly the numbers above. Never cite a number that is not listed.",
-            depth="DEEP", tools_used=["web_search", "web_fetch"], evidence_is_live=True,
-            memory_query=topic, timeout=90,
-        )
+        from ishti import vram
+        try:
+            report = self.model_router.generate(
+                f"Research topic: {topic}\n\n"
+                f"Evidence actually fetched from the web (these are the only sources that exist):\n{evidence_str}\n\n"
+                f"Write the report. Include only the sections the evidence supports - if the evidence "
+                f"does not let you compare options, do not write a comparison section; if the sources do "
+                f"not agree or disagree about anything, do not write a cross-verification section. "
+                f"Cite as [1], [2] using exactly the numbers above. Never cite a number that is not listed.",
+                depth="DEEP", tools_used=["web_search", "web_fetch"], evidence_is_live=True,
+                memory_query=topic, timeout=90,
+            )
+        except vram.GpuBusy as exc:  # evidence was fetched for real; a busy GPU falls back to the source cards
+            print(f"[DeepResearch] report not synthesized: {exc}")
+            report = ""
         if report:
             return report
 

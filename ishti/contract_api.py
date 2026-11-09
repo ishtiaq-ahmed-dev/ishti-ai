@@ -458,7 +458,8 @@ async def prompt_layers():
 def attach(app):
     app.include_router(router)
     # recovery is idempotent and cheap; runs it at every boot (WP1 restart recovery)
-    app.on_event("startup")(_recover)
+    # Use router.on_startup to avoid the on_event deprecation warning in FastAPI >= 0.93.
+    app.router.on_startup.append(_recover)
 
 
 def _recover() -> None:

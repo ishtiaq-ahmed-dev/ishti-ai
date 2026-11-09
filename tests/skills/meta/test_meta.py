@@ -30,8 +30,15 @@ def _run(text):
     return out
 
 
+@pytest.mark.timeout(300)  # the first "check your skills" runs every skill's self-check subprocess once
 def test_happy_path():
-    """Row 1: normal English request returns a real reply (no crash, no hang - harness adds timeout)."""
+    """Row 1: normal English request returns a real reply (no crash, no hang - harness adds timeout).
+
+    op_health costs ~140 s on its first uncached pass (~124 skills x their self-checks, in 4 worker
+    threads; browser's check alone is 140 s) and is instant after - the QA scratch dir is per-process,
+    so the 900 s disk cache (Cycle 4) can never carry between suite runs. Measured 2026-10-16: the
+    90 s harness budget killed this test every single batch, which read as a broken skill.
+    """
     _run(HAPPY)
 
 

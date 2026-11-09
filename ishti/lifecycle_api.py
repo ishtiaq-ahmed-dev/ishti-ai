@@ -257,4 +257,4 @@ def attach(app):
         except Exception as exc:
             print(f"[lifecycle_api] run recovery skipped: {exc}")
         lifecycle.start(lifecycle._st["port"])
-    app.on_event("startup")(_boot)
+    app.router.on_startup.append(_boot)  # on_event("startup") is deprecated in FastAPI >= 0.93

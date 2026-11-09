@@ -288,6 +288,13 @@ def need_of(name, ctx=None):
     try:
         with _db() as c:
             rows = c.execute("SELECT num_ctx,size,size_vram,gpu_delta FROM model_footprints WHERE model=?", (name,)).fetchall()
+            if not rows and not alias_ctx:
+                # plan() asks with the BASE name while the load (and so its measurement) happened under the
+                # "-cNk" alias for that context (gemma3:12b at 4096 loads as gemma3-c4k:12b). Without this
+                # the model stayed "unmeasured" forever and every admission paid the 1.35x unknown headroom.
+                an = alias_name(name, ctx)
+                if an != name:
+                    rows = c.execute("SELECT num_ctx,size,size_vram,gpu_delta FROM model_footprints WHERE model=?", (an,)).fetchall()
     except sqlite3.Error:
         rows = []
     # a model needs what the GPU really grew by when it loaded (>= Ollama's size_vram: vision models carry ~1.2 GB more)
@@ -404,6 +411,13 @@ def role_spec(role):
 
 
 def keep_alive_for(role):
+    """How long a role's model may stay loaded after a call. Production pins the planner (keep_alive -1).
+    Under ISHTI_TEST_MODE nothing is pinned: a pinned model outlives the QA suite that loaded it, and the
+    next suite's GPU admission then sees a busy card (the "GpuBusy" skips in batch runs). A short
+    keep_alive keeps models through a suite (each call refreshes it) but lets the card free between suites."""
+    from ishti import test_mode
+    if test_mode.enabled():
+        return "2m"
     spec = role_spec(role)
     return -1 if spec.get("pinned") else spec.get("keep_alive", "10m")
 
@@ -732,6 +746,15 @@ def plan(model, ctx=None, role=None, strict=False):
         p_loaded = {**p_loaded, "size_vram_mb": need_of(planner_rs[p_idx]["name"])[0], "name": planner_rs[p_idx]["name"]}
         if ok():
             return {"actions": actions, "target": tgt, "need_mb": need}
+    # 6. an UNMEASURED model: give it ONE raw-estimate attempt. The 1.35x unknown-headroom rule above is
+    # conservative because an estimate can be low - but refusing forever means a big model can never be
+    # loaded once to BE measured (chicken-and-egg: the vision 12B sat queued behind this on a used
+    # desktop no matter how far the planner stepped down). _apply verifies FULL residency after the load
+    # and unloads + steps lighter on a partial one, so a wrong estimate costs one load attempt, never a
+    # split model.
+    if not known and g["total_mb"] - used - need >= c.get("ollama_headroom_mb", 1536) \
+            and used + need + c["safety_margin_mb"] + reserve <= budget_mb(g):
+        return {"actions": actions, "target": tgt, "need_mb": need}
     return None
 
 

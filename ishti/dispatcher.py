@@ -485,18 +485,27 @@ def why(dec) -> str:
     src, skill = dec.get("source"), dec.get("skill")
     if src == "rule":
         return f"The request matches the {skill} skill's pattern."
-    if src == "laya":
-        runner = [n for n, _ in dec.get("scores", [])[1:2]]
-        return (f"Laya (typed-decision model, {dec.get('ms', 0):.0f} ms) picked {skill} at {dec['confidence']:.0%}"
-                + (f", ahead of {runner[0]}." if runner else "."))
+    if dec.get("why_recency"):
+        return f"Two candidates fit equally well; this chat used {skill} last, so it continues."
     if src == "pending":
         return f"This answers the question {skill} asked you."
     if src == "correction":
         return f"You corrected the route: re-running your last request with {skill}."
     if src == "planner":
-        return f"Several tasks in one request, so I planned {len(dec.get('steps', []))} steps."
+        steps = dec.get("steps")
+        return f"Several tasks in one request, so I planned {len(steps) if isinstance(steps, list) else 0} steps."
     if src == "clarify":
         return "The available evidence is too ambiguous to choose a safe tool and target."
+    if src == "compound":
+        return "Several separate requests in one message; each half already matches its own tool, so both run as steps."
+    if src == "explicit_directive":
+        return f"You asked me to use the {skill} skill directly."
+    if src == "reference_resolved":
+        return f"This follows up on {skill} from just now."
+    if src == "learned":
+        return f"A past correction sends this to {skill}."
+    if src == "default":
+        return f"No tool matched, so {skill} answers directly."
     if src in ("shortlist", "local_rerank", "preference_hint"):
         return f"The constrained tool shortlist selected {skill}."
     if src == "plan":
@@ -782,6 +791,10 @@ def _rule_owned(text):
         dec = route(text, SKILLS)
         if dec.get("source") == "explicit_directive":
             return True
+        if dec.get("source") == "compound":
+            # Several separate requests in one message ("... and then ..."): no single skill owns it, so the
+            # one model call splits it into steps. Direct-running the first cue used to drop the rest.
+            return False
         skill = dec.get("skill")
         if skill == "chat":  # "did you send it?" is answered from the conversation, never re-run or improvised
             from ishti.skills.chat.skill import DID_YOU, KNOWLEDGE, PERSONAL, ARITHMETIC, CREATIVE, CODE, BACKCHANNEL
@@ -1306,12 +1319,22 @@ def _handle(text, sid, conv, s, events, t0, channel):
     # One architecture: rules own the requests their own triggers claim (run directly, no model call); everything
     # else gets the single model call in ishti/brain.py, which picks the tool(s) or answers directly.
     brain_out = None
-    if not (_rule_owned(text) or dec.get("needs_enable") or dec.get("source") in ("pending", "correction", "explicit_directive", "learned")):
+    compound_parts = dec.get("parts") if dec.get("source") == "compound" else None
+    if compound_parts:
+        # Both halves already routed to their own real tool, so no model call is needed: the steps go straight
+        # into the workflow executor (same T2 pauses, journal and resume as a model-planned turn). Handing the
+        # split to a small model instead let it answer in prose with invented values - a fabricated RAM figure
+        # and a weather line that contradicted the real open-meteo answer from the turn before.
+        brain_out = brain.run(text, s, SKILLS, dec,
+                              calls=[{"tool": p["skill"], "input": p["text"]} for p in compound_parts])
+    elif not (_rule_owned(text) or dec.get("needs_enable") or dec.get("source") in ("pending", "correction", "explicit_directive", "learned")):
         brain_out = brain.run(text, s, SKILLS, dec)
     if brain_out is not None:
         name, out = "brain", brain_out
         dec = {"skill": "brain", "source": "brain", "confidence": 1.0}
-        s["trace"](type="route", skill="brain", source="brain", confidence=1.0, why="one model call decided this turn")
+        why_brain = ("both halves already matched their own tool, so the steps ran directly"
+                     if compound_parts else "one model call decided this turn")
+        s["trace"](type="route", skill="brain", source="brain", confidence=1.0, why=why_brain)
         _verify_reply("brain", text, out, s)
     else:
         if dec.get("skill") is None:  # ambiguous and the model gave no usable answer: the default skill answers
@@ -1358,12 +1381,14 @@ def initiator_of(dec, s, tried):
 
 
 def recency_tiebreak(dec, last_skill, margin=0.05):
-    """Conflict resolution (E): when Laya's top two skills are within `margin`, the one this conversation used last
-    wins - "and the next one?" after a weather answer is weather, not a coin flip."""
+    """Conflict resolution (E): when two candidates fit within `margin`, the one this conversation used last
+    wins - "and the next one?" after a weather answer is weather, not a coin flip. The near-ties arrive from
+    the deterministic cue shortlist (its cues all score 0.92), which is the source checked here; a decision
+    the shortlist won by a real margin (>= 0.12 by its own rule) is never second-guessed."""
     scores = dec.get("scores") or []
-    if dec.get("source") == "laya" and len(scores) >= 2 and last_skill and scores[0][1] - scores[1][1] < margin \
+    if dec.get("source") == "shortlist" and len(scores) >= 2 and last_skill and scores[0][1] - scores[1][1] < margin \
             and last_skill in (scores[0][0], scores[1][0]) and last_skill != dec["skill"]:
-        return {**dec, "skill": last_skill, "source": "laya+recency", "why_recency": f"{scores[0]} vs {scores[1]}"}
+        return {**dec, "skill": last_skill, "why_recency": f"{scores[0]} vs {scores[1]}"}
     return dec
 
 

@@ -99,3 +99,6 @@ ishti/skills/_drafts/
 reports/
 reports/test_state.json
 tests/fixtures_new.zip
+
+# imported assistant conversations (personal)
+.cloud-attachments/

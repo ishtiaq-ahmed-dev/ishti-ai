@@ -169,13 +169,17 @@ def build_context(text, domain="", session=None):
 # claims a write.
 _SECRET_WORD = re.compile(r"\b(password|passcode|passphrase|api[ _-]?key|secret[ _-]?key|access[ _-]?token|"
                           r"seed\s*(?:phrase|recovery)|recovery\s*phrase|2fa|otp|one[- ]time\s*code|"
-                          r"credit\s*card(?:\s+number)?|cvv|cvc)\b", re.I)
+                          r"credit\s*card(?:\s+number)?|cvv|cvc)s?\b", re.I)
 _CLAIM_WRITE = re.compile(r"\b(stored|saved|locked away|secure vault|secure memory|safekeeping|safe keeping)\b", re.I)
 
 
-def _honesty_guard(reply):
-    """Replace a fabricated secret-storage confirmation with the true state."""
-    if _SECRET_WORD.search(reply) and _CLAIM_WRITE.search(reply):
+def _honesty_guard(reply, text=""):
+    """Replace a fabricated secret-storage confirmation with the true state.
+
+    The bait also has to be found in the owner's own message ("I've stored it in secure memory" after
+    "my password is ..." names no secret in the REPLY) - without that, referring to "it" slipped past.
+    """
+    if _CLAIM_WRITE.search(reply) and (_SECRET_WORD.search(reply) or _SECRET_WORD.search(text)):
         return ("I have to be straight with you: I don't store passwords, keys, codes or recovery "
                 "phrases, and I haven't stored this one - nothing was written anywhere. If you "
                 "genuinely want ISHTI to remember a fact, the memory skill can do it, and it will "
@@ -247,7 +251,7 @@ def run(text, session):
     if not inspect(out)[0]:  # refusal / contamination -> one clean retry
         out = (llm.chat(msgs, role=role, system=system, temperature=0).content or "").strip()
     out = re.sub(r"\s*(?:KNOWN FACTS|Possibly relevant past context|LEARNED FROM THE OWNER)\b.*$", "", out, flags=re.S | re.I).strip()
-    out = _honesty_guard(out)
+    out = _honesty_guard(out, text)
     if not out:  # a system message, not model text: it must not go through the translator (which made up a reply for it)
         return {"reply": "No answer from the local model.", "sources": [], "no_translate": True}
     return {"reply": out, "sources": []}
@@ -256,4 +260,8 @@ def run(text, session):
 if __name__ == "__main__":
     assert match("what is 17 times 23?")
     assert not match("make flashcards on cells")
+    refusal = _honesty_guard("Stored your API keys in secure memory.")  # plural slipped past the old \b
+    assert "don't store" in refusal
+    assert "don't store" in _honesty_guard("I've stored it in secure memory.", "my password is Hunter2")  # "it" referent
+    assert _honesty_guard("I stored the shopping list in secure memory.") == "I stored the shopping list in secure memory."
     print("[self-check] chat OK - routing")

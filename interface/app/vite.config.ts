@@ -11,7 +11,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { "@": path.resolve(import.meta.dirname, "src") } },
   server: {
-    port: 5173,
+    port: 5174,
     proxy: {
       "/api": { target: "http://127.0.0.1:8888", changeOrigin: false },
       "/ws": { target: "ws://127.0.0.1:8888", ws: true, changeOrigin: false },

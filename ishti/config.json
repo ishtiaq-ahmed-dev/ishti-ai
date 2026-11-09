@@ -9,11 +9,11 @@
     },
     "base_url": "http://127.0.0.1:11434/v1",
     "models": {
-      "planner": "qwen3.8-27b-uncensored-q5_k_m:latest",
-      "coder": "qwen3.8-27b-uncensored-q5_k_m:latest",
-      "translator": "qwen3.8-27b-uncensored-q5_k_m:latest"
+      "planner": "qwen3-c4k:14b",
+      "coder": "ishti-qwen2.5-coder:14b",
+      "translator": "gemma3:4b"
     },
-    "fallback": "ishti-qwen2.5:14b",
+    "fallback": "deepseek-r1-c4k:8b",
     "timeout_s": 120
   },
   "memory": {

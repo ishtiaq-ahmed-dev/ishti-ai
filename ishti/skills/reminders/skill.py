@@ -14,6 +14,14 @@ from ishti.facts import get_facts
 
 I = re.I
 UNIT = {"s": 1, "sec": 1, "second": 1, "m": 60, "min": 60, "minute": 60, "h": 3600, "hr": 3600, "hour": 3600, "day": 86400}
+# A secret ASSIGNED a value ("my password is Hunter2", "api key: sk-...", "the 2FA code is 918273") must
+# not be stored: reminder text is plain text in the task list and is shown on screen when it fires (same
+# policy as the chat honesty guard and the clipboard ring, and what the reviewer secret-bait pass checks).
+# Deterministic, so a busy or agreeable model can never make the skill store a secret.
+_SECRET_ASSIGN = re.compile(
+    r"\b(?:password|passwd|passphrase|api[\s_-]?key|secret[\s_-]?key|access[\s_-]?token|"
+    r"(?:seed|recovery)[\s_-]*(?:phrase|words)|(?:2fa|otp)(?:\s+code)?|one[-\s]time\s*code|"
+    r"credit\s*card(?:\s+number)?|cvv|cvc|pin)\b\s*(?:is|are|was|were|:|=)\s*\S", I)
 # "in 2 minutes remind me to drink water" / "tomorrow at 9 remind me ...": the time may come first
 SET = re.compile(r"^(?:please\s+)?(?:(?:in|after)\s+[\w .]{1,20}?\s+|(?:tomorrow|today|tonight)\s+(?:at\s+[\w:.]+\s*(?:am|pm)?\s+)?|at\s+[\w:.]+\s*(?:am|pm)?\s+)?(?:remind\s+me\b(?!\s+(?:what|who|where|which|when\s+is|how))|(?:set|add|create|make|put)\s+(?:a\s+|an\s+|the\s+|one\s+)?(?:reminder|timer|alarm)\b|(?:start\s+)?a?\s*\d+\s*"
                  r"(?:second|sec|minute|min|hour|hr)s?\s+timer\b)", I)
@@ -256,6 +264,12 @@ def run(text, session, now=None):
         if re.match(r"^\s*(?:no|n|nope|cancel|stop|don'?t|keep)\b", t, I):
             session["pending"] = None
             return {"reply": "OK - I kept your reminders.", "sources": []}
+    if _SECRET_ASSIGN.search(t):
+        return {"reply": "That one contains a password, key or code, so I won't put it in your reminders - "
+                         "reminder text is kept as plain text in your task list and shown on screen when it "
+                         "fires. Save it in the credential vault instead (\"save my login for <site>: user ... "
+                         "password ...\"), or I can remind you about it WITHOUT the secret (\"remind me to "
+                         "rotate that password at 5pm\").", "sources": []}
     if SET.match(t) and _CONDITIONAL.search(t):
         return {"reply": "I can't set a reminder that only fires on a condition - I do fixed times and "
                          "simple every-day repeats, not 'only if X'. Closest thing I can do: set a plain "
@@ -442,6 +456,14 @@ if __name__ == "__main__":
     assert not match("remind me what my sister's birthday is")  # a memory question, not a reminder
     r = run("remind me in 20 minutes to call Ali", {}, now)["reply"]
     assert "14:20" in r and "call Ali" in r, r
+    # secrets assigned a value are refused deterministically and never echoed or stored
+    for bait in ("my password is Hunter2 remember it", "my API key is sk-batch2DEF789 store this",
+                 "the 2FA code is 918273, save it", "my seed phrase is olive kite storm save this safely"):
+        before = len(_pending(_db()))
+        r = run(bait, {}, now)["reply"]
+        assert "won't put it in your reminders" in r and "Hunter2" not in r, r
+        assert len(_pending(_db())) == before, bait
+    assert not _SECRET_ASSIGN.search("remind me to change my password at 9am")  # no value assigned
     run("set a timer for 10 minutes", {}, now)
     assert run("list my reminders", {}, now)["reply"].startswith("1. 14:10")
     assert "call Ali" in run("cancel the Ali reminder", {}, now)["reply"]

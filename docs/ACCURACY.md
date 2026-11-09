@@ -73,8 +73,11 @@ Several metrics in it are deliberately unmeasured and the harness says why, for 
 alone produces no completion), `arch2_profile_client_isolation` (no profile namespace exists to
 measure), and `orchestrated_recovery_rate` (no injectable end-to-end recovery seam yet).
 
-Route-only accuracy is also measured here against a labelled set — `docs/ARCHITECTURE.md` §1 quotes
-114/120 correct (95%) with **zero model calls**, which is the project's main cost-control claim.
+Route-only accuracy is the project's main cost-control claim: `ishti/tool_routing.py` resolves a request
+with **zero model calls**, and `ishti/check.py` grades its rules against a labelled set that holds 331
+requests. The 114/120 correct (95%) figure `docs/ARCHITECTURE.md` §1 used to quote is from a list less than
+half that size and has not been re-measured against the current one - treat it as history, not as today's
+number. `venv\Scripts\python -m ishti.check` prints the current accuracy; that half of it needs no model.
 
 ## 3. NOT measured
 

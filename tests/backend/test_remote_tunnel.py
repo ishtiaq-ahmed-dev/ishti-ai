@@ -77,7 +77,9 @@ def test_tunnel_error_messages_are_plain_and_never_echo_tokens():
         "ngrok could not start (ERR_NGROK_4018); review the local ngrok configuration")
 
 
-def test_live_start_is_blocked_in_test_mode(tmp_path):
+def test_live_start_is_blocked_in_test_mode(tmp_path, monkeypatch):
+    # Explicitly set the flag so this test is self-contained regardless of the calling environment.
+    monkeypatch.setenv("ISHTI_TEST_MODE", "1")
     manager = tunnel.TunnelManager(ngrok_path="C:/fake/ngrok.exe", state_path=tmp_path / "state.json")
     with pytest.raises(tunnel.TunnelError, match="disabled in test mode"):
         manager.start(8890)

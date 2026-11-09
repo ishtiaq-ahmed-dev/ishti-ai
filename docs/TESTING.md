@@ -59,6 +59,23 @@ full, because a batch that fights a live instance produces GpuBusy failures that
 An empty suite folder collects no tests and is scored `no-suite` — it leaves the denominator and
 cannot inflate the pass rate.
 
+### Per-test timeouts (2026-10-16)
+
+The runner's default per-test wall is **150 s** (`--timeout`): live browser/LLM rows run 40-90 s
+warm on this machine, and the old 90 s wall raced the MCP client's own 90 s call timeout with zero
+margin (a wedged browser bridge killed the test a second before the client would have errored
+gracefully). Suites whose rows are intrinsically slow (live fetch + LLM extraction, the contradictory
+fetch row at 143-284 s, `meta`'s op_health at ~141 s first pass) carry a module-level
+`pytestmark = pytest.mark.timeout(300)` — the marker overrides the CLI `--timeout`, and the comment
+on each names the measured worst row. A red in one of those suites is a real regression, not a
+budget artifact.
+
+`tools/evidence.py` sets `ISHTI_OFFLINE_EVAL=1` for its core+eval sections and **must clear it
+before the per-skill section**: with it still set, every live skill suite fails inside `vram.admit`
+("GPU residency could not be verified") because the offline blocker refuses the loopback `/api/ps`
+call — every skills number the tool had ever written (100-102/121) was that artifact, not the
+product. After the fix the same command measures 121/121.
+
 ## 2. Live backend contract tests (explicit)
 
 ```powershell
@@ -75,15 +92,25 @@ Starts `python -m ishti <port>`, waits for `/api/ready`, and checks every respon
 venv\Scripts\python -X utf8 -m ishti.check
 ```
 
-Routing eval over the labelled set in `ishti/check.py` (212 requests, bar 85% — the router is
-`ishti/tool_routing.py`, which makes no model call, and the eval prints its own median time), memory
+Routing eval over the labelled set in `ishti/check.py` (331 requests on 2026-10-16, bar 85% — the router is
+`ishti/tool_routing.py`, which makes no model call, and the eval prints its own count, median time and
+accuracy, so read those rather than this number: the list grows in batches and any count written down here
+goes stale, as 120 and 212 both did), memory
 round-trip, one live skill, one local-LLM answer, one compound request. The last four need Ollama;
 the routing eval does not.
 
-Two expectations in this script are stale after the one-architecture rewrite and are recorded in
-[OWNER_LOOP.md](OWNER_LOOP.md) rather than silently re-baselined: the compound step still asserts
-skill `plan`, and `recency_tiebreak`'s unit assertion exercises a decision source the live router no
-longer emits. Both need a live run to correct.
+Two expectations recorded in [OWNER_LOOP.md](OWNER_LOOP.md) still need a live run. `ishti/check.py`
+now *reports* drift in its stored loop labels instead of asserting them — it prints how many turns
+still match the list and flags each one that does not. The `plan` expectation this paragraph used to
+explain has been replaced by `brain`: a continued workflow is routed as
+`{"skill": "brain", "source": "workflow"}` (`ishti/dispatcher.py:1074`), which is the only producer of
+that turn. `planners` is a different skill (flashcards, trip planning), not a rename of this path. What
+is asserted is the smoke invariant: every turn returns a non-empty answer. That is weaker than the
+per-turn assertions it replaced — nothing now checks that the memory, weather or LLM turns still answer
+what they are supposed to — and re-baselining the labels from a live run, then restoring an assertion on
+at least the `memory` turns, is still outstanding.
+Separately, `recency_tiebreak`'s unit assertion exercises a decision source the live router no longer
+emits; it is kept deliberately, because it pins the function's contract rather than a live path.
 
 ## 4. Live-stack acceptance scenarios (no mocks)
 

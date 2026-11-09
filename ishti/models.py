@@ -192,7 +192,14 @@ def used(model: str):
     if model == "whisper":
         return  # Whisper's idle unload is coordinated via voice.py
 
-    if is_pinned(model):
+    from ishti import test_mode
+    if test_mode.enabled():
+        # Under test mode nothing is pinned, even the planner (see vram.keep_alive_for): a pinned model
+        # outlives the QA suite that loaded it, and the next suite's GPU admission then sees a busy card
+        # (the batch "GpuBusy" failures). 2m keeps it resident through a suite; every call refreshes it.
+        threading.Thread(target=_keep_alive, args=(model, "2m"), daemon=True).start()
+        _schedule_eviction(model)
+    elif is_pinned(model):
         # Planner stays resident
         threading.Thread(target=_keep_alive, args=(model, -1), daemon=True).start()
     else:

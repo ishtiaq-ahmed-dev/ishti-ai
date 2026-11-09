@@ -270,12 +270,10 @@ async def remote_logs(source: str = "audit", lines: int = 200):
     return {"source": source, "lines": output, "count": len(output), "capped": lines}
 
 STATIC_DIR = os.path.join(ROOT_DIR, "interface", "web_ui", "static")
-TEMPLATES_DIR = os.path.join(ROOT_DIR, "interface", "web_ui", "templates")
 REFLECTIONS_PATH = os.path.join(ROOT_DIR, "orchestrator", "memory", "reflections.md")
 RESEARCH_MEM_DIR = os.path.join(ROOT_DIR, "orchestrator", "memory", "research")
 
 os.makedirs(STATIC_DIR, exist_ok=True)
-os.makedirs(TEMPLATES_DIR, exist_ok=True)
 os.makedirs(RESEARCH_MEM_DIR, exist_ok=True)
 
 # Mount static files (the old HUD's own assets: short cache - they are not content-hashed)
@@ -290,7 +288,6 @@ last_research_state: Dict[str, Any] = {}
 MAIN_LOOP: asyncio.AbstractEventLoop = None  # set at startup; worker threads have no loop of their own
 
 
-@app.on_event("startup")
 async def _capture_loop():
     global MAIN_LOOP
     MAIN_LOOP = asyncio.get_running_loop()
@@ -344,10 +341,16 @@ async def _capture_loop():
         mic_control.apply_on_startup()  # starts the wake listener ONLY if the owner left mic ON (default OFF)
 
 
-@app.on_event("shutdown")
+# Register startup/shutdown handlers without the deprecated on_event() API (FastAPI >= 0.93).
+app.router.on_startup.append(_capture_loop)
+
+
 def _stop_business_observer():
     from ishti.business import runtime as business_runtime
     business_runtime.stop()
+
+
+app.router.on_shutdown.append(_stop_business_observer)
 
 
 async def broadcast_event(event_type: str, data: Dict[str, Any]):
@@ -463,20 +466,26 @@ def _built_index():
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    """The new app when it's built; the old HUD otherwise (still reachable at /hud)."""
+    """Serve the modern React dashboard application."""
     cached = _built_index()
     if not cached:
-        return await hud()
+        return HTMLResponse(
+            "<!DOCTYPE html><html><head><title>ISHTI Dashboard</title></head><body style='font-family:sans-serif;padding:40px;background:#0d1117;color:#e6edf3;'>"
+            "<h2>ISHTI Dashboard Not Built</h2>"
+            "<p>Please build the dashboard by running: <code>cd interface/app && npm run build</code></p>"
+            "</body></html>",
+            status_code=503
+        )
     headers = {"Cache-Control": "no-cache", "ETag": cached["etag"]}  # revalidate -> 304, never stale
     if request.headers.get("if-none-match") == cached["etag"]:
         return Response(status_code=304, headers=headers)
     return HTMLResponse(cached["html"], headers=headers)
 
 
-@app.get("/hud", response_class=HTMLResponse)
+@app.get("/hud")
 async def hud():
-    with open(os.path.join(TEMPLATES_DIR, "index.html"), "r", encoding="utf-8") as f:
-        return HTMLResponse(f.read())
+    """Redirect legacy HUD route to main modern dashboard."""
+    return RedirectResponse(url="/", status_code=307)
 
 
 def _kill(reason):
