@@ -121,7 +121,7 @@ class Facts:
                     self.db.execute("SELECT entity, attr, value FROM facts WHERE key=?", (k,))]
 
     def log_route(self, text, skill, confidence, source, detail=""):
-        from ishti.ftlog import SECRETISH  # a typed key/password never lands in the routing log verbatim
+        from ishti.audit import SECRETISH  # a typed key/password never lands in the routing log verbatim
         text, detail = SECRETISH.sub("[redacted]", text or ""), SECRETISH.sub("[redacted]", detail or "")
         with self.lock, self.db:
             self.db.execute("INSERT INTO route_log VALUES(?,?,?,?,?,?)",

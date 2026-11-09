@@ -11,6 +11,7 @@ T2/T3 entries record what was asked and when the owner confirmed. Local SQLite (
 import contextlib
 import datetime as dt
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -81,12 +82,19 @@ def context(**kw):
         _local.ctx = prev
 
 
+# Secret-looking values (also used by ishti.ftlog and the route log). Defined here, at the bottom of the import
+# graph: audit is imported while other modules initialise, so it must not import them.
+SECRETISH = re.compile(
+    r"(?i)\b(?:password|passwd|pwd|pass|token|api[_-]?key|secret|pin|otp|cvv|cvc|credit\s*card|"
+    r"card\s*number|iban|iban\s*no|account\s*number)\b\s*(?:is|=|:)?\s*[\"']?[A-Za-z0-9_/.+-]{3,}[\"']?"
+    r"|\b(?:sk|pk|ghp|gho|xox[baprs]|AKIA)[A-Za-z0-9_-]{8,}")
+
+
 def _mask(value, secrets):
     for secret in ([secrets] if isinstance(secrets, str) else secrets or []):
         if secret and value:
             value = value.replace(secret, "•" * 8)
     if value:  # secrets the session never marked ("my key is sk-proj-...", "password: x") are caught by pattern too
-        from ishti.ftlog import SECRETISH
         value = SECRETISH.sub("[redacted]", value)
     return value
 

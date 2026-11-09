@@ -30,10 +30,7 @@ MIN_TURNS = 2  # an exportable example needs a real exchange, not "hi" / "Hello!
 
 # redaction: anything that looks like a secret never reaches the training set.
 # A labelled value ("password Hunter2x", "api_key=sk-...") is swallowed whole - label AND value.
-SECRETISH = re.compile(
-    r"(?i)\b(?:password|passwd|pwd|pass|token|api[_-]?key|secret|pin|otp|cvv|cvc|credit\s*card|"
-    r"card\s*number|iban|iban\s*no|account\s*number)\b\s*(?:is|=|:)?\s*[\"']?[A-Za-z0-9_/.+-]{3,}[\"']?"
-    r"|\b(?:sk|pk|ghp|gho|xox[baprs]|AKIA)[A-Za-z0-9_-]{8,}")
+from ishti.audit import SECRETISH  # noqa: E402  (one definition; audit must never import ftlog)
 EMAIL = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
 PHONE = re.compile(r"\b(?:\+92|0)3\d{2}[- ]?\d{7}\b")
 
