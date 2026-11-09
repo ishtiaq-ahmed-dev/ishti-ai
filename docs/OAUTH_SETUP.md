@@ -1,9 +1,8 @@
 # Connecting your accounts (Client ID + Client Secret)
 
-ISHTI can reach your accounts two ways. The **browser path** (Chrome Profile 9) is the default and needs no
-setup. The **API path** is faster, needs no browser, and is what "connect …" turns on. One flow serves
-everything - you paste a Client ID + Client Secret, ISHTI opens that service's own consent page once, and
-keeps the token.
+ISHTI reaches your accounts through their official APIs only - it never drives a browser. One flow serves
+everything: you paste a Client ID + Client Secret, ISHTI opens that service's own consent page once (OAuth with
+PKCE), and keeps the token on this PC.
 
 ## Supported right now (say `what services can i connect`)
 
@@ -77,10 +76,10 @@ treats it as an identifier. It still stays on your PC.
 
 | Ask | Not connected | Connected |
 |---|---|---|
-| "Do I have any unread emails?" | opens Gmail in Profile 9 and reads the page | direct API call, no browser |
-| "Read the email from X" / "search my email for Y" | browser | direct API call |
-| "Open my Gmail" | opens the web inbox (you asked for the web) | unchanged — still opens the web |
-| API fails for any reason | — | falls straight back to the browser, and says so |
+| "Do I have any unread emails?" | says Gmail isn't connected and how to connect it | direct API call |
+| "Read the email from X" / "search my email for Y" | same | direct API call |
+| "Send an email to ..." | same | draft shown, sent through the API after your yes |
+| API fails for any reason | — | says what failed; nothing is invented, nothing is retried silently |
 
 ## Files
 

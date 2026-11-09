@@ -260,7 +260,7 @@ When shutdown begins, the `Gate` middleware in `ishti.lifecycle_api`:
 3. `flush_data`: Saving your data (SQLite WAL checkpoint truncate & integrity check)
 4. `stop_voice`: Stopping the voice and microphone (force mic OFF)
 5. `unload_models`: Releasing the graphics card (unloads Ollama models + stops our Ollama if started by ISHTI)
-6. `close_browsers`: Closing ISHTI's browser tools (MCP/Playwright sessions; never user Chrome)
+6. (removed in 0.2.0: ISHTI no longer opens browser sessions; WAHA is stopped with the model unload)
 7. `release_ports`: Closing the server (Uvicorn `should_exit = True`, release port 8888)
 8. `exit`: Goodbye (process tree termination)
 
@@ -656,7 +656,7 @@ per row). All local-only; none weakens an existing gate.
 # Targeted contract additions verified 2026-10-04
 
 These additions describe current code. Test evidence is not recorded here; see
-[TESTING.md](TESTING.md) for how to run the suite and [RELEASE_READINESS.md](RELEASE_READINESS.md)
+[TESTING.md](TESTING.md) for how to run the suite and [RELEASE_READINESS.md](history/RELEASE_READINESS.md)
 gate 1 for its current status.
 
 | Route | Request | Response and conditions |

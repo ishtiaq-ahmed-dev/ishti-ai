@@ -4,10 +4,10 @@ What ISHTI does with your data, checked against the code rather than asserted ab
 
 | | |
 |---|---|
-| Version | 0.1.0 |
-| Revision | `fbed0aa` (dirty) |
-| Source hash | `a7596dfbb71d4bf0d73cc054dd5ad6e942c193ef4d3538e3f1836e44a3150f3c` |
-| Generated | 2026-10-16T21:01:23 |
+| Version | 0.2.0 |
+| Revision | `c01cc26` (dirty) |
+| Source hash | `466641bd24fe3429bafba2ae383593fc7d14faa60dfb95d5b729f753f6940918` |
+| Generated | 2026-11-09T20:36:09 |
 | Python | 3.11.9 on Windows-10-10.0.26300-SP0 |
 | Result | 4 of 4 checks passed |
 
@@ -17,7 +17,7 @@ What ISHTI does with your data, checked against the code rather than asserted ab
 |---|---|---|
 | `egress_guard_blocks` | PASS | blocked a connect to a public IP and logged one row of host/port/who only |
 | `telemetry_deny` | PASS | all 26 telemetry hosts refused while scope.net "*" was active, and example.com allowed in the same context |
-| `loopback_bind` | PASS | 13 bind sites, none using a non-loopback literal; orchestrator/plan_view.py refuses a non-loopback host before a socket opens |
+| `loopback_bind` | PASS | 14 bind sites, none using a non-loopback literal; orchestrator/plan_view.py refuses a non-loopback host before a socket opens |
 | `no_desktop_capture` | PASS | none of 14 desktop-capture APIs appear in the product source; screenshot requests are refused remotely |
 
 ## What each check actually did
@@ -28,19 +28,19 @@ What ISHTI does with your data, checked against the code rather than asserted ab
 - The refusal reads: _ISHTI blocked an outbound connection to 93.184.216.34:80 (no skill or owner action is running); nothing was sent. See Privacy in the dashboard or data/outbound.log._
 - Connecting to a telemetry host by name returned **blocked**.
 - One ledger row was written, with fields `['allowed', 'host', 'port', 'reason', 'ts', 'who']` - the host, the port, who asked and why. There is no field for a payload, a URL path or a response, which is the point.
-- The row: `{"ts": "2026-10-16T21:00:52", "host": "i.posthog.com", "port": 443, "who": "library:?", "allowed": false, "reason": "known telemetry/analytics endpoint"}`
+- The row: `{"ts": "2026-11-09T20:36:07", "host": "i.posthog.com", "port": 443, "who": "library:?", "allowed": false, "reason": "known telemetry/analytics endpoint"}`
 
 ### `telemetry_deny` - PASS
 
-- Context: the skill `browser`, whose manifest declares `scope.net: ["*"]`, plus an owner grant - the most permission ISHTI can hand out.
+- Context: the skill `deep_research`, whose manifest declares `scope.net: ["*"]`, plus an owner grant - the most permission ISHTI can hand out.
 - Control: `example.com` in that same context was **allowed**. Without this the check would pass on a build that blocked everything.
 - All 26 hosts on `TELEMETRY_DENY` were refused: ['known telemetry/analytics endpoint'].
 - With the Internet switch OFF, an otherwise allowed host was refused.
 
 ### `loopback_bind` - PASS
 
-- 13 bind sites in ISHTI's own source; non-loopback literals: none. Sites: `ishti/lifecycle.py:1089`, `ishti/lifecycle.py:1050`, `ishti/oauth.py:438`, `ishti/oauth.py:441`, `ishti/skills/workflows/skill.py:105`, `desktop/mock_server.py:251`, `orchestrator/plan_view.py:235`, `tests/test_audit_fixes.py:160`, `tests/test_download_cancel.py:44`, `tests/test_keepalive.py:71`, `tests/test_launcher_window.py:123`, `tests/test_launcher_window.py:129`, `tests/backend/test_remote_tunnel.py:44`.
-- `orchestrator/plan_view.py:serve()` refused ['', '0.0.0.0', '192.168.1.10', '::', 'example.com'] at runtime, and its default bind was `http://127.0.0.1:60906/`.
+- 14 bind sites in ISHTI's own source; non-loopback literals: none. Sites: `ishti/lifecycle.py:1084`, `ishti/lifecycle.py:1041`, `ishti/oauth.py:438`, `ishti/oauth.py:441`, `ishti/skills/workflows/skill.py:105`, `desktop/mock_server.py:251`, `orchestrator/plan_view.py:235`, `tests/test_audit_fixes.py:160`, `tests/test_download_cancel.py:44`, `tests/test_keepalive.py:71`, `tests/test_launcher_window.py:123`, `tests/test_launcher_window.py:129`, `tests/test_wa_bridge.py:45`, `tests/backend/test_remote_tunnel.py:44`.
+- `orchestrator/plan_view.py:serve()` refused ['', '0.0.0.0', '192.168.1.10', '::', 'example.com'] at runtime, and its default bind was `http://127.0.0.1:57478/`.
 - 1 site(s) take the host as a parameter rather than a literal (`orchestrator/plan_view.py:235`). The runtime half above exercises `orchestrator/plan_view.py:serve()`; a variable host is listed rather than passed, because a scan of literals cannot see what it is set to at call time.
 
 ### `no_desktop_capture` - PASS
@@ -53,9 +53,9 @@ What ISHTI does with your data, checked against the code rather than asserted ab
 
 ### Web skills - allowed by design, only while the Internet switch is on
 
-These 12 skills declare `scope.net: ["*"]`: they may call whatever host the task needs, because fetching a page the owner asked for is their job. The guard allows them only while the Internet switch is on, and it refuses the telemetry list above even then.
+These 11 skills declare `scope.net: ["*"]`: they may call whatever host the task needs, because fetching a page the owner asked for is their job. The guard allows them only while the Internet switch is on, and it refuses the telemetry list above even then.
 
-`browser`, `deep_research`, `dev`, `digest`, `find_leads`, `ledger`, `markets`, `shopping`, `utilities`, `web_fetch`, `web_search`, `webtools`
+`deep_research`, `dev`, `digest`, `find_leads`, `ledger`, `markets`, `shopping`, `utilities`, `web_fetch`, `web_search`, `webtools`
 
 ### Skills with a named host list
 
@@ -74,11 +74,13 @@ These 12 skills declare `scope.net: ["*"]`: they may call whatever host the task
 | `speedtest` | `speed.cloudflare.com` |
 | `stats` | `localhost` |
 | `weather` | `open-meteo.com` |
+| `whatsapp` | `127.0.0.1` |
 
 ### Model providers (only when you choose a cloud model)
 
 | Provider | Endpoint |
 |---|---|
+| agentrouter | `https://agentrouter.org/v1` |
 | anthropic | `https://api.anthropic.com/v1/` |
 | gemini | `https://generativelanguage.googleapis.com/v1beta/openai/` |
 | openai | `https://api.openai.com/v1` |
@@ -104,14 +106,14 @@ Telemetry, analytics and crash-reporting endpoints. These are refused even insid
 | chromadb / posthog | posthog | anonymous usage events | off: anonymized_telemetry=False and ANONYMIZED_TELEMETRY=False |
 | huggingface_hub | huggingface.co | model name, the saved HF token if any, telemetry ping | offline when the cache exists; telemetry and implicit token off; downloads only via Settings |
 | crewai / langsmith / opentelemetry (installed, not imported by ISHTI) | telemetry.crewai.com, api.smith.langchain.com | n/a unless imported | env switches set; hosts on the deny list |
-| npx @playwright/mcp (browser skill) | registry.npmjs.org | package name | npm_config_prefer_offline set; the MCP child may not inherit it |
+| WhatsApp (WAHA container) | WhatsApp's servers, from ISHTI's local Docker container | the chats you ask ISHTI to read and the messages you approve | opt-in: only after you link WhatsApp; container published on 127.0.0.1 only, API key required |
 | Telegram remote control | api.telegram.org | your messages and replies, through Telegram's servers | opt-in: allowed only while telegram_enabled is on |
-| Web skills (browser, web_search, web_fetch, markets, ...) | whatever you ask them to open | the query or URL you gave | allowed by design, per manifest scope.net; blocked when the Internet switch is OFF |
+| Web skills (web_search, web_fetch, markets, ...) | whatever you ask them to open | the query or URL you gave | allowed by design, per manifest scope.net; blocked when the Internet switch is OFF |
 | SearXNG (Docker) | startpage, mojeek, yahoo, bing, qwant, wikipedia | your search terms | owner-initiated through web_search; the container is outside Python's reach |
 
-The same live check found none of the third parties that announce themselves at runtime (Ollama's tray app is not running), so nothing outside the static inventory above was observed on this machine.
+A live check of the machine this report was generated on found: **Ollama tray app is running** - ACTIVE - quit it (tray icon > Quit) and remove Startup\Ollama.lnk to stop The rows above are the static inventory; this line is an observation, and it changes between runs.
 
-### Environment hardening (25 variables set at import)
+### Environment hardening (24 variables set at import)
 
 Set by `ishti/privacy.py:harden()`, before any library that reads them is imported - this is what turns off the telemetry of the libraries ISHTI depends on.
 
@@ -133,7 +135,6 @@ Set by `ishti/privacy.py:harden()`, before any library that reads them is import
 | `OLLAMA_NO_CLOUD` | `1` |
 | `OTEL_SDK_DISABLED` | `true` |
 | `PIP_DISABLE_PIP_VERSION_CHECK` | `1` |
-| `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD` | `1` |
 | `SCARF_NO_ANALYTICS` | `true` |
 | `SCRAPEGRAPHAI_TELEMETRY_ENABLED` | `false` |
 | `WANDB_DISABLED` | `true` |
@@ -153,23 +154,9 @@ ISHTI's own UI runs in a WebView2 with these flags (`ishti/privacy.py:WEBVIEW2_A
 
 and with a resolver rule that maps every host except `127.0.0.1` and `localhost` to `~NOTFOUND`. The browser engine that renders the interface therefore cannot resolve a name on the network at all - it is a rendering surface, not a browser.
 
-## Live gate
+## Live gate - not run
 
-`tools/gate_no_cloud.py` started the real backend, watched every TCP connection of its process tree and ran local tasks through it: **PASS** (exit 0).
-
-```
-('what is 7 plus 5?', 1.6, 0, '7 plus 5 is 12.')
-('tell me a short fun fact about Peshawar', 1.3, None, 'Something went wrong inside me (RuntimeError: Sens')
-('what time is it', 0.2, 0, "It's 9:01 PM.")
-('how much RAM is free right now', 0.4, 0, '|  | Use | Details |\n|---|---|---|\n| CPU | 26.5% u')
-('list my notes', 0.2, 0, 'Your notes:\n- qa ramp marker probe (13 Oct)\n- qa r')
-('explain what a mutex is in two sentences', 1.9, 0, 'A mutex, short for mutual exclusion object, is a s')
-remote connections seen (backend tree, our Ollama, our WebView2): none
-remote connections of an Ollama ISHTI did not start (informational): none
-egress ledger: allowed external rows 0 | blocked rows 0
-outbound calls in request ledgers: 0
-GATE no-cloud: PASS
-```
+This report did not start the backend, so nothing here shows the running server's own sockets. `--live` runs `tools/gate_no_cloud.py`, which does exactly that: it samples every connection of the backend's process tree during boot and under load, and fails on a single external one.
 
 ## What this report does not prove
 

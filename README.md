@@ -1,197 +1,186 @@
 <p align="center">
-  <img src="assets/ishti_logo_dark.png#gh-dark-mode-only" alt="ISHTI: Personal AI Assistant" width="460" />
-  <img src="assets/ishti_logo.png#gh-light-mode-only" alt="ISHTI: Personal AI Assistant" width="460" />
+  <img src="assets/ishti_logo_dark.png#gh-dark-mode-only" alt="ISHTI" width="420" />
+  <img src="assets/ishti_logo.png#gh-light-mode-only" alt="ISHTI" width="420" />
 </p>
 
-# ISHTI: a personal AI assistant for Windows
+<h3 align="center">A private, safety-first personal AI assistant for Windows</h3>
 
-ISHTI is a personal assistant for your Windows PC. You can type to it or talk to it. It answers questions, keeps
-reminders and notes, finds files, opens apps, reads and writes documents, and translates to and from Urdu and Pashto.
-It asks before it does anything that cannot be undone, such as deleting a file or sending a message.
+<p align="center">
+  <a href="https://github.com/ishtiaq-ahmed-dev/ISHTI/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/ishtiaq-ahmed-dev/ISHTI/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="Version" src="https://img.shields.io/badge/version-0.2.0-blue">
+  <img alt="Python" src="https://img.shields.io/badge/python-3.11-3776AB">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6">
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-lightgrey"></a>
+</p>
 
-ISHTI is **personal only**: one owner, one PC, one set of chats and memory.
+ISHTI is a desktop assistant that you can type to or talk to. It runs on your own PC. It answers questions, keeps
+reminders and notes, finds and reads your files, works with your Gmail, Calendar, WhatsApp and Telegram, and
+translates to and from Urdu and Pashto. It never acts behind your back: anything that sends, deletes, spends or
+installs waits for your explicit **yes**, and some actions, such as wiping a drive or moving money, are refused outright.
 
-Created by **[Ishtiaq Ahmed](https://github.com/ishtiaq-ahmed-dev)**. Licensed for non-commercial use only
-(see [License](#license)).
+It is **single-owner by design**: one person, one PC, one memory.
 
-## Business Desk
+---
 
-Business Desk is an opt-in workspace for one business owner on this PC. It observes accepted invoice, lead and sales
-CSV data, finds overdue balances and neglected opportunities, explains the evidence, and consults the owner before
-preparing local follow-up drafts. Outcome receipts teach it which categories deserve attention. It does not send
-customer messages or control spending. Continuous observation can run independently through a current-user Windows
-worker while the PC is awake and the user is signed in. Open **Business Desk** in the sidebar and follow
-[the setup and operating guide](docs/BUSINESS_DESK.md). No business data is imported automatically.
+## Highlights
 
-## Choose how ISHTI thinks
+- **One decision per request.** Deterministic rules handle what they can with no model call. Everything else gets
+  **at most one** model call, which either answers or picks the right skill. Ordinary turns cost 0–1 calls.
+- **Your choice of brain.** A local model through [Ollama](https://ollama.com), or any OpenAI-compatible cloud API
+  (OpenAI, Anthropic, Gemini, OpenRouter, AgentRouter, or a custom URL). If the cloud refuses, **automatic failover**
+  switches to a light local model, and a circuit breaker stops ISHTI from retrying a dead provider on every message.
+- **About 120 skills:** reminders, calendar, notes, files, documents (PDF, Word, Excel, slides), charts, OCR, media,
+  translation, web search with citations, markets, ledger, a CRM-style Business Desk, and more.
+  See [docs/SKILLS.md](docs/SKILLS.md).
+- **Real integrations, not screen scraping.** Gmail and Google Calendar through their official APIs (OAuth),
+  Telegram through the Bot API, and WhatsApp through [WAHA](https://waha.devlike.pro), a local HTTP API.
+  No headless browser drives your accounts.
+- **Voice.** Optional wake word, Whisper speech-to-text and Kokoro text-to-speech, all on-device. The microphone
+  is off by default.
+- **Learns from you, safely.** Corrections become lessons and preferences, which you can inspect and delete under
+  *Learning*. Model weights are never changed at runtime.
+- **Token-efficient.** The system prompt is ordered for provider prompt caching (stable prefix first). Measured
+  facts about your PC are only attached when you ask about it, and background extractors skip ordinary task messages.
 
-Every request takes one path: safety guards and fixed rules first (no model), then at most one model call that
-picks a skill or answers directly. Each skill still passes its approval gate. See
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+## How it works
 
-Choose Local or API before installation (`install.bat --provider api` is the lightweight path).
-The first-run card and saved provider choice are implemented. API credentials are currently read from the configured
-environment variable or saved through the setup card to the OS credential store. They are never written to config or logs.
+```mermaid
+flowchart LR
+    U([You: text, voice, WhatsApp, Telegram]) --> G{Guards}
+    G -- "refuse: wipe a drive, move money,<br/>reveal instructions" --> R([Plain refusal])
+    G --> D{Deterministic rules}
+    D -- "rule owns it<br/>(0 model calls)" --> S[Skill]
+    D -- otherwise --> B["Brain: 1 model call<br/>answer or choose skills"]
+    B --> S
+    B --> A([Answer])
+    S -- "sends, deletes, spends, installs" --> Y{"Your yes"}
+    Y -- yes --> X[Action, audited]
+    S --> A
+    X --> A
+```
 
-| Mode | What runs the AI | You need | Your messages go to |
-|---|---|---|---|
-| **Local** | A model on your own PC, through [Ollama](https://ollama.com) | An NVIDIA graphics card (8 GB minimum, 16 GB recommended), about 25 GB of disk | Model inference stays local; requested network tools use their declared services |
-| **API** | A cloud model you pay for, through your own API key | Internet and an API key. No graphics card needed | The provider you chose (OpenAI, Anthropic/Claude, Google Gemini or OpenRouter) |
+| Layer | Where | What it guarantees |
+|---|---|---|
+| Guards | `ishti/dispatcher.py` | Hard boundaries run before any model call; injected "skip confirmation" text is refused |
+| Rules | `ishti/tool_routing.py` | A skill whose own trigger owns the request runs directly |
+| Brain | `ishti/brain.py` | One model call over a shortlist of at most 12 skills; multi-step plans become a journaled workflow |
+| Execution | `ishti/skill_execution.py` | Tier gates (T0 read-only to T3 blocked), scope checks, single-use approvals, audit log |
+| Models | `ishti/llm.py` | One code path for local and cloud models: GPU governor, failover, kill switch, output caps |
 
-The decision stage uses at most one model call. Skills, translation and optional background memory extraction can
-make additional calls; total cost depends on the complete task and the selected provider. Your key is read
-from an environment variable and is never written to the config file or the logs.
+Deeper dives: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/SAFETY.md](docs/SAFETY.md),
+[docs/API_CONTRACT.md](docs/API_CONTRACT.md).
 
-Web search and any skill that fetches a web page use the internet in both modes. Each skill declares its network
-use in its manifest (`scope.net`).
+## Quick start
 
-### What leaves this PC
+**Requirements:** Windows 10 or 11 and Python 3.11. For **local** models, an NVIDIA GPU (8 GB minimum, 16 GB
+recommended). For **API** mode, an API key. Docker Desktop is needed only if you want WhatsApp.
 
-That is a claim in a README until something checks it, so something does.
-`venv\Scripts\python tools\privacy_report.py` audits the revision you are running and writes
-[docs/PRIVACY_REPORT.md](docs/PRIVACY_REPORT.md): every host the code can reach and why, the telemetry
-endpoints refused even inside a skill declaring `scope.net: ["*"]`, the loopback-only bind of every server,
-the absence of a desktop-capture path, and an explicit list of what the report does **not** cover. How well
-it works, and on exactly which source hash, is in [docs/EVIDENCE.md](docs/EVIDENCE.md).
+```bat
+git clone https://github.com/ishtiaq-ahmed-dev/ISHTI.git C:\ISHTI
+cd C:\ISHTI
+install.bat              :: or: install.bat --provider api   (lightweight, no GPU models)
+start.bat
+```
 
-## What you need
+On first start, ISHTI asks how it should think, **Local** or **API**, and saves the choice. API keys go to the
+**Windows Credential Manager**, never to a file.
 
-- Windows 10 or Windows 11
-- **Local mode:** an NVIDIA graphics card (8 GB minimum; 16 GB for the best results) and about 25 GB of free disk space
-- **API mode:** an internet connection and an API key from one provider
-- Internet, for the first install
+### Model providers
 
-## Install
+| Mode | Runs on | Configure |
+|---|---|---|
+| Local | Ollama on this PC, with the GPU governed so models never spill to the CPU | `install.bat` downloads the models |
+| API | `openai`, `anthropic`, `gemini`, `openrouter`, `agentrouter`, or any OpenAI-compatible `base_url` | First-run card, or `llm.api` in [`ishti/config.json`](ishti/config.json) |
 
-1. **Get the project.** Click **Code -> Download ZIP** on the GitHub page, or run `git clone`. Put the folder in a short
-   path such as `C:\ISHTI`.
-2. **Double-click `install.bat`.** It installs the Python packages, and in Local mode it also installs Ollama and
-   downloads the models. The first run can take 20 to 40 minutes. If it stops, run it again; it continues where it
-   stopped.
-3. **Double-click `start.bat`** to start ISHTI.
-
-### API mode, in short
-
-Set your key as a Windows environment variable named `ISHTI_API_KEY` (or the name set in `api.api_key_env`), then set
-the provider in `ishti/config.json` under `llm`:
-
-```json
+```jsonc
 "llm": {
   "provider": "api",
-  "api": { "provider": "anthropic", "base_url": "", "model": "claude-haiku-5-5", "api_key_env": "ISHTI_API_KEY" }
+  "api": {
+    "provider": "agentrouter",           // or openai | anthropic | gemini | openrouter
+    "model": "gpt-6.1-sol",
+    "api_key_env": "ISHTI_API_KEY",      // or save the key from the first-run card (Credential Manager)
+    "failover_local_model": "gemma3:4b"  // answers while the cloud refuses; "" disables failover
+  }
 }
 ```
 
-`provider` can be `openai`, `anthropic`, `gemini` or `openrouter`. Any other OpenAI-compatible endpoint can be set in
-`base_url`. You can also override the provider for one run with the environment variable `ISHTI_LLM_PROVIDER=api`.
+Provider failures (bad key, quota, network, a client allow-list) are reported as one plain sentence. Failover only
+uses a model Ollama **already** has pulled; it never downloads or starts anything heavy.
 
-## First use
+### WhatsApp (optional)
 
-Try asking:
+ISHTI runs [WAHA](https://waha.devlike.pro) in its **own** Docker container, `ishti-waha`. The container listens on
+`127.0.0.1:3747` only, the image is pinned by digest, and the GOWS engine runs without a browser. Open
+**Settings → Connectors → WhatsApp → Link** and scan the QR code with *WhatsApp → Linked devices*. The API key is
+generated once and stored in Credential Manager; the container only receives its SHA-512 hash. ISHTI stops the
+container on shutdown, and the session survives in a Docker volume.
 
-1. "What is the weather today?"
-2. "Remind me to call Ali tomorrow at 5 pm."
-3. "Find my files named invoice."
-4. "Translate 'good morning, how are you?' into Urdu."
-5. "Write a short, polite email asking for a day off."
+> WhatsApp access is unofficial (WhatsApp Web protocol). It can get a number banned. Use a number you can afford to lose.
 
-## Safety
+### Gmail, Calendar, Telegram
 
-- **Permission levels.** Each skill has a tier. Read-only skills run freely. Anything that changes data or talks to
-  another person waits for your yes. Blocked actions never run.
-- **Audit log.** Every action is recorded with who started it.
-- **Kill switch.** The stop control cancels running work at the next step.
-- **Untrusted content.** Text from web pages, files and messages is treated as data, never as instructions.
-- **Microphone off by default.** Voice control is off until you turn it on.
-- **No screenshots of your desktop.** ISHTI never captures your screen. `ui_read` lists the named controls of a
-  window, and `ui_act` clicks or types into one exact control after you say yes. Secret fields are refused. (The
-  browser skill does save images of the *web pages* it visits — that is page content, not your screen.)
+Connect them under **Settings → Connectors**. Google services use OAuth with PKCE ([docs/OAUTH_SETUP.md](docs/OAUTH_SETUP.md)).
+Telegram uses a bot token and a one-time pairing code.
 
-See [docs/SAFETY.md](docs/SAFETY.md) for the full model. ISHTI is not a sandbox: the file and document readers run in
-separate processes with limits, but this is not an operating-system security boundary.
+## Try it
+
+```text
+remind me tomorrow at 9 to submit the report
+what's the weather in Peshawar this weekend?
+convert 10 km to miles and what is 15% of 2400?
+find my files named invoice
+summarize https://www.python.org/downloads/
+translate "good morning, how are you?" into Urdu
+send "running 10 minutes late" to Ahmed on WhatsApp      ← shows the draft and waits for your yes
+```
+
+## Safety and privacy
+
+- **Approvals.** T2 actions (send, delete, pay, install, control the PC) need your yes. That yes is single-use and
+  bound to the exact draft and recipient. T3 actions are refused.
+- **Untrusted content stays data.** Web pages, files, emails and messages can never authorise an action.
+- **Local by default.** The backend binds to `127.0.0.1`. Remote access is opt-in and authenticated.
+- **No secrets in files.** Keys live in Credential Manager. The API token file is owner-only.
+- **Auditable.** Every action is logged with who started it. `tools/privacy_report.py` lists every host the code can
+  reach and why.
+- **Kill switch.** One control stops all running work at the next step.
+
+Report vulnerabilities privately: see [SECURITY.md](SECURITY.md).
+
+## Development
+
+```bat
+python -m venv venv && venv\Scripts\pip install -r requirements.txt
+set ISHTI_OFFLINE_EVAL=1
+venv\Scripts\python -m pytest              :: offline suite: no model, no network, scratch data
+venv\Scripts\ruff check ishti tests
+cd interface\app && npm ci && npm run build
+```
+
+Tests never touch your real data, saved provider choice or Credential Manager. See [CONTRIBUTING.md](CONTRIBUTING.md)
+and [docs/TESTING.md](docs/TESTING.md).
+
+```text
+ishti/            core: dispatcher, brain, routing, LLM, memory, learning, channels, skills/
+interface/        FastAPI server (web_ui/) and the React dashboard (app/)
+desktop/          pywebview window, tray, launcher
+orchestrator/     research engine, persona, diagnostics
+tools/            installer, web search/fetch, privacy report, QA harnesses
+tests/            offline pytest suite, per-skill suites, task suites
+docs/             architecture, safety, API contract, setup guides
+```
 
 ## Known limitations
 
-This is an early public release. Please read these before you rely on it.
-
-- **Accuracy is only partly measured.** The 300-task suite passed **292 tasks in live mode** on
-  2026-10-04 — a run that has not been repeated since the tree changed. Voice accuracy in any language,
-  and accuracy on your own real data, are **not measured at all**. Read [docs/ACCURACY.md](docs/ACCURACY.md)
-  for exactly what is and is not measured before you rely on a number. Local models in particular can
-  overstate what a file format can do. Check important answers.
-- **Not every skill is verified on a live account.** WhatsApp (through an unofficial web bridge), Google sign-in,
-  and some desktop automations were tested only offline or with synthetic data.
-- **WhatsApp is unofficial.** The bridge uses the WhatsApp Web protocol. That breaks WhatsApp's terms and can get an
-  account banned. Use a number you can afford to lose, or leave it off.
-- **Uploaded files are not encrypted at rest yet.** Encryption helpers exist but are not wired into every upload path.
-- **One owner only.** Memory is not isolated between several people or clients in this release.
-- **Windows only** for now. Local mode is tested on one NVIDIA card; other hardware is unverified.
-
-## Troubleshooting
-
-**The window does not open.** Wait 20 seconds, then start ISHTI again. Still nothing? Run `stop.bat`, then `start.bat`.
-If it keeps happening, run `install.bat` again.
-
-**"Ollama not found" (Local mode).** Install Ollama from <https://ollama.com/download>, then run `install.bat` again.
-
-**"No API key" (API mode).** Set the environment variable named in `api.api_key_env`, then restart ISHTI.
-
-**The model is too big for my graphics card (Local mode).** Choose a smaller model in Settings -> Models & voices.
-
-**ISHTI answers slowly.** Close games and other programs that use the graphics card, or use a smaller model.
-
-**Logs.** They are in `%LOCALAPPDATA%\ISHTI\logs`. The installer log is `install.log` in the ISHTI folder.
-
-**Health check.** Run `venv\Scripts\python tools\install.py --check` from the ISHTI folder.
-
-**Shut down.** Use the **Shut down** button in the app, or close the window.
-
-**Uninstall.** Delete the ISHTI folder. In Local mode, models are stored by Ollama; remove Ollama from Windows Settings ->
-Apps to delete them too.
-
-## Documentation
-
-| Read this | For |
-|---|---|
-| [docs/SETUP.md](docs/SETUP.md) | Install, run, and test details |
-| [docs/SAFETY.md](docs/SAFETY.md) | Permissions, limits, and the audit record |
-| [docs/PRIVACY_REPORT.md](docs/PRIVACY_REPORT.md) | What this build sends, what it refuses, and what the report does not cover |
-| [docs/EVIDENCE.md](docs/EVIDENCE.md) | The test, eval and per-skill results for one source hash |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How ISHTI is built |
-| [docs/ACCURACY.md](docs/ACCURACY.md) | What accuracy is measured, and what is not |
-| [docs/SKILLS.md](docs/SKILLS.md) | The skill catalog and how to add a skill |
-| [docs/API_CONTRACT.md](docs/API_CONTRACT.md) | The HTTP and WebSocket contract |
-| [docs/TESTING.md](docs/TESTING.md) | Every test type, and the one command that reports them |
-| [CHANGELOG.md](CHANGELOG.md) | What changed, by version |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute and how to reach the maintainer |
-
-## Contributing
-
-Contributions are welcome: bug reports, skills, tests, documentation and translations. Start with
-[CONTRIBUTING.md](CONTRIBUTING.md). Questions and ideas belong in GitHub Discussions; bugs belong in Issues.
-
-## Interoperability and reliability
-
-ISHTI can expose its native skill catalogue to a local MCP host and read portable `SKILL.md` instruction
-guides. Execution is opt-in for exact T0 names; other catalogue entries require the owner's normal
-ISHTI approval flow. See [interoperability](docs/INTEROPERABILITY.md).
-
-The [October 13 audit fixes](docs/AUDIT_FIXES_2026-10-13.md) cover bounded boot recovery, Windows
-disconnect logging, rotating Ollama output, connection cleanup and fresh test evidence. Model/voice
-soak, signed installers and customer validation are separate release gates.
+- **Windows only**, tested on one NVIDIA card. Other hardware is unverified.
+- **Accuracy is only partly measured.** See [docs/ACCURACY.md](docs/ACCURACY.md). Small local models make more
+  mistakes than cloud models; check important answers.
+- Pages that only render with JavaScript or sit behind a login can't be read: there is no browser automation, by design.
+- Uploaded files are not encrypted at rest yet.
 
 ## License
 
-ISHTI is released under the **[PolyForm Noncommercial License 1.0.0](LICENSE)**. You may read, run, modify and share
-it for any **non-commercial** purpose, including personal, research, educational and hobby use. **Commercial use is not
-permitted** without a separate written agreement with the author. Contact the author through
-[GitHub](https://github.com/ishtiaq-ahmed-dev).
+[PolyForm Noncommercial 1.0.0](LICENSE). Free for personal and non-commercial use. Third-party notices are in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), and the release history is in [CHANGELOG.md](CHANGELOG.md).
 
-Commercial adoption and contributor ownership still require the review in [commercial readiness](docs/COMMERCIAL_READINESS.md).
-
-Third-party software and their licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-Interface components include [Rare UI](https://rareui.com), used under its attribution and license terms.
-
-## Author
-
-**Ishtiaq Ahmed** created ISHTI. Source and issues: <https://github.com/ishtiaq-ahmed-dev/ISHTI>.
+Created by **[Ishtiaq Ahmed](https://github.com/ishtiaq-ahmed-dev)**.

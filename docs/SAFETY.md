@@ -122,7 +122,7 @@ It is enforced in code (`ishti/privacy.py`, tests in `tests/test_privacy.py`) an
   web_search, webtools) can reach any site the owner asks for; the others are limited to their manifest hosts or none.
 - Telegram, if the owner pairs it, passes messages through Telegram's servers (policy acknowledgement `risk_ack.telegram_cloud`).
   WhatsApp automation is implemented but off by default.
-- **Limits, stated plainly:** the guard is Python-level. Ollama's own model downloads, Docker/SearXNG, Node/Playwright, FFmpeg,
+- **Limits, stated plainly:** the guard is Python-level. Ollama's own model downloads, Docker (SearXNG, WAHA), FFmpeg,
   the owner's Chrome and native extensions that open their own sockets are outside it; they are covered by settings and by
   `tools/gate_no_cloud.py`, which samples their connections. Docker Desktop's own telemetry cannot be separated from SearXNG's
   traffic: turn "Send usage statistics" off in Docker Desktop. A Windows Firewall rule for `ollama.exe` / Docker would close the rest.
@@ -163,7 +163,7 @@ unaffected and is the one that matters for behavior.
 
 `ishti/killswitch.py::kill(reason)` bumps a generation counter and runs every registered stop hook: it ends speech,
 model generation (checked in the token loop and before each model call), browser steps, tool subprocesses (FFmpeg,
-robocopy, yt-dlp, code runners; never the Playwright MCP servers, Ollama or the watchdog), recordings and pending
+robocopy, yt-dlp, code runners; never Ollama or the watchdog), recordings and pending
 yes/no questions, and it sets the global microphone OFF. It is not barge-in (which pauses to listen and keeps context).
 Threads and thread pools started while handling a request inherit the kill generation, so deep-research workers stop
 too (`killswitch.propagate`).
@@ -224,7 +224,7 @@ saved chats and the audit log.
   which is no longer in this tree. **This section therefore currently rests on no re-verifiable
   security evidence.** The `ISHTI_TEST_MODE` safety assertions still live in `tests/run_skill.py`, and
   a fresh full offline regression remains an outstanding release gate: see
-  [RELEASE_READINESS.md](RELEASE_READINESS.md) gate 1 and [ACCURACY.md](ACCURACY.md) for what is and
+  [RELEASE_READINESS.md](history/RELEASE_READINESS.md) gate 1 and [ACCURACY.md](ACCURACY.md) for what is and
   is not measured.
 - Real Telegram/WhatsApp end-to-end behavior and live microphone behavior were never verified on this machine (needs the
   owner's token/pairing and a working input device).

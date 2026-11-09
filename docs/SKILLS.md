@@ -1,7 +1,6 @@
 # SKILLS: what ISHTI can do, and how skills are built
 
-Counted from `ishti/skills/*/manifest.json`: **124 skills** have a manifest, **122 `working`**, **2 `disabled`**
-(`internet_reach`, `security_scan`). Tiers: **T0: 68, T1: 41, T2: 15, T3: 0**. All 124 name a `test_file`.
+Counted from `ishti/skills/*/manifest.json`: **119 skills** have a manifest, **117 `working`**, **2 `disabled`** (`internet_reach`, `security_scan`). Tiers: **T0: 68**, **T1: 40**, **T2: 11**, **T3: 0**.
 Directories in `ishti/skills/` without a manifest (`legacy`, `_drafts`) are not counted as skills.
 
 How a skill is chosen is in [ARCHITECTURE.md](ARCHITECTURE.md) section 3; what the tiers and scopes mean is in
@@ -35,7 +34,7 @@ Development & Code) because the manifests were written in different sessions. Th
 | Category | Count | Skills |
 |---|---|---|
 | Communication | 2 | `mailmerge` (T1), `sendlater` (T2) |
-| Communication & Social | 4 | `chat`, `contacts` (T2), `email` (T2), `whatsapp` (T2) |
+| Communication & Social | 3 | `chat`, `email` (T2), `whatsapp` (T2) |
 | Daily Life | 2 | `pantry`, `recipe` |
 | Data | 6 | `abtest`, `chart` (T1), `dataprep`, `forecast`, `infographic` (T1), `stats` |
 | Development | 2 | `devops`, `gitops` (T2) |
@@ -46,7 +45,7 @@ Development & Code) because the manifests were written in different sessions. Th
 | Finance & Commerce | 6 | `clients` (T1), `find_leads`, `ledger` (T1), `markets`, `shopping`, `trading` (T2) |
 | Health | 4 | `metrics`, `moodlog`, `sleeplog`, `symptomlog` |
 | Health & Habits | 1 | `habits` |
-| Knowledge & Intelligence | 6 | `deep_research`, `gemini` (T2), `learning` (T1), `memory` (T1), `owner` (T1), `relationships` (T1) |
+| Knowledge & Intelligence | 5 | `deep_research`, `learning` (T1), `memory` (T1), `owner` (T1), `relationships` (T1) |
 | Learning | 4 | `citation`, `mnemonic`, `study`, `vocab` |
 | Media & Creative | 15 | `audioclean` (T1), `audiomark`, `audioquality`, `capcut` (T1), `chapters`, `chromakey` (T1), `extract` (T1), `highlights`, `imgcrop` (T1), `imgquality`, `media` (T1), `meme` (T1), `palette`, `scanqr` (T1), `video` (T1) |
 | Memory & Notes | 2 | `checklist`, `notes` |
@@ -56,21 +55,19 @@ Development & Code) because the manifests were written in different sessions. Th
 | Reasoning | 9 | `argumentcheck`, `bayes`, `calc`, `gametheory`, `montecarlo`, `optimize`, `quickcalc`, `sensitivity`, `sudoku` |
 | Security | 2 | `phishing_check`, `vulnscan` |
 | Security & Privacy | 1 | `security_scan` (T1) [disabled] |
-| System & Desktop | 9 | `apps` (T1), `automation` (T1), `desktop` (T1), `meta`, `security` (T2), `system`, `terminal` (T2), `ui_read` (T0), `ui_act` (T2) |
-| Utilities & Daily | 4 | `speedtest`, `travel` (T1), `utilities`, `weather` |
-| Web & Internet | 6 | `browser` (T2), `internet_reach` (T1) [disabled], `online_fallback` (T2), `web_fetch`, `web_search`, `webtools` (T1) |
+| Settings & Connections | 1 | `connectors` (T1) |
+| System & Desktop | 9 | `apps` (T1), `automation` (T1), `desktop` (T1), `meta`, `security` (T2), `system`, `terminal` (T2), `ui_act` (T2), `ui_read` |
+| Utilities & Daily | 3 | `speedtest`, `utilities`, `weather` |
+| Web & Internet | 4 | `internet_reach` (T1) [disabled], `web_fetch`, `web_search`, `webtools` (T1) |
 | Writing & Text | 4 | `legaldoc` (T1), `pressrel`, `textstats`, `writing` |
 
 ### T2 skills (always ask first)
 
-`browser`, `contacts`, `email`, `gemini`, `gitops`, `online_fallback`, `security`, `ui_act`, `sendlater`,
-`skill_creator`, `skillsmith`, `terminal`, `trading` (paper trading only; no real broker exists), `whatsapp`,
-`workflows`.
+`email`, `gitops`, `security`, `sendlater`, `skill_creator`, `skillsmith`, `terminal`, `trading`, `ui_act`, `whatsapp`, `workflows`.
 
 ### Skills with broad reach (from their manifest `scope`)
 
-- Unrestricted network (`net: ["*"]`): `browser`, `deep_research`, `dev`, `digest`, `find_leads`, `ledger`, `markets`,
-  `shopping`, `utilities`, `web_fetch`, `web_search`, `webtools`.
+- Unrestricted network (`net: ["*"]`): `deep_research`, `dev`, `digest`, `find_leads`, `ledger`, `markets`, `shopping`, `utilities`, `web_fetch`, `web_search`, `webtools`.
 - May launch apps or drive mouse/keyboard (`apps: true`): `apps`, `capcut`, `desktop`, `terminal`, `video`.
 - `ui_act` clicks and types only into one exact named control, after a yes; it is never reachable from a remote channel. It needs
   the external `cua-driver`; its availability must be checked on the target machine.
