@@ -1,4 +1,4 @@
-"""Owner-only WhatsApp inbound control over the local Baileys bridge."""
+"""Owner-only WhatsApp inbound control over ISHTI's local WAHA service (ishti/wa_bridge.py)."""
 from __future__ import annotations
 
 import json

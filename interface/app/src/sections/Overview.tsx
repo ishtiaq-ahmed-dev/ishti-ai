@@ -263,7 +263,7 @@ export function Overview({ onToggleNav }: { onToggleNav?: () => void }) {
     { icon: <Route className="h-4 w-4" />, orbState: "working" as OrbState, title: "Route", lines: ["Skill patterns first", `Laya ${o.laya.model} ${o.laya.loaded ? "· loaded" : ""}`], count: src("rule") + src("laya"), label: `${src("rule")} rule · ${src("laya")} Laya` },
     { icon: <GitBranch className="h-4 w-4" />, orbState: "weaving" as OrbState, title: "Plan", lines: ["Several tasks → steps", "Answers carried between steps"], count: src("plan"), label: "plan steps" },
     { icon: <Wrench className="h-4 w-4" />, orbState: "shaping" as OrbState, title: "Skills", lines: [`${o.skills.length} skills`, `${o.skills.filter((s) => s.status !== "broken").length} working`], count: o.skills.length, label: "skills" },
-    { icon: <Brain className="h-4 w-4" />, orbState: "connecting" as OrbState, title: "Tools & memory", lines: [`LLM ${o.models.planner}`, "SearXNG · Playwright MCP · FFmpeg", `${o.facts.length + o.owner.length} facts · ${o.memories} memories`] },
+    { icon: <Brain className="h-4 w-4" />, orbState: "connecting" as OrbState, title: "Tools & memory", lines: [`LLM ${o.models.planner}`, "SearXNG · WAHA · FFmpeg", `${o.facts.length + o.owner.length} facts · ${o.memories} memories`] },
     { icon: <CheckCheck className="h-4 w-4" />, orbState: "solving" as OrbState, title: "Verify", lines: ["Answer check by the local model", "Falls short → next skill"], count: src("escalation"), label: "escalations" },
     { icon: <AudioLines className="h-4 w-4" />, orbState: "composing" as OrbState, title: "Answer", lines: ["Streamed with its reasoning", `Voice ${o.prefs.audio_output ? "on" : "off"} · ${o.voice.piper_voice}`] },
   ];

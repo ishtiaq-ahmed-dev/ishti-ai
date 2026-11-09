@@ -238,67 +238,20 @@ class ModelRouter:
         if "<<EXTERNAL" in user_content:  # fetched pages are data, never instructions
             from ishti.untrusted import RULE
             system = f"{system}\n\n{RULE}"
-        from ishti import killswitch, models
-        killswitch.check()
-        guard = lease = None
-        requested = self.get_model(role)
+        # One model path for everything (ishti/llm.py): the owner's provider (local Ollama or the cloud API), the VRAM
+        # governor, provider failover, the kill switch, reasoning_effort=none and an output cap all apply here too.
+        # This used to POST straight to Ollama's /api/generate - in API mode research synthesis hit a local model that
+        # was never started, with no output cap and thinking tokens on.
+        from ishti import llm
+        limit = {"SIMPLE": 700, "MODERATE": 1200, "DEEP": 2500}.get(str(depth).upper(), 1200)
         try:
-            guard, lease, model_name = self._admit(requested)
-        except Exception as exc:
-            from ishti import vram
-            if type(exc) is vram.GpuBusy:  # refused (busy / missing model / cannot fit): the raw call would OOM or 404
-                print(f"[ModelRouter] generate refused: {exc}")
-                if getattr(exc, "timed_out", False):  # the server itself is stuck: another model would wait just as long
-                    return ""
-                alt = self._installed_alternative(requested)
-                if alt == requested:
-                    alt = self.get_model("fallback")
-                if alt and alt != requested:
-                    print(f"[ModelRouter] {requested} busy/fallback - using {alt}")
-                    try:
-                        guard, lease, model_name = self._admit(alt)
-                    except Exception as exc2:
-                        print(f"[ModelRouter] {alt} refused too: {exc2}")
-                        return ""
-                else:
-                    return ""
-            else:
-                model_name = requested  # governor unreachable (Ollama down): proceed as before, degraded
-                print(f"[ModelRouter] VRAM governor skipped ({type(exc).__name__}: {exc})")
-        try:
-            # streamed, so the kill switch can stop a long report at the next token (closing the stream ends it)
-            with requests.post(
-                f"{self.host}/api/generate",
-                json={
-                    "model": model_name,
-                    "system": system,
-                    "prompt": user_content,
-                    "stream": True,
-                    "options": {"temperature": temperature},
-                },
-                timeout=timeout, stream=True,
-            ) as res:
-                if res.status_code != 200:
-                    print(f"[ModelRouter] generate HTTP {res.status_code}")
-                    return ""
-                parts = []
-                for line in res.iter_lines():
-                    killswitch.check()
-                    if line:
-                        chunk = json.loads(line)
-                        parts.append(chunk.get("response", ""))
-                        if chunk.get("done"):
-                            break
-                models.used(model_name)  # usage decides how long the model stays in VRAM
-                return "".join(parts).strip()
+            return (llm.chat([{"role": "user", "content": user_content}], role="planner", system=system,
+                             temperature=temperature, max_tokens=limit).content or "").strip()
         except Exception as exc:
             if type(exc).__name__ == "Cancelled":
                 raise
-            print(f"[ModelRouter] generate failed: {exc}")
-        finally:
-            if guard is not None:
-                self._release(guard, lease)
-        return ""
+            print(f"[ModelRouter] generate failed: {type(exc).__name__}: {exc}")
+            return ""
 
     def benchmark_model(self, model_name: str) -> Dict[str, Any]:
         """

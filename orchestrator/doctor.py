@@ -1,7 +1,7 @@
 """
 ISHTI System Diagnostics & Doctor Engine
 Performs comprehensive end-to-end health checks across all hardware, local models,
-isolated browser environment, web capabilities, speech pipelines, and memory integrity.
+web capabilities, speech pipelines, and memory integrity.
 """
 
 import os
@@ -37,7 +37,6 @@ except Exception:  # pragma: no cover
 
 
 CHROME_EXE = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-PROFILE_DIR = os.path.join(ROOT_DIR, "data", "chrome_profile")
 
 
 class IshtiDoctor:
@@ -86,7 +85,6 @@ class IshtiDoctor:
         self.check_hardware()
         self.check_ollama()
         self.check_models()
-        self.check_browser_isolation()
         self._live(self.check_web_search, "Live web search")
         self._live(self.check_web_fetch, "Live page fetch")
         self.check_voice()               # internal live parts are budget-aware
@@ -222,31 +220,6 @@ class IshtiDoctor:
                     self._log_result("Models", f"Primary Model ({primary}){served}", False, f"HTTP {res.status_code}")
         except Exception as e:
             self._log_result("Models", f"Primary Model ({primary})", False, str(e), is_warning=True)
-
-    def check_browser_isolation(self):
-        print("\n--- [5] Browser & Profile Isolation ---")
-        chrome_exists = os.path.exists(CHROME_EXE)
-        self._log_result("Browser", "System Google Chrome", chrome_exists, CHROME_EXE)
-
-        profile_exists = os.path.exists(PROFILE_DIR)
-        profile_isolated = os.path.abspath(PROFILE_DIR).lower().startswith(ROOT_DIR.lower())
-        self._log_result("Browser", "Isolated Chrome Profile", profile_exists and profile_isolated, PROFILE_DIR)
-
-        # Real test: launch the browser, load a page, close it. A version string proves nothing.
-        for label, headless in (("Headless Browser Launch", True), ("Visible Browser Launch", False)):
-            if time.time() >= self._deadline:
-                self._log_result("Browser", f"{label} (skipped: time budget spent)", True, "static checks complete", is_warning=True)
-                continue
-            try:
-                from browser.browser_agent import BrowserAgent
-                t0 = time.time()
-                page = BrowserAgent(headless=headless).fetch_page_text("https://example.com", max_chars=300)
-                ok = bool(page.get("text"))
-                self._log_result("Browser", label, ok,
-                                 f"Loaded {len(page.get('text') or '')} chars in {round(time.time()-t0, 2)}s",
-                                 is_warning=not ok)
-            except Exception as e:
-                self._log_result("Browser", label, False, str(e)[:120], is_warning=True)
 
     def check_web_search(self):
         print("\n--- [6] Real-Time Web Search Capabilities ---")

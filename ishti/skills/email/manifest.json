@@ -1,14 +1,12 @@
 {
   "name": "email",
   "version": "1.0.0",
-  "description": "Gmail in the owner's Chrome Profile 10 (signed in to Google): list or summarise unread mail, read one email, search mail, and draft + send an email (shown first, sent only after a yes).",
+  "description": "Gmail through the Gmail API (OAuth connector): list or summarise unread mail, read one email, search mail, track orders, find invoice emails, and draft + send or forward an email (shown first, sent only after a yes).",
   "route": "check or summarise my email, read an email from someone, search my mail, send an email",
   "needs": {
     "python": [],
     "models": [],
-    "mcp": [
-      "browser"
-    ],
+    "mcp": [],
     "apis": []
   },
   "priority": 17,
@@ -20,7 +18,9 @@
       "data",
       "~/Downloads"
     ],
-    "net": ["googleapis.com"],
+    "net": [
+      "googleapis.com"
+    ],
     "apps": false
   },
   "category": "Communication & Social",

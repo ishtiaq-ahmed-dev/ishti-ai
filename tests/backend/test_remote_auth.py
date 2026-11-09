@@ -105,9 +105,8 @@ def test_remote_log_tail_is_authenticated_capped_and_redacted(secured_server, tm
     monkeypatch.setattr(audit, "query", lambda limit: [(1.0, "owner", "remote", "login token=TOPSECRET",
                                                          "phone +923001234567", "", None, "", "whatsapp")])
     backend = tmp_path / "backend.log"; backend.write_text("Bearer TOPSECRET phone +923001234567\n", encoding="utf-8")
-    bridge_dir = tmp_path / "bridge"; bridge_dir.mkdir(); (bridge_dir / "bridge.log").write_text(
-        "authtoken=TOPSECRET 03001234567\n", encoding="utf-8")
-    monkeypatch.setattr(lifecycle, "LOG_FILE", str(backend)); monkeypatch.setattr(wa_bridge, "DATA", str(bridge_dir))
+    monkeypatch.setattr(wa_bridge, "logs", lambda lines=200: ["authtoken=TOPSECRET 03001234567"])  # WAHA docker logs
+    monkeypatch.setattr(lifecycle, "LOG_FILE", str(backend))
     for source in ("audit", "backend", "wa_bridge"):
         result = client.get(f"/api/remote/logs?source={source}&lines=999").json()
         text = "\n".join(result["lines"])

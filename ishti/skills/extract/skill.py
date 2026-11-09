@@ -1,16 +1,14 @@
-"""Full-page scroll, extraction and filing (C4).
+"""Page extraction and filing (C4).
 
 "extract the product names and prices from <url> into a spreadsheet", "collect every job title and company on
 <url>, save it in my notes". Steps (each reported live, so a long run is visibly alive):
-  1. open the page in the owner's main Chrome (Playwright MCP)
-  2. scroll until the page stops growing (infinite-scroll pages load more as you go; max 15 scrolls), reading the
-     DOM text each time - fast and exact; if a page is mostly visual (little text) a screenshot goes to the local
-     vision model instead
-  3. the model turns the text into JSON rows with exactly the requested fields, chunk by chunk (a chunk that
+  1. read the public page over plain HTTP (SSRF-guarded: public hosts only, redirects re-checked) and keep its
+     visible text with list/table structure; no headless browser, so pages that only render with JavaScript or
+     behind a login are reported as unreadable instead of being scraped
+  2. the model turns the text into JSON rows with exactly the requested fields, chunk by chunk (a chunk that
      comes back malformed is retried once), rows de-duplicated
-  4. filed durably: an .xlsx in Documents/ISHTI Extracts (+ JSON), a note, or a memory table - if the request
-     doesn't say where, ISHTI asks and the answer continues the same job
-Every browser step is retried once on failure (per-step error rates compound on long flows)."""
+  3. filed durably: an .xlsx in Documents/ISHTI Extracts (+ JSON), a note, or a memory table - if the request
+     doesn't say where, ISHTI asks and the answer continues the same job"""
 import datetime as dt
 import json
 import os
@@ -29,7 +27,7 @@ DEST = {"spreadsheet": re.compile(r"\b(?:spreadsheet|excel|xlsx|sheet|csv|table)
         "note": re.compile(r"\b(?:note|notes|notebook)\b", I),
         "memory": re.compile(r"\b(?:memory|remember|save\s+it\s+in\s+you)\b", I)}
 OUT = os.path.join(os.path.expanduser("~"), "Documents", "ISHTI Extracts")
-MAX_SCROLLS = 15
+
 
 
 def match(text):
@@ -52,58 +50,22 @@ def fields_of(text):
     return fields[:8] or ["item", "details"]
 
 
-# ---------------------------------------------------------------- browser steps (retried once)
-def _step(name, args):
-    from ishti.skills.browser import skill as browser
-    for attempt in (1, 2):
-        try:
-            out = browser._call(name, args)
-            if not out.startswith("ERROR") or attempt == 2:
-                return out
-        except Exception:
-            if attempt == 2:
-                raise
-        time.sleep(1.0)
-
-
-def _js(expr):
-    out = _step("browser_evaluate", {"function": f"() => {{ {expr} }}"})
-    m = re.search(r"### Result\s*\n(.+?)(?:\n###|\Z)", out, re.S)
-    raw = (m.group(1) if m else out).strip()
-    try:
-        return json.loads(raw)
-    except ValueError:
-        return raw.strip('"')
+# ---------------------------------------------------------------- page reading
+CHUNK = 6000
 
 
 def read_all(url, session):
-    """[text chunks] of the whole page after scrolling it to the end."""
-    _step("browser_navigate", {"url": url if url.startswith("http") else "https://" + url})
-    time.sleep(2)
-    seen, chunks, last_height, still = set(), [], 0, 0
-    for n in range(MAX_SCROLLS + 1):
-        text = _js("return document.body.innerText") or ""
-        new = [p for p in re.split(r"\n{2,}|\n(?=\S)", str(text)) if p.strip() and p.strip() not in seen]
-        seen.update(p.strip() for p in new)
-        if new:
-            chunks.append("\n".join(new))
-        height = _js("window.scrollBy(0, window.innerHeight * 0.9); return document.body.scrollHeight") or 0
-        trace(session, "scroll", f"page part {n + 1}: {len(seen)} text blocks so far", status="done")
-        still = still + 1 if (not new and height == last_height) else 0
-        if still >= 2:  # nothing new twice in a row: the end of the page (or of what it will load)
-            break
-        last_height = height
-        time.sleep(1.2)  # infinite scroll loads the next batch
-    return chunks
-
-
-def looked_at(session):
-    """The page has little DOM text (charts, canvas): its accessibility text is read instead of a screenshot."""
-    from ishti.skills.browser.skill import page_snapshot_text
-    text = page_snapshot_text()
-    if text.strip():
-        trace(session, "read", "the page is mostly visual - reading its page text", status="done")
-    return text
+    """[text chunks] of a public page: visible text, one line per block, scripts/styles/navigation dropped."""
+    from bs4 import BeautifulSoup
+    from tools.web.fetch import safe_get
+    r = safe_get(url if url.startswith("http") else "https://" + url, timeout=20)
+    soup = BeautifulSoup(r.text, "html.parser")
+    for tag in soup(["script", "style", "noscript", "svg", "nav", "footer", "header", "form"]):
+        tag.decompose()
+    lines = [" ".join(t.split()) for t in soup.get_text("\n").splitlines()]
+    text = "\n".join(line for line in lines if line)
+    trace(session, "read", f"read {len(text)} characters of page text", status="done")
+    return [text[i:i + CHUNK] for i in range(0, len(text), CHUNK)]
 
 
 def rows_from(chunks, fields, text, session):
@@ -179,16 +141,10 @@ def run(text, session):
     url = m.group(0).rstrip(".,)")
     fields = fields_of(text)
     trace(session, "extract", f"fields: {', '.join(fields)}", status="done")
-    from ishti.skills.browser import skill as browser
-    with browser.LOCK:
-        try:
-            browser.use_server(browser.profile_for("extract"), session)
-        except RuntimeError as exc:
-            return {"reply": str(exc), "sources": []}
+    try:
         chunks = read_all(url, session)
-        if sum(len(c) for c in chunks) < 300:
-            seen = looked_at(session)
-            chunks = [seen] if seen else chunks
+    except Exception as exc:
+        return {"reply": f"I couldn't read {url}: {exc}", "sources": [], "no_escalate": True}
     if not chunks:
         return {"reply": f"I couldn't read anything on {url}.", "sources": []}
     rows = rows_from(chunks, fields, text, session)

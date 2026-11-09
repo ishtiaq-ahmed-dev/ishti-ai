@@ -64,69 +64,6 @@
     "min_confidence": 0.2,
     "default_skill": "chat"
   },
-  "mcp_servers": {
-    "login": {
-      "note": "Owner's Chrome 'Profile 10' - for logins only (Google sign-in, Gmail) - via the Playwright Extension; token in data/mcp_tokens.json",
-      "command": "npx",
-      "args": [
-        "-y",
-        "@playwright/mcp@0.0.82",
-        "--extension",
-        "--profile-dir-name",
-        "Profile 10",
-        "--output-dir",
-        "D:\\ISHTI\\data\\mcp_output",
-        "--timeout-navigation",
-        "25000"
-      ],
-      "token_key": "browser",
-      "fallback": "browser_isolated"
-    },
-    "main": {
-      "note": "Owner's MAIN Chrome 'Profile 9' - WhatsApp Web, Gemini, general browsing - via the Playwright Extension",
-      "command": "npx",
-      "args": [
-        "-y",
-        "@playwright/mcp@0.0.82",
-        "--extension",
-        "--profile-dir-name",
-        "Profile 9",
-        "--output-dir",
-        "D:\\ISHTI\\data\\mcp_output",
-        "--timeout-navigation",
-        "25000"
-      ],
-      "token_key": "whatsapp",
-      "fallback": "browser_isolated"
-    },
-    "browser_isolated": {
-      "note": "Fallback until the extension is set up: ISHTI's own separate profile, no logins",
-      "command": "npx",
-      "args": [
-        "-y",
-        "@playwright/mcp@0.0.82",
-        "--user-data-dir",
-        "D:\\ISHTI\\data\\mcp_browser_profile",
-        "--output-dir",
-        "D:\\ISHTI\\data\\mcp_output",
-        "--timeout-navigation",
-        "25000"
-      ]
-    }
-  },
-  "browser_profiles": {
-    "note": "Which Chrome profile (mcp_servers entry) each skill browses with; skills not listed use default. The owner's MAIN profile is 'main' = Chrome Profile 9 and it is the profile for mail AND social media, so everything defaults to it. 'login' (Profile 10) is only a fallback for a site that is genuinely not signed in on Profile 9.",
-    "default": "main",
-    "whatsapp": "main",
-    "gemini": "main",
-    "online_fallback": "main",
-    "email": "main",
-    "login": "login",
-    "calendar": "main",
-    "travel": "main",
-    "extract": "main",
-    "contacts": "main"
-  },
   "voice": {
     "whisper_model": "D:\\ISHTI\\data\\models\\whisper-large-v3-turbo",
     "whisper_model_fallback": "large-v3",
@@ -260,5 +197,18 @@
       "min_importance_floor": 0.55,
       "note": "Low-importance, long-unconfirmed memories are marked needs_confirmation (never deleted); importance >= floor is never decayed."
     }
+  },
+  "webtools": {
+    "chrome_profile": "Profile 9",
+    "note": "Chrome profile folder that webtools (cache, cookies, bookmarks) works on."
+  },
+  "whatsapp": {
+    "waha_url": "http://127.0.0.1:3747",
+    "session": "default",
+    "engine": "GOWS",
+    "container": "ishti-waha",
+    "image": "devlikeapro/waha@sha256:280bdc8f860267a2488a45d00ec88529646f7468c0bf0283c595d6efdd1b5e3b",
+    "volume": "ishti_waha_sessions",
+    "note": "WAHA (WhatsApp HTTP API) in ISHTI own Docker container, published on 127.0.0.1 only. Image pinned by digest; the API key lives in Windows Credential Manager (ishti-waha), the container only gets its SHA-512 hash."
   }
 }

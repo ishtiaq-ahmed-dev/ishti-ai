@@ -1,10 +1,9 @@
 """Exports for the digest (4.6): markdown, DOCX and PDF - all local, all in reports/.
 
-PDF path, in the order the master prompt asks for:
-  1. Playwright Chromium print (already in the stack: `playwright` + its bundled Chromium).
-  2. The installed Edge/Chrome binary in headless print-to-pdf mode (no GTK, no extra download).
-  3. ReportLab (pure Python, no browser at all) - the last resort, so a digest still becomes a PDF on a
-     machine where neither Playwright nor Edge/Chrome can print. Landscape A4 like the other paths, an
+PDF path:
+  1. The installed Edge/Chrome binary in headless print-to-pdf mode (no GTK, no extra download).
+  2. ReportLab (pure Python, no browser at all) - the fallback, so a digest still becomes a PDF on a
+     machine where Edge/Chrome cannot print. Landscape A4 like the other paths, an
      Arabic-capable font so Urdu/Pashto cells stay readable, repeating table headers.
 WeasyPrint is deliberately not used: it needs GTK on Windows.
 Landscape A4, repeating header rows (thead display:table-header-group / w:tblHeader), wrapped cells and an
@@ -242,7 +241,7 @@ def _find_chrome():
 
 
 def save_pdf(md, path=None, when=None):
-    """-> (path, method). Tries Playwright Chromium, then Edge/Chrome headless. Raises RuntimeError with the
+    """-> (path, method). Tries Edge/Chrome headless, then ReportLab. Raises RuntimeError with the
     exact reasons when neither is usable (the caller reports it, never pretends a PDF exists)."""
     path = path or filename("pdf", when)
     html_text = to_html(md)
@@ -250,17 +249,6 @@ def save_pdf(md, path=None, when=None):
     with open(page, "w", encoding="utf-8") as f:
         f.write(html_text)
     reasons = []
-    try:
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
-            browser = p.chromium.launch()
-            pg = browser.new_page()
-            pg.set_content(html_text, wait_until="load")
-            pg.pdf(path=path, landscape=True, print_background=True, format="A4")
-            browser.close()
-        return path, "playwright-chromium"
-    except Exception as exc:
-        reasons.append(f"playwright: {type(exc).__name__}: {exc}")
     chrome = _find_chrome()
     if chrome:
         try:

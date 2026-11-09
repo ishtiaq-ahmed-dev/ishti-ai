@@ -16,7 +16,6 @@ import {
   History,
   Lock,
   MessageSquare,
-  Monitor,
   Moon,
   PanelLeft,
   Pencil,
@@ -3572,174 +3571,6 @@ export function System({ onToggleNav }: { onToggleNav?: () => void }) {
 }
 
 // ---------------------------------------------------------------- Settings
-type Profile = { key: string; server: string; profile: string; purpose: string; connected: boolean };
-
-/** The owner's own Chrome profiles ISHTI may drive (via the Playwright Extension). Tokens stay on this PC. */
-function ChromeProfiles({
-  isOpen,
-  onToggle,
-}: {
-  isOpen: boolean;
-  onToggle: () => void;
-}) {
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [draft, setDraft] = useState<Record<string, string>>({});
-  const [savingKey, setSavingKey] = useState<string | null>(null);
-
-  useEffect(() => {
-    getJSON<{ profiles: Profile[] }>("/api/chrome_profiles").then((d) =>
-      setProfiles(d.profiles)
-    );
-  }, []);
-
-  const save = async (key: string, token: string) => {
-    setSavingKey(key);
-    try {
-      const d = await postJSON<{ profiles: Profile[] }>("/api/chrome_profiles", {
-        key,
-        token,
-      });
-      setProfiles(d.profiles);
-      setDraft((prev) => ({ ...prev, [key]: "" }));
-    } finally {
-      setSavingKey(null);
-    }
-  };
-
-  const connectedCount = profiles.filter((p) => p.connected).length;
-
-  return (
-    <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
-      {/* Card Header */}
-      <div
-        className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
-        onClick={onToggle}
-      >
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-sky-500/15 text-sky-500">
-            <Monitor className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-foreground text-sm">Chrome Profiles</span>
-              <span
-                className={cn(
-                  "rounded-md px-2 py-0.5 text-[10px] font-semibold font-mono",
-                  connectedCount > 0
-                    ? "bg-success/15 text-success"
-                    : "bg-muted text-muted-foreground"
-                )}
-              >
-                {connectedCount} / {profiles.length || 2} Connected
-              </span>
-            </div>
-            <div className="text-xs text-muted-foreground truncate">
-              Isolated Playwright sessions with human-in-the-loop approval.
-            </div>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggle();
-          }}
-          className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
-        >
-          <ChevronDown
-            className={cn(
-              "h-4 w-4 transition-transform duration-200",
-              isOpen ? "rotate-180 text-accent" : ""
-            )}
-          />
-        </button>
-      </div>
-
-      {/* Expandable Body */}
-      <AnimatePresence initial={false}>
-        {isOpen && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden border-t border-border/60 p-4 space-y-3 bg-background/50"
-          >
-            <div className="text-xs text-muted-foreground leading-relaxed">
-              ISHTI only ever uses these two dedicated profiles of your Chrome. In each one, install the{" "}
-              <a
-                className="text-accent underline hover:opacity-80"
-                href="https://chromewebstore.google.com/detail/playwright-extension/mmlmfjhmonkocbjadbfplnigmagldckm"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Playwright Extension
-              </a>
-              , open it, copy its token and paste it below. Actions like sending messages or submitting forms always ask you first.
-            </div>
-
-            <div className="space-y-2.5 pt-1">
-              {profiles.map((pr) => (
-                <div
-                  key={pr.key}
-                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-border/80 bg-background/80 p-3 shadow-2xs"
-                >
-                  <div className="flex items-center gap-2.5 min-w-[180px]">
-                    <span
-                      className={cn(
-                        "h-2.5 w-2.5 rounded-full shrink-0",
-                        pr.connected ? "bg-success" : "bg-muted-foreground/30"
-                      )}
-                    />
-                    <div>
-                      <div className="text-xs font-semibold text-foreground">
-                        {pr.profile} · {pr.server === "main" ? "Main: WhatsApp, Gemini, browsing" : pr.server === "login" ? "Logins only (Gmail)" : pr.server}
-                      </div>
-                      <div className="text-[11px] text-muted-foreground">
-                        {pr.connected ? "Connected & Ready" : "Disconnected"}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-1 sm:justify-end">
-                    <input
-                      type="password"
-                      placeholder={pr.connected ? "Replace token…" : "Paste token…"}
-                      value={draft[pr.key] ?? ""}
-                      onChange={(e) =>
-                        setDraft({ ...draft, [pr.key]: e.target.value })
-                      }
-                      className="w-full sm:w-48 rounded-lg border border-border bg-card/60 px-2.5 py-1.5 text-xs outline-none focus:border-accent"
-                    />
-                    <button
-                      type="button"
-                      disabled={!draft[pr.key] || savingKey === pr.key}
-                      onClick={() => save(pr.key, draft[pr.key])}
-                      className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40 hover:opacity-90 transition-opacity cursor-pointer shrink-0"
-                    >
-                      {savingKey === pr.key ? "Saving..." : "Save"}
-                    </button>
-                    {pr.connected && (
-                      <button
-                        type="button"
-                        onClick={() => save(pr.key, "")}
-                        className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer shrink-0"
-                      >
-                        Disconnect
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </Card>
-  );
-}
-
 export function Settings({ onToggleNav, children }: { onToggleNav?: () => void; children?: ReactNode }) {
   const [p, setP] = useState<{
     audio_output: boolean;
@@ -4234,11 +4065,6 @@ export function Settings({ onToggleNav, children }: { onToggleNav?: () => void; 
                 </AnimatePresence>
               </Card>
 
-              {/* 4. Chrome Profiles Card */}
-              <ChromeProfiles
-                isOpen={expandedCards.chrome}
-                onToggle={() => toggleCard("chrome")}
-              />
             </div>
 
             {/* 5. Remote Control: REMOVED from Settings (WP5) — WhatsApp/Telegram now live only on

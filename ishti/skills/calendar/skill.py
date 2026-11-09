@@ -177,27 +177,24 @@ def google_url(title, start, end, place=""):
 
 
 def to_google(title, start, end, place, session, reply):
-    """Open the prefilled event in the Google-signed-in profile; Save only after the owner's yes."""
+    """Add the event to Google Calendar through the Calendar API (OAuth connector, calendar.events scope), only after
+    the owner's yes. Not connected: the owner gets a prefilled link to save it themselves - nothing is clicked for them."""
+    from ishti import oauth
     from ishti.skills import ask_first
-    from ishti.skills.browser import skill as browser
-    url = google_url(title, start, end, place)
-    with browser.LOCK:
-        try:
-            browser.use_server(browser.profile_for("calendar"), session)
-        except RuntimeError as exc:
-            return f"{reply}\n\nGoogle Calendar: {exc}"
-        page = browser._call("browser_navigate", {"url": url})
-        used = browser.SERVER  # Profile 10 if Profile 9 asked for a login: Save is clicked where the event is open
-        save = browser.ref(page, "button", "Save")
-    if not save:
-        return f"{reply}\n\nI opened it in Google Calendar but couldn't find its Save button - it's open in your Chrome."
+    if not oauth.token("calendar"):
+        return (f"{reply}\n\nGoogle Calendar isn't connected (say \"connect calendar\" to link it). "
+                f"Meanwhile you can save it there yourself: {google_url(title, start, end, place)}")
+    event = {"summary": title, "start": {"dateTime": start.astimezone().isoformat()},
+             "end": {"dateTime": end.astimezone().isoformat()}, **({"location": place} if place else {})}
 
     def go():
-        with browser.LOCK:
-            browser.use_server(used, session)
-            browser._call("browser_click", {"element": "Save", "ref": save})
-        return f"Saved **{title}** to your Google Calendar too."
-    return ask_first(session, "calendar", reply + "\n\nIt's filled in on Google Calendar - save it there too", go)
+        try:
+            created = oauth.api("calendar", "/calendars/primary/events", body=event)
+        except Exception as exc:
+            return f"Google Calendar didn't accept it ({type(exc).__name__}); it is still saved in ISHTI's calendar."
+        link = created.get("htmlLink", "")
+        return f"Saved **{title}** to your Google Calendar too." + (f" [Open it]({link})" if link else "")
+    return ask_first(session, "calendar", reply + "\n\nAdd it to your Google Calendar too", go)
 
 
 def _range(text):

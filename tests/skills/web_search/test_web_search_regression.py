@@ -60,20 +60,19 @@ def test_cascade_skips_everything_when_budget_already_spent():
     assert calls == [], f"providers were called past the budget: {calls}"
 
 
-def test_cascade_without_budget_reaches_browser_fallback():
-    """The budget is opt-in (default None): callers that pass none keep the legacy
-    fall-through behaviour - Playwright is still reached when earlier providers return
-    nothing (the FIX-4 change must not silently degrade the healthy path)."""
+def test_cascade_without_budget_reaches_the_github_fallback():
+    """The budget is opt-in (default None): with every earlier provider empty the cascade still falls through to
+    the final GitHub fallback (the FIX-4 change must not silently degrade the healthy path)."""
     from tools.web.search import MultiProviderSearch
 
     m = MultiProviderSearch.__new__(MultiProviderSearch)
     calls = []
-    for name in ("searxng", "bing", "wikipedia", "github", "gh_release"):
+    for name in ("searxng", "bing", "wikipedia", "gh_release"):
         setattr(m, name, _fake_provider(name, calls))
     sentinel = object()
-    m.playwright = _fake_provider("playwright", calls, ret=[sentinel])
+    m.github = _fake_provider("github", calls, ret=[sentinel])
 
     out = m.search("qwerty layout history")                # no budget_s -> legacy path
-    assert calls[-4:] == ["searxng", "bing", "wikipedia", "playwright"], calls
+    assert calls[-4:] == ["searxng", "bing", "wikipedia", "github"], calls
     assert "gh_release" in calls                           # Route 0 still probed first
     assert out == [sentinel]

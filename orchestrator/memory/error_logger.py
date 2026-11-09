@@ -35,8 +35,6 @@ class ErrorLogger:
         if "timeout" in msg_lower:
             return "Operation exceeded timeout threshold. Verify network connectivity, proxy settings, or increase timeout in config.json."
         
-        if "chrome" in msg_lower or "playwright" in msg_lower:
-            return "Verify that Google Chrome is installed at 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' and profile dir has write permissions."
         
         if "202" in msg_lower or "403" in msg_lower or "429" in msg_lower or "bot" in msg_lower:
             return "Search provider returned anti-bot or rate-limit challenge. MultiProviderSearch automatically fails over to alternate providers."

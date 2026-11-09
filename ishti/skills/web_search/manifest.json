@@ -1,7 +1,7 @@
 {
   "name": "web_search",
   "version": "1.0.0",
-  "description": "Live internet answer: multi-provider search (Bing Lite, Wikipedia, GitHub, arXiv, Playwright fallback), reads top pages, answers with citations. Wraps orchestrator/deep_research.quick_search.",
+  "description": "Live internet answer: multi-provider search (Bing Lite, Wikipedia, GitHub, arXiv), reads top pages, answers with citations. Wraps orchestrator/deep_research.quick_search.",
   "route": "current events, news, prices, latest versions, or any fact that needs a live internet search",
   "priority": 40,
   "needs": {

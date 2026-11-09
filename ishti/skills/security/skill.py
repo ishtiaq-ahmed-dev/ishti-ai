@@ -277,60 +277,15 @@ def op_vault_delete(m, text, session):
 
 
 # ---------------------------------------------------------------- log in with a saved login
-USER_BOX = re.compile(r'textbox "[^"]*(?:e-?mail|user|login|phone|account|id)[^"]*"[^\n]*\[ref=([^\]]+)\]', I)
-PASS_BOX = re.compile(r'textbox "[^"]*pass(?:word|code)?[^"]*"[^\n]*\[ref=([^\]]+)\]', I)
-NEXT_BTN = re.compile(r'button "(?:next|continue)"[^\n]*\[ref=([^\]]+)\]', I)
-SUBMIT_BTN = re.compile(r'button "(?:log\s*in|sign\s*in|login|signin|continue|next|submit)"[^\n]*\[ref=([^\]]+)\]', I)
-
-
-def login_steps(snapshot):
-    """What to do on a login page: ('both', user_ref, pass_ref) | ('user', user_ref, next_ref) | ('pass', pass_ref) | None."""
-    u, p = USER_BOX.search(snapshot), PASS_BOX.search(snapshot)
-    if u and p:
-        return "both", u.group(1), p.group(1)
-    if p:
-        return "pass", p.group(1)
-    if u:
-        n = NEXT_BTN.search(snapshot) or SUBMIT_BTN.search(snapshot)
-        return ("user", u.group(1), n.group(1)) if n else None
-    return None
-
-
 def op_vault_login(m, text, session):
-    from ishti.skills.browser import skill as browser
+    """ISHTI never types a password into a website (no browser automation): it tells the owner what is saved and how to
+    reveal it, so they sign in themselves."""
     site = m["site"].lower()
     saved = vault_get(site)
     if not saved:
         return f"I have no saved login for {site} - say \"save my login for {site}: user ... password ...\" first."
-    user, pw = saved
-    _hide(session, pw)
-    url = site if "." in site else f"{site}.com"
-    with browser.LOCK:
-        browser.use_server(browser.profile_for("login"), session)
-        page = browser._call("browser_navigate", {"url": "https://" + url + ("/login" if "." not in site else "")})
-        step = login_steps(page)
-        if step and step[0] == "user":  # two-step login (Google, Microsoft): the user name first, then the password
-            browser._call("browser_type", {"element": "user name", "ref": step[1], "text": user})
-            browser._call("browser_click", {"element": "Next", "ref": step[2]})
-            import time
-            time.sleep(2.5)
-            step = login_steps(browser._call("browser_snapshot", {}))
-        if not step or step[0] == "user":
-            return f"I opened {url} but couldn't find its login form - it's open in your Chrome."
-        if step[0] == "both":
-            browser._call("browser_type", {"element": "user name", "ref": step[1], "text": user})
-        browser._call("browser_type", {"element": "password", "ref": step[-1], "text": pw})
-        trace(session, "login", f"filled your {site} login (password hidden)")
-        page = browser._call("browser_snapshot", {})
-        submit = SUBMIT_BTN.search(page)
-
-        def go():
-            with browser.LOCK:
-                out = browser._call("browser_click", {"element": "Sign in", "ref": submit.group(1)}) if submit else \
-                    browser._call("browser_press_key", {"key": "Enter"})
-            where = re.search(r"Page URL: (\S+)", out)
-            return f"Signed in to {site}" + (f" - now on {where.group(1)}." if where else ".")
-        return ask_first(session, "security", f"Your {site} login ({user}) is filled in - sign in now", go)
+    return (f"I don't type passwords into websites. Your saved {site} login is **{saved[0]}** - say "
+            f"\"reveal my password for {site}\" to see the password, then sign in yourself.")
 
 
 if __name__ == "__main__":
@@ -344,10 +299,6 @@ if __name__ == "__main__":
         assert next((n for n, rx in OPS if rx.search(t)), None) == want, (t, want)
     assert not match("generate a password") and not match("what's the weather")
     assert next(n for n, rx in OPS if rx.search("log in to github with my saved login")) == "vault_login"
-    one = '- textbox "Username or email address" [ref=e10]\n- textbox "Password" [ref=e12]\n- button "Sign in" [ref=e14]'
-    two = '- textbox "Email or phone" [ref=e5]\n- button "Next" [ref=e7]'
-    assert login_steps(one) == ("both", "e10", "e12") and login_steps(two) == ("user", "e5", "e7")
-    assert login_steps('- textbox "Enter your password" [ref=e9]') == ("pass", "e9") and login_steps("- heading x") is None
     assert strength("password")[0] == 0 and strength("correct horse battery staple zebra 9!")[0] == 4
     assert pwned_count("password") > 1_000_000 and pwned_count(generate(32)) == 0  # live HIBP range API
     folder = tempfile.mkdtemp()

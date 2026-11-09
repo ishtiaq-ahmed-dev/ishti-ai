@@ -1,21 +1,19 @@
 {
   "name": "whatsapp",
   "version": "1.0.0",
-  "description": "Reads and writes WhatsApp messages in WhatsApp Web, inside the owner's own Chrome 'Profile 9' (already logged in) through the Playwright Extension. Sending always waits for the owner's yes.",
+  "description": "WhatsApp through WAHA (local, loopback-only Docker service): read unread or recent chats, read or summarise a chat, read an image/PDF a contact sent, and send texts, files and voice notes. Every send shows the exact draft and recipient and waits for the owner's yes.",
   "route": "reading or sending WhatsApp messages",
   "priority": 16,
   "laya": false,
   "needs": {
-    "python": [
-      "mcp"
-    ],
+    "python": [],
     "models": [
       "planner"
     ],
-    "mcp": [
-      "main"
-    ],
-    "apis": []
+    "mcp": [],
+    "apis": [
+      "WAHA (Docker)"
+    ]
   },
   "status": "working",
   "tier": "T2",
@@ -23,7 +21,9 @@
     "write": [
       "data"
     ],
-    "net": [],
+    "net": [
+      "127.0.0.1"
+    ],
     "apps": false
   },
   "category": "Communication & Social",

@@ -31,7 +31,7 @@ def _load(man):
 
 
 def test_detector_still_finds_the_manifest_set():
-    assert len(_manifests()) >= 120, "manifest detector broke - no manifests found"
+    assert len(_manifests()) >= 110, "manifest detector broke - no manifests found"
 
 
 def test_every_manifest_points_at_a_test_file_that_exists():

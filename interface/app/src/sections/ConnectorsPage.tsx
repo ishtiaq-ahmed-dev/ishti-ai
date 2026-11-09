@@ -5,13 +5,12 @@
 // #inputs deep links land on this page. Nothing was removed from Inputs.
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Cable, Check, CheckCircle2, ClipboardCheck, MessageCircle, Mic, MicOff, PanelLeft, Plus, QrCode, RefreshCw, Send, Shield, Trash2, Webhook, X, XCircle } from "lucide-react";
+import { Cable, Check, ClipboardCheck, MessageCircle, Mic, MicOff, PanelLeft, Plus, QrCode, RefreshCw, Send, Shield, Trash2, X } from "lucide-react";
 import { getJSON, postJSON, putJSON } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type Connector = { id: string; kind: string; status: string; configured: boolean; detail?: string };
 type Row = { ts?: number; sender?: string; command?: string; result?: string };
-type McpServer = { name: string; command: string; extension: boolean; token_stored: boolean; live: boolean; resolved: string };
 
 const E164 = /^\+[1-9]\d{6,14}$/;
 
@@ -350,59 +349,6 @@ function PolicyEditor() {
   );
 }
 
-function McpCard() {
-  const [st, setSt] = useState<{ servers: McpServer[]; error?: string } | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState("");
-  const load = useCallback(() => {
-    getJSON<{ servers: McpServer[]; error?: string }>("/api/mcp/status").then((d) => setSt((prev) => (same(prev, d) ? prev : d))).catch(() => setSt(null));
-  }, []);
-  usePoll(load, 15000);
-  const reload = async () => {
-    setBusy(true); setMsg("");
-    try {
-      const d = await postJSON<{ ok: boolean; stopped: string[] }>("/api/mcp/reload");
-      setMsg(d.stopped.length ? `Restarted ${d.stopped.join(", ")} on next use.` : "Hub cleared — servers start fresh on next use.");
-      load();
-    } catch (e) { setMsg(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
-  };
-  return (
-    <div className="rounded-xl border border-border bg-card p-4" data-testid="connector-mcp">
-      <div className="flex items-center gap-2">
-        <Webhook className="h-4 w-4 text-violet-500" aria-hidden />
-        <h3 className="text-sm font-bold text-foreground">Tools · MCP servers</h3>
-        <button onClick={reload} disabled={busy} data-testid="mcp-reload" title="Restart MCP sessions (reads new tokens/config)"
-                className="ml-auto inline-flex items-center gap-1 rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-foreground disabled:opacity-50 cursor-pointer">
-          <RefreshCw className={cn("h-3 w-3", busy && "animate-spin")} /> Reload
-        </button>
-      </div>
-      <p className="mt-1 text-xs text-muted-foreground">Local tool servers ISHTI may call (Playwright browser control).</p>
-      {!st && <p className="mt-2 text-xs text-muted-foreground">Reading MCP hub state…</p>}
-      {st?.error && <p className="mt-2 text-xs text-destructive">{st.error}</p>}
-      {st && st.servers.length === 0 && <p className="mt-2 text-xs text-muted-foreground">No MCP servers configured (ishti/config.json → mcp_servers).</p>}
-      <ul className="mt-2 space-y-1.5">
-        {(st?.servers || []).map((s) => (
-          <li key={s.name} className="rounded-lg border border-border/70 bg-background/60 px-2.5 py-1.5 text-xs" data-testid={`mcp-server-${s.name}`}>
-            <div className="flex items-center gap-2">
-              {s.token_stored ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" aria-hidden /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />}
-              <span className="font-semibold text-foreground">{s.name}</span>
-              <span className={cn("ml-auto rounded-full px-1.5 py-0.5 text-[10px]", s.live ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300" : "bg-muted text-muted-foreground")}>
-                {s.live ? "live" : "starts on use"}
-              </span>
-            </div>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">
-              {s.extension ? (s.token_stored ? "Extension token stored — will connect without a popup." : "Missing extension token: paste it in Settings → Playwright Extension token, or reload after adding.")
-                : `Isolated profile: ${s.resolved || s.command}`}
-            </p>
-          </li>
-        ))}
-      </ul>
-      {msg && <p className="mt-2 text-[11px] text-accent" role="status">{msg}</p>}
-    </div>
-  );
-}
-
-
 // ---------------------------------------------------------------- Inputs (merged section)
 // The old Inputs page, now a section of Connectors (owner request: ONE place for everything
 // inbound). Same endpoints, same live controls - mic toggle, WhatsApp QR modal, clipboard/screen
@@ -692,10 +638,6 @@ export function ConnectorsPage({ onToggleNav }: { onToggleNav?: () => void }) {
           <WhatsAppCard row={byId.whatsapp} reload={reload} />
           <TelegramCard row={byId.telegram} reload={reload} />
         </div>
-      </section>
-
-      <section className="grid gap-3 md:grid-cols-2">
-        <McpCard />
       </section>
 
       <section className="rounded-xl border border-border bg-card p-4" data-testid="connector-keys">

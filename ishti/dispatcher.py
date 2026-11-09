@@ -76,8 +76,8 @@ FELL_SHORT = re.compile(r"\b(?:couldn'?t|could not|can'?t|cannot|unable to|not a
 CLARIFY = re.compile(r"\b(?:which|what|who|where|whose)\b[^.?!\n]{0,80}\?|\bcould\s+you\s+(?:tell|clarify|share|specify|say)\b|"
                      r"\bcan\s+you\s+(?:tell|clarify|share|specify)\b|\bplease\s+(?:tell|clarify|specify|share)\b|"
                      r"\b(?:need|give|tell)\s+me\s+(?:more|the|a)\b|\bI\s+(?:don'?t|do not)\s+know\s+which\b", re.I)
-# Next skill to try when one falls short (followed up to twice): browser -> web_search -> deep_research.
-ESCALATE = {"browser": "web_search", "chat": "web_search", "web_fetch": "browser", "web_search": "deep_research"}
+# Next skill to try when one falls short (followed up to twice): web_fetch/chat -> web_search -> deep_research.
+ESCALATE = {"chat": "web_search", "web_fetch": "web_search", "web_search": "deep_research"}
 # "that should have been web search" / "use the browser for that" -> re-run the last request with
 # that skill, remember it (ishti.corrections) and log it as a labelled example for fine-tuning Laya
 # (ishti.ftlog.mark_quality -> data/finetune/).
@@ -85,7 +85,7 @@ CORRECTION = re.compile(
     r"^(?:no[,.!]?\s+)?(?:(?:that|this|it)\s+(?:should\s+(?:have\s+)?(?:been|gone\s+to|used)|was\s+(?:meant\s+)?for)"
     r"|use)\s+(?:the\s+)?(?P<skill>[a-z_ ]+?)(?:\s+skill)?(?:\s+for\s+(?:that|this|it))?[.!]?$", re.I)
 ALIASES = {"search": "web_search", "web": "web_search", "internet": "web_search", "web search": "web_search",
-           "pc": "legacy", "computer": "legacy", "files": "legacy", "browser": "browser", "llm": "chat"}
+           "pc": "legacy", "computer": "legacy", "files": "legacy", "llm": "chat"}
 HOOKS = {"emit": None}  # the web server sets emit(event, data) so skills can push HUD events
 api = APIRouter()
 
@@ -246,7 +246,27 @@ def _ftlog(text, reply, name, dec, channel):
 # boundary, so no path can narrate a step).
 
 
+# Questions and task commands rarely state anything lasting; both background extractors (memory consolidation and
+# owner-fact learning) used to fire on words like "I'm", "always" or "should" inside ordinary tasks, costing up to two
+# extra model calls per turn. They now run only for statements, or for any message with an explicit memory cue.
+_TASK_OR_QUESTION = re.compile(
+    r"^\s*(?:please\s+|pls\s+|can\s+you\s+|could\s+you\s+|would\s+you\s+)?(?:remind|send|open|find|search|look|check|show|"
+    r"play|set|create|make|write|draft|translate|summari[sz]e|read|list|delete|remove|rename|move|copy|call|message|text|"
+    r"reply|book|buy|order|download|convert|calculate|run|start|stop|close|what|where|who|when|how|why|which|is|are|do|"
+    r"does|did|can|could|would|will|should)\b|\?\s*$", re.I)
+_MEMORY_CUE = re.compile(r"\b(?:remember|from\s+now\s+on|always|never|i\s+prefer|my\s+name\s+is|call\s+me|don'?t\s+ever)\b",
+                         re.I)
+
+
+def worth_learning(text: str) -> bool:
+    """True for a statement that may carry a lasting fact or preference (not a plain question or task command)."""
+    t = (text or "").strip()
+    return bool(t) and (bool(_MEMORY_CUE.search(t)) or not _TASK_OR_QUESTION.search(t))
+
+
 def _learn(text):
+    if not worth_learning(text):
+        return
     try:
         from ishti.skills.owner.skill import learn
         if found := learn(text):
@@ -1352,9 +1372,6 @@ def _handle(text, sid, conv, s, events, t0, channel):
             if (nxt not in SKILLS or nxt in tried or s.get("pending") or out.get("no_escalate")
                     or dec.get("source") in ("pending", "correction") or not fell_short(text, out.get("reply"), current, s)):
                 break
-            if current == "browser" and (re.search(r"\b(?:open|launch|go\s+to|visit|switch\s+to|close|tab|profile|dm|dms|message|messages|notification|notifications|chat|inbox|post|comment|feed|status|unread|new|viewed|who\s+viewed|connect|connection)\b", text, re.I)
-                    or re.search(r"\b(?:instagram|facebook|linkedin|whatsapp|twitter|x\.com|gmail|outlook)\b", text, re.I)):
-                break
             # Don't hand the owner a "couldn't / visit this site yourself": try the next capable skill.
             s["trace"](type="escalate", frm=current, to=nxt, why=f"{current} fell short, so I'm trying {nxt}.")
             n2, out2, _ = _run(text, s, {"skill": nxt, "confidence": 1.0, "source": "escalation", "was": current})
@@ -1423,7 +1440,7 @@ def _memory_extract(text, reply, name, channel):
         return
     try:
         from ishti.memstore import consolidate
-        if not consolidate.worth_extracting(text):
+        if not (worth_learning(text) and consolidate.worth_extracting(text)):
             return
         counts = consolidate.consolidate(text, reply)
         if counts and any(counts.values()):
@@ -2165,37 +2182,3 @@ async def owner_voice_preview():
         return _manage_error(exc)
 
 
-@api.get("/api/chrome_profiles")
-async def chrome_profiles_get():
-    """Which of the owner's Chrome profiles ISHTI may use, and whether each is connected (never the token)."""
-    from ishti import CONFIG
-    from ishti.mcp_client import load_tokens
-    tokens = load_tokens()
-    out = []
-    for name, cfg in CONFIG.get("mcp_servers", {}).items():
-        if cfg.get("token_key"):
-            args = cfg.get("args", [])
-            profile = next((args[i + 1] for i, a in enumerate(args[:-1]) if a == "--profile-dir-name"), "")
-            out.append({"key": cfg["token_key"], "server": name, "profile": profile, "purpose": cfg.get("note", ""),
-                        "connected": bool(tokens.get(cfg["token_key"]))})
-    return {"profiles": out}
-
-
-@api.post("/api/chrome_profiles")
-async def chrome_profiles_set(req: Request):
-    """Save a Playwright Extension token for one profile (local data/mcp_tokens.json, git-ignored)."""
-    from ishti import CONFIG
-    from ishti.mcp_client import TOKENS_PATH, get_hub, load_tokens, strip_token
-    body = await req.json()
-    key, token = str(body.get("key", "")), strip_token(str(body.get("token", "")))
-    keys = {c["token_key"]: n for n, c in CONFIG.get("mcp_servers", {}).items() if c.get("token_key")}
-    if key not in keys or len(token) > 400 or not re.fullmatch(r"[\w\-.=+/:]*", token):
-        return JSONResponse({"error": "unknown profile or malformed token"}, status_code=400)
-    tokens = {**load_tokens(), key: token}
-    if not token:
-        tokens.pop(key, None)  # empty = disconnect
-    os.makedirs(os.path.dirname(TOKENS_PATH), exist_ok=True)
-    with open(TOKENS_PATH, "w", encoding="utf-8") as f:
-        json.dump(tokens, f)
-    get_hub().close(keys[key])  # reconnect with the new token on next use
-    return await chrome_profiles_get()

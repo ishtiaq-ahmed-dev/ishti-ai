@@ -142,7 +142,11 @@ def run(text: str, s, skills: dict, hint: dict | None = None, calls: list[dict] 
     if calls is not None:
         return _execute_plan(s, skills, calls)
     names = shortlist(skills, text, hint)
-    system = llm.style() + "\n\n" + SYSTEM.format(tools=_tool_lines(skills, names), context=_context(text, s) or "(none)")
+    # stable first (style + decision rules), then what changes per request (tools, context), the clock last:
+    # the long identical prefix is what OpenAI-compatible providers cache
+    system = (llm.style(about=text, dynamic=False) + "\n\n"
+              + SYSTEM.format(tools=_tool_lines(skills, names), context=_context(text, s) or "(none)")
+              + "\n\n" + llm.dynamic_block(text))
     dialogue = assemble_session_context(s, text, verbatim_turns=4, max_msg_chars=1400)
     trace(s, "model", f"deciding with {llm.model_for('planner')}", status="start")
     t0 = time.monotonic()

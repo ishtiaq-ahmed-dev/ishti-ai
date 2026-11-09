@@ -148,14 +148,10 @@ collect_ignore = [
     # --- call sys.exit() / abort the run at import time ---------------------------------------------
     "test_lifecycle.py",
     # --- standalone self-check scripts (no `def test_*`; run by tools/verify_all.py) -----------------
-    "test_browser_tabs.py",
     "test_client_isolation.py",
     "test_dispatcher_followups.py",
     "test_multitopic.py",
     "test_shutdown_cleanliness.py",
     "test_stt_threads.py",
     "test_vram_governor_pressure.py",
-    # --- script-first with 3 pytest tests: its `__main__` block runs all three, and importing it
-    #     loads the planner model and hardcodes the checkout path. Run it as a script, not as a module. --------
-    "test_whatsapp_context.py",
 ]

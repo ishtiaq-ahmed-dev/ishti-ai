@@ -1,142 +1,189 @@
+"""WAHA transport (ishti/wa_bridge.py) against a local fake WAHA server: no Docker, no WhatsApp, no network beyond
+loopback. Covers auth, mapping, exact-only chat resolution, idempotent sends and media integrity."""
 import base64
 import hashlib
 import json
-import os
-from pathlib import Path
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlsplit, parse_qs, unquote
+
 import pytest
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
 from ishti import wa_bridge as bridge
 
 
+class FakeWaha:
+    """Programmable WAHA: routes[(method, path)] -> (status, json body or bytes)."""
+
+    def __init__(self):
+        self.routes, self.seen = {}, []
+        outer = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def _serve(self, method):
+                length = int(self.headers.get("Content-Length") or 0)
+                body = json.loads(self.rfile.read(length) or b"null") if length else None
+                parts = urlsplit(self.path)
+                outer.seen.append({"method": method, "path": unquote(parts.path), "query": parse_qs(parts.query),
+                                   "key": self.headers.get("X-Api-Key"), "body": body})
+                status, payload = outer.routes.get((method, unquote(parts.path)), (404, {"error": "not found"}))
+                raw = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
+                self.send_response(status)
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+
+            def do_GET(self):
+                self._serve("GET")
+
+            def do_POST(self):
+                self._serve("POST")
+
+            def log_message(self, *_a):
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def calls(self, method, path):
+        return [s for s in self.seen if s["method"] == method and s["path"] == path]
+
+
 @pytest.fixture
-def scratch(monkeypatch, tmp_path):
-    monkeypatch.setattr(bridge, 'DATA', str(tmp_path))
-    key = bytes(range(32))
-    monkeypatch.setattr(bridge, '_credentials', lambda create=False: {'key': base64.b64encode(key).decode(), 'token': 'test_token' * 5})
-    return tmp_path, key
-
-
-def test_find_chat_never_guesses_empty_prefix_or_ambiguous_name(monkeypatch):
-    monkeypatch.setattr(bridge, 'chats', lambda: [{'id': 'user@example.com', 'name': 'Ali'}, {'id': 'user@example.com', 'name': 'Ali'}])
-    assert bridge.find_chat('') == ''
-    assert bridge.find_chat('Al') == ''
-    assert bridge.find_chat('Ali') == ''
-    assert bridge.find_chat('+1 (000) 000-0001') == 'user@example.com'
-
-
-def test_staging_encrypts_exact_approved_bytes_in_node_format(scratch):
-    directory, key = scratch
-    original = directory / 'invoice.pdf'
-    original.write_bytes(b'%PDF-synthetic private invoice')
-    digest = hashlib.sha256(original.read_bytes()).hexdigest()
-    media, target = bridge._stage_media(str(original), '', digest)
-    stored = target.read_bytes()
-    assert b'private invoice' not in stored
-    assert media['kind'] == 'document'
-    assert media['mimetype'] == 'application/pdf'
-    decrypted = AESGCM(key).decrypt(stored[4:16], stored[32:] + stored[16:32], media['file'].encode())
-    assert decrypted == original.read_bytes()
-
-
-def test_changed_attachment_and_wav_voice_rejected(scratch):
-    directory, _key = scratch
-    original = directory / 'test.wav'; original.write_bytes(b'RIFF synthetic')
-    with pytest.raises(bridge.BridgeError, match='changed'):
-        bridge._stage_media(str(original), '', '0' * 64)
-    with pytest.raises(bridge.BridgeError, match='Ogg Opus'):
-        bridge._stage_media(str(original), 'voice', None)
+def waha(monkeypatch, tmp_path):
+    fake = FakeWaha()
+    monkeypatch.delenv("ISHTI_TEST_MODE", raising=False)
+    monkeypatch.setattr(bridge, "BASE", fake.url)
+    monkeypatch.setattr(bridge, "DATA", str(tmp_path))
+    monkeypatch.setattr(bridge, "LEDGER", tmp_path / "actions.json")
+    monkeypatch.setattr(bridge, "TEST_DESTINATION_FILE", tmp_path / "test_destination")
+    monkeypatch.setattr(bridge, "_api_key", lambda create=False: "synthetic-waha-key")
+    monkeypatch.setattr(bridge, "_lids", {})
+    yield fake
+    fake.server.shutdown()
 
 
 def test_live_operations_disabled_in_test_mode(monkeypatch):
-    monkeypatch.setenv('ISHTI_TEST_MODE', '1')
-    monkeypatch.setattr(bridge, '_call', lambda *_a, **_k: pytest.fail('network called'))
-    for call in [bridge.start, lambda: bridge.send('10000000001', 'test', action_id='test_action_12345'), lambda: bridge.mark_read('10000000001')]:
-        with pytest.raises(bridge.BridgeError): call()
+    monkeypatch.setenv("ISHTI_TEST_MODE", "1")
+    for call in (lambda: bridge.send("x@c.us", "hi", action_id="a"), bridge.start, lambda: bridge.mark_read("x@c.us"),
+                 lambda: bridge.authorize_self_test("923001234567")):
+        with pytest.raises(bridge.BridgeError, match="test mode"):
+            call()
+    assert bridge.status() == {"connected": False, "running": False}
 
 
-def test_errors_are_not_empty_successful_reads(monkeypatch):
-    def unavailable(*_a, **_k): raise bridge.BridgeError('Unavailable')
-    monkeypatch.setattr(bridge, '_call', unavailable)
-    with pytest.raises(bridge.BridgeError): bridge.messages('user@example.com')
-    with pytest.raises(bridge.BridgeError): bridge.chats()
-    assert bridge.status() == {'connected': False, 'running': False}
+def test_closed_port_is_not_running_and_costs_no_http(monkeypatch):
+    monkeypatch.delenv("ISHTI_TEST_MODE", raising=False)
+    monkeypatch.setattr(bridge, "BASE", "http://127.0.0.1:1")
+    assert bridge.status() == {"connected": False, "running": False}
 
 
-def test_qr_response_is_one_status_read_and_contains_image_not_raw_credentials(monkeypatch):
-    calls = []
-    monkeypatch.setattr(bridge, 'status', lambda: calls.append(1) or {'running': True, 'connected': False, 'qr_matrix': [[True] * 21 for _ in range(21)]})
+def test_status_maps_session_and_sends_the_api_key(waha):
+    waha.routes[("GET", "/api/sessions/default")] = (200, {"status": "WORKING", "me": {"id": "923007654321@c.us"}})
+    st = bridge.status()
+    assert st["connected"] and st["me"] == "923007654321@c.us" and st["pairingState"] == "WORKING"
+    assert waha.seen[-1]["key"] == "synthetic-waha-key"
+    waha.routes[("GET", "/api/sessions/default")] = (200, {"status": "SCAN_QR_CODE"})
+    waha.routes[("GET", "/api/default/auth/qr")] = (200, {"mimetype": "image/png", "data": "iVBORw0KGgo="})
     qr = bridge.get_qr_data()
-    assert qr['qr_image'].startswith('data:image/png;base64,')
-    assert qr['raw_qr'] is None and qr['ascii_qr'] == '' and calls == [1]
+    assert qr["qr_image"] == "data:image/png;base64,iVBORw0KGgo=" and not qr["connected"] and qr["raw_qr"] is None
 
 
-def test_deferred_mutations_never_call_network(monkeypatch):
-    monkeypatch.setattr(bridge, '_call', lambda *_a, **_k: pytest.fail('network called'))
-    for fn in [bridge.edit, bridge.delete, bridge.react]: assert fn('chat', 'key')['ok'] is False
+def test_unauthorized_key_is_a_clear_error(waha):
+    waha.routes[("GET", "/api/default/chats/overview")] = (401, {"error": "bad key"})
+    with pytest.raises(bridge.BridgeError, match="refused ISHTI's API key"):
+        bridge.chats()
 
 
-def test_send_timeout_does_not_replay(monkeypatch):
-    monkeypatch.delenv('ISHTI_TEST_MODE', raising=False)
-    calls = []
-    def unavailable(*args, **kwargs):
-        calls.append(args); raise bridge.BridgeError('uncertain')
-    monkeypatch.setattr(bridge, '_call', unavailable)
-    with pytest.raises(bridge.BridgeError): bridge.send('10000000001', 'synthetic', action_id='test_action_12345')
-    assert len(calls) == 1 and calls[0][0] == '/send'
+def test_chats_and_messages_are_mapped_oldest_first_with_lid_resolution(waha):
+    waha.routes[("GET", "/api/default/chats/overview")] = (200, [
+        {"id": "923001111111@c.us", "name": "Ali", "lastMessage": {"body": "hi", "timestamp": 200, "fromMe": False}},
+        {"id": "555@lid", "name": "Sara", "lastMessage": {"body": "ok", "timestamp": 100, "fromMe": True}}])
+    waha.routes[("GET", "/api/default/lids/555@lid")] = (200, {"lid": "555@lid", "pn": "923002222222@c.us"})
+    chats = bridge.chats()
+    assert [c["id"] for c in chats] == ["923001111111@c.us", "923002222222@c.us"]
+    waha.routes[("GET", "/api/default/chats/923001111111@c.us/messages")] = (200, [
+        {"id": "B", "body": "second", "timestamp": 20, "fromMe": True, "source": "api", "ackName": "DEVICE"},
+        {"id": {"_serialized": "A"}, "body": "first", "timestamp": 10, "fromMe": False, "from": "923001111111@c.us"},
+        {"id": "C", "body": "", "timestamp": 30, "hasMedia": True, "media": {"mimetype": "application/pdf"},
+         "_data": {"isViewOnce": True}}])
+    rows = bridge.messages("923001111111@s.whatsapp.net", 10, since_ms=5000)
+    assert [r["id"] for r in rows] == ["A", "B", "C"]
+    assert rows[0]["senderJid"] == "923001111111@c.us" and rows[1]["viaApi"] and rows[1]["delivery"] == "delivered"
+    assert rows[2]["kind"] == "document" and rows[2]["restricted"] is True
+    q = waha.calls("GET", "/api/default/chats/923001111111@c.us/messages")[-1]["query"]
+    assert q["filter.timestamp.gte"] == ["5"] and q["downloadMedia"] == ["false"]
 
 
-def test_missing_key_preserves_existing_encrypted_session(monkeypatch, tmp_path):
-    monkeypatch.setattr(bridge, 'DATA', str(tmp_path)); monkeypatch.delenv('ISHTI_TEST_MODE', raising=False)
-    (tmp_path / 'encrypted_state').mkdir(); (tmp_path / 'encrypted_state' / 'existing.enc').write_bytes(b'ciphertext')
-    with pytest.raises(bridge.BridgeError, match='missing'): bridge._credentials(create=True)
-    assert not (tmp_path / 'bootstrap.dpapi').exists()
+def test_find_chat_is_exact_or_nothing(waha):
+    waha.routes[("GET", "/api/default/chats/overview")] = (200, [
+        {"id": "1@c.us", "name": "Ali Khan"}, {"id": "2@c.us", "name": "ali khan"}, {"id": "3@c.us", "name": "Zara"}])
+    waha.routes[("GET", "/api/contacts/all")] = (200, [])
+    assert bridge.find_chat("+92 300 123 4567") == "923001234567@c.us"
+    assert bridge.find_chat("Zara") == "3@c.us"
+    assert bridge.find_chat("Ali Khan") == ""  # two chats share the name: never a guess
+    assert bridge.find_chat("Za") == "" and bridge.find_chat("") == ""
 
 
-def test_test_destination_prefers_explicit_env_then_persisted_file(monkeypatch, tmp_path):
-    monkeypatch.setattr(bridge, 'DATA', str(tmp_path))
-    monkeypatch.setattr(bridge, 'TEST_DESTINATION_FILE', tmp_path / 'test_destination')
-    monkeypatch.delenv('ISHTI_WA_TEST_DESTINATION', raising=False)
-    assert bridge.test_destination() == ''
-    (tmp_path / 'test_destination').write_text('923001234567', encoding='utf-8')
-    assert bridge.test_destination() == '923001234567'
-    monkeypatch.setenv('ISHTI_WA_TEST_DESTINATION', '+923001234567')
-    assert bridge.test_destination() == '+923001234567'
+def test_send_is_idempotent_per_action_id_and_never_replays(waha):
+    waha.routes[("POST", "/api/sendText")] = (201, {"id": "MSG1", "ackName": "SERVER"})
+    first = bridge.send("923001234567@s.whatsapp.net", "hello", action_id="act-1")
+    assert first["id"] == "MSG1" and first["delivery"] == "server_ack" and first["chat"] == "923001234567@c.us"
+    again = bridge.send("923001234567@c.us", "hello", action_id="act-1")
+    assert again["replayed"] and len(waha.calls("POST", "/api/sendText")) == 1
+    body = waha.calls("POST", "/api/sendText")[0]["body"]
+    assert body == {"session": "default", "chatId": "923001234567@c.us", "text": "hello"}
 
 
-def test_authorize_self_test_requires_the_linked_account_and_persists(monkeypatch, tmp_path):
-    monkeypatch.setattr(bridge, 'DATA', str(tmp_path))
-    monkeypatch.setattr(bridge, 'TEST_DESTINATION_FILE', tmp_path / 'test_destination')
-    monkeypatch.delenv('ISHTI_TEST_MODE', raising=False)
-    monkeypatch.delenv('ISHTI_WA_TEST_DESTINATION', raising=False)
-    monkeypatch.setattr(bridge, 'status', lambda: {'running': True, 'connected': True, 'me': '923007654321:user@example.com'})
-    with pytest.raises(bridge.BridgeError, match='must be the account'):
-        bridge.authorize_self_test('+923001234567')
-    assert not (tmp_path / 'test_destination').exists()
-    result = bridge.authorize_self_test('+92 300 765 4321')
-    assert result == {'ok': True, 'destination': '923007654321', 'linked': '923007654321', 'requiresRestart': True}
-    assert (tmp_path / 'test_destination').read_text(encoding='utf-8') == '923007654321'
-    assert bridge.account_matches_self_test() is True
+def test_uncertain_send_is_recorded_and_not_retried(waha):
+    waha.routes[("POST", "/api/sendText")] = (500, {"error": "boom"})
+    with pytest.raises(bridge.BridgeError):
+        bridge.send("923001234567@c.us", "hello", action_id="act-2")
+    waha.routes[("POST", "/api/sendText")] = (201, {"id": "LATE"})
+    out = bridge.send("923001234567@c.us", "hello", action_id="act-2")
+    assert out["replayed"] and out["state"] == "uncertain" and len(waha.calls("POST", "/api/sendText")) == 1
 
 
-def test_unauthorized_or_unlinked_destination_is_not_a_match(monkeypatch, tmp_path):
-    monkeypatch.setattr(bridge, 'DATA', str(tmp_path))
-    monkeypatch.setattr(bridge, 'TEST_DESTINATION_FILE', tmp_path / 'test_destination')
-    monkeypatch.setenv('ISHTI_WA_TEST_DESTINATION', '923001234567')
-    monkeypatch.setattr(bridge, 'status', lambda: {'running': True, 'connected': True, 'me': '923007654321:user@example.com'})
-    assert bridge.account_matches_self_test() is False
-    monkeypatch.setattr(bridge, 'status', lambda: {'running': True, 'connected': False, 'me': ''})
-    assert bridge.account_matches_self_test() is False
+def test_attachment_integrity_and_voice_format(waha, tmp_path):
+    photo = tmp_path / "p.png"
+    photo.write_bytes(b"\x89PNG fake image bytes")
+    with pytest.raises(bridge.BridgeError, match="changed after approval"):
+        bridge.send("1@c.us", media=str(photo), expected_hash="0" * 64, action_id="m1")
+    wav = tmp_path / "note.wav"
+    wav.write_bytes(b"RIFF....WAVE")
+    with pytest.raises(bridge.BridgeError, match="Ogg Opus"):
+        bridge.send("1@c.us", media=str(wav), media_kind="voice", action_id="m2")
+    waha.routes[("POST", "/api/sendImage")] = (201, {"id": "IMG"})
+    digest = hashlib.sha256(photo.read_bytes()).hexdigest()
+    out = bridge.send("1@c.us", media=str(photo), caption="look", expected_hash=digest, action_id="m3")
+    sent = waha.calls("POST", "/api/sendImage")[0]["body"]
+    assert out["id"] == "IMG" and sent["caption"] == "look" and base64.b64decode(sent["file"]["data"]) == photo.read_bytes()
 
 
-def test_live_self_test_authorization_disabled_in_test_mode(monkeypatch):
-    monkeypatch.setenv('ISHTI_TEST_MODE', '1')
-    with pytest.raises(bridge.BridgeError, match='disabled in test mode'):
-        bridge.authorize_self_test('923007654321')
+def test_media_is_fetched_only_from_this_waha_instance(waha, monkeypatch):
+    waha.routes[("GET", "/api/default/chats/1@c.us/messages/M1")] = (200, {
+        "id": "M1", "timestamp": 1, "hasMedia": True,
+        "media": {"mimetype": "image/png", "url": "http://evil.example/api/files/default/M1.png"}})
+    waha.routes[("GET", "/api/files/default/M1.png")] = (200, b"\x89PNG data")
+    monkeypatch.setattr(bridge, "_read_worker", lambda kind, data: {"text": f"{kind}:{len(data)}"})
+    out = bridge.read_media("1@c.us", "M1")
+    assert out["text"] == "image:9" and out["trust"] == "untrusted_message_content"
+    assert waha.calls("GET", "/api/files/default/M1.png")  # fetched from OUR base, not evil.example
+    waha.routes[("GET", "/api/default/chats/1@c.us/messages/M2")] = (200, {
+        "id": "M2", "timestamp": 1, "hasMedia": True, "media": {"mimetype": "image/png", "url": "http://x/etc/passwd"}})
+    with pytest.raises(bridge.BridgeError, match="no longer available"):
+        bridge.read_media("1@c.us", "M2")
 
 
-@pytest.mark.skipif(os.name != 'nt', reason='Windows DPAPI integration')
-def test_native_dpapi_roundtrip_uses_bytes_without_exposing_synthetic_secret():
-    encrypted = bridge._protect(b'synthetic credential verification')
-    assert isinstance(encrypted, bytes)
-    assert b'synthetic credential verification' not in encrypted
-    assert bridge._unprotect(encrypted) == b'synthetic credential verification'
+def test_authorize_self_test_requires_the_linked_account(waha):
+    waha.routes[("GET", "/api/sessions/default")] = (200, {"status": "WORKING", "me": {"id": "923007654321@c.us"}})
+    with pytest.raises(bridge.BridgeError, match="must be the account"):
+        bridge.authorize_self_test("+923001234567")
+    result = bridge.authorize_self_test("+92 300 765 4321")
+    assert result["destination"] == "923007654321" and bridge.account_matches_self_test() is True
+
+
+def test_deferred_mutations_never_call_network(waha):
+    assert bridge.delete("x", "y")["ok"] is False and bridge.edit() == bridge.delete() and bridge.react()["ok"] is False
+    assert waha.seen == []

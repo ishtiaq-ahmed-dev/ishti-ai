@@ -126,8 +126,14 @@ def run(text, session):
                 return {"reply": "Outlook is not installed on this PC. You can open your Outlook inbox at https://outlook.live.com in the browser.", "sources": []}
         m = VERB.match(text)
         if m and m["app"].lower().strip() in SITES and not WHATSAPP.search(text):
-            from ishti.skills.browser import skill as browser
-            return browser.run(text, session)
+            # a website opens in the owner's own default browser: ISHTI shows it, it does not drive it
+            url = browser_url(m["app"])
+            from ishti import test_mode
+            if test_mode.enabled():
+                return {"reply": f"(test mode) Would open {url} in your browser.", "sources": []}
+            import os
+            os.startfile(url)
+            return {"reply": f"Opened {url} in your browser.", "sources": [{"title": m["app"], "url": url}], "verified": True}
     from desktop.computer_use import get_computer_use_agent
     agent = get_computer_use_agent()
     if what := _play_words(text):

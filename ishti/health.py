@@ -94,21 +94,13 @@ def _skills():
     return not broken, f"{len(SKILLS) - len(broken)}/{len(SKILLS)} loaded" + (f"; broken: {', '.join(broken)}" if broken else "")
 
 
-def _browser():
-    from ishti.mcp_client import load_tokens
-    main = CONFIG.get("browser_profiles", {}).get("default", "main")
-    key = CONFIG["mcp_servers"].get(main, {}).get("token_key")
-    ok = not key or bool(load_tokens().get(key))
-    return ok, "main profile connected" if ok else "main Chrome profile not connected (Settings -> Chrome profiles)"
-
-
 def _errors():
     from ishti.audit import query
     fails = [r for r in query(time.time() - 3600) if r[3].endswith("failed") or r[3] == "request failed"]
     return len(fails) < 5, f"{len(fails)} failures in the last hour"
 
 
-CHECKS = {"ollama": _ollama, "search": _searx, "gpu": _gpu, "disks": _disks, "skills": _skills, "browser": _browser,
+CHECKS = {"ollama": _ollama, "search": _searx, "gpu": _gpu, "disks": _disks, "skills": _skills,
           "errors": _errors}
 
 

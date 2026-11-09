@@ -55,7 +55,7 @@ def test_oversized_document_is_rejected(tmp_path):
 
 def test_native_catalogue_has_no_import_side_effects():
     records = catalogue()
-    assert len(records) >= 120 and records["terminal"]["tier"] == "T2"
+    assert len(records) >= 110 and records["terminal"]["tier"] == "T2"
     assert json.dumps(records)
 
 

@@ -266,7 +266,7 @@ async def remote_logs(source: str = "audit", lines: int = 200):
         output = _tail_file(lifecycle.LOG_FILE, lines)
     elif source == "wa_bridge":
         from ishti import wa_bridge
-        output = _tail_file(str(Path(wa_bridge.DATA) / "bridge.log"), lines)
+        output = [_redact_remote_log(line) for line in wa_bridge.logs(lines)]
     else:
         return JSONResponse({"error": "source must be audit, backend or wa_bridge"}, status_code=400)
     return {"source": source, "lines": output, "count": len(output), "capped": lines}
@@ -685,17 +685,10 @@ def get_status():  # a plain def: FastAPI runs it in a thread; it makes blocking
         "fast_model": fast,
         "fallback_model": fallback,
         "installed_models": installed,
-        "browser_profile": os.path.join(ROOT_DIR, "data", "chrome_profile"),
-        "isolation_verified": True,
         "skills_count": len(skills),
         "skills": skills,
         "last_execution": last_execution_state,
         "last_research": last_research_state,
-        "hardware": {
-            "gpu": "NVIDIA GeForce RTX 5070 Ti (16GB GDDR7)",
-            "cpu": "Intel Core Ultra 9 (24 Cores + NPU)",
-            "ram": "64GB DDR5",
-        },
     }
 
 
@@ -838,31 +831,6 @@ async def mic_toggle_endpoint():
     res = mic_control.toggle(by="dashboard")
     await broadcast_event("mic_state", res)
     return JSONResponse(res)
-
-
-@app.get("/api/mcp/status")
-async def mcp_status():
-    """Read-only MCP hub state for the UI's Tools card (never starts a server)."""
-    from ishti import mcp_client
-    return JSONResponse(mcp_client.status())
-
-
-@app.post("/api/mcp/reload")
-async def mcp_reload():
-    """T2 owner action from the desktop UI: stop every live MCP session so the next call re-reads
-    config.json / freshly pasted tokens. Local loopback callers only (authorized())."""
-    from ishti import mcp_client
-    hub = mcp_client._hub
-    stopped = []
-    if hub is not None:
-        for name in list(hub.live.keys()):
-            try:
-                hub.close(name)
-                stopped.append(name)
-            except Exception as exc:
-                swallowed("server.mcp_reload.close", exc)
-        mcp_client._hub = None
-    return JSONResponse({"ok": True, "stopped": stopped})
 
 
 @app.post("/api/execute")

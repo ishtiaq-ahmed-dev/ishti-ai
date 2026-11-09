@@ -76,17 +76,14 @@ SKILL_CATEGORIES = {
     "fileops": "Files & Storage",
 
     # Web & Internet
-    "browser": "Web & Internet",
     "web_search": "Web & Internet",
     "web_fetch": "Web & Internet",
     "webtools": "Web & Internet",
-    "online_fallback": "Web & Internet",
 
     # Communication & Social
     "chat": "Communication & Social",
     "whatsapp": "Communication & Social",
     "email": "Communication & Social",
-    "contacts": "Communication & Social",
 
     # Productivity & Planning
     "calendar": "Productivity & Planning",
@@ -102,7 +99,6 @@ SKILL_CATEGORIES = {
     "memory": "Knowledge & Intelligence",
     "relationships": "Knowledge & Intelligence",
     "deep_research": "Knowledge & Intelligence",
-    "gemini": "Knowledge & Intelligence",
     "owner": "Knowledge & Intelligence",
 
     # Development & Tools
@@ -124,7 +120,7 @@ SKILL_CATEGORIES = {
 
     # Utilities & Daily
     "weather": "Utilities & Daily",
-    "travel": "Utilities & Daily",
+
     "utilities": "Utilities & Daily",
     "speedtest": "Utilities & Daily",
     "legacy": "Utilities & Daily",

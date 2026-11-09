@@ -33,7 +33,7 @@ def test_shutdown_labels_are_plain_language():
     m = re.search(r"SHUTDOWN_STEPS\s*=\s*\[(.*?)\]", src, re.S)
     assert m, "SHUTDOWN_STEPS disappeared from lifecycle.py"
     labels = re.findall(r'"([^"]+)"\)', m.group(1)) or re.findall(r',\s*"([^"]+)"', m.group(1))
-    assert len(labels) == 8, labels
+    assert len(labels) == 7, labels
     for label in labels:
         for word in JARGON:
             assert word.lower() not in label.lower(), f"jargon on the shutdown screen: {label!r} has {word!r}"

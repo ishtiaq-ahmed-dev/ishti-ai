@@ -36,11 +36,8 @@ def match(text):
 
 
 def profile_dir(server=None):
-    """The folder of the Chrome profile a skill uses (config mcp_servers args --profile-dir-name)."""
-    from ishti.skills.browser.skill import profile_for
-    args = CONFIG["mcp_servers"].get(server or profile_for("browser"), {}).get("args", [])
-    name = next((args[i + 1] for i, a in enumerate(args[:-1]) if a == "--profile-dir-name"), "Default")
-    return os.path.join(CHROME, name)
+    """The owner's Chrome profile folder (config.json webtools.chrome_profile, e.g. "Profile 9"; default "Default")."""
+    return os.path.join(CHROME, (CONFIG.get("webtools") or {}).get("chrome_profile") or "Default")
 
 
 def close_chrome(wait=8):
@@ -157,22 +154,10 @@ def op_cookies_all(m, text, session, ask_first):
 
 
 def op_cookies_site(m, text, session, ask_first):
-    from ishti.skills.browser import skill as browser
+    """One site's cookies live inside Chrome's encrypted cookie store; ISHTI does not drive the browser to edit them."""
     site = m["site"].lower().removeprefix("www.")
-    js = ("() => { const n = document.cookie.split(';').map(c => c.split('=')[0].trim()).filter(Boolean);"
-          " for (const c of n) for (const d of [location.hostname, '.' + location.hostname.split('.').slice(-2).join('.')])"
-          " document.cookie = c + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; domain=' + d;"
-          " localStorage.clear(); sessionStorage.clear(); return n.length; }")
-
-    def go():
-        with browser.LOCK:
-            browser.use_server(browser.profile_for("browser"), session)
-            browser._call("browser_navigate", {"url": f"https://{site}"})
-            out = browser._call("browser_evaluate", {"function": js})
-        n = re.search(r"### Result\s*\n(\d+)", out)
-        return (f"Cleared {site}'s site storage and {n.group(1) if n else 'its'} script-visible cookie(s). Chrome doesn't let "
-                "pages remove HttpOnly cookies (usually the sign-in ones) - say \"clear all cookies\" for those.")
-    return ask_first(session, "webtools", f"Clear the cookies and site data of {site}", go)
+    return (f"To clear only {site}: in Chrome open Settings > Privacy and security > Third-party cookies > See all site data "
+            f"and permissions, search {site} and delete it. Or say \"clear all cookies\" and I'll clear the whole profile.")
 
 
 def op_bookmark_add(m, text, session, ask_first):

@@ -62,7 +62,7 @@ def _submit(pool, fn, *args, **kwargs):
 
 READ_BUDGET_S = 4.0
 SEARCH_BUDGET_S = 25.0  # FIX-4: one provider cascade must not eat a whole chat turn (measured 40-60 s with SearXNG down)
-MAX_REWORDS = 2  # reformulations after the first search before "no confident match"
+MAX_REWORDS = 1  # reformulations after the first search before "no confident match" (each costs a model call + a search)
 BLOCKED = re.compile(r"enable javascript|access denied|are you a robot|captcha|verify you are human|subscribe to (?:continue|read)|"
                      r"sign in to (?:continue|read)|403 forbidden|404 not found|page not found|just a moment\.\.\.")
 
@@ -75,16 +75,7 @@ class DeepResearchEngine:
         self.event_callback = event_callback
 
     def _fetch_one(self, url: str, max_chars: int = 3000) -> Dict[str, Any]:
-        """Section 8: Obscura is the default page reader (one Rust process, no GPU, ~30 MB,
-        markdown for the LLM, robots.txt obeyed). Static WebFetcher stays as the fallback;
-        logged-in/interactive pages belong to the browser skill, not here."""
-        try:
-            from ishti import obscura
-            o = obscura.fetch(url, "markdown")
-            if o.get("ok") and o.get("content", "").strip():
-                return {"status": "success", "content": o["content"][:max_chars]}
-        except Exception as _exc:
-            swallowed('orchestrator/deep_research.py:DeepResearchEngine._fetch_one', _exc)
+        """Plain-HTTP page reader (tools/web/fetch.WebFetcher: SSRF-guarded, no headless browser)."""
         return self.fetcher.fetch(url, max_chars=max_chars)
 
     def emit(self, event_type: str, data: Dict[str, Any]) -> None:
@@ -135,9 +126,7 @@ class DeepResearchEngine:
                 self.emit("status_change", {"state": "RESEARCHING", "detail": f"Found {len(results)} sources, opening the top {len(top)}..."})
                 pages = self._read(top)
                 self.emit("status_change", {"state": "RESEARCHING", "detail": "Reading through them now..."})
-                with concurrent.futures.ThreadPoolExecutor(max_workers=len(pages) or 1) as pool:
-                    verdicts = [f.result() for f in [_submit(pool, self._page_verdict, user_prompt[:MAX_QUERY_CHARS], pg)
-                                                     for pg in pages]]
+                verdicts = self._page_verdicts(user_prompt[:MAX_QUERY_CHARS], pages)  # ONE model call for all pages
                 for pg, (ok, why) in zip(pages, verdicts):
                     if ok:
                         good.append(pg)
@@ -193,28 +182,38 @@ class DeepResearchEngine:
                           "content": content or r.snippet, "read": len(content) > 80})
         return pages
 
-    def _page_verdict(self, question: str, page: Dict[str, Any]):
-        """(keep?, reason). Blocked/paywalled/empty pages are dropped without asking the model; otherwise the
-        local model judges whether the page answers the question - leniently, because its own knowledge ends
-        before today (the wording that rejected correct 2026 answers was tuned out in the dispatcher's verifier)."""
-        head = (page["content"] or "")[:700].lower()
-        if page["read"] and BLOCKED.search(head):
-            return False, "blocked or paywalled"
-        if len((page["content"] or "").strip()) < 60:
-            return False, "no readable content"
+    def _page_verdicts(self, question: str, pages: List[Dict[str, Any]]):
+        """[(keep?, reason)] per page with at most ONE model call (it was one call per page: up to 12 per search).
+        Blocked/paywalled/empty pages are dropped without the model; the rest are judged together, leniently - a
+        page the model's reply does not mention is kept."""
+        out, ask = [], []
+        for i, page in enumerate(pages):
+            head = (page["content"] or "")[:700].lower()
+            if page["read"] and BLOCKED.search(head):
+                out.append((False, "blocked or paywalled"))
+            elif len((page["content"] or "").strip()) < 60:
+                out.append((False, "no readable content"))
+            else:
+                out.append((True, ""))
+                ask.append(i)
+        if not ask:
+            return out
         from ishti import llm, vram
+        blocks = "\n\n".join(f"[{n}] {pages[i]['title']} ({pages[i]['url']})\n{fence(pages[i]['content'][:900], pages[i]['url'])}"
+                             for n, i in enumerate(ask, 1))
         try:
-            verdict = llm.ask(
-                f"Today is {time.strftime('%d %B %Y')}. Question: {question}\nPage title: {page['title']}\nURL: {page['url']}\n"
-                f"Page text: {fence(page['content'][:1400], page['url'])}\n\nDoes this page contain information that answers the question, about "
-                "the right thing (same product, person, place, event)? Partly is enough. Reply 'yes' or 'no: <reason in "
-                "3-6 words, e.g. wrong product, different person, outdated, only a homepage>'.",
-                system=None, temperature=0, max_tokens=16).strip().lower()
+            reply = llm.ask(
+                f"Today is {time.strftime('%d %B %Y')}. Question: {question}\n\n{blocks}\n\nFor each page number, does it "
+                "contain information that answers the question about the right thing (same product, person, place, "
+                "event)? Partly is enough. One line per page: '<n>: yes' or '<n>: no: <reason in 3-6 words>'.",
+                system=None, temperature=0, max_tokens=12 * len(ask) + 20)
         except vram.GpuBusy:
-            return True, ""  # model busy: keep the page (the doctrine here is lenient) instead of crashing the turn
-        if verdict.startswith("no"):
-            return False, verdict.split(":", 1)[-1].strip(" .") or "doesn't answer it"
-        return True, ""
+            return out  # model busy: keep the pages (the doctrine here is lenient) instead of failing the turn
+        for line in reply.lower().splitlines():
+            m = re.match(r"\s*\[?(\d+)\]?\s*[:.)-]\s*(yes|no)\b\s*:?\s*(.*)", line)
+            if m and 0 < int(m.group(1)) <= len(ask) and m.group(2) == "no":
+                out[ask[int(m.group(1)) - 1]] = (False, m.group(3).strip(" .") or "doesn't answer it")
+        return out
 
     def _reword(self, question: str, tried: List[str], skipped: List[str]) -> str:
         from ishti import llm, vram
@@ -375,10 +374,7 @@ class DeepResearchEngine:
         }
 
     def _generate_research_queries(self, topic: str, count: int = 3) -> List[str]:
-        """Uses local model to generate 3-4 diverse search angles."""
-        host = self.model_router.host
-        # The 3B fast model invents vague sub-queries ("AI"), which return front pages.
-        model = self.model_router.get_model("primary")
+        """One model call (the owner's provider, through ishti/llm.py) for 3-4 search angles on the same subject."""
 
         # Every query must stay on the owner's actual subject. Unconstrained, the model produced tangents
         # like "meaning of the phrase ..." and "user confusion when searching online".
@@ -393,17 +389,12 @@ class DeepResearchEngine:
         )
         queries = [topic]
         try:
-            res = requests.post(
-                f"{host}/api/generate",
-                json={"model": model, "prompt": prompt, "stream": False, "options": {"temperature": 0.2}},
-                timeout=12,
-            )
-            if res.status_code == 200:
-                raw = res.json().get("response", "")
-                lines = [re.sub(r"^\d+[\.\)]\s*", "", l).strip() for l in raw.split("\n") if l.strip()]
-                clean_queries = [l for l in lines if len(l) > 5][:count]
-                if clean_queries:
-                    queries = clean_queries
+            from ishti import llm
+            raw = llm.ask(prompt, system=None, temperature=0.2, max_tokens=120)
+            lines = [re.sub(r"^\d+[\.\)]\s*", "", l).strip() for l in raw.split("\n") if l.strip()]
+            clean_queries = [l for l in lines if len(l) > 5][:count]
+            if clean_queries:
+                queries = clean_queries
         except Exception as _exc:
             swallowed('orchestrator/deep_research.py:DeepResearchEngine._generate_research_queries', _exc)
 

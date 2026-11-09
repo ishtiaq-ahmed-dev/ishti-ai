@@ -22,7 +22,7 @@ _gen = 0
 _last = {"at": 0.0, "reason": ""}
 _local = threading.local()
 _hooks = []
-# tool subprocesses a skill may have started (never the browser's MCP servers, Ollama or the watchdog)
+# tool subprocesses a skill may have started (never Ollama or the watchdog)
 TOOL_PROCESSES = {"ffmpeg.exe", "ffprobe.exe", "realesrgan-ncnn-vulkan.exe", "robocopy.exe", "rg.exe", "winget.exe",
                   "yt-dlp.exe", "7z.exe", "python.exe", "pythonw.exe", "powershell.exe"}
 
@@ -79,12 +79,11 @@ def kill(reason="kill switch"):
 
 
 def end_tool_processes():
-    """Terminate FFmpeg/robocopy/code-runner... children of this process (not the MCP browser servers)."""
+    """Terminate FFmpeg/robocopy/code-runner... children of this process."""
     try:
         import psutil
         me = psutil.Process()
-        victims = [p for p in me.children(recursive=True) if (p.name() or "").lower() in TOOL_PROCESSES
-                   and not any((a or "").lower().endswith(("mcp", "@playwright/mcp")) for a in _cmdline(p))]
+        victims = [p for p in me.children(recursive=True) if (p.name() or "").lower() in TOOL_PROCESSES]
         for p in victims:
             p.kill()
         psutil.wait_procs(victims, timeout=3)

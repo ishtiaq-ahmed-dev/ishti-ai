@@ -444,36 +444,53 @@ class Cancelled(Exception):
     """Raised by an on_token callback to abort a streaming generation (voice barge-in)."""
 
 
-def style() -> str:
+# A question about THIS PC or ISHTI itself: only then does the measured self-model block (~500 tokens) ride along.
+SELF_TOPIC = re.compile(
+    r"\b(?:ram|vram|gpu|cpu|graphics(?:\s+card)?|processor|hardware|specs?|disk|storage|ssd|battery|"
+    r"models?|llm|ollama|skills?|tools?|ishti|capabilit(?:y|ies)|abilit(?:y|ies)|features?|version|install(?:ed)?|"
+    r"(?:this|my|your)\s+(?:pc|computer|machine|laptop|system)|what\s+can\s+you\s+do|"
+    r"are\s+you\s+able|who\s+are\s+you|what\s+are\s+you)\b", re.I)
+
+
+def style(about: str | None = None, dynamic: bool = True) -> str:
     """What goes with every styled answer: the base style, the owner's own custom instructions (edited in
-    About you) and the standing preferences learned from their chats. Shown verbatim in About you."""
+    About you) and the standing preferences learned from their chats. Shown verbatim in About you.
+
+    Ordered for provider prompt caching: everything stable comes first; the clock and the measured self-model (which
+    change every call) come LAST via dynamic_block(), so the long stable prefix is cached by OpenAI-compatible APIs
+    (cached input is billed at a fraction). `about` is the request: the self-model is only added when it is about this
+    PC/ISHTI. dynamic=False leaves the volatile tail off for a caller that appends its own stable rules first (brain)."""
     from ishti.facts import get_facts
     owner = get_facts().get("owner")
     prefs = [f"- {a.removeprefix('prefers_').replace('_', ' ')}: {v}" for a, v in owner.items() if a.startswith("prefers_")]
     from ishti import languages
     out = STYLE.replace("6. Language: Reply only in English.", "6. " + languages.style_rule())
-    import datetime as _dt
-    now = _dt.datetime.now()
     who = owner.get("name") or "the owner"
     where = ", ".join(x for x in (owner.get("city"), owner.get("country")) if x)
-    # an assistant that doesn't know today's date can't answer "how many days until..." or "what's on today" (it asked the owner)
-    out += f"\n\nNOW: {now:%A %d %B %Y, %H:%M} (local time). The owner: {who}" + (f", in {where}" if where else "") + "."
+    out += f"\n\nThe owner: {who}" + (f", in {where}" if where else "") + "."
     if owner.get("instructions"):
         out += "\n\nThe owner's instructions (always follow them):\n" + owner["instructions"]
     if prefs:
         out += "\n\nThe owner's standing preferences:\n" + "\n".join(prefs)
-    # The self-model (ishti/selfmodel.py): measured facts about THIS machine, skills and models, so the
-    # model never has to recall them. Additive and wrapped: if any probe fails the block is simply absent
-    # and a reply still goes out - a self-model must never be able to break answering. Measured cost:
-    # ~91 ms cold, ~1 ms from cache (2026-09-30).
+    return out + ("\n\n" + dynamic_block(about) if dynamic else "")
+
+
+def dynamic_block(about: str | None = None) -> str:
+    """The volatile tail of a system prompt: the local time, and - only for questions about this PC/ISHTI - the
+    measured self-model (ishti/selfmodel.py). Wrapped: a failing probe leaves the block out, never breaks an answer."""
+    import datetime as _dt
+    # an assistant that doesn't know today's date can't answer "how many days until..." or "what's on today"
+    out = f"NOW: {_dt.datetime.now():%A %d %B %Y, %H:%M} (local time)."
+    if about is not None and not SELF_TOPIC.search(about):
+        return out
     try:
         from ishti.selfmodel import render as _self_model
         out += ("\n\n" + _self_model() +
                 "\n\nHow to use the block above: it is MEASURED, not remembered. It is ONLY for questions about "
                 "this PC and ISHTI itself (hardware, models, skills, limits, abilities): answer those only from it, and if "
                 "such a fact is not in there say \"I don't know - shall I check?\" instead of estimating a spec. It has "
-                "nothing to do with general knowledge (geography, science, history, how-to): answer those normally. Never say which model you are: the router picks one per "
-                "request, and the block lists what is installed, not what is speaking.")
+                "nothing to do with general knowledge: answer those normally. Never say which model you are: the router "
+                "picks one per request, and the block lists what is installed, not what is speaking.")
     except Exception as exc:
         print(f"[llm] self-model unavailable ({type(exc).__name__}: {exc}) - answering without it")
     return out
@@ -484,7 +501,8 @@ def _chat(messages, role="planner", system=STYLE, tools=None, temperature=0.3, m
     max_tokens is always set: with tools the model can keep generating after its tool call.
     on_token(str) streams the reply as it is generated (plain replies only, not tool calls)."""
     if system is STYLE:
-        system = style()
+        last_user = next((str(m.get("content", "")) for m in reversed(messages) if m.get("role") == "user"), None)
+        system = style(about=last_user)
     if any("<<EXTERNAL" in str(m.get("content", "")) for m in messages):  # outside text is data, never instructions
         from ishti.untrusted import RULE
         system = f"{system}\n\n{RULE}" if system else RULE

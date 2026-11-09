@@ -178,48 +178,6 @@ def test_legacy_secret_redaction_occurs_before_audit_truncation(tmp_path, monkey
         assert "synthetic-very" not in str(column)
 
 
-def test_connected_github_read_uses_api_before_browser(monkeypatch):
-    from ishti.skills.browser import skill as browser
-    oauth._save("github", {"access_token": "synthetic"})
-    calls = []
-    monkeypatch.setattr(oauth, "api", lambda service, path, *_args, **_kwargs: calls.append((service, path)) or [{"subject": {"title": "Real fixture notification"}}])
-    monkeypatch.setattr(browser, "use_server", lambda *_args: pytest.fail("Browser must not run for a supported connected API read"))
-    result = browser.run("Check my GitHub notifications", {})
-    assert calls == [("github", "/notifications")]
-    assert "Real fixture notification" in result["reply"] and result["connector"] == "github"
-
-
-@pytest.mark.parametrize("connected", [False, True])
-def test_unconnected_or_failed_api_moves_to_browser(monkeypatch, connected):
-    from ishti.skills.browser import skill as browser
-    if connected:
-        oauth._save("github", {"access_token": "synthetic"})
-
-    def unavailable(*_args, **_kwargs):
-        raise RuntimeError("API unavailable")
-
-    monkeypatch.setattr(oauth, "api", unavailable)
-    seen = []
-    monkeypatch.setattr(browser, "_run_locked", lambda text, *_args: seen.append(text) or {"reply": "fixture from Chrome"})
-    assert browser.run("Check my GitHub notifications", {})["reply"] == "fixture from Chrome"
-    assert seen == ["Check my GitHub notifications"]
-
-
-@pytest.mark.parametrize("prompt", ["Any new Instagram DMs?", "Check my Facebook notifications", "Any new LinkedIn messages?",
-    "Who messaged me on Instagram today?", "Research this topic and post it to LinkedIn"])
-def test_social_requests_use_page_evidence_instead_of_canned_success(prompt, monkeypatch):
-    from ishti.skills.browser import skill as browser
-    monkeypatch.setattr(browser, "use_server", lambda *_args: "fixture")
-    monkeypatch.setattr(browser, "learned", lambda *_args: [])
-    monkeypatch.setattr(browser, "remember", lambda *_args: None)
-    monkeypatch.setattr(browser, "_site_url_for", lambda _text: ("test-site", "https://example.invalid"))
-    monkeypatch.setattr(browser, "_call", lambda *_args: "fixture page evidence")
-    captured = []
-    monkeypatch.setattr(browser, "_loop", lambda _session, messages, *_args: captured.append(messages) or {"reply": "verified fixture result"})
-    assert browser.run(prompt, {})["reply"] == "verified fixture result"
-    assert captured and "fixture page evidence" in json.dumps(captured)
-
-
 def test_read_from_sender_is_not_swallowed_by_generic_inbox_path(monkeypatch):
     from ishti.skills.email import skill as email
     from ishti import gmail_api
@@ -227,8 +185,10 @@ def test_read_from_sender_is_not_swallowed_by_generic_inbox_path(monkeypatch):
     monkeypatch.setattr(gmail_api, "unread", lambda *_args: pytest.fail("Specific sender request must not use generic unread listing"))
     monkeypatch.setattr(gmail_api, "search", lambda *_args: [{"id": "fixture-message"}])
     monkeypatch.setattr(gmail_api, "read", lambda *_args: {"subject": "Invoice", "from": "Ali", "date": "today", "body": "fixture invoice"})
-    result = email._oauth_path("Read the latest email from Ali", {})
-    assert "fixture invoice" in result["reply"]
+    from ishti import llm
+    monkeypatch.setattr(llm, "ask", lambda prompt, **_k: "summary of: " + prompt[prompt.find("fixture"):][:15])
+    result = email.run("Read the latest email from Ali", {})
+    assert "Invoice" in result["reply"] and "fixture invoice" in result["reply"]
 
 
 def test_provider_hosts_are_allowed_under_the_real_connector_scope(monkeypatch):

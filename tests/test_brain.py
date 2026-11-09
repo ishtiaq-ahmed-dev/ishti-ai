@@ -28,7 +28,8 @@ def stubs(monkeypatch):
         return {"reply": f"{name} did: {text}", "sources": []}
 
     monkeypatch.setattr(llm, "chat", fake_chat)
-    monkeypatch.setattr(llm, "style", lambda: "STYLE")
+    monkeypatch.setattr(llm, "style", lambda **_k: "STYLE")
+    monkeypatch.setattr(llm, "dynamic_block", lambda *_a, **_k: "NOW")
     monkeypatch.setattr(llm, "model_for", lambda role: "planner-model")
     monkeypatch.setattr(retrieval, "assemble_context", lambda *a, **k: "")
     monkeypatch.setattr("ishti.skill_execution.execute", fake_execute)

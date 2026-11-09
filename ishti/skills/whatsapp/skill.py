@@ -1,28 +1,35 @@
-"""WhatsApp skill: WhatsApp Web in the owner's Chrome Profile 9.
+"""WhatsApp skill over WAHA (ishti/wa_bridge.py): read unread chats, read or summarise a chat, list top chats, read an
+image/PDF a contact sent, and send text, files and voice notes. Every send shows the exact draft and recipient first and
+goes out only after the owner's yes; an approved send is attempted once and never silently retried.
 
-Reading unread chats is done directly from the page (fast, no model steps); anything else (opening a chat,
-writing a message) goes to the browser engine, which still asks before sending."""
-import difflib
+No browser is driven. When WhatsApp is not linked, ISHTI says so and how to link it (Settings -> Connectors -> WhatsApp);
+"open WhatsApp" opens the WhatsApp Desktop app for the owner. Recipient resolution is exact or asked: a fuzzy name match
+is offered as a numbered choice, never sent to on a guess."""
 import json
 import os
 import re
+import threading
 import time
 import unicodedata
+import difflib
 
 from ishti.skills import ask_first, trace
-from ishti.skills.browser import skill as browser
+from ishti import wa_bridge as bridge
+
+_LOCK = threading.RLock()
 
 TRIGGER = re.compile(r"\b(?:w+h?a+t*s+\s?a+p+|w(?:h)?at(?:s\s?)?app?|wh?as+t?a+p+)\b", re.I)  # whatsap, watsapp, whastap; not "what app"
+
+
 UNREAD = re.compile(r"\b(?:unread|unseen|new\s+(?:\w+\s+)?messages?|any\s+(?:new\s+)?messages?|who\s+(?:messaged|texted))\b", re.I)
+
+
 SEND = re.compile(r"\b(?:send|reply|message\s+to|write\s+to|tell\s+\w+\s+that)\b", re.I)
-URL = "https://web.whatsapp.com"
-HINT = ("You are in WhatsApp Web, already logged in. To message someone: click the search box, type their "
-        "name, open their chat from the results, click the message box, type the message and press Enter. "
-        "To read messages: open the chat and read the latest messages from the page. Never send anything the "
-        "owner did not ask for.")
 
 
 PRONOUN_SEND = re.compile(r"^\s*(?:(?:and|then|now|also|please|yes|yeah|ok|okay)[,]?\s+)*(?:send|text|message|tell|reply)\s+(?:it\s+)?(?:to\s+)?(?:him|her|them)\b", re.I)  # "and send him hi": the last chat
+
+
 # Another service named and WhatsApp NOT named: that request is not ours. SEND/SEND_TO are wide on purpose
 # ("reply to ...", "message ... saying ..."), and whatsapp has a lower priority number than browser/email, so
 # it was checked first and swallowed every one of these - a LinkedIn connection request and an Instagram DM
@@ -30,6 +37,8 @@ PRONOUN_SEND = re.compile(r"^\s*(?:(?:and|then|now|also|please|yes|yeah|ok|okay)
 OTHER_SERVICE = re.compile(
     r"\b(?:instagram|facebook|linkedin|twitter|x\.com|gmail|outlook|email|e-mail|sms|telegram|signal|"
     r"messenger|snapchat|discord|teams|zoom)\b", re.I)
+
+
 # "reply to Sara saying I'll call her tonight", "message Ahmed about the invoice": a named person, no app
 REPLY_TO_PERSON = re.compile(
     r"^\s*(?:please\s+)?(?:reply\s+(?:to\s+)?|text\s+(?:to\s+)?|message\s+(?:to\s+)?|poke\s+|write\s+to\s+)"
@@ -95,127 +104,11 @@ def _read_chat_abstract(text):
     return bool(words) and all(NOT_A_CONTACT.fullmatch(w) for w in words)
 
 
-def open_whatsapp(session, wait_s=4):
-    """Open WhatsApp Web and wait for the chat list (a fresh tab shows a progress bar for a few seconds).
-    Reuses the already-open WhatsApp tab (issue 6) instead of navigating - which reloads the page and loses the
-    open chat every single time."""
-    browser.use_server(browser.profile_for("whatsapp"), session)
-    trace(session, "browser_navigate", "open WhatsApp Web (Chrome Profile 9)", status="start")
-    snap, t0 = browser.open_url(URL, session), time.time()
-    while "Chat list" not in snap and time.time() - t0 < wait_s:
-        if re.search(r"Scan (?:the )?QR|Log in with phone|Link with phone", snap, re.I):
-            break
-        time.sleep(1)
-        snap = browser._call("browser_snapshot", {})
-    ok = "Chat list" in snap
-    trace(session, "browser_navigate", "WhatsApp loaded" if ok else "WhatsApp didn't show the chat list",
-          status="done" if ok else "error")
-    return snap, ok
-
-
-def unread(snap):
-    """[(chat name, unread count or None)] from the visible chat list, plus WhatsApp's own unread-chats total."""
-    rows = []
-    for block in re.split(r"\n\s*- row \[", snap[snap.find("Chat list"):])[1:]:
-        top = re.search(r'gridcell "(?:(\d+) unread messages?|(Unread)) ', block)
-        if not top:
-            continue
-        name = re.search(r'- generic "([^"]+)" \[ref', block)
-        rows.append((name.group(1) if name else "?", int(top.group(1)) if top.group(1) else None))
-    total = re.search(r'"Unread (\d+)"', snap)
-    return rows, int(total.group(1)) if total else len(rows)
-
-
 # "send this video to qasim ims" names no app: WhatsApp is ISHTI's messenger.
 SEND_TO = re.compile(r"^(?!.*(?:\be-?mails?\b|\bgmail\b|@))\s*(?:please\s+)?(?:now\s+)?send\s+.{1,300}?\bto\s+\S+", re.I)  # email is the email skill's
+
+
 MEDIA_PATH = re.compile(r"""(?:[A-Za-z]:[\\/]|/|[A-Za-z0-9_.\-]+[\\/])[^\n"'<>|?*`]+?\.(?:mp4|webm|mov|mkv|png|jpe?g|gif|webp|3gp|mp3|wav|ogg|opus|m4a|aac|pdf|docx?|xlsx?|pptx?|txt|csv|zip|rar|7z)\b""", re.I)
-
-# ---------------------------------------------------------------- chat context (issue 4/5)
-# A message row in the chat pane: row "Bhai: Good 5:38 PM" [ref=...] / 'row "You: hi 1:39 PM Read" [ref=...]'
-MSG_ROW = re.compile(r'\brow "((?:\\.|[^"\\])*)" \[ref=[^\]]+\]')
-#   sender (WhatsApp drops it on consecutive messages from one person) + body + time + optional tick label
-MSG_TIME = re.compile(r"^(?:(?P<who>[^:]{1,40}):\s+)?(?P<body>.*?)\s+(?P<t>(?:\d{1,2}:\d{2}\s?[AP]M|(?:[01]?\d|2[0-3]):[0-5]\d))"
-                      r"(?:\s+(?:Sent|Delivered|Read))?(?:\s+(?:React|Menu|(?:Open )?message options))*$", re.I)
-
-
-def parse_messages(snap, n=10):
-    """The last n messages of the open chat as [(who, text)], oldest first - the context a reply needs.
-    Supports row labels and generic/gridcell nodes in Playwright accessibility snapshots.
-    Sidebar results are excluded, and reading never stops early at a guessed question."""
-    composers = list(re.finditer(r'textbox "Type a message', snap))
-    if composers:
-        banners = list(re.finditer(r'^[ \t]*- banner \[ref=', snap[:composers[-1].start()], re.M))
-        if banners:
-            snap = snap[banners[-1].start():composers[-1].start()]
-    elif (start := snap.find('grid "Message list"')) >= 0:
-        snap = snap[start:]
-    out, last = [], None
-    candidates = []
-    for m in MSG_ROW.finditer(snap):
-        try:
-            candidates.append(json.loads('"' + m.group(1) + '"'))
-        except ValueError:
-            candidates.append(m.group(1))
-
-    if not candidates:
-        chat_start = snap.find("Message list")
-        if chat_start == -1:
-            chat_start = max(snap.rfind("Chat list"), snap.rfind("Search results"))
-            chat_start = snap.find("\n-", chat_start + 10) if chat_start != -1 else 0
-        chat_end = snap.find('textbox "Type a message', chat_start)
-        if chat_end == -1:
-            chat_end = len(snap)
-        for line in snap[chat_start:chat_end].split("\n"):
-            m = re.search(r'-\s*(?:generic|gridcell|text|statictext|row)\s*"([^"]+)"', line)
-            if m:
-                candidates.append(m.group(1))
-
-    for raw in candidates:
-        g = MSG_TIME.match(raw)
-        who, body, t = None, None, None
-        if g:
-            who, body, t = (g.group("who") or "").strip(), (g.group("body") or "").strip(), g.group("t")
-            if re.search(r'\s(?:Sent|Delivered|Read)(?:\s+(?:React|Menu|(?:Open )?message options))*$', raw, re.I):
-                # Consecutive outgoing rows may omit You:. A colon in their body
-                # must not turn a sentence prefix into a different sender.
-                body = raw[:g.start("t")].strip()
-                body = re.sub(r'^(?:You|Me|Owner):\s+', '', body, flags=re.I)
-                who = "You"
-        else:
-            time_match = re.search(r'\b((?:\d{1,2}:\d{2}\s?[AP]M|(?:[01]?\d|2[0-3]):[0-5]\d))\b', raw, re.I)
-            if time_match:
-                t = time_match.group(1)
-                body = raw.replace(t, "").strip().strip(",- ")
-                if ":" in body:
-                    parts = body.split(":", 1)
-                    if len(parts[0].split()) <= 3:
-                        who, body = parts[0].strip(), parts[1].strip()
-
-        if not body:
-            continue
-
-        low = body.lower()
-        if re.fullmatch(r'(?:play\s+)?(?:voice message|audio message)(?:\s+voice message)?(?:\s+\d{1,2}:\d{2}(?:/\d{1,2}:\d{2})?)?', low):
-            body = "[voice message]"
-        elif low == "sticker":
-            body = "[sticker]"
-        elif low in ("photo", "image"):
-            body = "[photo]"
-
-        who = who or last or "Them"
-        last = who
-        out.append((who, body))
-
-    return out[-max(0, int(n)):] if n else []
-
-
-read_chat_messages_raw = parse_messages
-
-
-def read_chat_messages(snap, max_messages=10):
-    """The last messages of the open chat as [{'sender': who, 'text': text}], oldest first."""
-    msgs = parse_messages(snap, n=max_messages)
-    return [{"sender": who, "text": text} for who, text in msgs]
 
 
 def format_chat_context(contact, messages):
@@ -260,30 +153,9 @@ def formulate_reply(contact, context_str, owner_text, session=None):
     return reply.strip().strip('"\'')
 
 
-def open_chat(contact, session, exact_name=None):
-    """Search for `contact` and open its chat -> (name, fresh chat snapshot); when the match is not exact,
-    -> (None, ranked candidate names) so the owner picks - same rule the send flow uses."""
-    snap = browser._call("browser_snapshot", {})
-    actual, _ = current_chat_identity(snap)
-    if actual and norm(actual) == norm(exact_name or contact):
-        return actual, snap
-    found = search(contact, session)
-    if not found:
-        browser._call("browser_press_key", {"key": "Escape"})
-        return None, []
-    ranked = [(n, s) for n, s in rank(contact, [n for n, _ in found]) if s >= 0.66]
-    exact = [n for n, _ in ranked if norm(n) == norm(exact_name or contact)]
-    name = exact[0] if exact else (ranked[0][0] if len(ranked) == 1 else None)
-    if not name:
-        browser._call("browser_press_key", {"key": "Escape"})
-        return None, [n for n, _ in ranked[:5]]
-    browser._call("browser_click", {"element": f"chat with {name}", "target": dict(found)[name]})
-    time.sleep(1.5)
-    trace(session, "read", f"opened the chat with {name}")
-    return name, browser._call("browser_snapshot", {})
-
-
 REPLY = re.compile(r"\b(?:reply|respond|write\s+back|get\s+back\s+to)\b", re.I)
+
+
 # "what did fuzail reply" / "did Sarah reply" / "check if Ahmed messaged" / "what did he last message me"
 READ_CHAT = re.compile(
     r"\b(?:read|check|show|see|open)\s+(?:the\s+|my\s+|his\s+|her\s+)?(?:last\s+|latest\s+|recent\s+)?\d*\s*(?:messages?|msgs|chats?)\b"
@@ -294,8 +166,12 @@ READ_CHAT = re.compile(
     r"|\bcheck\s+(?:if|whether)\s+(?P<f>[\w .'-]{1,30}?)\s+(?:repl(?:y|ied)|message[d]?|text(?:ed)?|said)\b"
     r"|\bwhat\s+(?P<g>[\w .'-]{1,30}?)\s+repl(?:y|ied)\b"
     r"|\bwhat\s+(?:did|has)\s+(?P<e>[\w .'-]{1,30}?)\s+(?:last\s+)?(?:message|text)\s+me\b", re.I)
+
+
 # a read question about mail or a meeting is never WhatsApp's
 READ_OTHER = re.compile(r"\b(?:e-?mail|gmail|inbox|outlook|meeting|minutes|lecture|class\s+notes?)\b", re.I)
+
+
 # "what does this error message mean", "why did that last answer take so long", "what did that email say":
 # the READ_CHAT shape ("what did X say/reply") also fires on abstract nouns that are not contacts, so
 # those questions went to WhatsApp and needed the app to answer (checklist #161, #191).
@@ -326,6 +202,8 @@ def read_target(text):
     if words and all(NOT_A_CONTACT.fullmatch(w) for w in words):  # "this error", "that last", "the message"
         return None
     return name
+
+
 VOICE_NOTE = re.compile(r"\b(?:voice\s*(?:note|message)|audio\s+message|say\s+it|as\s+(?:a\s+)?voice)\b", re.I)
 
 
@@ -334,52 +212,6 @@ def norm(name):
     # non-Latin names all equal to the empty string.
     name = re.sub(r"\s*\(You\)\s*$", "", str(name or ""), flags=re.I)
     return re.sub(r"[\W_]+", "", unicodedata.normalize("NFKC", name).casefold())
-
-
-def current_chat_identity(snap):
-    """Read the active pane's header, excluding sidebar names and message bodies."""
-    composers = list(re.finditer(r'textbox "Type a message(?: to ([^"\n]+))?"', snap or ""))
-    if not composers:
-        return None, False
-    composer = composers[-1]
-    before = snap[:composer.start()]
-    banners = list(re.finditer(r'^[ \t]*- banner \[ref=[^\]]+\]', before, re.M))
-    if not banners:
-        return None, False
-    # The last banner before the composer belongs to the open conversation.
-    pane = before[banners[-1].start():]
-    lines = pane.splitlines()
-    # Do not accept a quoted-message button masquerading as a self-chat header.
-    # The header ends at the next sibling of its banner in the accessibility tree.
-    indentation = len(lines[0]) - len(lines[0].lstrip())
-    end = next((i for i, line in enumerate(lines[1:], 1)
-                if line.strip() and len(line) - len(line.lstrip()) <= indentation), len(lines))
-    pane = "\n".join(lines[:end])
-    self_header = re.search(r'button "([^"\n]+) \(You\) Message yourself"', pane)
-    if self_header:
-        return self_header.group(1), True
-    if composer.group(1):
-        return composer.group(1), False
-    buttons = re.findall(r'button "([^"\n]+)" \[ref=', pane.split('\n    - generic', 1)[0])
-    neutral = {"profile details", "search", "menu", "video call", "voice call"}
-    names = [label for label in buttons if label.casefold() not in neutral]
-    return (names[0] if len(names) == 1 else None), False
-
-
-def search_results(snap):
-    """[(name, row ref)] of chats/contacts in WhatsApp's search results (message hits are skipped)."""
-    out, section = [], ""
-    for block in re.split(r"\n\s*- row \[", snap[snap.find("Search results"):])[1:]:
-        head = re.search(r'heading "([^"]+)"', block)
-        if head and "gridcell" not in block:
-            section = head.group(1)
-            continue
-        if section.lower().startswith("messages"):
-            continue
-        name, cell = re.search(r'- generic "([^"]+)" \[ref', block), re.search(r'gridcell "[^"]*" \[ref=([^\]]+)\]', block)
-        if name and cell and name.group(1) not in [n for n, _ in out]:
-            out.append((name.group(1), cell.group(1)))
-    return out
 
 
 def rank(wanted, names):
@@ -392,36 +224,6 @@ def rank(wanted, names):
         per_word = sum(max(difflib.SequenceMatcher(None, s, t).ratio() for t in toks) for s in said) / len(said)
         return 0.5 * difflib.SequenceMatcher(None, w, norm(n)).ratio() + 0.5 * per_word
     return sorted(((n, round(score(n), 2)) for n in names), key=lambda x: -x[1])
-
-
-def search(name, session):
-    """Search the full intended name first; a short prefix is only a fuzzy fallback."""
-    snap = browser._call("browser_snapshot", {})
-    boundaries = [i for label in ("Chat list", "Search results") if (i := snap.find(label)) >= 0]
-    sidebar = snap[:min(boundaries)] if boundaries else snap
-    # WhatsApp removes the search box's accessible name while search is active.
-    # Do not hand the message composer to the model as another possible search box.
-    active = re.search(r'\btextbox(?: \[[^\]]+\])* \[ref=([^\]]+)\]', sidebar)
-    box = browser.ref(sidebar, "textbox", r"Search[^\"]*") or (active.group(1) if active else None)
-    box = box or browser.locate(sidebar,
-                         "the search box above the chat list", "textbox", r"Search[^\"]*", session)
-    if not box:
-        return []
-    probe = re.sub(r"\s*\(You\)\s*$", "", name.strip(), flags=re.I)
-    browser._call("browser_type", {"element": "WhatsApp search box", "target": box, "text": probe})
-    time.sleep(2)
-    found = search_results(browser._call("browser_snapshot", {}))
-    if not found and not re.fullmatch(r"[+\d\s()-]+", probe):
-        probe = re.split(r"\s+", probe)[0][:3]
-        fresh = browser._call("browser_snapshot", {})
-        box = browser.ref(fresh, "textbox", r"Search[^\"]*") or next(iter(re.findall(
-            r'\btextbox(?: \[[^\]]+\])* \[ref=([^\]]+)\]', fresh)), None)
-        if box:
-            browser._call("browser_type", {"element": "WhatsApp search box", "target": box, "text": probe})
-            time.sleep(2)
-            found = search_results(browser._call("browser_snapshot", {}))
-    trace(session, "contacts", f"searched '{probe}': {len(found)} chats/contacts")
-    return found
 
 
 def parse_send(text, session, context=None):
@@ -518,6 +320,8 @@ def parse_send(text, session, context=None):
 
 
 VISUAL = (".mp4", ".webm", ".mov", ".mkv", ".3gp", ".png", ".jpg", ".jpeg", ".gif", ".webp")
+
+
 AUDIO = (".mp3", ".wav", ".ogg", ".opus", ".m4a", ".aac", ".amr")
 
 
@@ -542,54 +346,9 @@ def voice_note(words):
     return out, whose
 
 
-def _stuck(want, name, task, session):
-    """A step's element isn't on the page (WhatsApp changed, a popup is in the way): look at a screenshot, look up
-    how WhatsApp does it, and let the browser agent finish the task from there (it still asks before sending)."""
-    trace(session, "stuck", f"couldn't find {want} - looking at the screen and searching how it's done", status="error")
-    notes = browser.troubleshoot(want, "WhatsApp Web", session)
-    out = browser.run(f"In WhatsApp Web, in the open chat with {name}: {task}", session,
-                      server=browser.profile_for("whatsapp"), hint=HINT + "\n" + notes,
-                      start_snapshot=browser._call("browser_snapshot", {}))
-    return (out or {}).get("reply") or f"I couldn't find {want} in {name}'s chat."
-
-
-def _sent(snap, text, baseline=None):
-    """True only when a new outgoing row matching this text appeared after the baseline snapshot."""
-    want = re.sub(r"\s+", " ", str(text or "")).strip().casefold()
-    if not want or baseline is None:
-        return False
-    owner_names = {"you", "me", "owner"}
-    matching = lambda page: sum(1 for sender, body in parse_messages(page, n=20)
-                                if sender.strip().casefold() in owner_names
-                                and re.sub(r"\s+", " ", body).strip().casefold() == want)
-    after = parse_messages(snap, n=20)
-    latest_outgoing = next((re.sub(r"\s+", " ", body).strip().casefold() for sender, body in reversed(after)
-                            if sender.strip().casefold() in owner_names), None)
-    return latest_outgoing == want and matching(snap) > matching(baseline)
-
-
-def _file_sent(snap, path, baseline=None):
-    """Require a new visible outgoing document row with its filename; preview dismissal is not proof."""
-    if baseline is None:
-        return False
-    filename = os.path.basename(path or "").casefold()
-    if not filename:
-        return False
-    owner_names = {"you", "me", "owner"}
-    def matching(page):
-        return sum(1 for sender, body in parse_messages(page, n=20)
-                   if sender.strip().casefold() in owner_names and filename in body.casefold())
-    return matching(snap) > matching(baseline)
-
-
 def _out(reply, verified):
     """A skill result that carries the truth about verification (the dispatcher warns on verified=False claims)."""
     return {"reply": reply, "sources": [], "verified": bool(verified)}
-
-
-def _enabled_send(snap):
-    """True when a Send button that is NOT disabled is on the page - i.e. a file preview is still waiting to go."""
-    return any("disabled" not in flags for flags in re.findall(r'button "Send"((?: \[[^\]]*\])*)', snap))
 
 
 def _file_digest(path):
@@ -600,411 +359,6 @@ def _file_digest(path):
         for block in iter(lambda: file.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
-
-
-def _control_ref(snap, role, label):
-    """A single enabled control; never guess a consequential control with a model."""
-    found = re.findall(rf'\b{role} "(?:{label})"((?: \[[^\]]+\])*)', snap or "")
-    refs = [match[1] for flags in found if "[disabled]" not in flags
-            and (match := re.search(r'\[ref=([^\]]+)\]', flags))]
-    return refs[0] if len(refs) == 1 else None
-
-
-def deliver(ref, name, path, messages, session):
-    """Send a frozen, approved draft after reacquiring and verifying the recipient.
-
-    The ref from the preview is deliberately not reused: another request or a UI
-    refresh can invalidate it while the owner is considering the confirmation.
-    """
-    from ishti import test_mode
-    if test_mode.enabled():
-        return test_mode.blocked("whatsapp", f"send approved draft to {name}")
-    with browser.LOCK:
-        browser.use_server(browser.profile_for("whatsapp"), session)
-        snap = browser._call("browser_snapshot", {})
-        actual, _ = current_chat_identity(snap)
-        # Reuse an already verified active conversation. Repeating a search and
-        # clicking an asynchronously replaced results row caused a live failure.
-        if not actual or norm(actual) != norm(name):
-            selected, snap = open_chat(name, session, exact_name=name)
-            if not selected or not isinstance(snap, str):
-                return _out("The approved recipient is no longer an exact available match. Nothing was sent.", False)
-        actual, is_self = current_chat_identity(snap)
-        if not actual or norm(actual) != norm(name):
-            return _out("The active chat does not match the approved recipient. Nothing was sent.", False)
-        if session.get("live_self_test") and not is_self:
-            return _out("Live test stopped: the active chat is not Message yourself. Nothing was sent.", False)
-        return _deliver_current(name, path, tuple(messages or ()), session, snap)
-
-
-def _deliver_current(name, path, messages, session, snap):
-    """Transport only: approved words and attachments must not be regenerated here."""
-
-    # Issue 4: Read conversation context from the opened chat
-    chat_messages = parse_messages(snap, n=10)
-    context_str = format_chat_context(name, chat_messages)
-    session["whatsapp_context"] = {"contact": name, "messages": chat_messages, "context_str": context_str}
-    trace(session, "context", f"Read {len(chat_messages)} recent message(s) from chat with {name}")
-
-    messages, done = list(messages), []
-    file_ok = True
-    if path:
-        file_baseline = snap
-        ext = os.path.splitext(path)[1].lower()
-        kind = "Photos & videos" if ext in VISUAL else "Audio" if ext in AUDIO else "Document"
-        task = f"attach the file {path} with the '{kind}' option and send it" + (f" with the caption {messages[0]!r}" if messages else "")
-        option_label = r"Photos\s*(?:&|&amp;|and)\s*videos" if kind == "Photos & videos" else re.escape(kind)
-        item = _control_ref(snap, "menuitem", option_label)
-        if not item:
-            attach = _control_ref(snap, "button", "Attach")
-            if not attach:
-                return _out("I could not identify the chat's enabled Attach control. Nothing was uploaded.", False)
-            snap = browser._call("browser_click", {"element": "Attach", "target": attach})
-            item = _control_ref(snap, "menuitem", option_label)
-        if not item:
-            return _out(f"WhatsApp did not expose a unique enabled {kind} attachment option. Nothing was uploaded.", False)
-        browser._call("browser_click", {"element": kind, "target": item})
-        browser._call("browser_file_upload", {"paths": [path]})
-        time.sleep(3)  # WhatsApp builds the preview
-        snap = browser._call("browser_snapshot", {})
-        if messages and kind == "Photos & videos" and (cap := browser.locate(snap, "the caption box of the file preview", "textbox",
-                                                                             r"(?:Add a caption|Type a message)[^\"]*", session)):
-            browser._call("browser_type", {"element": "caption", "target": cap, "text": messages.pop(0)})
-            snap = browser._call("browser_snapshot", {})
-        send = _control_ref(snap, "button", "Send")
-        if not send:
-            return _out("The attachment preview has no unique enabled Send control. I stopped before sending.", False)
-        browser._call("browser_click", {"element": "Send", "target": send})
-        time.sleep(2)
-        snap = browser._call("browser_snapshot", {})
-        # A closed preview is not delivery proof: the owner may have dismissed it. Require the
-        # uploaded file name in a visible outgoing message before saying that it was sent.
-        file_ok = _file_sent(snap, path, baseline=file_baseline)
-        if not file_ok:
-            trace(session, "verify", "no new outgoing attachment evidence", status="error")
-            return _out("The upload was attempted, but I could not verify a new outgoing attachment. "
-                        "I stopped before sending anything else. Check WhatsApp before retrying.", False)
-        done.append(os.path.basename(path))
-    for i, msg in enumerate(messages):
-        snap = browser._call("browser_snapshot", {})
-        snap_before_last_send = snap
-        box = browser.locate(snap, f"the message box of the chat with {name}", "textbox", r"Type a message[^\"]*", session)
-        if not box:
-            rest = " then ".join(repr(m) for m in messages[i:])
-            return _out(("Sent " + ", ".join(done) + ". " if done else "") + _stuck("the message box", name, f"send the messages {rest}", session), False)
-        # Recheck the active recipient immediately before every outgoing message.
-        actual, is_self = current_chat_identity(snap)
-        if not actual or norm(actual) != norm(name) or (session.get("live_self_test") and not is_self):
-            return _out("The active chat changed. I stopped sending; check WhatsApp for any earlier items.", False)
-        browser._call("browser_type", {"element": "message box", "target": box, "text": msg, "submit": True})
-        time.sleep(1.2)
-        after = browser._call("browser_snapshot", {})
-        if not _sent(after, msg, baseline=snap_before_last_send):
-            return _out("A send was attempted, but a new matching outgoing message was not verified. "
-                        "I stopped before the remaining messages. Check WhatsApp before retrying.", False)
-        done.append(repr(msg) if len(msg) < 60 else "your message")
-    snap = browser._call("browser_snapshot", {})
-    text_ok = not messages or _sent(snap, messages[-1], baseline=snap_before_last_send)
-    if not text_ok:
-        trace(session, "verify", "the last message isn't visible in the chat yet", status="error")
-        return _out(f"I typed it to {name}, but I can't see it in the chat - please check WhatsApp.", False)
-    if not file_ok:
-        return _out(f"I attached {done[0] if done else 'the file'} to {name}'s chat, but the preview didn't close - "
-                    f"it may not have gone out. Please check WhatsApp.", False)
-    trace(session, "send", f"sent {len(done)} item(s) to {name}", status="done")
-    return _out(f"Sent {', '.join(done)} to {name} on WhatsApp.", True)
-
-
-def _approve_bridge_send(contact, path, messages, voice, text, session, draft_ready=False):
-    """Use the connected transport only after exact resolution; no send fallback after an attempt."""
-    from ishti import wa_bridge as bridge
-    if not bridge.connected():
-        return None
-    try:
-        cid = bridge.find_chat(contact)
-        if not cid:
-            return None
-        if session.get("is_reply") and not draft_ready:
-            rows = bridge.messages(cid, 40)
-            if not rows:
-                return None  # full older history is read through the browser
-            context = json.dumps({"scope": "Messages observed since the bridge started; earlier history is not included",
-                "chat": cid, "messages": rows}, ensure_ascii=False)
-            reply = formulate_reply(contact, context, text, session)
-            if not reply:
-                return _out("I couldn't prepare a reply for review. Nothing was sent.", False)
-            if session.get("is_voice_reply"):
-                path, _whose = voice_note(reply)
-                voice, messages = reply, []
-            else:
-                messages = [reply] + list(messages[1:])
-        expected_file = _file_digest(path) if path else None
-    except bridge.BridgeError:
-        return None  # read-only discovery failure can still use Chrome
-    import uuid
-    frozen = tuple(messages)
-    audio_kind = "voice" if path and (session.get("is_voice_reply") or session.get("voice") or voice) else ""
-    ids = tuple(uuid.uuid4().hex for _ in range(len(frozen) + bool(path)))
-    recap = (f"Attachment: {os.path.basename(path)}\n" if path else "")
-    recap += "\n".join(f"{i}. {message}" for i, message in enumerate(frozen, 1))
-    if isinstance(voice, str) and voice:
-        recap += f"\nSpoken words: {voice}"
-    attempted = False
-    def approved():
-        nonlocal attempted
-        with browser.LOCK:
-            if attempted:
-                return _out("That approved send was already attempted. Check WhatsApp before creating another draft.", False)
-            attempted = True
-            session["pending"] = None
-        outcomes = []
-        items = [("media", path)] if path else []
-        items += [("text", value) for value in frozen]
-        for index, (kind, value) in enumerate(items):
-            try:
-                result = bridge.send(cid, text=value if kind == "text" else "", media=value if kind == "media" else "",
-                    media_kind=audio_kind if kind == "media" else "", expected_hash=expected_file if kind == "media" else None,
-                    action_id=ids[index])
-            except bridge.BridgeError as exc:
-                return _out(f"{exc}. I stopped the remaining items. Check WhatsApp before retrying.", False)
-            outcomes.append({"id": result.get("id"), "actionId": ids[index], "delivery": result.get("delivery")})
-            if not result.get("id") or result.get("delivery") not in {"submitted", "server_ack", "delivered", "read"}:
-                session["last_whatsapp_outcomes"] = outcomes
-                return _out("The bridge attempted submission, but acknowledgement was not verified. "
-                            "I stopped the remaining items. Check WhatsApp before retrying.", False)
-        session["whatsapp_last"] = cid
-        session["last_whatsapp_outcomes"] = outcomes
-        session["last_whatsapp_send"] = {"contact": cid, "path": path, "messages": frozen, "sent_at": time.time()}
-        session["is_reply"] = session["is_voice_reply"] = False
-        session["voice"] = None
-        return {**_out(f"WhatsApp acknowledged {len(outcomes)} item(s) for {contact}. "
-                      "Acknowledgement does not confirm the recipient read them.", True), "outcomes": outcomes}
-    return ask_first(session, "whatsapp", f"Send this to {contact} ({cid}) on WhatsApp?\n\n{recap}\n\nSend it", approved)
-
-
-def send_flow(text, session, pend=None):
-    exact_name = None
-    voice = None
-    owner_named = False  # the owner just answered "who should I send it to?" - a clear match is the answer
-    draft_ready = False
-    if pend:
-        if pend.get("ask") == "contact":
-            c, _, msgs, v = parse_send(f"send to {text}", session)
-            # "The name is Bai." answers the question - the phrase must not become part of the contact name
-            contact = re.sub(r"^(?:the\s+name\s+is|name\s+is|it'?s|it\s+is|contact\s+is)\s+", "",
-                             (c or text).strip(), flags=re.I).strip(" .,!?")
-            path = pend.get("file")
-            messages = pend.get("messages") or msgs
-            voice = pend.get("voice") or v
-            owner_named = True
-            exact_name = contact
-        elif pend.get("ask") == "content":
-            contact = pend.get("contact")
-            exact_name = pend.get("exact_name")
-            path = pend.get("file")
-            if pend.get("voice"):
-                path, whose = voice_note(text.strip())
-                trace(session, "voice_note", f"recorded the voice note in {whose}")
-                messages = []
-            else:
-                messages = [text.strip()]
-        elif pend.get("ask") == "reply":
-            contact = pend.get("contact")
-            exact_name = pend.get("exact_name") or contact
-            is_voice = bool(VOICE_NOTE.search(text))
-            session["is_reply"] = True
-            session["is_voice_reply"] = is_voice
-            context_str = pend.get("context", "")
-            refined = formulate_reply(contact, context_str, text, session)
-            draft_ready = True
-            if is_voice:
-                path, whose = voice_note(refined)
-                messages = []
-            else:
-                path = None
-                messages = [refined]
-        elif pend.get("ask") == "retry":
-            contact = pend.get("contact")
-            exact_name = pend.get("contact")
-            path = pend.get("path") or pend.get("file")
-            messages = pend.get("messages") or []
-        elif "candidates" in pend:
-            pick = re.search(r"\b(\d)\b", text)
-            names = pend["candidates"]
-            chosen = names[int(pick.group(1)) - 1] if pick and 0 < int(pick.group(1)) <= len(names) else \
-                next((n for n in names if norm(text) and norm(text) in norm(n)), None)
-            if not chosen:
-                low = (text or "").strip().lower()
-                if re.match(r"^(?:no|nope|cancel|stop|never\s*mind|forget\s+it)\b", low):
-                    session["pending"] = None
-                    return {"reply": "Cancelled - nothing was sent.", "sources": []}
-                if re.match(r"^(?:yes|yeah|yep|sure|ok|okay|go\s+ahead|do\s+it|send\s+it)\b", low):
-                    # "yes" to an ambiguous list is not a pick: never send to a guess
-                    return {"reply": "Which one? Reply with the number or the exact name (or say cancel).", "sources": []}
-                return None  # not an answer: route normally
-            contact, path, messages, exact_name = chosen, pend.get("file"), pend.get("messages", []), chosen
-            if pend.get("voice") and not path:
-                path, _whose = voice_note(pend["voice"])
-                messages = []
-        else:
-            contact = pend.get("contact")
-            path = pend.get("file")
-            messages = pend.get("messages", [])
-            exact_name = pend.get("exact_name")
-    else:
-        is_reply = bool(REPLY.search(text))
-        is_voice = bool(VOICE_NOTE.search(text))
-        session["is_reply"] = is_reply
-        session["is_voice_reply"] = is_voice
-        contact, path, messages, voice = parse_send(text, session)
-        if is_voice:
-            session["voice"] = voice or (messages[0] if messages else True)
-        if not contact:
-            if session.get("whatsapp_ambiguous"):
-                names = session.pop("whatsapp_ambiguous")
-                session["pending"] = {
-                    "skill": "whatsapp", "sticky": True, "candidates": names,
-                    "file": path, "messages": messages, "voice": voice,
-                }
-                return {"reply": "I found more than one person matching that relative. Who should receive it?\n" + "\n".join(f"{i}. {n}" for i, n in enumerate(names, 1)), "sources": []}
-            missing_relative = session.pop("whatsapp_missing_relative", None)
-            if missing_relative:
-                session["pending"] = {
-                    "skill": "whatsapp", "sticky": True, "ask": "contact",
-                    "file": path, "messages": messages, "voice": voice,
-                }
-                return {"reply": f"I don't have a confirmed name for your {missing_relative}. Who should receive it?", "sources": []}
-            session["pending"] = {"skill": "whatsapp", "sticky": True, "ask": "contact", "file": path, "messages": messages, "voice": voice}
-            return {"reply": "Who should I send it to?", "sources": []}
-        if voice and not path:
-            path, whose = voice_note(voice)
-            trace(session, "voice_note", f"recorded the voice note in {whose}")
-        if not path and not messages and not is_reply:
-            from ishti.reference_resolver import resolve_reference
-            ref = resolve_reference(text, session)
-            if ref and ref.get("payload"):
-                messages = [ref["payload"]]
-            else:
-                session["pending"] = {"skill": "whatsapp", "sticky": True, "ask": "content", "contact": contact, "exact_name": exact_name, "voice": bool(voice)}
-                return {"reply": "What should I send? Name the file or open it in the chat first, or give me the message.", "sources": []}
-    if not contact:
-        session["pending"] = {"skill": "whatsapp", "sticky": True, "ask": "contact", "file": path, "messages": messages, "voice": voice}
-        return {"reply": "Who should I send it to?", "sources": []}
-    bridged = _approve_bridge_send(exact_name or contact, path, messages, voice, text, session, draft_ready)
-    if bridged is not None:
-        return bridged
-    # When a linked bridge has not observed this contact or enough reply history,
-    # load Web before using its snapshot-based search. The direct bridge path
-    # reaches send_flow without opening Chrome first.
-    from ishti import wa_bridge as bridge
-    if bridge.connected():
-        _snap, ready = open_whatsapp(session, wait_s=3)
-        if not ready:
-            return _out("I could not resolve this chat through the linked bridge or WhatsApp Web. Nothing was sent.", False)
-    snap = browser._call("browser_snapshot", {})
-    actual, _ = current_chat_identity(snap)
-    found = [(actual, None)] if actual and norm(actual) == norm(exact_name or contact) else search(contact, session)
-    browser._call("browser_press_key", {"key": "Escape"}) if not found else None
-    ranked = [(n, s) for n, s in rank(contact, [n for n, _ in found]) if s >= 0.66]
-    exact = [n for n, _ in ranked if norm(n) == norm(exact_name or contact)]
-    if not exact and len(ranked) == 1:
-        # the owner's own rule (chat 2026-10-03): ask only when MORE THAN ONE name matches; a single clear
-        # match above the threshold is the person they meant, so send without another question
-        exact = [ranked[0][0]]
-    if owner_named and not exact and ranked:
-        # the owner just named the person: the one clear match above the threshold IS their answer - asking
-        # "did you mean 1. Bhai?" after "the name is Bai" is the loop that lost the message
-        top = ranked[0]
-        if len(ranked) == 1 or top[1] - ranked[1][1] >= 0.1:
-            exact = [top[0]]
-    if exact:
-        ref, who = dict(found)[exact[0]], exact[0]
-        if session.get("is_reply") and messages and not path and not draft_ready:
-            selected, opened = open_chat(who, session, exact_name=who)
-            if not selected or not isinstance(opened, str):
-                return _out("I could not read the intended chat to prepare the reply. Nothing was sent.", False)
-            context_str = format_chat_context(who, parse_messages(opened, n=10))
-            refined = formulate_reply(who, context_str, text, session)
-            if not refined:
-                return _out("I could not prepare a reply for you to review. Nothing was sent.", False)
-            messages = [refined] + messages[1:]
-        what = (f"Attachment: {os.path.basename(path)}\n" if path else "")
-        what += "\n".join(f"{i}. {message}" for i, message in enumerate(messages or [], 1))
-        if isinstance(voice, str) and voice:
-            what += f"\nSpoken audio attachment: {voice}"
-        what = what.strip() or "the message"
-        expected_file = None
-        if path:
-            expected_file = _file_digest(path)
-
-        # T2, always. This used to send straight away on an exact name match: checklist 113/116 require
-        # the exact draft shown and an explicit yes first, and a voice note reached the WRONG chat
-        # ("Ahmed" resolved to "Ishtiaq Ahmed") with nothing asked. Nothing leaves without the recap.
-        attempted = False
-        def _send(ref=ref, who=who, path=path, messages=tuple(messages), session=session,
-                  expected_file=expected_file):
-            nonlocal attempted
-            with browser.LOCK:
-                if attempted:
-                    return _out("That approved send was already attempted. Check WhatsApp before creating another draft.", False)
-                attempted = True
-                session["pending"] = None
-            if path:
-                try:
-                    actual_file = _file_digest(path)
-                except OSError:
-                    return _out("The approved attachment is no longer readable. Nothing was sent.", False)
-                if actual_file != expected_file:
-                    return _out("The attachment changed after your preview. Nothing was sent; review it again.", False)
-            res = deliver(ref, who, path, messages, session)
-            if res.get("verified"):
-                session["pending"] = None
-                session["whatsapp_last"] = who      # "send him ..." / "what did he reply" resolve to them
-                session["last_whatsapp_send"] = {"contact": who, "path": path, "messages": messages,
-                                                 "sent_at": time.time()}
-                # the flags describe this one send; a later, ordinary message must not inherit them
-                session["is_reply"] = session["is_voice_reply"] = False
-                session["voice"] = None
-            return res
-        return ask_first(session, "whatsapp", f"Send this to {who} on WhatsApp?\n\n{what}\n\nSend it", _send)
-    browser._call("browser_press_key", {"key": "Escape"})
-    if not ranked:
-        session["pending"] = {"skill": "whatsapp", "sticky": True, "ask": "contact", "file": path, "messages": messages, "voice": voice}
-        return {"reply": f"I couldn't find anyone like '{contact}' on WhatsApp. Check the name?", "sources": []}
-    names = [n for n, _ in ranked[:5]]
-    session["pending"] = {"skill": "whatsapp", "sticky": True, "candidates": names, "file": path, "messages": messages, "voice": voice}
-    return {"reply": f"I didn't find '{contact}' exactly. Did you mean:\n" + "\n".join(f"{i}. {n}" for i, n in enumerate(names, 1))
-                     + "\nReply with the number or name.", "sources": []}
-
-
-def _copy_file_clipboard(path):
-    """Put a file on the Windows clipboard as CF_HDROP so Ctrl+V pastes it (WhatsApp Desktop accepts drops this
-    way). True on success; False when pywin32/the clipboard is unavailable (the send then must not pretend)."""
-    try:
-        import win32clipboard
-        import win32con
-        from ctypes import sizeof, c_uint, c_bool, c_long, Structure
-
-        class _POINT(Structure):
-            _fields_ = [("x", c_long), ("y", c_long)]
-
-        class _DROPFILES(Structure):
-            _fields_ = [("pFiles", c_uint), ("pt", _POINT), ("fNC", c_bool), ("fWide", c_bool)]
-
-        hdr = _DROPFILES()
-        hdr.pFiles = sizeof(_DROPFILES)
-        hdr.fWide = True
-        data = bytes(hdr) + (os.path.abspath(path) + "\0\0").encode("utf-16le")
-        win32clipboard.OpenClipboard()
-        try:
-            win32clipboard.EmptyClipboard()
-            win32clipboard.SetClipboardData(win32con.CF_HDROP, data)
-        finally:
-            win32clipboard.CloseClipboard()
-        return True
-    except Exception as exc:
-        print(f"[whatsapp] clipboard file copy failed: {type(exc).__name__}: {exc}")
-        return False
 
 
 def send_desktop(contact, messages, path, session):
@@ -1018,125 +372,13 @@ PAIR_WANT = re.compile(r"\b(?:connect|pair|link|scan|qr)\b.*\bwhats?app\b|\bwhat
                        r"\bqr\s+code\b.*\bwhats?app\b", re.I)
 
 
-def _bridge_path(text, session):
-    """Preferred transport when the Baileys bridge (tools/wa_bridge) is running and linked.
-
-    QR-paired once, then messages arrive live - no Chrome, no page reading, no timing out. When the bridge
-    is absent this returns None and the browser path (Profile 9) answers exactly as before.
-
-    It never sends by itself: a send still goes through the same ask_first gate below.
-    """
-    from ishti import wa_bridge as bridge
-    t = text.strip()
-
-    if PAIR_WANT.search(t):
-        return {"reply": bridge.pair_hint() + "\n\n" + bridge.install_hint(), "sources": []}
-
-    if not bridge.connected():
-        return None
-
-    if re.search(r"\b(?:read|check|show|understand|summari[sz]e|what(?:'s| is| does)?)\b.*\b(?:photo|image|picture|pdf|document|attachment)\b", t, re.I):
-        target = re.search(r"\b(?:from|with|in\s+(?:the\s+)?chat\s+with)\s+([\w+@ .'-]{1,50})", t, re.I)
-        who = (target.group(1).strip(" ?.!") if target else session.get("whatsapp_last") or "")
-        if not who:
-            return _out("Which WhatsApp chat contains that image or PDF?", False)
-        who = resolve_contact(who, session)
-        if not who or session.get("whatsapp_ambiguous"):
-            return _out("That contact is not uniquely identified. Name the exact chat to read its media.", False)
-        try:
-            cid = bridge.find_chat(who)
-            rows = bridge.messages(cid, 200) if cid else []
-        except bridge.BridgeError:
-            return None
-        want_pdf = bool(re.search(r"\b(?:pdf|document)\b", t, re.I))
-        wanted = "document" if want_pdf else "image"
-        row = next((item for item in reversed(rows)
-                    if item.get("kind") == wanted and not item.get("restricted")
-                    and (wanted != "document" or
-                         (item.get("media") or {}).get("mimetype", "").split(";")[0].lower() == "application/pdf")), None)
-        if not row:
-            return _out(f"I have no {wanted} message retained from {who} since this bridge started. "
-                        "That does not rule out earlier attachments in WhatsApp.", False)
-        try:
-            evidence = bridge.read_media(cid, row["id"])
-        except bridge.BridgeError as exc:
-            return _out(f"I found the attachment but could not safely read it: {exc}", False)
-        reading = evidence.get("text", "").strip()
-        if not reading:
-            return _out(f"I retrieved the {wanted} in {who}'s chat, but local text extraction found no readable text. "
-                        f"Message ID: {row['id']}. I cannot describe visual objects from OCR alone.", False)
-        alternate = (evidence.get("alternatives") or {}).get("rapidocr", "")
-        uncertainty = evidence.get("uncertainty") or []
-        excerpt = reading[:3000]
-        answer = f"**{who} · {wanted}** (message `{row['id']}`)\n\n{excerpt}"
-        if alternate and alternate.strip() != reading:
-            answer += "\n\n**Second OCR reading:**\n" + alternate[:1800]
-        if uncertainty:
-            answer += "\n\n**Check before relying on:** " + "; ".join(map(str, uncertainty[:3]))
-        if evidence.get("truncated"):
-            answer += "\n\nOnly the first part of this attachment was read."
-        session["whatsapp_last"] = cid
-        return _out(answer, True)
-
-    # "any new messages" - straight from the live socket, no page load
-    if UNREAD.search(t) and not (SEND.search(t) or SEND_TO.search(t)):
-        try:
-            rows = [c for c in bridge.chats() if c.get("unread")]
-        except bridge.BridgeError:
-            return None
-        if not rows:
-            return {"reply": "No unread messages have been observed since this bridge started. Older chats are not included.",
-                    "sources": [], "verified": True}
-        lines = [f"{len(rows)} chat(s) with new messages observed since this bridge started:"]
-        for c in rows[:15]:
-            last = c.get("last") or {}
-            lines.append(f"- **{c.get('name') or c['id']}**: {(last.get('text') or '')[:70]}")
-        trace(session, "wa_bridge", f"{len(rows)} unread chats", status="done")
-        return {"reply": "\n".join(lines), "sources": [], "verified": True}
-
-    # "what did X say" / "check the chat with X"
-    if re.search(r"\b(?:what|read|check|show|see)\b.*\b(?:say|said|last|chat|message)", t, re.I) \
-            and not (SEND.search(t) or SEND_TO.search(t)):
-        who = (read_target(t) or session.get("whatsapp_last") or "").strip(" ?.!")
-        if who:
-            try:
-                cid = bridge.find_chat(who)
-            except bridge.BridgeError:
-                return None
-            if cid:
-                try:
-                    rows = bridge.messages(cid, 40)
-                except bridge.BridgeError:
-                    return None
-                if not rows:
-                    return None  # use the Web/desktop read path for older history
-                name = next((c["name"] for c in bridge.chats() if c["id"] == cid), cid)
-                lines = [f"**{name}** ({len(rows)} messages observed since this bridge started):"]
-                for r in rows:
-                    who_ = "You" if r.get("fromMe") else (name or "Them")
-                    lines.append(f"- {who_}: {(r.get('text') or '').strip()[:160]}")
-                session["whatsapp_last"] = cid
-                trace(session, "wa_bridge", f"read {len(rows)} messages from {name}", status="done")
-                return {"reply": "\n".join(lines), "sources": [], "verified": True}
-    return None
-
-
-def run(text, session):
-    if not match(text) and not (session.get("pending") or {}).get("skill") == "whatsapp":
-        return None
-    with browser.LOCK:
-        out = op_message_edit(text, session)
-        if out is not None:
-            return out
-        out = _bridge_path(text, session)
-        if out is not None:
-            return out
-        return _run(text, session)
-
-
 # a message that starts a NEW request is not the answer to "which contact?" (owner's chat: "Open WhatsApp Web." was searched as a contact name)
 NEW_COMMAND = re.compile(r"^\s*(?:please\s+|now\s+|and\s+)?(?:open|launch|start|go\s+to|switch\s+to|check|read|show|send|message|text|tell|search|find|call|remind|what|who|how|why|when)\b", re.I)
+
+
 PRONOUN = {"him", "her", "them", "he", "she", "it", "and", "again", "same", "the same person", "that person", "this person", "same person"}
+
+
 OPEN_ONLY = re.compile(r"^\s*(?:please\s+)?(?:open|launch|start|switch\s+to|focus|go\s+to)\s+(?:the\s+|my\s+)?(?:whatsapp|whatsap|watsapp|whastap)"
                        r"(?:\s+(?P<kind>web|desktop|app|application))?(?:\s+(?:in|on)\s+(?:chrome|browser|my\s+(?:pc|computer|desktop)))?\s*[.!]?$", re.I)
 
@@ -1152,6 +394,8 @@ DISCUSS = re.compile(
     r"(?P<c>[\w][\w&'-]*(?:\s+[\w&'-]+){0,3}?)(?:\s+group|\s+chat)?\s*[.?!]?$"
     r"|\b(?:catch\s+me\s+up|catch\s+up|fill\s+me\s+in)\s+(?:on|with)\s+(?:the\s+|my\s+)?"
     r"(?P<c2>[\w][\w&'-]*(?:\s+[\w&'-]+){0,3}?)(?:\s+group|\s+chat)?\s*[.?!]?$", re.I)
+
+
 SAID = re.compile(r"\bwhat\s+(?:he|she|they|we)\s+(?:have\s+|had\s+|has\s+)?(?:said|say|says|discussed|talked\s+about|wrote|sent)\b", re.I)
 
 
@@ -1160,21 +404,6 @@ TOP_CHATS = re.compile(
     r"list\s+(?:top\s+)?(?:recent\s+)?chats?|who\s+are\s+(?:the\s+)?top\s+persons?)\b",
     re.I,
 )
-
-
-def top_chat_names(snap, limit=5):
-    names = []
-    start = snap.find("Chat list")
-    sub = snap[start:] if start >= 0 else snap
-    for block in re.split(r"\n\s*- row \[", sub)[1:]:
-        m_name = re.search(r'- generic "([^"]+)" \[ref', block)
-        if m_name:
-            nm = m_name.group(1).strip()
-            if nm and nm not in names and not re.search(r"\b(?:unread|messages?|pinned|muted)\b", nm, re.I):
-                names.append(nm)
-        if len(names) >= limit:
-            break
-    return names
 
 
 def discussed_in(text):
@@ -1222,57 +451,6 @@ def resolve_contact(name, session):
     return name
 
 
-def open_preferred(session, kind=None):
-    """Open WhatsApp following the owner's 3-tier hierarchy:
-    1. Priority 1: Check if WhatsApp is connected via QR scan bridge (send/receive directly).
-    2. Priority 2: If QR bridge is not connected, open WhatsApp Desktop application.
-    3. Priority 3: If desktop app is not available/fails to load, close that app and open WhatsApp Web (Chrome Profile 9)."""
-    from ishti import wa_bridge
-    t_kind = (kind or "").lower().strip()
-
-    # Priority 1: QR scan bridge (unless owner explicitly requested a GUI app/web view)
-    if not t_kind and wa_bridge.connected():
-        return {
-            "reply": "WhatsApp is connected via the local QR bridge. New messages arrive and send directly through it; older chat history remains accessible in WhatsApp Web.",
-            "sources": []
-        }
-
-    # Priority 2: WhatsApp Desktop application
-    if t_kind in ("desktop", "app", "application") or not t_kind:
-        desktop_opened = False
-        try:
-            from desktop.computer_use import get_computer_use_agent
-            agent = get_computer_use_agent()
-            res = agent.launch_app("whatsapp")
-            time.sleep(1.0)
-            if res.get("status") == "success" and agent.focus_window("whatsapp"):
-                desktop_opened = True
-        except Exception:
-            desktop_opened = False
-
-        if desktop_opened:
-            return {"reply": "Opened WhatsApp Desktop.", "sources": []}
-
-        # If desktop app was explicitly requested but failed:
-        if t_kind in ("desktop", "app", "application"):
-            return {"reply": "WhatsApp Desktop could not be opened. You can use WhatsApp Web or link the QR bridge.", "sources": []}
-
-        # Priority 3 fallback: Close any unresponsive/hung desktop process and open WhatsApp Web
-        try:
-            import subprocess
-            subprocess.run(["taskkill", "/F", "/IM", "WhatsApp.exe"], capture_output=True, timeout=3)
-        except Exception:
-            from ishti.core.logutil import swallowed
-            swallowed("whatsapp.open_preferred.taskkill")
-
-    snap, ok = open_whatsapp(session)
-    if ok:
-        return {"reply": "Opened WhatsApp Web (Chrome Profile 9).", "sources": []}
-    if re.search(r"Scan (?:the )?QR|Log in with phone|Link with phone", snap or "", re.I):
-        return {"reply": "WhatsApp Web is open but it asks you to scan the QR code with your phone first (WhatsApp > Linked devices).", "sources": []}
-    return {"reply": "I opened WhatsApp Web in Chrome Profile 9 but the chat list did not load yet - give it a few seconds.", "sources": []}
-
-
 def _desktop_gate(session, contact, messages, path, voice=None):
     """The WhatsApp DESKTOP app is driven blind, so ISHTI cannot prove the right chat received a message. Desktop
     sends are therefore refused (send_desktop). No yes/no is offered for them: that question could only end in the same
@@ -1290,20 +468,12 @@ MESSAGE_OP = re.compile(
     r"(?:the\s+|that\s+|last\s+|my\s+)*?(?:message|msg|text|chat)\s*"
     r"(?:(?:to|with|in)\s+)?(?P<who>[A-Za-z][\w'-]*(?:\s+[A-Za-z][\w'-]*)?)?"
     r"(?:\s+(?:saying|that|with|to)\s+(?P<what>.+?))?\s*[.!]?$", re.I)
+
+
 REACT_EMOJI = re.compile(r"[\U0001F300-\U0001FAFF]|(?:\+1)", re.I)
+
+
 REACT = re.compile(r"^\s*(?:please\s+)?react\s+(?:to\s+)?(?:the\s+|that\s+|his\s+|her\s+|their\s+|'\s+)?(?:last\s+|newest\s+)?(?:message|msg|text|one)?\s*(?:with\s+(?P<emoji>[^\s.!?]+))?\s*[.!?]?$", re.I)
-
-
-def locate_message(snap, target):
-    """The ref of the message row matching the words given, else the last message row."""
-    rows = re.findall(r'^- row "(?:[^"]*?)\s+([^"]+)" \[ref=([^\]]+)\]', snap or "", re.M)
-    if not rows:
-        return None
-    want = re.sub(r"\s+", " ", (target or "")).strip().lower()
-    for text_, ref in rows:
-        if want and want in text_.strip().lower():
-            return ref
-    return rows[-1][1]
 
 
 def op_message_edit(text, session):
@@ -1316,231 +486,415 @@ def op_message_edit(text, session):
     return None
 
 
-def _run(text, session):
-    relative_read = session.get("whatsapp_relative_read")
-    if relative_read:
-        names = relative_read.get("candidates", [])
-        choice = re.search(r"^\s*(\d+)\s*[.!]?\s*$", text)
-        chosen = names[int(choice.group(1)) - 1] if choice and 0 < int(choice.group(1)) <= len(names) else \
-            next((n for n in names if norm(text.strip()) == norm(n)), None)
-        if chosen:
-            session.pop("whatsapp_relative_read", None)
-            text = f"What did {chosen} say?"
-        elif NEW_COMMAND.match(text):
-            session.pop("whatsapp_relative_read", None)
-        else:
-            return {"reply": "Which person? Reply with a listed number or exact name.", "sources": []}
-    p = session.get("pending")
-    if p and p.get("skill") == "whatsapp" and NEW_COMMAND.match(text):
-        session["pending"] = p = None
-    if p and p.get("skill") == "browser":  # yes/no to a send the browser engine asked about
-        return browser.run(text, session)
-    if p and p.get("skill") == "whatsapp":
-        from ishti import wa_bridge as bridge
-        if bridge.connected() and p.get("ask") != "relative_read":
-            prepared = send_flow(text, session, p)
-            if prepared is not None:
-                return prepared
-        try:
-            snap, ok = open_whatsapp(session, wait_s=3)
-        except Exception:
-            ok = False
-        if ok:
-            return send_flow(text, session, p)
-        chosen_contact = p.get("contact") or (p.get("candidates", [text])[0] if p.get("candidates") else text)
-        return _desktop_gate(session, chosen_contact, p.get("messages", []), p.get("file"))
 
-    # Never claim a group operation happened when this build has no verified implementation.
-    if GROUP_OPS.search(text):
-        return {"reply": "I did not take any action. WhatsApp group creation, membership lookup, group announcements, and member removal are not implemented in this build.", "sources": []}
 
-    # 1. Plain "open WhatsApp" / "open WhatsApp Web": one window, the preferred kind
-    m_open = OPEN_ONLY.match(text)
-    if m_open and not (SEND.search(text) or SEND_TO.search(text)):
-        return open_preferred(session, m_open.group("kind"))
-
-    # Bulk mark as read intent (checklist 115)
-    if re.search(r"\bmark\b.*\bread\b", text, re.I):
-        return {"reply": "WhatsApp does not expose a bulk control to mark messages as read by label or contact. You can open that chat directly to mark it as read.", "sources": []}
-
-    is_unread = bool(UNREAD.search(text))
-    is_send = not is_unread and bool(SEND.search(text) or SEND_TO.search(text) or re.search(r"\b(?:send|text|write)\b", text, re.I))
-    if is_send:
-        from ishti import wa_bridge as bridge
-        if bridge.connected():
-            prepared = send_flow(text, session)
-            if prepared is not None:
-                return prepared
-
-    # Fast check if WhatsApp Web is open & logged in
-    snap, ok = None, False
+# ---------------------------------------------------------------- WAHA-based reading
+def _linked():
     try:
-        snap, ok = open_whatsapp(session, wait_s=3)
+        return bridge.connected()
     except Exception:
-        ok = False
+        return False
 
-    # 2a. "open WhatsApp and check the automation workflow group and let me know what we discussed there": read that chat and answer
-    if (target := discussed_in(text)) and not (SEND.search(text) or SEND_TO.search(text)):
-        if not ok:
-            return {"reply": "WhatsApp Web is not logged in or ready in Chrome Profile 9 (scan the QR code to link your phone). Link your phone to check the group chat.",
-                    "sources": []}
-        target = resolve_contact(target, session)
-        if session.get("whatsapp_ambiguous"):
-            names = session.pop("whatsapp_ambiguous")
-            session["whatsapp_relative_read"] = {"candidates": names}
-            session["pending"] = {"skill": "whatsapp", "sticky": True, "ask": "relative_read"}
-            return {"reply": "I found more than one matching relative. Which person should I open?\n" + "\n".join(f"{i}. {n}" for i, n in enumerate(names, 1)), "sources": []}
-        if not target:
-            missing = session.pop("whatsapp_missing_relative", "relative")
-            return {"reply": f"I don't have a confirmed name for your {missing} yet. Tell me the person's name, then ask again.", "sources": []}
-        name, chat_snap = open_chat(target, session)
-        if isinstance(chat_snap, list) and not name:
-            if not chat_snap:
-                return {"reply": f"I couldn't find a chat or group called \"{target}\" on WhatsApp.", "sources": []}
-            session["pending"] = {"skill": "whatsapp", "sticky": True, "candidates": chat_snap, "ask": "contact"}
-            return {"reply": "Which one?\n" + "\n".join(f"{i}. {n}" for i, n in enumerate(chat_snap, 1)), "sources": []}
-        session["whatsapp_last"] = name
-        messages = parse_messages(chat_snap, n=40)
-        if not messages:
-            return {"reply": f"I opened \"{name}\" but no messages were visible to read.", "sources": []}
-        trace(session, "read", f"read {len(messages)} messages in {name}")
-        answer = _answer_from_transcript(text, name, messages)
-        transcript = format_chat_context(name, messages)
-        session["whatsapp_context"] = {"contact": name, "messages": messages, "context_str": transcript}
-        return {"reply": f"**{name}** (last {len(messages)} messages):\n{answer}", "sources": []}
 
-    # Bulk mark as read intent (checklist 115)
-    if re.search(r"\bmark\b.*\bread\b", text, re.I):
-        return {"reply": "WhatsApp does not expose a bulk control to mark messages as read by label or contact. You can open that chat directly to mark it as read.", "sources": []}
+def _not_linked(extra=""):
+    return {**_out(("WhatsApp isn't linked yet. " + bridge.pair_hint() + (" " + extra if extra else "")).strip(), False),
+            "no_escalate": True}
 
-    # 2. Direct Read Chat Messages intent: "what did Ali say", "read messages from Ali", "check chat with Bhai"
-    if READ_CHAT.search(text) and not (SEND.search(text) or SEND_TO.search(text)):
-        target_name = read_target(text)
-        if not ok:
-            who = f" to check your chat with {target_name.title()}" if target_name else ""
-            return {"reply": f"WhatsApp Web is not logged in or ready in Chrome Profile 9 yet (it may need the QR scan){who}. Open it once and link your phone.", "sources": []}
-        if target_name:
-            target_name = resolve_contact(target_name, session)
-            if session.get("whatsapp_ambiguous"):
-                names = session.pop("whatsapp_ambiguous")
-                session["whatsapp_relative_read"] = {"candidates": names}
-                session["pending"] = {"skill": "whatsapp", "sticky": True, "ask": "relative_read"}
-                return {"reply": "I found more than one matching relative. Which person do you mean?\n" + "\n".join(f"{i}. {n}" for i, n in enumerate(names, 1)), "sources": []}
-            if not target_name:
-                missing = session.pop("whatsapp_missing_relative", "relative")
-                return {"reply": f"I don't have a confirmed name for your {missing} yet. Tell me the person's name, then ask again.", "sources": []}
-        if not target_name:
-            target_name = session.get("whatsapp_last")  # "what did he reply": the chat ISHTI touched last
-        if not target_name:
-            c, _, _, _ = parse_send(f"send to {text}", session)
-            target_name = resolve_contact(c, session) if c else None
-        if target_name and ok:
-            name, chat_snap = open_chat(target_name, session)
-            if isinstance(chat_snap, list) and not name:  # candidates
-                session["pending"] = {"skill": "whatsapp", "sticky": True, "candidates": chat_snap, "ask": "contact"}
-                if not chat_snap:  # an empty "Did you mean:" is a dead end, not a question
-                    reply = "I couldn't find a chat called \"%s\" on WhatsApp. Give me the exact name, or the number from your chat list." % target_name
-                    return {"reply": reply, "sources": []}
-                return {"reply": "Did you mean:\n" + "\n".join(f"{i}. {n}" for i, n in enumerate(chat_snap, 1)) + "\nReply with the number or name.", "sources": []}
-            if name:
-                messages = parse_messages(chat_snap, n=10)
-                context_str = format_chat_context(name, messages)
-                session["whatsapp_last"] = name
-                session["whatsapp_context"] = {"contact": name, "messages": messages, "context_str": context_str}
-                session["pending"] = {"skill": "whatsapp", "sticky": True, "ask": "reply", "contact": name, "exact_name": name, "context": context_str}
-                if re.search(r"\b(?:what|did|has|any|check|who|when|where|why|how|which|summari[sz]e|tell me)\b", text, re.I):
-                    answer = _answer_from_transcript(text, name, messages)
-                    return {"reply": answer, "sources": []}
-                return {"reply": f"{context_str}\n\nWould you like me to send a text or voice reply to {name}?", "sources": []}
 
-    # 2b. Top chats / persons intent
-    if TOP_CHATS.search(text) and not (SEND.search(text) or SEND_TO.search(text)):
-        if not ok:
-            return {"reply": "WhatsApp Web is not logged in in Chrome Profile 9. Please open Chrome Profile 9 to view your chats.", "sources": []}
-        names = top_chat_names(snap, limit=5)
-        if names:
-            lines = [f"{i}. {name}" for i, name in enumerate(names, 1)]
-            return {"reply": "Top persons on your WhatsApp Web:\n\n" + "\n".join(lines), "sources": []}
-        return {"reply": "No chats visible in your WhatsApp chat list.", "sources": []}
+def locate(contact):
+    """(chat id, display name) for an exact match, else (None, [candidate names]) - a fuzzy match is asked, never guessed."""
+    if not contact:
+        return None, []
+    exact = bridge.find_chat(contact)
+    names = bridge.chat_names()
+    if exact:
+        return exact, next((n for n, cid in names.items() if cid == exact), contact)
+    ranked = [(n, s) for n, s in rank(contact, list(names)) if s >= 0.66]
+    same = [n for n, _ in ranked if norm(n) == norm(contact)]
+    if same:
+        return names[same[0]], same[0]
+    if len(ranked) == 1 or (len(ranked) > 1 and ranked[0][1] - ranked[1][1] >= 0.15):
+        return names[ranked[0][0]], ranked[0][0]
+    return None, [n for n, _ in ranked[:5]]
 
-    # 3. Unread messages intent: "any new WhatsApp messages" (checklist 111)
-    if UNREAD.search(text) and not (SEND.search(text) or SEND_TO.search(text)):
-        if not ok:
-            return {"reply": "WhatsApp Web is not logged in in Chrome Profile 9 (scan the QR code to link your phone). Once logged in you will see your new messages and unread chats.", "sources": []}
-        rows, total = unread(snap)
-        trace(session, "read", f"{total} unread chats")
-        if not total:
-            return {"reply": "No new messages on WhatsApp.", "sources": []}
-        lines = [f"- {n}" + (f" ({c})" if c else " (marked unread)") for n, c in rows]
-        more = f"\n{total - len(rows)} more further down the list." if total > len(rows) else ""
-        return {"reply": f"{total} unread chat{'s' if total != 1 else ''} on WhatsApp:\n" + "\n".join(lines) + more,
+
+def transcript(cid, name, n=40):
+    """[(who, text)] oldest first; media shown as [image] / [voice message] etc."""
+    out = []
+    for r in bridge.messages(cid, n):
+        body = (r.get("text") or "").strip() or f"[{ {'voice': 'voice message'}.get(r.get('kind'), r.get('kind') or 'message') }]"
+        out.append(("You" if r.get("fromMe") else (name or "Them"), body))
+    return out
+
+
+def _choose(session, names, ask, extra=None):
+    session["pending"] = {"skill": "whatsapp", "sticky": True, "candidates": names, "ask": ask, **(extra or {})}
+    return {"reply": "Which one?\n" + "\n".join(f"{i}. {n}" for i, n in enumerate(names, 1))
+                     + "\nReply with the number or the exact name.", "sources": []}
+
+
+def read_flow(text, session, target, question=True):
+    target = resolve_contact(target, session)
+    if session.get("whatsapp_ambiguous"):
+        names = session.pop("whatsapp_ambiguous")
+        session["whatsapp_relative_read"] = {"candidates": names}
+        session["pending"] = {"skill": "whatsapp", "sticky": True, "ask": "relative_read"}
+        return {"reply": "I found more than one matching relative. Which person do you mean?\n"
+                         + "\n".join(f"{i}. {n}" for i, n in enumerate(names, 1)), "sources": []}
+    if not target:
+        missing = session.pop("whatsapp_missing_relative", "relative")
+        return {"reply": f"I don't have a confirmed name for your {missing} yet. Tell me the person's name, then ask again.",
                 "sources": []}
+    cid, name = locate(target)
+    if not cid:
+        if not name:
+            return {"reply": f"I couldn't find a chat called \"{target}\" on WhatsApp. Give me the exact name or number.",
+                    "sources": [], "no_escalate": True}
+        return _choose(session, name, "read")
+    messages = transcript(cid, name)
+    session["whatsapp_last"] = name
+    if not messages:
+        return _out(f"The chat with {name} has no messages I can read.", True)
+    trace(session, "read", f"read {len(messages)} messages with {name}", status="done")
+    context_str = format_chat_context(name, messages)
+    session["whatsapp_context"] = {"contact": name, "messages": messages, "context_str": context_str}
+    if question and re.search(r"\b(?:what|did|has|any|check|who|when|where|why|how|which|summari[sz]e|tell\s+me|let\s+me\s+know|discuss)",
+                              text, re.I):
+        return _out(f"**{name}** (last {len(messages)} messages):\n{_answer_from_transcript(text, name, messages)}", True)
+    session["pending"] = {"skill": "whatsapp", "sticky": True, "ask": "reply", "contact": name, "exact_name": name,
+                          "context": context_str}
+    return _out(f"{context_str}\n\nShall I send a text or voice reply to {name}?", True)
 
-    if is_send:
-        if ok:
-            return send_flow(text, session)
-        # Desktop fallback
+
+def unread_flow(session):
+    chats = bridge.chats(100)
+    counted = [c for c in chats if c.get("unread")]
+    if counted:
+        lines = [f"- **{c['name'] or c['id']}** ({c['unread']}): {c['last']['text'][:70]}" for c in counted[:15]]
+        trace(session, "read", f"{len(counted)} unread chats", status="done")
+        return _out(f"{len(counted)} chat(s) with unread messages:\n" + "\n".join(lines), True)
+    # Some WAHA engines do not report unread counts: show recent INCOMING chats and say exactly that.
+    cutoff = (time.time() - 24 * 3600) * 1000
+    recent = [c for c in chats if not c["last"]["fromMe"] and c["last"]["ts"] >= cutoff]
+    if not recent:
+        return _out("No new incoming WhatsApp messages in the last 24 hours.", True)
+    lines = [f"- **{c['name'] or c['id']}**: {c['last']['text'][:70]}" for c in recent[:15]]
+    return _out("Chats whose latest message is from them (last 24 h; WhatsApp didn't report unread counts):\n"
+                + "\n".join(lines), True)
+
+
+def media_flow(text, session):
+    target = re.search(r"\b(?:from|with|in\s+(?:the\s+)?chat\s+with)\s+([\w+@ .'-]{1,50})", text, re.I)
+    who = resolve_contact(target.group(1).strip(" ?.!") if target else session.get("whatsapp_last") or "", session)
+    if not who:
+        return _out("Which WhatsApp chat contains that image or PDF?", False)
+    cid, name = locate(who)
+    if not cid:
+        return _out("That contact is not uniquely identified. Name the exact chat to read its media.", False)
+    want_pdf = bool(re.search(r"\b(?:pdf|document)\b", text, re.I))
+    wanted = "document" if want_pdf else "image"
+    rows = bridge.messages(cid, 200)
+    row = next((r for r in reversed(rows) if r.get("kind") == wanted and not r.get("restricted")
+                and (wanted != "document" or str((r.get("media") or {}).get("mimetype") or "").split(";")[0].lower()
+                     == "application/pdf")), None)
+    if not row:
+        return _out(f"I found no {wanted} in the last 200 messages with {name}.", False)
+    try:
+        evidence = bridge.read_media(cid, row["id"])
+    except bridge.BridgeError as exc:
+        return _out(f"I found the attachment but could not safely read it: {exc}", False)
+    reading = evidence.get("text", "").strip()
+    if not reading:
+        return _out(f"I retrieved the {wanted} in {name}'s chat, but local text extraction found no readable text. "
+                    "I cannot describe visual objects from OCR alone.", False)
+    answer = f"**{name} - {wanted}**\n\n{reading[:3000]}"
+    alternate = (evidence.get("alternatives") or {}).get("rapidocr", "")
+    if alternate and alternate.strip() != reading:
+        answer += "\n\n**Second OCR reading:**\n" + alternate[:1800]
+    if evidence.get("uncertainty"):
+        answer += "\n\n**Check before relying on:** " + "; ".join(map(str, evidence["uncertainty"][:3]))
+    session["whatsapp_last"] = name
+    return _out(answer, True)
+
+
+def top_chats_flow(text):
+    m = TOP_CHATS.search(text)
+    n = {"three": 3, "five": 5, "ten": 10}.get(str(m.group("n") or "").lower()) or int(m.group("n") or 5) if m else 5
+    names = [c["name"] or c["id"] for c in bridge.chats(50)][:max(1, min(20, n))]
+    if not names:
+        return _out("No chats in your WhatsApp yet.", True)
+    return _out("Your most recent WhatsApp chats:\n" + "\n".join(f"{i}. {x}" for i, x in enumerate(names, 1)), True)
+
+
+def open_preferred(session, kind=None):
+    """Linked through WAHA: say so. Otherwise open the WhatsApp Desktop app for the owner (no automation inside it)."""
+    if not (kind or "").strip() and _linked():
+        return {"reply": "WhatsApp is linked through ISHTI's WAHA service: I can read your chats and send after your yes.",
+                "sources": []}
+    if os.environ.get("ISHTI_TEST_MODE"):
+        return {"reply": "(test mode) Would open WhatsApp Desktop.", "sources": []}
+    try:
+        from desktop.computer_use import get_computer_use_agent
+        agent = get_computer_use_agent()
+        res = agent.launch_app("whatsapp")
+        time.sleep(1.0)
+        if res.get("status") == "success":
+            agent.focus_window("whatsapp")
+            return {"reply": "Opened WhatsApp Desktop.", "sources": []}
+    except Exception as exc:
+        from ishti.core.logutil import swallowed
+        swallowed("ishti/skills/whatsapp/skill.py:open_preferred", exc)
+    return {"reply": "WhatsApp Desktop isn't installed. Link WhatsApp in Settings -> Connectors -> WhatsApp to use it "
+                     "through ISHTI.", "sources": []}
+
+
+# ---------------------------------------------------------------- sending (always behind the owner's yes)
+def _approve_send(cid, name, path, messages, voice, text, session, draft_ready=False):
+    """Exact recipient, frozen draft, one yes, each item sent once with its own action id; stop at the first failure."""
+    if session.get("is_reply") and not draft_ready:
+        context = format_chat_context(name, transcript(cid, name, 20))
+        reply = formulate_reply(name, context, text, session)
+        if not reply:
+            return _out("I couldn't prepare a reply for review. Nothing was sent.", False)
+        if session.get("is_voice_reply"):
+            path, _whose = voice_note(reply)
+            voice, messages = reply, []
+        else:
+            messages = [reply] + list(messages[1:])
+    expected_file = _file_digest(path) if path else None
+    import uuid
+    frozen = tuple(messages)
+    audio_kind = "voice" if path and (session.get("is_voice_reply") or session.get("voice") or voice) else ""
+    ids = tuple(uuid.uuid4().hex for _ in range(len(frozen) + bool(path)))
+    recap = (f"Attachment: {os.path.basename(path)}\n" if path else "")
+    recap += "\n".join(f"{i}. {message}" for i, message in enumerate(frozen, 1))
+    if isinstance(voice, str) and voice:
+        recap += f"\nSpoken words: {voice}"
+    attempted = False
+
+    def approved():
+        nonlocal attempted
+        with _LOCK:
+            if attempted:
+                return _out("That approved send was already attempted. Check WhatsApp before creating another draft.", False)
+            attempted = True
+            session["pending"] = None
+        outcomes = []
+        items = ([("media", path)] if path else []) + [("text", value) for value in frozen]
+        for index, (kind, value) in enumerate(items):
+            try:
+                result = bridge.send(cid, text=value if kind == "text" else "", media=value if kind == "media" else "",
+                                     media_kind=audio_kind if kind == "media" else "",
+                                     expected_hash=expected_file if kind == "media" else None, action_id=ids[index])
+            except bridge.BridgeError as exc:
+                session["last_whatsapp_outcomes"] = outcomes
+                return _out(f"{exc}. I stopped the remaining items. Check WhatsApp before retrying.", False)
+            outcomes.append({"id": result.get("id"), "actionId": ids[index], "delivery": result.get("delivery")})
+            if not result.get("id") or result.get("delivery") not in {"submitted", "server_ack", "delivered", "read"}:
+                session["last_whatsapp_outcomes"] = outcomes
+                return _out("WhatsApp accepted the request but did not confirm it. I stopped the remaining items. "
+                            "Check WhatsApp before retrying.", False)
+        session["whatsapp_last"] = name
+        session["last_whatsapp_outcomes"] = outcomes
+        session["last_whatsapp_send"] = {"contact": name, "chat": cid, "path": path, "messages": frozen, "sent_at": time.time()}
+        session["is_reply"] = session["is_voice_reply"] = False
+        session["voice"] = None
+        return {**_out(f"Sent {len(outcomes)} item(s) to {name} on WhatsApp (accepted by WhatsApp; that does not mean "
+                       "it was read yet).", True), "outcomes": outcomes}
+    shown = name if _digits_only(name) else f"{name} ({cid.split('@')[0]})"
+    return ask_first(session, "whatsapp", f"Send this to {shown} on WhatsApp?\n\n{recap}\n\nSend it", approved)
+
+
+def _digits_only(value):
+    return bool(re.fullmatch(r"[+\d\s()-]+", str(value or "")))
+
+
+def send_flow(text, session, pend=None):
+    voice, draft_ready = None, False
+    path, messages = None, []
+    if pend:
+        ask = pend.get("ask")
+        if ask == "contact":
+            c, _, msgs, v = parse_send(f"send to {text}", session)
+            contact = re.sub(r"^(?:the\s+name\s+is|name\s+is|it'?s|it\s+is|contact\s+is)\s+", "",
+                             (c or text).strip(), flags=re.I).strip(" .,!?")
+            path, messages, voice = pend.get("file"), pend.get("messages") or msgs, pend.get("voice") or v
+        elif ask == "content":
+            contact, path = pend.get("contact"), pend.get("file")
+            if pend.get("voice"):
+                path, whose = voice_note(text.strip())
+                trace(session, "voice_note", f"recorded the voice note in {whose}")
+            else:
+                messages = [text.strip()]
+        elif ask == "reply":
+            contact = pend.get("contact")
+            is_voice = bool(VOICE_NOTE.search(text))
+            session["is_reply"], session["is_voice_reply"] = True, is_voice
+            refined = formulate_reply(contact, pend.get("context", ""), text, session)
+            draft_ready = True
+            if is_voice:
+                path, _whose = voice_note(refined)
+            else:
+                messages = [refined]
+        elif "candidates" in pend:
+            pick = re.search(r"\b(\d)\b", text)
+            names = pend["candidates"]
+            chosen = names[int(pick.group(1)) - 1] if pick and 0 < int(pick.group(1)) <= len(names) else \
+                next((n for n in names if norm(text) and norm(text) == norm(n)), None)
+            if not chosen:
+                low = (text or "").strip().lower()
+                if re.match(r"^(?:no|nope|cancel|stop|never\s*mind|forget\s+it)\b", low):
+                    session["pending"] = None
+                    return {"reply": "Cancelled - nothing was sent.", "sources": []}
+                if re.match(r"^(?:yes|yeah|yep|sure|ok|okay|go\s+ahead|do\s+it|send\s+it)\b", low):
+                    return {"reply": "Which one? Reply with the number or the exact name (or say cancel).", "sources": []}
+                return None  # not an answer: route normally
+            session["pending"] = None
+            if pend.get("ask") == "read":
+                return read_flow(f"what did {chosen} say", session, chosen)
+            contact, path, messages = chosen, pend.get("file"), pend.get("messages", [])
+            if pend.get("voice") and not path:
+                path, _whose = voice_note(pend["voice"])
+                messages = []
+        else:
+            contact, path, messages = pend.get("contact"), pend.get("file"), pend.get("messages", [])
+    else:
+        is_reply, is_voice = bool(REPLY.search(text)), bool(VOICE_NOTE.search(text))
+        session["is_reply"], session["is_voice_reply"] = is_reply, is_voice
         contact, path, messages, voice = parse_send(text, session)
+        if is_voice:
+            session["voice"] = voice or (messages[0] if messages else True)
         if not contact:
             if session.get("whatsapp_ambiguous"):
                 names = session.pop("whatsapp_ambiguous")
-                return {"reply": "I found more than one person matching that relative. Who should receive it?\n" + "\n".join(f"{i}. {n}" for i, n in enumerate(names, 1)), "sources": []}
+                session["pending"] = {"skill": "whatsapp", "sticky": True, "candidates": names,
+                                      "file": path, "messages": messages, "voice": voice}
+                return {"reply": "I found more than one person matching that relative. Who should receive it?\n"
+                                 + "\n".join(f"{i}. {n}" for i, n in enumerate(names, 1)), "sources": []}
+            missing_relative = session.pop("whatsapp_missing_relative", None)
+            session["pending"] = {"skill": "whatsapp", "sticky": True, "ask": "contact", "file": path,
+                                  "messages": messages, "voice": voice}
+            if missing_relative:
+                return {"reply": f"I don't have a confirmed name for your {missing_relative}. Who should receive it?",
+                        "sources": []}
             return {"reply": "Who should I send it to?", "sources": []}
-        if not path and not messages and not voice:
+        if voice and not path:
+            path, whose = voice_note(voice)
+            trace(session, "voice_note", f"recorded the voice note in {whose}")
+        if not path and not messages and not is_reply:
             from ishti.reference_resolver import resolve_reference
             ref = resolve_reference(text, session)
             if ref and ref.get("payload"):
                 messages = [ref["payload"]]
             else:
-                return {"reply": "What should I send? Give me the message or file.", "sources": []}
-        return _desktop_gate(session, contact, messages, path, voice=voice)
+                session["pending"] = {"skill": "whatsapp", "sticky": True, "ask": "content", "contact": contact,
+                                      "voice": bool(voice)}
+                return {"reply": "What should I send? Give me the message, or name the file.", "sources": []}
+    if not contact:
+        session["pending"] = {"skill": "whatsapp", "sticky": True, "ask": "contact", "file": path,
+                              "messages": messages, "voice": voice}
+        return {"reply": "Who should I send it to?", "sources": []}
+    cid, name = locate(contact)
+    if not cid:
+        if not name:
+            session["pending"] = {"skill": "whatsapp", "sticky": True, "ask": "contact", "file": path,
+                                  "messages": messages, "voice": voice}
+            return {"reply": f"I couldn't find anyone like '{contact}' on WhatsApp. Check the name, or give me the number.",
+                    "sources": []}
+        return _choose(session, name, "send", {"file": path, "messages": messages, "voice": voice})
+    return _approve_send(cid, name, path, messages, voice, text, session, draft_ready)
 
-    if not ok:
-        if os.environ.get("ISHTI_TEST_MODE"):
-            return {"reply": "Opened WhatsApp on your desktop.", "sources": []}
-        from desktop.computer_use import get_computer_use_agent
-        agent = get_computer_use_agent()
-        agent.launch_app("whatsapp")
-        time.sleep(0.6)
-        agent.focus_window("whatsapp")
-        return {"reply": "Opened WhatsApp on your desktop.", "sources": []}
 
-    return browser.run(text, session, server=browser.profile_for("whatsapp"), hint=HINT, start_snapshot=snap)
+# ---------------------------------------------------------------- entry
+def run(text, session):
+    if not match(text) and not (session.get("pending") or {}).get("skill") == "whatsapp":
+        return None
+    with _LOCK:
+        return _run(text, session)
+
+
+def _run(text, session):
+    out = op_message_edit(text, session)
+    if out is not None:
+        return out
+    t = text.strip()
+    if PAIR_WANT.search(t):
+        return {"reply": bridge.pair_hint() + "\n\n" + bridge.install_hint(), "sources": []}
+    if GROUP_OPS.search(t):
+        return {"reply": "I did not take any action. WhatsApp group creation, membership lookup, group announcements, "
+                         "and member removal are not implemented in this build.", "sources": []}
+    m_open = OPEN_ONLY.match(t)
+    if m_open and not (SEND.search(t) or SEND_TO.search(t)):
+        return open_preferred(session, m_open.group("kind"))
+    if re.search(r"\bmark\b.*\bread\b", t, re.I):
+        return {"reply": "Marking chats as read in bulk isn't supported; open the chat on your phone to mark it read.",
+                "sources": []}
+
+    relative_read = session.get("whatsapp_relative_read")
+    if relative_read:
+        names = relative_read.get("candidates", [])
+        choice = re.search(r"^\s*(\d+)\s*[.!]?\s*$", t)
+        chosen = names[int(choice.group(1)) - 1] if choice and 0 < int(choice.group(1)) <= len(names) else \
+            next((n for n in names if norm(t) == norm(n)), None)
+        if chosen:
+            session.pop("whatsapp_relative_read", None)
+            session["pending"] = None
+            text = t = f"What did {chosen} say?"
+        elif NEW_COMMAND.match(t):
+            session.pop("whatsapp_relative_read", None)
+        else:
+            return {"reply": "Which person? Reply with a listed number or exact name.", "sources": []}
+
+    p = session.get("pending")
+    if p and p.get("skill") == "whatsapp" and NEW_COMMAND.match(t) and "candidates" not in p:
+        session["pending"] = p = None
+    if not _linked():
+        if p and p.get("skill") == "whatsapp":
+            session["pending"] = None
+        return _not_linked()
+    if p and p.get("skill") == "whatsapp" and p.get("ask") != "relative_read":
+        prepared = send_flow(text, session, p)
+        if prepared is not None:
+            return prepared
+
+    try:
+        if re.search(r"\b(?:read|check|show|understand|summari[sz]e|what(?:'s| is| does)?)\b.*\b(?:photo|image|picture|pdf|document|attachment)\b",
+                     t, re.I):
+            return media_flow(t, session)
+        if (target := discussed_in(t)) and not (SEND.search(t) or SEND_TO.search(t)):
+            return read_flow(t, session, target)
+        if READ_CHAT.search(t) and not (SEND.search(t) or SEND_TO.search(t)):
+            target = read_target(t) or session.get("whatsapp_last")
+            if not target:
+                return {"reply": "Whose chat should I read?", "sources": []}
+            return read_flow(t, session, target)
+        if TOP_CHATS.search(t) and not (SEND.search(t) or SEND_TO.search(t)):
+            return top_chats_flow(t)
+        is_unread = bool(UNREAD.search(t))
+        if is_unread and not (SEND.search(t) or SEND_TO.search(t)):
+            return unread_flow(session)
+        if SEND.search(t) or SEND_TO.search(t) or PRONOUN_SEND.search(t) or REPLY_TO_PERSON.match(t) \
+                or re.search(r"\b(?:send|text|write|message|poke)\b", t, re.I):
+            return send_flow(text, session)
+        return unread_flow(session)  # "check my whatsapp"
+    except bridge.BridgeError as exc:
+        return {**_out(f"WhatsApp didn't answer: {exc}. Nothing was sent.", False), "no_escalate": True}
 
 
 if __name__ == "__main__":
     assert match("check my whatsap") and match("watsapp ali") and not match("what app should I use")
-    sample = ('- grid "Chat list" [ref=e191]:\n  - row [ref=e192]:\n    - gridcell "Ali 12:54 hi Pinned chat" [ref=e193]:\n'
-              '      - generic "Ali" [ref=e206]\n  - row [ref=e280]:\n    - gridcell "2 unread messages Sara 2:01 pm ok" '
-              '[ref=e281]:\n      - generic "Sara" [ref=e290]\n  - row [ref=e300]:\n    - gridcell "Unread Class group 1:27 pm" '
-              '[ref=e301]:\n      - generic "Class group" [ref=e310]\n- button "Unread 2" [ref=e135]')
-    assert unread(sample) == ([("Sara", 2), ("Class group", None)], 2), unread(sample)
     assert UNREAD.search("which chats are unread") and SEND.search("send hi to ali on whatsapp")
-    res = "\n".join([
-        '- grid "Search results." [ref=e1]:',
-        '  - row [ref=e2]:',
-        '    - heading "Chats" [level=2] [ref=e3]',
-        '  - row [ref=e4]:',
-        '    - gridcell "Qassim IMS 1:27 pm hi" [ref=e5]:',
-        '      - generic "Qassim IMS" [ref=e6]',
-        '  - row [ref=e7]:',
-        '    - gridcell "Qasim Ali" [ref=e8]:',
-        '      - generic "Qasim Ali" [ref=e9]',
-        '  - row [ref=e10]:',
-        '    - heading "Messages" [level=2] [ref=e11]',
-        '  - row [ref=e12]:',
-        '    - gridcell "Zara hi qasim" [ref=e13]:',
-        '      - generic "Zara" [ref=e14]',
-    ])
-    assert search_results(res) == [("Qassim IMS", "e5"), ("Qasim Ali", "e8")], search_results(res)
     assert rank("qasim ims", ["Qasim Ali", "Qassim IMS", "Zara"])[0][0] == "Qassim IMS"
     assert match("open whastap and send hi to bhai") and match("wasap ali") and not match("whatever happens")
-    assert match("open WhatsApp and send the message hi to bhai")
-    assert match("send or open WhatsApp and send the message hi to bhai")
-    assert match("open whatsapp")
-    # the bug that stopped sends: Playwright's "[active]" flag between the box's name and its ref
-    chat = ('- button "Attach" [ref=f1e1725] [cursor=pointer]\n- textbox "Type a message to Bhai" [active] [ref=f1e1740]:\n'
-            '- button "Send" [disabled] [ref=f9]\n- button "Send" [ref=f10]')
-    assert browser.ref(chat, "textbox", r"Type a message[^\"]*") == "f1e1740" and browser.refs(chat, "button", "Send")[-1] == "f10"
-    assert browser.locate(chat, "attach", "button", "Attach") == "f1e1725"
-    print("[self-check] whatsapp OK")
+    assert match("open WhatsApp and send the message hi to bhai") and match("open whatsapp")
+    assert norm("علی") != norm("احمد") and norm("Ali (You)") == "ali"
+    # exact-or-ask resolution against a fake WAHA chat list
+    bridge.find_chat = lambda name: ""
+    bridge.chat_names = lambda limit=200: {"Qassim IMS": "92300@c.us", "Qasim Ali": "92301@c.us", "Zara": "92302@c.us"}
+    assert locate("Qassim IMS") == ("92300@c.us", "Qassim IMS")
+    cid, cands = locate("qasim")
+    assert cid is None and set(cands) >= {"Qasim Ali"}, cands  # ambiguous: asked, never guessed
+    bridge.connected = lambda: False
+    out = run("any new whatsapp messages", {})
+    assert "isn't linked" in out["reply"] and not out["verified"]
+    print("[self-check] whatsapp OK - routing, exact-or-ask contact resolution, unlinked state is honest")

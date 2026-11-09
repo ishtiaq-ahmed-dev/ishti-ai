@@ -43,7 +43,7 @@ def test_n8_case2_open_classroom_assignment_to_do():
     assert "classroom" in norm
     session = {"history": []}
     r = route(text, skills, session=session)
-    assert r["skill"] in ("browser", "apps")
+    assert r["skill"] != "browser"  # no browser automation: never routed to a removed skill
     # Must NOT route to web_search
     assert r["skill"] != "web_search"
 
@@ -53,7 +53,7 @@ def test_n8_case3_classroom_profile9():
     text = "dont look for the files on internet it is in the google clasrom logged in the profile 9"
     session = {"history": []}
     r = route(text, skills, session=session)
-    assert r["skill"] == "browser"
+    assert r["skill"] != "browser"
 
 
 def test_n8_case4_downloads_folder():
@@ -93,7 +93,7 @@ def test_n8_case7_open_clasrom_pending_assignments():
     assert "classroom" in norm
     session = {"history": []}
     r = route(text, skills, session=session)
-    assert r["skill"] in ("browser", "apps")
+    assert r["skill"] != "browser"
 
 
 def test_n8_case8_send_this_to_rayyan_ims():
@@ -144,7 +144,7 @@ def test_n8_case11_open_wahstap_web_top_5():
     assert "the top" in norm
     session = {"history": []}
     r = route(text, skills, session=session)
-    assert r["skill"] in ("whatsapp", "browser")
+    assert r["skill"] == "whatsapp"
     # Must NOT treat 'wahstap web now' as contact name
     from ishti.skills.whatsapp.skill import discussed_in
     assert not discussed_in(text)
@@ -199,7 +199,7 @@ def test_n8_case17_try_opening_two_tabs():
     """Prompt 17: 'try opening two tabs if not working' -> browser."""
     session = {"history": []}
     r = route("try opening two tabs if not working", skills, session=session)
-    assert r["skill"] == "browser"
+    assert r["skill"] != "browser"
 
 
 def test_n8_case18_whats_up_for_today():
@@ -217,7 +217,7 @@ def test_n8_case19_typo_calssrom_run_on():
     assert "to-do" in norm or "to dos" in norm or "todo" in norm or "to do" in norm
     session = {"history": []}
     r = route(text, skills, session=session)
-    assert r["skill"] == "browser"
+    assert r["skill"] != "browser"
 
 
 def test_n8_case20_the_above_provided_one_names():

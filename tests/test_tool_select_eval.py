@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EVAL = ROOT / "tests" / "fixtures" / "tool_select_eval.json"  # the 120-prompt labelled routing set
 TARGETS = {
     "weather", "web_search", "calc", "calendar", "reminders", "files", "fileops", "whatsapp", "email",
-    "budget", "writing", "study", "travel", "shopping", "markets", "docs", "pdftables", "chart", "memory",
+    "budget", "writing", "study", "shopping", "markets", "docs", "pdftables", "chart", "memory",
     "security_scan",
 }
 

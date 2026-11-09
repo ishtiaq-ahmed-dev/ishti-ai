@@ -8,7 +8,7 @@ The contract is docs/API_CONTRACT.md; the HTTP/WS side is ishti/lifecycle_api.py
   Ollama     if it is not running we start it (hidden, in our Job Object) and it is "ours": we stop it at shutdown. An
              Ollama that was already running is left running (only our models are unloaded from it).
   shutdown   stop intake -> cancel/finish tasks (bounded) -> flush SQLite/Chroma -> stop voice+mic -> unload our models
-             (+ stop our Ollama) -> close the MCP/browser servers we opened (never the owner's own Chrome) -> release the
+             (+ stop our Ollama) -> release the
              port -> exit; anything still alive after a bounded time is force-killed (whole tree)."""
 import asyncio
 import faulthandler
@@ -851,7 +851,7 @@ def retry_boot():
 # (owner request 2026-09-29: "these are for the programmers, not for the real user").
 SHUTDOWN_STEPS = [("stop_intake", "Wrapping things up"), ("cancel_tasks", "Finishing what ISHTI is doing"),
                   ("flush_data", "Saving your conversations and files"), ("stop_voice", "Turning off the microphone"),
-                  ("unload_models", "Resting the AI"), ("close_browsers", "Closing the browser"),
+                  ("unload_models", "Resting the AI"),
                   ("release_ports", "Signing off"), ("exit", "All done. Goodbye!")]
 
 
@@ -910,7 +910,6 @@ def _shutdown_sequence(force):
     _step(2, flush_data)
     _step(3, stop_voice)
     _step(4, unload_models)
-    _step(5, close_browsers)
     # Close the desktop shell (window + tray) at the OS level: the owner's shutdown must visibly close
     # the app even if the window's GUI thread is wedged (2026-09-30: overlay at 100%, frozen window
     # survived every in-process close path). Data work is done above, so this is pure cleanup.
@@ -920,9 +919,9 @@ def _shutdown_sequence(force):
         log.exception("shutdown: closing the desktop shell")
     # The last two events are sent BEFORE the port is really released: closing the listener also closes every
     # WebSocket, so a client could never receive them afterwards.
-    _progress(6)
+    _progress(5)
     time.sleep(0.3)
-    _progress(7)
+    _progress(6)
     time.sleep(0.4)
     srv = _server["uvicorn"]
     if srv is not None:
@@ -976,19 +975,11 @@ def unload_models():
     if ollama_ours() and reg.get("ollama_pid"):  # only an Ollama we started is stopped
         kill_tree(reg["ollama_pid"])
         registry({"ollama_pid": None, "ollama_ct": None})
-
-
-def close_browsers():
-    """Stop the MCP/Playwright servers ISHTI opened. The owner's own Chrome and its tabs are never touched
-    (the extension relay just disconnects)."""
-    mod = sys.modules.get("ishti.mcp_client")
-    hub = getattr(mod, "_hub", None) if mod else None
-    if hub is not None:
-        for name in list(hub.live):
-            hub.close(name)
-        end = time.time() + 5
-        while hub.live and time.time() < end:
-            time.sleep(0.2)
+    try:  # ISHTI's own WAHA container (WhatsApp): stopped with ISHTI, its session stays in the Docker volume
+        if "ishti.wa_bridge" in sys.modules:
+            sys.modules["ishti.wa_bridge"].stop()
+    except Exception:
+        log.exception("shutdown: stopping the WhatsApp service")
 
 
 def _port_open(port):

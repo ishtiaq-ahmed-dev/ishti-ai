@@ -101,30 +101,6 @@ def test_D(engine):
     return ok
 
 
-def test_E(engine):
-    print("\nTEST E - Headless browser search")
-    from browser.browser_agent import BrowserAgent
-    t0 = time.time()
-    results = BrowserAgent(headless=True).search_duckduckgo("RTX 5070 Ti drivers", max_results=3)
-    return check("E: headless browser returned results", bool(results),
-                 f"{len(results)} results in {round(time.time()-t0, 1)}s")
-
-
-def test_F(engine):
-    print("\nTEST F - Visible browser (Playwright MCP, real window)")
-    r = ask(engine, "go to example.com in the browser and tell me the main heading")
-    print(f"    > {r['final_answer'][:200]}")
-    ok = check("F: routed to the browser skill", r.get("skill") == "browser", r.get("skill"))
-    ok &= check("F: read the live page", "example domain" in r["final_answer"].lower())
-    from ishti import CONFIG
-    from ishti.mcp_client import get_hub
-    from ishti.skills.browser import skill as browser
-    # the owner's main Chrome profile when its extension is connected, else ISHTI's isolated one
-    ok &= check("F: used a configured browser profile", browser.SERVER in CONFIG["mcp_servers"], browser.SERVER)
-    get_hub().call(browser.SERVER, "browser_close")
-    return ok
-
-
 def test_G(engine):
     print("\nTEST G - Research quality")
     r = ask(engine, "Research the latest AI news this week.")
@@ -215,7 +191,7 @@ def test_L(engine):
     return ok
 
 
-TESTS = {"A": test_A, "B": test_B, "C": test_C, "D": test_D, "E": test_E, "F": test_F,
+TESTS = {"A": test_A, "B": test_B, "C": test_C, "D": test_D,
          "G": test_G, "H": test_H, "I": test_I, "J": test_J, "K": test_K, "L": test_L}
 
 if __name__ == "__main__":

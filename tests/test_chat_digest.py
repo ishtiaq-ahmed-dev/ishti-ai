@@ -356,15 +356,9 @@ def test_n9_pdf_pages_are_real(tmp_path):
 
 def test_n9b_pdf_still_renders_without_any_browser(tmp_path, monkeypatch):
     """CD-12: the reportlab path was only a detection stub, so a digest could not become a PDF on a
-    machine with no printable browser. With Playwright AND Edge/Chrome forced unusable the report must
-    still come out as a real, non-blank landscape PDF - and name the engine that produced it."""
+    machine with no printable browser. With Edge/Chrome forced unusable the report must still come out as
+    a real, non-blank landscape PDF - and name the engine that produced it."""
     from ishti.skills.chat_digest import export
-    pw = pytest.importorskip("playwright.sync_api")
-
-    def no_browser(*_a, **_k):
-        raise RuntimeError("no browser here (forced by the test)")
-
-    monkeypatch.setattr(pw, "sync_playwright", no_browser)
     monkeypatch.setattr(export, "_find_chrome", lambda: "")
     d = digest(tmp_path / "data")
     path, method = export.save_pdf(d["md"], path=os.path.join(str(tmp_path), "fallback.pdf"))

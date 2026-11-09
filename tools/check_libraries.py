@@ -5,8 +5,7 @@ a reading of the code, this reads ISHTI's own call sites with `ast`, resolves th
 package and checks the keyword arguments it passes are accepted by that object's signature. A renamed flag, a moved
 parameter or a signature that changed under us shows up here instead of as a TypeError in front of the owner.
 
-It also prints the installed versions (the evidence that "current" means these versions) and runs
-`npx --yes @playwright/mcp@<pinned> --help` to confirm the browser flags ISHTI passes still exist in that version.
+It also prints the installed versions (the evidence that "current" means these versions).
 
     python tools/check_libraries.py
 Exit code: 0 when every call site matches, 1 otherwise.
@@ -64,7 +63,7 @@ TARGETS = [
      lambda: __import__("pynput.keyboard", fromlist=["GlobalHotKeys"]).GlobalHotKeys, ANY),
 ]
 VERSIONS = ["faster-whisper", "openwakeword", "piper-tts", "kokoro-onnx", "chromadb", "pynput", "sounddevice",
-            "onnxruntime", "yfinance", "pypdfium2", "playwright", "speechbrain", "torch", "ctranslate2"]
+            "onnxruntime", "yfinance", "pypdfium2", "speechbrain", "torch", "ctranslate2"]
 
 
 def version(name):
@@ -138,31 +137,6 @@ def main():
                                     f"not accepted by {attr}")
         if not found:
             problems.append(f"{label}: no call site found in {files} (this list is stale, fix it)")
-
-    # the pinned browser MCP: the flags ISHTI passes must still be offered by that exact version
-    cfg = json.load(open(os.path.join(ROOT, "ishti", "config.json"), encoding="utf-8"))
-    for server in ("main", "login"):
-        entry = (cfg.get("mcp_servers") or {}).get(server) or {}
-        args = entry.get("args") or []
-        pkg = next((a for a in args if a.startswith("@playwright/mcp")), None)
-        flags = [a.split("=")[0] for a in args if a.startswith("--")]
-        if not pkg:
-            problems.append(f"mcp_servers.{server}: no @playwright/mcp package pinned")
-            continue
-        try:
-            # no shell=True: pkg comes from config.json, so build an argv and resolve npx on PATH
-            # (a shell string would make any interpolated value a command-injection path)
-            npx = shutil.which("npx") or shutil.which("npx.cmd")
-            if not npx:
-                raise FileNotFoundError("npx not found on PATH")
-            p = subprocess.run([npx, "--yes", pkg, "--help"], capture_output=True, text=True, timeout=240)
-            text = (p.stdout or "") + (p.stderr or "")
-            missing = [f for f in flags if f not in text]
-            print(f"  browser MCP {server}: {pkg} {flags} -> " + ("all present" if not missing else f"MISSING {missing}"))
-            if missing:
-                problems.append(f"playwright MCP {pkg} (server {server}) no longer offers {missing} - update config.json")
-        except Exception as exc:
-            print(f"  browser MCP {server}: could not run --help ({type(exc).__name__}: {exc})")
 
     print(f"\n[check_libraries] {checked} call sites checked against the installed signatures")
     if problems:

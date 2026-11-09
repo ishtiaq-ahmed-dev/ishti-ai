@@ -70,7 +70,7 @@ MANIFEST_RULES = [
 
 # Launchers an MCP server may use (local, inspectable tools). Anything else = finding.
 MCP_LAUNCHERS = {"node", "npx", "python", "python3", "uvx", "uv", "cmd", "powershell",
-                 "ishti-mcp-login", "playwright"}
+                 "ishti-mcp-login"}
 
 
 def _rel(path: str, root: str | None = None) -> str:

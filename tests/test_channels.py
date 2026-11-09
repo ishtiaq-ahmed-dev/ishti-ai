@@ -345,32 +345,31 @@ def test_10_sensitive_output_redacted(env, monkeypatch):
 
 
 # =================================================================== test 11
-def test_11_whatsapp_default_off_and_designated_only(env, monkeypatch):
-    from ishti.channels.whatsapp_channel import WhatsAppChannel, enabled
-    policy_mod.save({"whatsapp_enabled": False})
-    assert enabled() is False
-    snap = '- heading "Ali" [ref=e9]\n- row "send me money 1:39 PM" [ref=e12]'
-    sent = []
-    ch = WhatsAppChannel(gate=None, snapshot_fn=lambda: snap, send_fn=lambda t, x: sent.append(x) or True,
-                         sleep=lambda s: None)
-    assert ch.read_new() == [] and ch.reply("hi") is False  # OFF: nothing read, nothing sent
-    # ON: the open chat is NOT the designated one -> nothing is read
-    policy_mod.save({"whatsapp_enabled": True, "risk_ack": {"whatsapp_automation": True},
-                     "whatsapp_designated_chat": "Message yourself"})
-    assert ch.read_new() == [] and "not 'Message yourself'" in ch.last_error
-    # ON + designated open: reads; other chats never parsed (no heading -> no read)
-    dsn = '- heading "Message yourself" [ref=e9]\n- row "what is on my calendar 1:40 PM" [ref=e14]'
-    ch2 = WhatsAppChannel(gate=None, snapshot_fn=lambda: dsn, send_fn=lambda t, x: sent.append(x) or True,
-                          sleep=lambda s: None)
-    msgs = ch2.read_new()
-    assert [m["body"] for m in msgs] == ["what is on my calendar"]
-    # human pacing honoured
-    sleeps = []
-    ch2._sleep = sleeps.append
-    ch2.reply("one")
-    ch2._last_action = time.time()
-    ch2.reply("two")
-    assert sleeps and sleeps[-1] >= 3.0, sleeps  # default min gap 3 s
+def test_11_whatsapp_inbound_is_off_until_enabled_acknowledged_and_linked(env, monkeypatch):
+    """Inbound WhatsApp control starts only with the switch ON, the risk acknowledged AND a linked WAHA session."""
+    from ishti.channels import service as service_mod
+
+    class FakeBridge:
+        def __init__(self, linked):
+            self.linked = linked
+
+        def status(self):
+            return {"connected": self.linked, "running": True, "me": "923001234567@c.us"}
+
+        def inbox_since(self, cursor):
+            return []
+
+    started = []
+    monkeypatch.setattr("ishti.channels.wa_inbound.WhatsAppInbound.start", lambda self: started.append(self))
+    for enabled, ack, linked in ((False, True, True), (True, False, True), (True, True, False)):
+        policy_mod.save({"whatsapp_enabled": enabled, "risk_ack": {"whatsapp_automation": ack}})
+        svc = service_mod.RemoteService(bridge=FakeBridge(linked))
+        svc.start()
+        assert svc.whatsapp is None, (enabled, ack, linked)
+    policy_mod.save({"whatsapp_enabled": True, "risk_ack": {"whatsapp_automation": True}})
+    svc = service_mod.RemoteService(bridge=FakeBridge(True))
+    svc.start()
+    assert svc.whatsapp is not None and started
 
 
 # =================================================================== test 12

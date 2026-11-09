@@ -54,8 +54,7 @@ HARDEN_ENV = {
     "NO_ALBUMENTATIONS_UPDATE": "1",
     "PIP_DISABLE_PIP_VERSION_CHECK": "1",                                      # pip would ask pypi.org for its own version
     "npm_config_update_notifier": "false", "npm_config_audit": "false", "npm_config_fund": "false",
-    "npm_config_prefer_offline": "true",                                       # npx @playwright/mcp: use the cache, no registry round-trip
-    "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD": "1",
+    "npm_config_prefer_offline": "true",                                       # npm: use the cache, no registry round-trip
     "OLLAMA_NO_CLOUD": "1",                                                    # an Ollama that WE start: no ollama.com cloud models/web search
 }
 # Chromium/WebView2 switches for the dashboard window. The dashboard is 127.0.0.1 only, so the resolver rule makes every
@@ -623,10 +622,9 @@ THIRD_PARTIES = [
      "status": "offline when the cache exists; telemetry and implicit token off; downloads only via Settings"},
     {"name": "crewai / langsmith / opentelemetry (installed, not imported by ISHTI)", "to": "telemetry.crewai.com, api.smith.langchain.com",
      "data": "n/a unless imported", "status": "env switches set; hosts on the deny list"},
-    {"name": "npx @playwright/mcp (browser skill)", "to": "registry.npmjs.org", "data": "package name", "status": "npm_config_prefer_offline set; the MCP child may not inherit it"},
     {"name": "Telegram remote control", "to": "api.telegram.org", "data": "your messages and replies, through Telegram's servers",
      "status": "opt-in: allowed only while telegram_enabled is on"},
-    {"name": "Web skills (browser, web_search, web_fetch, markets, ...)", "to": "whatever you ask them to open", "data": "the query or URL you gave",
+    {"name": "Web skills (web_search, web_fetch, markets, ...)", "to": "whatever you ask them to open", "data": "the query or URL you gave",
      "status": "allowed by design, per manifest scope.net; blocked when the Internet switch is OFF"},
     {"name": "SearXNG (Docker)", "to": "startpage, mojeek, yahoo, bing, qwant, wikipedia", "data": "your search terms",
      "status": "owner-initiated through web_search; the container is outside Python's reach"},

@@ -74,6 +74,6 @@ def test_remote_channels_say_what_the_owner_must_do_next():
     assert "switched off" in next_step("telegram", False, token=True, paired=True, running=False)
     assert next_step("telegram", True, True, True, True) == "Telegram is on and listening."
     assert "risk note" in next_step("whatsapp", True, False, False, False, risk_ack=False)
-    # WhatsApp control now runs on the local Baileys bridge: the owner's step is scanning its QR
+    # WhatsApp control runs on ISHTI's local WAHA service: the owner's step is scanning its QR
     assert "scan the QR" in next_step("whatsapp", True, False, False, False, risk_ack=True)
     assert "is off" in next_step("whatsapp", False, False, False, False)

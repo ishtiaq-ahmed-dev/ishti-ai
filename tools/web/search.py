@@ -1,7 +1,7 @@
 """
 ISHTI Multi-Provider Search Registry
 Integrates Bing Lite, GitHub API, Wikipedia API, arXiv API,
-DuckDuckGo fallback, and isolated Playwright Chrome search with self-healing failover.
+DuckDuckGo fallback, with self-healing failover (plain HTTP APIs only, no headless browser).
 """
 
 import os
@@ -509,66 +509,6 @@ class NewsSearchProvider(WebSearchProvider):
         return []
 
 
-class PlaywrightBrowserSearchProvider(WebSearchProvider):
-    """
-    High-fidelity fallback using Playwright inside the isolated profile <ISHTI root>/data/chrome_profile.
-    """
-    @property
-    def name(self) -> str:
-        return "playwright_browser"
-
-    def is_available(self) -> bool:
-        chrome_exe = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-        return os.path.exists(chrome_exe)
-
-    def search(self, query: str, max_results: int = 5) -> List[WebSearchResult]:
-        results: List[WebSearchResult] = []
-        profile_dir = os.path.join(ROOT_DIR, "data", "chrome_profile")
-        chrome_exe = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-
-        try:
-            from playwright.sync_api import sync_playwright
-            with sync_playwright() as p:
-                ctx = p.chromium.launch_persistent_context(
-                    user_data_dir=profile_dir,
-                    executable_path=chrome_exe,
-                    headless=True,
-                    args=["--no-first-run", "--no-default-browser-check"]
-                )
-                page = ctx.new_page()
-                encoded = urllib.parse.quote(query)
-                page.goto(f"https://www.bing.com/search?q={encoded}&setlang=en&cc=US", wait_until="domcontentloaded", timeout=12000)
-
-                algos = page.locator("li.b_algo").all()
-                for a in algos[:max_results]:
-                    h2 = a.locator("h2 a").first
-                    p_elem = a.locator(".b_caption p").first
-                    title = h2.inner_text().strip() if h2.count() > 0 else ""
-                    raw_href = h2.get_attribute("href") if h2.count() > 0 else ""
-                    snippet = p_elem.inner_text().strip() if p_elem.count() > 0 else ""
-
-                    actual_url = raw_href
-                    if "u=a1" in raw_href:
-                        try:
-                            part = raw_href.split("u=a1")[1].split("&")[0]
-                            part += "=" * (-len(part) % 4)
-                            actual_url = base64.b64decode(part).decode("utf-8", errors="ignore")
-                        except Exception:
-                            pass
-
-                    if title and actual_url and actual_url.startswith("http"):
-                        results.append(WebSearchResult(
-                            title=title,
-                            url=actual_url,
-                            snippet=snippet,
-                            verified=True
-                        ))
-                ctx.close()
-        except Exception as e:
-            print(f"[PlaywrightSearch] Search failed: {e}")
-        return results
-
-
 class MultiProviderSearch:
     """
     Intelligent routing search engine with multi-provider failover.
@@ -577,7 +517,6 @@ class MultiProviderSearch:
     - Papers / Scientific Preprints -> arXiv API
     - Definitions / Facts -> Wikipedia API
     - Live Web & Current Information -> Bing Lite + Targeted Domain search
-    - Complex Interactive Pages -> Playwright Chrome Sandbox
     """
     def __init__(self):
         self.searxng = SearxngSearchProvider()
@@ -587,11 +526,10 @@ class MultiProviderSearch:
         self.github = GitHubSearchProvider()
         self.wikipedia = WikipediaSearchProvider()
         self.arxiv = ArxivSearchProvider()
-        self.playwright = PlaywrightBrowserSearchProvider()
 
     def search(self, query: str, max_results: int = 5, budget_s: float = None) -> List[WebSearchResult]:
         """FIX-4 (QA prompt 2): with SearXNG down, the full cascade (searxng -> bing -> wikipedia ->
-        Playwright CHROME LAUNCH -> github) measured ~40-60 s per attempt, and deep_research repeats it
+        github) measured ~40-60 s per attempt, and deep_research repeats it
         up to 3x - a chat turn hung for minutes. With budget_s set, the expensive browser-launch step is
         skipped once the budget is spent; the cheap bounded providers still run. No provider behaviour
         changes when budget_s is None (default)."""
@@ -657,19 +595,11 @@ class MultiProviderSearch:
             print(f"[MultiProviderSearch] Wikipedia returned {len(wiki_res)} results for '{query}'")
             return wiki_res
 
-        # Step 3: Try Playwright Chrome Sandbox
         if deadline is not None and time.time() >= deadline:
-            # A Chrome launch is seconds of start-up even on a good day; past the budget it only adds
-            # latency to an answer that is already going to say "nothing found".
-            print(f"[MultiProviderSearch] budget {budget_s}s spent, skipping Playwright/GitHub fallback for '{query}'")
+            print(f"[MultiProviderSearch] budget {budget_s}s spent, skipping the GitHub fallback for '{query}'")
             return []
-        print(f"[MultiProviderSearch] Cascading to Playwright Chrome search for '{query}'...")
-        pw_res = self.playwright.search(targeted_query, max_results=max_results)
-        if pw_res:
-            self._log_failover(query, "bing_lite", "playwright_browser")
-            return pw_res
 
-        # Step 4: Final fallback to GitHub if technical
+        # Step 3: Final fallback to GitHub if technical
         gh_fallback = self.github.search(query, max_results=max_results)
         if gh_fallback:
             self._log_failover(query, "bing_lite", "github_api")
@@ -680,7 +610,7 @@ class MultiProviderSearch:
     def run_diagnostics(self) -> Dict[str, Dict[str, Any]]:
         """Probes all configured web search providers and returns availability and latency."""
         diag = {}
-        for prov in [self.bing, self.gh_release, self.news, self.github, self.wikipedia, self.arxiv, self.playwright]:
+        for prov in [self.bing, self.gh_release, self.news, self.github, self.wikipedia, self.arxiv]:
             t0 = time.time()
             avail = prov.is_available()
             elapsed = round(time.time() - t0, 3)

@@ -614,20 +614,12 @@ def phase2():
 
 
 def bridge_step():
-    """The WhatsApp bridge is a small Node program with its own packages; node_modules is not in the repo, so a fresh PC
-    needs them installed or pairing silently fails. Optional: without Node, everything else still works."""
-    bridge = os.path.join(ROOT, "tools", "wa_bridge")
-    if os.path.isdir(os.path.join(bridge, "node_modules", "@whiskeysockets")):
-        say("  Already installed.")
-        return
-    npm = shutil.which("npm")
-    if not npm:
-        say("  WhatsApp control needs Node.js 20 or newer (free: https://nodejs.org). Install it and run install.bat again.")
-        say("  Everything else works without it.")
-        return
-    say("  Installing the bridge's own packages...")
-    code, _out = run_logged([npm, "ci", "--omit=dev", "--no-audit", "--no-fund"], cwd=bridge)
-    say("  Done." if not code else "  Could not install them (details in install.log). WhatsApp control stays off; everything else works.")
+    """WhatsApp runs through WAHA in Docker (started from Settings -> Connectors -> WhatsApp -> Link). Nothing to install
+    here; this only says whether Docker is available. Optional: everything else works without it."""
+    if shutil.which("docker"):
+        say("  Docker found. Link WhatsApp later in Settings -> Connectors -> WhatsApp.")
+    else:
+        say("  WhatsApp control needs Docker Desktop (free: https://www.docker.com/). Everything else works without it.")
 
 
 def models_step(manage):

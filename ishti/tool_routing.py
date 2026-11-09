@@ -30,15 +30,13 @@ _STOP = frozenset(
 )
 _ALIASES = {
     "mail": "email", "gmail": "email", "forecast": "weather", "temperature": "weather",
-    "flight": "travel", "hotel": "travel", "airfare": "travel", "stock": "markets",
+    "stock": "markets",
     "shares": "markets", "crypto": "markets", "pdf": "docs", "spreadsheet": "docs",
     "graph": "chart", "plot": "chart", "timer": "reminders", "alarm": "reminders",
     "schedule": "calendar", "meeting": "calendar", "whatsapp": "whatsapp",
-    "classroom": "browser", "calssrom": "browser", "clasrom": "browser",
-    "instagram": "browser", "facebook": "browser", "linkedin": "browser", "outlook": "apps",
+    "outlook": "apps",
 }
 _CUES = (
-    ("browser", re.compile(r"\b(?:classroom|google classroom|google calssrom|google clasrom|web browser|profile 9|tabs?|open .* tabs?|instagram|facebook|linkedin)\b", re.I)),
     ("apps", re.compile(r"\b(?:outlook|notepad|calculator|brave|spotify|discord)\b", re.I)),
     ("pdftables", re.compile(r"\b(?:extract|pull|get|export|turn)\b.{0,55}\btable|\bpdf tables?\b|"
                               r"\btabular data\b.{0,45}\b(?:pdf|csv)\b", re.I)),
@@ -213,7 +211,7 @@ _COMPOUND = re.compile(
 # Skill pairs that read like two requests but are one task: opening a browser to search, and researching
 # something in order to write it up. Sending these to the model as a compound request split one intention
 # in two (both pairs were labelled single-skill in the routing eval).
-_JOINT_TASKS = frozenset({frozenset({"browser", "web_search"}), frozenset({"deep_research", "docs"})})
+_JOINT_TASKS = frozenset({frozenset({"deep_research", "docs"})})
 
 
 def _compound_parts(text: str) -> tuple[str, str] | None:
@@ -301,8 +299,6 @@ def route(text: str, skills: dict, exclude=(), *, session: dict | None = None) -
     if cues:
         if "writing" in cues and re.search(r"\b(?:draft|declining)\b", text, re.I):
             cues.insert(0, cues.pop(cues.index("writing")))
-        elif "browser" in cues and re.search(r"\b(?:classroom|profile 9|tabs?|open|web|instagram|facebook|linkedin)\b", text, re.I):
-            cues.insert(0, cues.pop(cues.index("browser")))
         elif "calc" in cues and re.search(r"\b(?:calculate|derivative|integral|simplify)\b", text, re.I):
             cues.insert(0, cues.pop(cues.index("calc")))
         if "reminders" in cues and re.search(r"\b(?:remind|set (?:a )?(?:timer|alarm)|wake me|utha dena|alarm)\b", text, re.I):
