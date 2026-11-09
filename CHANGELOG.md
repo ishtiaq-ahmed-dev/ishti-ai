@@ -41,6 +41,11 @@ with automatic local failover, and every turn makes fewer model calls.
   reason given three times ("too long") becomes a preference question; a rule the owner confirmed that keeps going
   wrong is put back to them; faded rules no longer crowd out preferences and retire when they did more harm than good.
 - **First-run setup tests the provider** with a 4-token call (no failover) and says why if it refuses.
+- **Scheduled jobs can ask you things.** Each scheduled task and automation runs in its own session; a job that
+  needs a yes leaves the question in the bell with Yes/No buttons. Failures are reported (once, then again only if
+  they keep failing), late runs are labelled catch-up, and a repeating check that finds nothing new stays quiet.
+- **The brief** adds today's calendar (Google Calendar read-only when connected), unread Gmail and jobs waiting for
+  your yes. Page and price watches reach the bell even when the window is closed.
 - **UI:** keyboard and screen-reader access throughout (native dialogs, Stop button and Esc, aria-live replies,
   labelled icon buttons, focusable rows), right-to-left text, reduced motion, 4.5:1 contrast, starter prompts, and
   on-demand loading of LiveMode, activity graphs and the code highlighter.
@@ -78,6 +83,8 @@ with automatic local failover, and every turn makes fewer model calls.
   Real phone numbers were removed from tests. `owner_profile.yaml`, `reports/`, `metrics/` and `audit/` are untracked.
 - The email skill no longer returns invented invoices or test results.
 - Tests no longer read the owner's saved provider choice or the OS credential store.
+- Quiet hours work: they were saved as "22:00-07:00" but read as a dict, so phone pushes failed silently once set.
+  Spoken announcements now respect them too.
 - **OWASP LLM Top 10 (2025) / Agentic Top 10 (2026) audit fixes:**
   - running code from the `dev` skill asks first, and remote channels can never trigger code execution;
   - a T1 workflow step fed another step's output (web, file or message text) asks first;
@@ -86,6 +93,13 @@ with automatic local failover, and every turn makes fewer model calls.
   - memory is extracted only from the owner's words, and a model-proposed "forget" needs the owner's ask;
   - lessons are mined only from the owner's requests, never from ISHTI's replies (which can quote emails or pages);
   - yes/no buttons work only on the latest question while nothing is running;
+  - a password or key typed into any turn is masked in the saved chat and never reaches memory, learning or a later
+    model prompt; "my gmail password is ..." goes to the Windows vault;
+  - "delete all my memories" / "forget everything" always asks first (it used to wipe immediately, and "forget it
+    all" said as "never mind" matched);
+  - no bulk sends to "everyone"; bookings get an honest no with a prefilled search instead of invented results;
+    scripts that delete a home folder are refused;
+  - third-party skill packages install as prebuilt wheels only, and a failed install leaves nothing behind;
   - remote channels classify the raw text, and forwarded WhatsApp messages are treated as data;
   - webtools downloads go through the SSRF guard;
   - secrets are redacted by pattern in the audit and route logs;

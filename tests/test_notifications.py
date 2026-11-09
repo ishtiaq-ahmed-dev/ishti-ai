@@ -153,3 +153,13 @@ def test_repeating_job_with_the_same_answer_stays_silent(store, monkeypatch):
     monkeypatch.setattr(server, "_LAST_RESULT", {})
     said = [server.run_scheduled("every hour check my inbox") for _ in range(3)]
     assert said == ["2 unread emails", None, "3 unread emails"]
+
+
+def test_a_job_that_keeps_failing_does_not_flood_the_bell(store, monkeypatch):
+    from interface.web_ui import server
+    monkeypatch.setattr(server, "_FAIL_STREAK", {})
+    monkeypatch.setattr(server, "ishti_handle", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("offline")))
+    for _ in range(6):
+        server.run_scheduled("every minute check the build")
+    titles = [r["title"] for r in notifications.recent() if r["kind"] == "error"]
+    assert len(titles) == 2 and "3 times in a row" in titles[0]

@@ -108,7 +108,14 @@ def install_folder(src, manifest, source):
                     scope={"write": ["data"], "net": [], "apps": False})
     json.dump(manifest, open(os.path.join(dst, "manifest.json"), "w", encoding="utf-8"), indent=2)
     if pkgs:
-        subprocess.run([sys.executable, "-m", "pip", "install", "-q", *pkgs], capture_output=True, timeout=900)
+        # wheels only: a source package runs its own setup.py at install time (code before anyone reviewed it), and
+        # a failed install must not leave a half-installed skill loaded
+        pip = subprocess.run([sys.executable, "-m", "pip", "install", "-q", "--only-binary=:all:", *pkgs],
+                             capture_output=True, text=True, timeout=900, encoding="utf-8", errors="replace")
+        if pip.returncode:
+            shutil.rmtree(dst, ignore_errors=True)
+            last = (pip.stderr.strip().splitlines() or ["pip failed"])[-1][:200]
+            return f"Not installed: its packages didn't install as prebuilt wheels ({last}). Nothing was changed."
     check = subprocess.run([sys.executable, "-m", f"ishti.skills.{name}.skill"], cwd=ROOT, capture_output=True, text=True,
                            timeout=300, encoding="utf-8", errors="replace")
     from ishti.dispatcher import SKILLS

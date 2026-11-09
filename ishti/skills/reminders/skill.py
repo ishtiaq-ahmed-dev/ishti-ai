@@ -428,7 +428,13 @@ def fire_due(announce, now=None, run_task=None):
     for rid, due, text, repeat, task in rows:
         late = now - due > 120
         if task and run_task:
-            threading.Thread(target=lambda t=text: announce(run_task(t)), daemon=True).start()
+            # past its grace window (half the period, 2 min to 2 h) a task still runs once, but says it is a catch-up:
+            # an "08:00 brief" arriving at 18:00 must not read as fresh
+            period = (next_due(due, repeat, due) - due) if repeat else 240
+            note = (f"(Catch-up - this was due at {dt.datetime.fromtimestamp(due):%H:%M}.)\n"
+                    if now - due > min(7200, max(120, period / 2)) else "")
+            threading.Thread(target=lambda t=text, n=note: announce((lambda r: r and n + r)(run_task(t))),
+                             daemon=True).start()
         else:
             announce(f"Reminder{' (missed while I was off, due ' + dt.datetime.fromtimestamp(due).strftime('%H:%M') + ')' if late else ''}: {text}")
         with f.lock, f.db:

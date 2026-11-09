@@ -1065,8 +1065,13 @@ def run_scheduled(t):
     try:
         reply = ishti_handle(t, session_id=sid, channel="scheduled").get("final_answer") or ""
     except Exception as exc:
-        notifications_store.add("error", f"Scheduled task failed: {t[:120]}", f"{type(exc).__name__}: {exc}"[:300])
+        streak = _FAIL_STREAK[sid] = _FAIL_STREAK.get(sid, 0) + 1
+        if streak in (1, 3):  # first failure, then once more when it keeps failing - never a flood
+            notifications_store.add("error", f"Scheduled task failed{' 3 times in a row' if streak == 3 else ''}: {t[:120]}",
+                                    f"{type(exc).__name__}: {exc}"[:300] + (" - say \"list my reminders\" to cancel it."
+                                                                             if streak == 3 else ""))
         return None
+    _FAIL_STREAK.pop(sid, None)
     if re.search(r"\(yes/no\)\s*$", reply):
         notifications_store.add("alert", f"Waiting for your yes: {reply[:250]}", meta={"session": sid, "answerable": True})
         return None
@@ -1080,6 +1085,7 @@ def run_scheduled(t):
 
 
 _LAST_RESULT: dict = {}
+_FAIL_STREAK: dict = {}
 
 
 @app.post("/api/notifications/{nid}/answer")
