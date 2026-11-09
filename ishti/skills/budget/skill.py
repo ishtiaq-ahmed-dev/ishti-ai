@@ -48,6 +48,16 @@ def _month_start():
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).timestamp()
 
 
+def _mirror_to_ledger(amount, cat, what, yesterday=False):
+    """The ledger is the spending record every report reads; budget keeps its limits on top of it."""
+    import datetime as _dt
+    from ishti.skills.ledger import skill as ledger
+    day = _dt.date.today() - _dt.timedelta(days=1 if yesterday else 0)
+    with ledger.db() as c:
+        c.execute("INSERT INTO expenses(day, amount, currency, category, note, tax) VALUES(?,?,?,?,?,?)",
+                  (day.isoformat(), amount, ledger.currency(), cat, what[:80], int(cat in ledger.TAX_CATS)))
+
+
 def _add(kind, amount, category, note=""):
     with _lock, _db() as c:
         c.execute("INSERT INTO ledger(ts, kind, amount, category, note) VALUES(?,?,?,?,?)",
@@ -104,13 +114,22 @@ def run(text, session):
     t = text.strip()
     m = SPEND_FULL.match(t)
     if m and not (SUMMARY.match(t) or RECENT.match(t)) and match(t):
-        return {"reply": _add("expense", _num(m.group("amt")), m.group("cat").strip()), "sources": []}
+        from ishti.skills.ledger import skill as ledger
+        what = m.group("cat").strip()
+        cat = ledger.category(what)
+        cat = what if cat == "other" else cat
+        _mirror_to_ledger(_num(m.group("amt")), cat, what, yesterday=bool(re.search(r"\byesterday\b", t, I)))
+        return {"reply": _add("expense", _num(m.group("amt")), cat, note=what), "sources": []}
     if m := INCOME.match(t):
         amt = m.group("amt2") or m.group("amt3")
         if not amt:
             return None
         return {"reply": _add("income", _num(amt), (m.group("src") or "income").strip()), "sources": []}
     if m := LIMIT.match(t):
+        from ishti.skills.ledger import skill as ledger  # "limit for dining" and "spent on dinner" meet at "food"
+        if ledger.category(m.group("cat")) != "other":
+            t = t[:m.start("cat")] + ledger.category(m.group("cat")) + t[m.end("cat"):]
+            m = LIMIT.match(t)
         cat, amt = m.group("cat").strip(), _num(m.group("amt"))
         with _lock, _db() as c:
             c.execute("INSERT INTO limits(category, monthly) VALUES(?,?) ON CONFLICT(category) DO UPDATE SET monthly=excluded.monthly", (cat, amt))
@@ -124,7 +143,10 @@ def run(text, session):
 
 if __name__ == "__main__":
     import tempfile
-    DB = os.path.join(tempfile.mkdtemp(), "b.db")
+    from ishti.skills.ledger import skill as _ledger
+    _tmp = tempfile.mkdtemp()
+    DB = os.path.join(_tmp, "b.db")
+    _ledger.DB = os.path.join(_tmp, "l.db")  # the mirror writes the ledger too: never the owner's real one
     assert match("spent 1200 on groceries")
     assert match("I spent 1,500.50 on lunch today")
     assert match("add income 50000 salary")
@@ -137,10 +159,12 @@ if __name__ == "__main__":
     r = run("spent 1200 on groceries", {})
     assert "Logged" in r["reply"], r
     r2 = run("this month's spending", {})
-    assert "groceries" in r2["reply"], r2
-    run("set a limit of 1000 for groceries", {})
-    r3 = run("spent 900 on groceries", {})
+    assert "food" in r2["reply"], r2  # groceries file under the ledger's "food"
+    run("set a limit of 1000 for dining", {})  # dining and dinner meet at "food"
+    r3 = run("spent 900 on dinner", {})
     assert "limit" in r3["reply"], r3  # over-80% warning fires (210% here)
+    with _ledger.db() as c:
+        assert c.execute("SELECT COUNT(*) FROM expenses").fetchone()[0] == 2  # one spending record for every report
     r4 = run("add income 50000 salary", {})
     assert "income" in r4["reply"].lower(), r4
     r5 = run("my recent expenses", {})

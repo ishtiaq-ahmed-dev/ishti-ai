@@ -12,7 +12,7 @@ from ishti.test_mode import scratch_path
 
 I = re.I
 DB = scratch_path(os.path.join(ROOT, "data", "ledger.db"))
-CATS = {"food": r"grocer|food|restaurant|lunch|dinner|breakfast|meal|pizza|burger|snack|tea|coffee|fruit|vegetable|bakery|khana",
+CATS = {"food": r"grocer|food|restaurant|dining|eat(?:ing)? out|lunch|dinner|breakfast|meal|pizza|burger|snack|tea|coffee|fruit|vegetable|bakery|khana",
         "transport": r"fuel|petrol|diesel|uber|careem|bykea|taxi|rickshaw|bus|metro|parking|car\b|bike|toll|fare",
         "bills": r"bill|electric|gas\b|water\b|internet|wifi|mobile\s+package|recharge|rent|load|sui",
         "shopping": r"cloth|shoe|shirt|amazon|daraz|mall|shopping|gift|electronics|phone|laptop",
@@ -23,6 +23,8 @@ CATS = {"food": r"grocer|food|restaurant|lunch|dinner|breakfast|meal|pizza|burge
 TAX_CATS = {"donations"}  # zakat and donations are deductible: tagged automatically
 TAX_SAID = re.compile(r"\b(?:tax[-\s]?deductible|for\s+tax(?:es)?|business\s+expense|deductible)\b", I)
 SPENT = re.compile(r"\b(?:i\s+)?(?:spent|paid|bought|gave|expense[d]?)\s+(?:rs\.?\s*|pkr\s*|\$)?(?P<amt>\d[\d,]*(?:\.\d+)?)\s*(?:k\b)?\s*"
+                   r"(?<!\d)(?![\d,.])(?!\s*(?:hours?|hrs?|minutes?|mins?|days?|weeks?|months?|years?|books?|shirts?|items?|pieces?|pcs|times?|kg|kgs|"
+                   r"km|liters?|litres?|people|kids|students|bottles?|boxes?|pairs?|cups?|glasses?|copies|tickets?)\b)"
                    r"(?:rs|rupees?|pkr|dollars?|usd)?\s*(?:on|for|at|in)?\s*(?P<what>[^.,;]*)", I)
 BOUGHT_STOCK = re.compile(r"\b(?:i\s+)?(?P<side>bought|sold)\s+(?P<qty>\d+(?:\.\d+)?)\s+(?:shares?\s+(?:of\s+)?|units?\s+of\s+)?"
                           r"(?P<sym>[A-Za-z.\-]{1,12})\s+(?:shares?\s+)?(?:at|@|for)\s+(?:rs\.?\s*|\$)?(?P<price>\d[\d,]*(?:\.\d+)?)", I)
@@ -56,8 +58,11 @@ def match(text):
 def run(text, session):
     for name, rx in _hits(text):
         if m := rx.search(text):
+            reply = globals()["op_" + name](m, text, session)
+            if reply is None:  # the op declined ("3 shirts for 4500" is not a stock trade): try the next one
+                continue
             trace(session, "ledger", name)
-            return {"reply": globals()["op_" + name](m, text, session), "sources": []}
+            return {"reply": reply, "sources": []}
     return None
 
 
@@ -174,6 +179,9 @@ def op_budget_set(m, text, session):
 
 
 def op_trade(m, text, session):
+    # "I bought 3 shirts for 4500" was recorded as a stock trade of SHIRTS: a trade names shares or a ticker
+    if not (re.search(r"\b(?:shares?|units?\s+of|stocks?)\b", text, I) or re.fullmatch(r"[A-Z.\-]{2,12}", m.group("sym"))):
+        return None
     side, qty = m.group("side").lower(), float(m.group("qty"))
     sym, price = m.group("sym").upper(), float(m.group("price").replace(",", ""))
     with db() as c:

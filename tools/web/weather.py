@@ -29,18 +29,26 @@ WMO = {
 
 # ponytail: regex city extraction, not an NER model. Ceiling: misses unusual phrasings,
 # in which case we fall back to the owner's profile city (which is the desired default anyway).
-_CITY_RE = re.compile(r"\b(?:in|at|for)\s+([A-Z][a-zA-Z\-']+(?:\s+[A-Z][a-zA-Z\-']+)?)")
+# Case-insensitive: "weather in lahore" used to fall back to the home city (only "Lahore" matched).
+_CITY_RE = re.compile(r"\b(?:in|at|for)\s+(?:the\s+)?([A-Za-z][A-Za-z\-']+(?:\s+[A-Za-z][A-Za-z\-']+)?)", re.I)
+_CITY_URDU = re.compile(r"\b([A-Za-z][A-Za-z\-']{2,})\s+(?:mein|main|me)\b", re.I)  # "karachi mein"
+_NOT_CITY = {"the", "my", "today", "tomorrow", "tonight", "now", "here", "morning", "evening", "afternoon", "night",
+             "weekend", "week", "this", "next", "a", "an", "general", "advance", "detail", "short", "english", "urdu",
+             "celsius", "fahrenheit", "days", "hours", "minutes", "kal", "aaj", "subah", "shaam", "raat"}
 
 
 def extract_city(prompt: str) -> Optional[str]:
     """Pull an explicit city out of the prompt, or None to use the owner's default."""
-    m = _CITY_RE.search(prompt)
+    m = _CITY_RE.search(prompt) or _CITY_URDU.search(prompt)
     if not m:
         return None
-    candidate = m.group(1).strip()
-    if candidate.lower() in {"the", "my", "today", "tomorrow", "now", "here"}:
+    words = m.group(1).split()
+    while words and words[-1].lower() in _NOT_CITY:  # "lahore tomorrow" -> "lahore"
+        words.pop()
+    if not words or words[0].lower() in _NOT_CITY:
         return None
-    return candidate
+    city = " ".join(words)
+    return city if not city.islower() else city.title()  # keep "UK"; "lahore" -> "Lahore"
 
 
 WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]

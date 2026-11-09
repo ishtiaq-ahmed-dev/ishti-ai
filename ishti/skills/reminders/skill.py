@@ -62,7 +62,9 @@ _NUMW = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, 
 _DUR_UNIT = {"second": 1, "sec": 1, "s": 1, "minute": 60, "min": 60, "m": 60,
              "hour": 3600, "hr": 3600, "h": 3600, "day": 86400}
 _DUR_CLAUSE = re.compile(r"\b(?:in|for|after)\s+(?P<clause>[^,]+?)(?=\s+(?:to|that|about|please|then|now)\b|[.!?]|$)", I)
-_DUR_PAIR = re.compile(r"(\d+(?:\.\d+)?)\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|[smh])\b", I)
+_DUR_PAIR = re.compile(r"(\d+(?:\.\d+)?)\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|[smh])(?=\d|\b)", I)
+WEEKDAY = re.compile(r"\b(?:(?:next|this|on|coming)\s+)?(?P<d>mon|tues|wednes|thurs|fri|satur|sun)day\b", I)
+IN_DAYS = re.compile(r"\bin\s+(?P<n>\d+)\s+days?\b", I)
 RECUR = re.compile(r"\b(?:every|each)\s+(?P<per>day|morning|evening|night|weekday|month|(?:mon|tues|wednes|thurs|fri|satur|sun)day|"
                    r"(?P<n>\d+)\s*(?P<u>minutes?|mins?|hours?|hrs?))\b|\b(?P<monthly>monthly)\b", I)
 DAY_OF_MONTH = re.compile(r"\b(?:on\s+)?(?:the\s+)?(?P<d>[12]?\d|3[01])(?:st|nd|rd|th)\b", I)
@@ -177,8 +179,28 @@ def _qty(tok: str) -> float:
     return float(_NUMW.get(tok, tok))
 
 
+def _at(text, default=(9, 0)):
+    m = AT.search(text)
+    if not m:
+        return default
+    h, mi, ap = int(m["h"]), int(m["m"] or 0), (m["ap"] or "").replace(".", "").lower()
+    return (h % 12 + (12 if ap == "pm" else 0) if ap else h), mi
+
+
 def when(text, now: dt.datetime):
     """Due datetime from common phrasings, or None (then the LLM tries)."""
+    # a named weekday or "in N days at T": "remind me next Friday at 5pm" was set for TODAY 17:00, and
+    # "in 2 days at 9am" for two days out at the current time
+    shift = None
+    if (wd := WEEKDAY.search(text)) and not RECUR.search(text):
+        shift = (DAYS.index(wd["d"].lower() + "day") - now.weekday()) % 7 or 7
+    elif (dd := IN_DAYS.search(text)) and AT.search(text):
+        shift = int(dd["n"])
+    if shift is not None:
+        h, mi = _at(text)
+        if h > 23 or mi > 59:
+            return None
+        return (now + dt.timedelta(days=shift)).replace(hour=h, minute=mi, second=0, microsecond=0)
     if secs := _duration_seconds(text):        # spoken numbers first (JEV-17), then the digit forms
         return now + dt.timedelta(seconds=secs)
     if m := IN.search(text):
@@ -202,8 +224,10 @@ def when(text, now: dt.datetime):
 
 def what(text):
     t = SET.sub("", text.strip()).strip()
-    for rx in (IN, AT, TOMORROW_ONLY):
+    t = re.sub(r"\bin\s+(?:\d+(?:\.\d+)?\s*(?:h|hrs?|hours?|m|mins?|minutes?|s|secs?)\s*)+(?=\s|$)", "", t, flags=I)  # "in 1h30m"
+    for rx in (IN, AT, TOMORROW_ONLY, WEEKDAY, IN_DAYS):  # "next Friday" is the time, not the task
         t = rx.sub("", t)
+    t = re.sub(r"\s{2,}", " ", t)
     t = re.sub(r"^\s*(?:to|that|about|of)\s+", "", t.strip(" ,.!"), flags=I)
     return re.sub(r"\s+(?:to|that)$", "", t).strip(" ,.!")
 

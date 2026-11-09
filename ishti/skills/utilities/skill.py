@@ -40,7 +40,9 @@ OPS = [
     ("prayer", re.compile(r"\b(?:prayer|namaz|namaaz|salah|salat|azan|adhan)\b|\b(?:fajr|zuhr|dhuhr|asr|maghrib|isha)\s+(?:time|kab)\b", I)),
     ("password", re.compile(r"\b(?:generate|make|create|give\s+me|suggest)\s+(?:a\s+|me\s+a\s+)?(?:strong\s+|secure\s+|random\s+)?password\b", I)),
     ("meeting", re.compile(r"\b(?:meeting|video\s+call|call)\s+link\b|\b(?:create|start|make)\s+a\s+(?:jitsi\s+)?meeting\b", I)),
-    ("money", re.compile(r"(?P<n>\d[\d,]*(?:\.\d+)?)\s*(?P<a>usd|pkr|inr|eur|gbp|aed|sar|dollars?|rupees?|euros?|pounds?|dirhams?|riyals?)\s+(?:to|in|into)\s+(?P<b>usd|pkr|inr|eur|gbp|aed|sar|dollars?|rupees?|euros?|pounds?|dirhams?|riyals?)\b", I)),
+    ("money", re.compile(r"(?:(?P<pre>\$|rs\.?|pkr|usd|£|€)\s*)?(?P<n>\d[\d,]*(?:\.\d+)?)\s*(?P<a>usd|pkr|inr|eur|gbp|aed|sar|rs|"
+                         r"dollars?|rupees?|euros?|pounds?|dirhams?|riyals?)?\s+(?:to|in|into)\s+(?P<b>usd|pkr|inr|eur|gbp|aed|sar|rs|"
+                         r"dollars?|rupees?|euros?|pounds?|dirhams?|riyals?)\b(?<=[a-z])(?(pre)|(?(a)|(?!)))", I)),
     ("convert", CONVERT),
     ("time_in", re.compile(r"\b(?:what(?:'s| is)\s+the\s+)?time\s+(?:is\s+it\s+)?(?:now\s+)?in\s+(?P<city>[a-z .'-]{3,30})\??$", I)),
     ("translate", re.compile(r"^\s*(?:please\s+)?translate\s+(?P<body>.+?)\s+(?:to|into|in)\s+(?P<lang>[a-z ]{3,20})\s*$|^\s*(?:how\s+do\s+(?:you|i)\s+say|what\s+is)\s+(?P<body2>.+?)\s+in\s+(?P<lang2>urdu|english|arabic|pashto|hindi|chinese|french|german|spanish|turkish|persian)\s*\??$", I)),
@@ -87,9 +89,9 @@ def owner_place():
 # ---------------------------------------------------------------- prayer times
 def op_prayer(m, text, session):
     city, country = owner_place()
-    other = re.search(r"\bin\s+([A-Z][a-zA-Z .'-]{2,30})", text)
-    if other and other.group(1).lower() not in ("the", "my"):
-        city, country = other.group(1).strip(), ""
+    from tools.web.weather import extract_city  # one city parser: "prayer times in lahore tomorrow" -> Lahore
+    if other := extract_city(text):
+        city, country = other, ""
     day = dt.date.today() + dt.timedelta(days=1 if re.search(r"\btomorrow\b", text, I) else 0)
     r = requests.get("https://api.aladhan.com/v1/timingsByCity/" + day.strftime("%d-%m-%Y"),
                      params={"city": city, "country": country, "method": 1, "school": 1}, timeout=15).json()
@@ -127,7 +129,11 @@ def op_money(m, text, session):
     from ishti.skills.markets.skill import CUR
     from ishti.skills.markets import data
     n = float(m.group("n").replace(",", ""))
-    a, b = CUR.get(m.group("a").lower(), m.group("a").upper()), CUR.get(m.group("b").lower(), m.group("b").upper())
+    sym = {"$": "USD", "rs": "PKR", "rs.": "PKR", "pkr": "PKR", "usd": "USD", "£": "GBP", "€": "EUR"}
+    raw_a = (m.group("a") or m.group("pre") or "").lower()
+    a = sym.get(raw_a) or CUR.get(raw_a, raw_a.upper())
+    raw_b = m.group("b").lower()
+    b = sym.get(raw_b) or CUR.get(raw_b, raw_b.upper())
     rate = data.fx(a, b)
     return f"{n:,.2f} {a} = **{n * rate:,.2f} {b}** (1 {a} = {rate:,.4f} {b})"
 

@@ -43,3 +43,20 @@ def test_skill_review_regressions_calc_notes_email_habits():
     assert not TRACK_SHORT.match("track my order") and TRACK_SHORT.match("track water")
     notes.run("note bank card is in the drawer", {})
     assert "nothing deleted" in notes.run("delete the note about the car", {})["reply"]
+
+
+def test_dates_weekdays_and_compact_durations():
+    now = dt.datetime(2026, 11, 9, 14, 0)  # a Monday
+    assert reminders.when("remind me next Friday at 5pm to call Ali", now) == dt.datetime(2026, 11, 13, 17, 0)
+    assert reminders.when("remind me in 2 days at 9am to pay rent", now) == dt.datetime(2026, 11, 11, 9, 0)
+    assert reminders.when("remind me in 1h30m to stretch", now) == dt.datetime(2026, 11, 9, 15, 30)
+    assert reminders.what("remind me next Friday at 5pm to call Ali") == "call Ali"
+
+
+def test_money_and_city_parsing():
+    from ishti.skills.utilities.skill import OPS
+    from tools.web.weather import extract_city
+    money = dict(OPS)["money"]
+    assert money.search("$100 to pkr") and money.search("convert Rs 5000 to dollars") and not money.search("100 to pkr")
+    assert extract_city("weather in lahore") == "Lahore" and extract_city("prayer times in Lahore tomorrow") == "Lahore"
+    assert extract_city("karachi mein mausam") == "Karachi" and extract_city("weather in the morning") is None
