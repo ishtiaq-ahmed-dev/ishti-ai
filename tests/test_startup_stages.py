@@ -45,10 +45,16 @@ def test_independent_stages_overlap_and_dependent_ones_stay_ordered(fresh, monke
     L.boot()
     took = time.time() - t
     sequential = 0.4 + 0.3 + 0.5 + 0.3 + 0.1
-    assert took < sequential * 0.75, f"stages did not overlap: {took:.2f}s vs {sequential:.2f}s sequential"
+    # The critical path is the longest chain (ollama 0.4 + planner 0.3 + skills 0.5 = 1.2 s); memory+voice (0.4 s) must
+    # overlap it. The old bound (0.75 x sequential = 1.2 s) equalled the critical path, so it failed on any busy machine.
+    critical = max(sum({"ollama_ready": 0.4, "memory_loaded": 0.3, "skills_loaded": 0.5, "planner_warm": 0.3,
+                        "voice_ready": 0.1}[x] for x in c) for c in L.CHAINS)
+    assert took < critical + 0.3 < sequential, f"stages did not overlap: {took:.2f}s vs {sequential:.2f}s sequential"
     pos = {e: i for i, e in enumerate(order)}
+    for chain in L.CHAINS:  # inside a chain every stage waits for the one before it...
+        for before, after in zip(chain, chain[1:]):
+            assert pos[("end", before)] < pos[("start", after)], (before, after)
     assert pos[("end", "ollama_ready")] < pos[("start", "planner_warm")]          # the model needs the engine first
-    assert pos[("end", "skills_loaded")] < pos[("start", "voice_ready")]
     assert pos[("start", "memory_loaded")] < pos[("end", "ollama_ready")]          # ...while memory loads meanwhile
     snap = L.ready_snapshot()
     assert [s["id"] for s in snap["stages"]] == [s for s, _ in L.STAGES]          # documented order is unchanged

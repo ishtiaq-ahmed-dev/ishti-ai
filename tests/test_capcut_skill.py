@@ -30,6 +30,7 @@ def test_matching():
     print("  [✓] All trigger patterns matched correctly.")
 
 
+@pytest.mark.e2e  # needs the local capcut-cli install / the owner's CapCut store / data/test_sample.mp4
 def test_controller_and_doctor():
     print("\n--- 2. Testing CapCut Controller & Doctor ---")
     ctrl = get_capcut_controller()
@@ -39,6 +40,7 @@ def test_controller_and_doctor():
     print(f"  [✓] Doctor OK: Node {doc.get('node')}, platform {doc.get('platform')}")
 
 
+@pytest.mark.e2e  # needs the local capcut-cli install / the owner's CapCut store / data/test_sample.mp4
 def test_projects_list():
     print("\n--- 3. Testing Project Listing ---")
     session = {}
@@ -70,6 +72,7 @@ def test_quickstart_and_timeline():
     print(f"  [✓] Verified timeline tracks: {info.get('tracks')} tracks, {info.get('segments')} segments")
 
 
+@pytest.mark.e2e  # needs the local capcut-cli install / the owner's CapCut store / data/test_sample.mp4
 def test_silence_detection():
     print("\n--- 5. Testing Silence Detection ---")
     ctrl = get_capcut_controller()

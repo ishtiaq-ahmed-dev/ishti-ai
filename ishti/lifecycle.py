@@ -1065,7 +1065,11 @@ def prepare_port(port):
             cmd = process.cmdline()
             ours = ("-m" in cmd and "ishti" in cmd) or any("interface/web_ui/server.py" in c.replace("\\", "/") for c in cmd)
             same = abs(round(process.create_time(), 2) - float(ct)) < 0.02
-            listens = any(c.status == "LISTEN" and c.laddr.port == port for c in process.net_connections(kind="inet"))
+            # Windows sometimes reports a listening TCP socket as status NONE (measured on this PC): a TCP socket bound
+            # to the port with no remote end is the listener either way.
+            listens = any(c.laddr and c.laddr.port == port and not getattr(c, "raddr", None)
+                          and getattr(c, "type", socket.SOCK_STREAM) == socket.SOCK_STREAM
+                          and c.status in ("LISTEN", "NONE") for c in process.net_connections(kind="inet"))
             if ours and same and listens:
                 kill_tree(int(pid))
                 for _ in range(20):
