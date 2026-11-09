@@ -108,8 +108,10 @@ def start_price_watch():
     def loop():
         while True:
             time.sleep(CHECK_EVERY_S)
-            if _watches():
-                check_price_watches(lambda msg: HOOKS["emit"]("assistant_message", {"reply": msg}))
+            if _watches():  # the bell keeps it when the window is closed (the socket message alone was lost)
+                from ishti import notifications
+                check_price_watches(lambda msg: (HOOKS["emit"]("assistant_message", {"reply": msg}),
+                                                 notifications.add("alert", msg)))
     threading.Thread(target=loop, daemon=True, name="price-watch").start()
 
 

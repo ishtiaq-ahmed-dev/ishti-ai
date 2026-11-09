@@ -144,3 +144,12 @@ def test_quiet_hours_understands_the_saved_string_and_the_old_dict():
     assert not in_quiet_hours("22:00-07:00", at(7)) and not in_quiet_hours("22:00-07:00", at(12))
     assert in_quiet_hours({"start": 22, "end": 7}, at(1)) and not in_quiet_hours({"start": 22, "end": 7}, at(9))
     assert in_quiet_hours("13:00-14:30", at(14, 0)) and not in_quiet_hours("", at(3)) and not in_quiet_hours("junk", at(3))
+
+
+def test_repeating_job_with_the_same_answer_stays_silent(store, monkeypatch):
+    from interface.web_ui import server
+    answers = iter(["2 unread emails", "2 unread emails", "3 unread emails"])
+    monkeypatch.setattr(server, "ishti_handle", lambda *a, **k: {"final_answer": next(answers)})
+    monkeypatch.setattr(server, "_LAST_RESULT", {})
+    said = [server.run_scheduled("every hour check my inbox") for _ in range(3)]
+    assert said == ["2 unread emails", None, "3 unread emails"]

@@ -62,7 +62,48 @@ def _screen():
     return out.splitlines()[0] if out.startswith("Screen time") else ""
 
 
-PARTS = [("Weather", _weather), ("Prayer", _prayer), ("Today", _reminders), ("Markets", _markets), ("Headlines", _news),
+def _calendar():
+    """Today's events: the local calendar, plus Google Calendar (read-only) when it is connected."""
+    from ishti.skills.calendar.skill import occurrences
+    today = dt.date.today()
+    items = {(f"{s:%H:%M}", title.strip().lower()): (f"{s:%H:%M}", title) for s, _e, title, _p, _id in occurrences(today, today)}
+    try:
+        from ishti import oauth
+        if oauth.connected("calendar"):
+            lo = dt.datetime.combine(today, dt.time()).astimezone()
+            got = oauth.api("calendar", "/calendars/primary/events",
+                            {"timeMin": lo.isoformat(), "timeMax": (lo + dt.timedelta(days=1)).isoformat(),
+                             "singleEvents": "true", "orderBy": "startTime", "maxResults": 15}) or {}
+            for ev in got.get("items", []):
+                start = ev.get("start", {})
+                when = (dt.datetime.fromisoformat(start["dateTime"].replace("Z", "+00:00")).astimezone().strftime("%H:%M")
+                        if start.get("dateTime") else "all day")
+                title = ev.get("summary") or "(no title)"
+                items.setdefault((when, title.strip().lower()), (when, title))
+    except Exception:
+        pass  # Google not reachable: the local calendar still counts
+    return "\n".join(f"- {w} {t}" for w, t in sorted(items.values(), key=lambda x: (x[0] != "all day", x[0]))) or "Nothing on the calendar."
+
+
+def _email():
+    """Unread Gmail, newest first - only when Gmail is connected (otherwise the section is left out)."""
+    from ishti import gmail_api
+    if not gmail_api.available():
+        return ""
+    rows = gmail_api.unread(5)
+    who = lambda h: re.sub(r"\s*<[^>]+>\s*$", "", h or "").strip(' "') or h
+    return "\n".join(f"- {who(r['from'])}: {r['subject'] or '(no subject)'}" for r in rows) or "No unread email."
+
+
+def _waiting():
+    """Scheduled jobs that are waiting for the owner's yes in the bell."""
+    from ishti import notifications
+    n = sum(1 for r in notifications.recent(50) if (r.get("meta") or {}).get("answerable") and not r["read"])
+    return f"{n} scheduled job{'s' if n != 1 else ''} waiting for your yes - see the bell." if n else ""
+
+
+PARTS = [("Weather", _weather), ("Prayer", _prayer), ("Calendar", _calendar), ("Today", _reminders),
+         ("Email", _email), ("Waiting for you", _waiting), ("Markets", _markets), ("Headlines", _news),
          ("Screen time", _screen)]
 
 

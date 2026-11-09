@@ -1070,7 +1070,16 @@ def run_scheduled(t):
     if re.search(r"\(yes/no\)\s*$", reply):
         notifications_store.add("alert", f"Waiting for your yes: {reply[:250]}", meta={"session": sid, "answerable": True})
         return None
+    # silent unless something changed: a repeating check ("every hour check my inbox") with the same answer as last
+    # time says nothing. ponytail: in memory, so the first run after a restart always speaks.
+    digest = hashlib.sha1(reply.strip().lower().encode("utf-8")).hexdigest()
+    if _LAST_RESULT.get(sid) == digest:
+        return None
+    _LAST_RESULT[sid] = digest
     return reply
+
+
+_LAST_RESULT: dict = {}
 
 
 @app.post("/api/notifications/{nid}/answer")
