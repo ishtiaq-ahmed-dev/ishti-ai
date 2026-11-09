@@ -399,6 +399,78 @@ const btnDanger = cn(btn, "border-red-500/30 bg-red-500/10 text-red-500 hover:bg
 const inputCls =
   "w-full rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-accent";
 
+type MemItem = { id: string; type: string; content: string; source: string; created_at: number; valid_until?: number | null };
+const MEM_VIEWS = [
+  { key: "active", label: "Active" },
+  { key: "needs_confirmation", label: "Needs confirmation" },
+  { key: "superseded", label: "Past (replaced)" },
+] as const;
+
+/** Every memory row ISHTI keeps (not only the exact facts above): read it, correct it (the old line is kept as
+ *  "was true until"), confirm a faded one, or forget it. */
+function MemoryItems() {
+  const [view, setView] = useState<(typeof MEM_VIEWS)[number]["key"]>("active");
+  const [q, setQ] = useState("");
+  const [items, setItems] = useState<MemItem[]>([]);
+  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
+  const [error, setError] = useState("");
+  const load = useCallback(() => {
+    getJSON<{ items: MemItem[] }>(`/api/memory/items?status=${view}&q=${encodeURIComponent(q)}`)
+      .then((d) => { setItems(d.items ?? []); setError(""); })
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+  }, [view, q]);
+  useEffect(() => { load(); }, [load]);
+  const act = (p: Promise<unknown>) => p.then(load).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+  const day = (ts?: number | null) => (ts ? new Date(ts * 1000).toISOString().slice(0, 10) : "");
+  return (
+    <Panel title="Everything ISHTI remembers" hint="Corrections replace a memory but keep the old line under Past. Forget removes it from every answer.">
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Which memories">
+        {MEM_VIEWS.map((v) => (
+          <button key={v.key} type="button" aria-pressed={view === v.key} onClick={() => setView(v.key)}
+            className={view === v.key ? btnPrimary : btnQuiet}>{v.label}</button>
+        ))}
+        <input className={cn(inputCls, "max-w-xs")} value={q} onChange={(e) => setQ(e.target.value)}
+          placeholder="Search memories" aria-label="Search memories" />
+      </div>
+      {error && <p role="alert" className="text-xs text-danger">{error}</p>}
+      {items.length === 0 ? <Empty>Nothing here.</Empty> : (
+        <ul className="space-y-1.5">
+          {items.map((m) => (
+            <li key={m.id} className="rounded-xl border border-border bg-card/60 px-3 py-2 text-xs">
+              {editing?.id === m.id ? (
+                <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); const text = editing.text.trim();
+                  if (text) act(postJSON(`/api/memory/items/${m.id}`, { content: text })).then(() => setEditing(null)); }}>
+                  <input dir="auto" autoFocus className={inputCls} value={editing.text} aria-label="Corrected memory"
+                    onChange={(e) => setEditing({ id: m.id, text: e.target.value })} />
+                  <button type="submit" className={btnPrimary}>Save</button>
+                  <button type="button" className={btnQuiet} onClick={() => setEditing(null)}>Cancel</button>
+                </form>
+              ) : (
+                <div className="flex items-start gap-2">
+                  <span className="shrink-0 tabular-nums text-muted-foreground">{day(m.created_at)}</span>
+                  <span dir="auto" className="min-w-0 flex-1 break-words text-foreground">{m.content}</span>
+                  <span className="shrink-0 text-[10px] text-muted-foreground">{m.type}{m.valid_until ? ` · until ${day(m.valid_until)}` : ""}</span>
+                  {view === "needs_confirmation" && (
+                    <button type="button" className={btnPrimary} onClick={() => act(postJSON(`/api/memory/items/${m.id}/confirm`))}>Still true</button>
+                  )}
+                  {view !== "superseded" && (
+                    <button type="button" className={btnQuiet} aria-label={`Correct: ${m.content.slice(0, 40)}`}
+                      onClick={() => setEditing({ id: m.id, text: m.content })}>Correct</button>
+                  )}
+                  {view !== "superseded" && (
+                    <button type="button" className={btnDanger} aria-label={`Forget: ${m.content.slice(0, 40)}`}
+                      onClick={() => { if (window.confirm(`Forget this?\n\n${m.content}`)) act(del(`/api/memory/items/${m.id}`)); }}>Forget</button>
+                  )}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
+  );
+}
+
 const TABS: { key: TabKey; label: string; icon: LucideIcon }[] = [
   { key: "overview", label: "Overview", icon: Sparkles },
   { key: "lessons", label: "Lessons", icon: Brain },
@@ -1774,7 +1846,7 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
 
             {tab === "about" && <AboutYouBody />}
 
-            {tab === "memory" && <MemoryBody />}
+            {tab === "memory" && <div className="space-y-6"><MemoryBody /><MemoryItems /></div>}
 
             {tab === "settings" && draft && (
               <Panel

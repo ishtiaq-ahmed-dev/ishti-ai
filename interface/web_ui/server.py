@@ -799,6 +799,47 @@ async def arch_memory_promote():
     return JSONResponse({"promoted": len(promoted), "items": [p["content"] for p in promoted]})
 
 
+_MEMORY_VIEW = ("active", "needs_confirmation", "superseded")
+
+
+@app.get("/api/memory/items")
+async def memory_items(status: str = "active", q: str = ""):
+    """Everything ISHTI remembers, for the owner to read, correct or forget (newest first)."""
+    from ishti.memstore import memory as amem
+    if status not in _MEMORY_VIEW:
+        return JSONResponse({"error": f"status must be one of {', '.join(_MEMORY_VIEW)}"}, status_code=400)
+    rows = amem.search(text=q.strip()[:200] or None, status=status, limit=300)
+    rows.sort(key=lambda r: r.get("created_at") or 0, reverse=True)
+    keep = ("id", "type", "content", "source", "confidence", "created_at", "valid_until", "times_observed")
+    return JSONResponse({"items": [{k: r.get(k) for k in keep} for r in rows]})
+
+
+@app.post("/api/memory/items/{mid}")
+async def memory_item_edit(mid: str, req: Request):
+    """A correction supersedes the old row (kept as 'was true until now'), it never overwrites it."""
+    from ishti.memstore import memory as amem
+    content = str((await req.json()).get("content", "")).strip()
+    if not content or len(content) > 1000:
+        return JSONResponse({"error": "content must be 1-1000 characters"}, status_code=400)
+    if not amem.get(mid):
+        return JSONResponse({"error": "no such memory"}, status_code=404)
+    return JSONResponse({"item": amem.supersede(mid, content, source="explicit_user")})
+
+
+@app.post("/api/memory/items/{mid}/confirm")
+async def memory_item_confirm(mid: str):
+    from ishti.memstore import memory as amem
+    return JSONResponse({"confirmed": amem.confirm(mid)})
+
+
+@app.delete("/api/memory/items/{mid}")
+async def memory_item_forget(mid: str):
+    from ishti.memstore import memory as amem
+    if not amem.get(mid):
+        return JSONResponse({"error": "no such memory"}, status_code=404)
+    return JSONResponse({"forgotten": amem.forget(mid)})
+
+
 @app.post("/api/memory/decay")
 async def arch_memory_decay():
     """Run a decay pass now: stale low-importance memories are marked needs_confirmation (never deleted)."""

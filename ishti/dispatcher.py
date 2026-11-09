@@ -382,6 +382,7 @@ def _learn_turn(text, reply, name, dec, sid, channel, message_id=None):
         try:
             from ishti.memstore import memory as _memstore
             _memstore.maybe_promote()
+            _memstore.maybe_decay()  # daily; faded rows wait in Learning > Memory for the owner to confirm or forget
         except Exception as exc:
             print(f"[dispatcher] observation promotion skipped: {exc}")
     except Exception as exc:

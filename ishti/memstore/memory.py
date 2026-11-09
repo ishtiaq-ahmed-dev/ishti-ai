@@ -474,6 +474,27 @@ def maybe_promote(interval_s: float = 3600) -> list:
     return promote_observations()
 
 
+def confirm(mid: str) -> int:
+    """The owner says a faded memory is still true: back to active, confirmation clock reset."""
+    c = conn()
+    with _lock, c:
+        return c.execute("UPDATE memories SET status='active', last_confirmed_at=?, updated_at=? "
+                         "WHERE id=? AND status='needs_confirmation'", (time.time(), time.time(), mid)).rowcount
+
+
+_decay_last = 0.0
+
+
+def maybe_decay(interval_s: float = 86400) -> list:
+    """Daily decay for the per-turn hook. Faded rows land in Learning > Memory > Needs confirmation."""
+    global _decay_last
+    now = time.time()
+    if now - _decay_last < interval_s:
+        return []
+    _decay_last = now
+    return decay(now)
+
+
 def decay(now=None) -> list:
     """Mark stale memories needs_confirmation (spec 16, D4/J12). Never deletes anything:
     low-importance rows fade after ~a month unconfirmed; HIGH-importance rows (identity,

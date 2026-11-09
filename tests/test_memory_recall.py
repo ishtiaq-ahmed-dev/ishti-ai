@@ -71,3 +71,23 @@ def test_recall_index_is_dated_and_bounded(tmp_path, monkeypatch):
     assert s.count() == 3
     hit = s.recall("when is my sister's birthday")
     assert hit and hit[0].startswith(time.strftime("[%Y-%m-%d] User:"))
+
+
+def test_owner_can_read_correct_confirm_and_forget_every_memory(mem):
+    from fastapi.testclient import TestClient
+    from interface.web_ui import server
+    client = TestClient(server.app, base_url="http://127.0.0.1", client=("127.0.0.1", 50000))
+    row = mem.semantic("I drive a Honda Civic", source="explicit_user")
+    items = client.get("/api/memory/items").json()["items"]
+    assert [i["content"] for i in items] == ["I drive a Honda Civic"]
+    assert client.post(f"/api/memory/items/{row['id']}", json={"content": "I drive a Toyota Corolla"}).status_code == 200
+    assert [i["content"] for i in client.get("/api/memory/items").json()["items"]] == ["I drive a Toyota Corolla"]
+    assert [i["content"] for i in client.get("/api/memory/items?status=superseded").json()["items"]] == ["I drive a Honda Civic"]
+    faded = mem.semantic("I go to the gym on Mondays", source="explicit_user")
+    mem.conn().execute("UPDATE memories SET status='needs_confirmation' WHERE id=?", (faded["id"],))
+    mem.conn().commit()
+    assert client.post(f"/api/memory/items/{faded['id']}/confirm").json()["confirmed"] == 1
+    new_id = client.get("/api/memory/items?q=Corolla").json()["items"][0]["id"]
+    assert client.delete(f"/api/memory/items/{new_id}").json()["forgotten"] == 1
+    assert [i["content"] for i in client.get("/api/memory/items").json()["items"]] == ["I go to the gym on Mondays"]
+    assert client.get("/api/memory/items?status=forgotten").status_code == 400  # forgotten rows are not browsable
