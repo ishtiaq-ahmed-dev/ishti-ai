@@ -417,8 +417,16 @@ def _cloud_open() -> bool:
 
 def _trip(exc: "ModelUnavailable"):
     import time
+    first = str(exc) != _cloud_state.get("error")  # notify once per distinct outage, not on every breaker re-trip
     _cloud_state.update(until=time.monotonic() + getattr(exc, "retry_s", 60), error=str(exc))
     print(f"[llm] cloud model unavailable, failing over for {getattr(exc, 'retry_s', 60)} s: {exc}")
+    if first and not os.environ.get("ISHTI_TEST_MODE"):
+        try:  # the owner sees why answers come from the local model (Notification Center), not only a log line
+            from ishti import notifications
+            notifications.add("alert", "Cloud model unavailable - using the local model",
+                              f"{exc} Answers come from {failover_model() or 'the local model'} until it recovers.")
+        except Exception as note_exc:
+            print(f"[llm] failover notice skipped: {type(note_exc).__name__}")
 
 
 def failover_model() -> str:
