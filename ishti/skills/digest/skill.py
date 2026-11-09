@@ -80,8 +80,9 @@ def _calendar():
                         if start.get("dateTime") else "all day")
                 title = ev.get("summary") or "(no title)"
                 items.setdefault((when, title.strip().lower()), (when, title))
-    except Exception:
-        pass  # Google not reachable: the local calendar still counts
+    except Exception as exc:  # Google not reachable: the local calendar still counts
+        from ishti.core.logutil import swallowed
+        swallowed("ishti/skills/digest/skill.py:_calendar", exc)
     return "\n".join(f"- {w} {t}" for w, t in sorted(items.values(), key=lambda x: (x[0] != "all day", x[0]))) or "Nothing on the calendar."
 
 
