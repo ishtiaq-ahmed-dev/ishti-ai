@@ -49,6 +49,11 @@ class Facts:
         k = self._exact_key(entity) or norm(entity)
         if not k:
             return None
+        from ishti.audit import SECRETISH
+        if SECRETISH.search(f"{attr} is {value}"):
+            # a password/PIN/key never lands in the plain fact store (it is shown back in "what do you know about me"
+            # and sent with prompts); the vault is the only place for it. Every caller is covered here.
+            return None
         with self.lock, self.db:
             row = self.db.execute("SELECT value FROM facts WHERE key=? AND attr=?", (k, attr)).fetchone()
             prev = row[0] if row else None

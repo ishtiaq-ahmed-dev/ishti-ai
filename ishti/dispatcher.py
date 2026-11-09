@@ -270,6 +270,17 @@ DANGEROUS = re.compile(
     r"\b(?:(?<!bath )(?<!photo )(?<!seed )(?<!glitter )(?<!calorie )bombs?|explosives?|ieds?|"
     r"pipe\s*bombs?|grenades?|napalm|thermite|detonators?|nerve\s+agents?|sarin|vx\s+gas|ricin|anthrax|chemical\s+weapons?|"
     r"bio\s*weapons?|biological\s+weapons?|dirty\s+bombs?)\b", re.I)
+def _redact_values(node, fn):
+    """fn applied to every string inside nested lists/dicts (keys untouched)."""
+    if isinstance(node, str):
+        return fn(node)
+    if isinstance(node, list):
+        return [_redact_values(x, fn) for x in node]
+    if isinstance(node, dict):
+        return {k: _redact_values(v, fn) for k, v in node.items()}
+    return node
+
+
 BARE_WRONG = re.compile(r"^\s*(?:no+[,.!]?\s*)?(?:that(?:'s|\s+is|\s+was)\s+|it(?:'s|\s+is|\s+was)\s+|you(?:'re|\s+are)\s+)?"
                         r"(?:(?:completely|totally|so|all)\s+)?(?:wrong|incorrect|not\s+(?:right|correct|true)|false|"
                         r"bad\s+answer|nope)\s*[.!]*\s*$", re.I)
@@ -1662,7 +1673,8 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
     if SECRETISH.search(text):  # a password/key typed into a turn no skill took charge of: the same treatment -
         # masked in the saved chat, and nothing from it reaches memory, learning, recall or a later cloud prompt
         text, kept = SECRETISH.sub("[redacted]", text), SECRETISH.sub("[redacted]", kept)
-        events[:] = json.loads(SECRETISH.sub("[redacted]", json.dumps(events, ensure_ascii=False)))
+        # per string value: run over the JSON text, the pattern's optional quote ate a closing '"' and broke the JSON
+        events[:] = _redact_values(events, lambda v: SECRETISH.sub("[redacted]", v))
         secret = True
     from ishti.core.context import normalize_history, RUNTIME_MESSAGES
     # incognito (H3): this conversation writes NOTHING to memory — no chat persistence, no

@@ -30,7 +30,10 @@ UNITS = {"km": ("len", 1000), "kilometer": ("len", 1000), "kilometre": ("len", 1
          "sqm": ("area", 1), "sqft": ("area", .09290304), "acre": ("area", 4046.8564224), "hectare": ("area", 10000),
          # ponytail: the revenue marla (272.25 sq ft); some housing authorities use 225 sq ft - say so if asked
          "marla": ("area", 25.2929), "kanal": ("area", 505.857),
-         "gb": ("data", 1e9), "mb": ("data", 1e6), "tb": ("data", 1e12), "kb": ("data", 1e3)}
+         "gb": ("data", 1e9), "mb": ("data", 1e6), "tb": ("data", 1e12), "kb": ("data", 1e3),
+         "light year": ("len", 9.4607304725808e15), "light-year": ("len", 9.4607304725808e15),
+         "lightyear": ("len", 9.4607304725808e15)}
+DIMENSION = {"len": "a length", "mass": "a weight", "vol": "a volume", "speed": "a speed", "area": "an area", "data": "data size"}
 _U = "|".join(sorted((re.escape(u) for u in UNITS), key=len, reverse=True))
 CONVERT = re.compile(rf"(?P<n>-?\d+(?:\.\d+)?)\s*(?P<a>{_U}|°?[cf]|celsius|fahrenheit)s?\s+(?:to|in|into)\s+(?P<b>{_U}|°?[cf]|celsius|fahrenheit)s?\b", I)
 OPS = [
@@ -111,7 +114,9 @@ def op_convert(m, text, session):
         v = n * 9 / 5 + 32 if (a, b) == ("c", "f") else (n - 32) * 5 / 9 if (a, b) == ("f", "c") else n
         return f"{n:g} °{a.upper()} = **{v:.1f} °{b.upper()}**"
     ua, ub = UNITS.get(a.rstrip("s")) or UNITS.get(a), UNITS.get(b.rstrip("s")) or UNITS.get(b)
-    if not ua or not ub or ua[0] != ub[0]:
+    if ua and ub and ua[0] != ub[0]:  # "100 kg to light years" reached a small model that invented code for it
+        return f"Those don't convert: {a} is {DIMENSION[ua[0]]} and {b} is {DIMENSION[ub[0]]}."
+    if not ua or not ub:
         return f"I can't convert {a} to {b}."
     v = n * ua[1] / ub[1]
     said_a, said_b = re.split(r"\s+(?:to|in|into)\s+", m.group(0), maxsplit=1)  # units as the owner wrote them

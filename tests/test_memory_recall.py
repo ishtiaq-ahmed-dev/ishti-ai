@@ -113,3 +113,23 @@ def test_round6_regressions_lists_days_between_knowledge():
     assert checklist.match("add milk and eggs to my shopping list") and not owner.match("add milk and eggs to my shopping list")
     assert checklist.SHOW.match("what's on my shopping list?").group("name3") == "shopping"
     assert not checklist.match("my spotify playlist")
+
+
+def test_round7_secrets_units_lists_reminders():
+    import datetime as dt
+    from ishti.facts import get_facts
+    from ishti.skills.owner import skill as owner
+    from ishti.skills.security import skill as security
+    from ishti.skills.checklist import skill as checklist
+    from ishti.skills.utilities.skill import CONVERT, op_convert
+    from ishti.skills.reminders.skill import _fmt
+    from ishti import dispatcher
+    assert get_facts().set("owner", "wifi password", "Sunset2024") is None and "wifi password" not in get_facts().get("owner")
+    assert not owner.match("store my pin 4321") and not owner.match("my wifi password is Sunset2024! remember it")
+    assert next(n for n, rx in security.OPS if rx.search("store my pin 4321")) == "vault_remember2"
+    assert dispatcher._redact_values([{"a": 'password is "x9y8z7"', "n": 1}], lambda v: v.replace("x9y8z7", "[r]")) == \
+        [{"a": 'password is "[r]"', "n": 1}]  # values only: the JSON-text version broke on the quote
+    assert "Those don't convert" in op_convert(CONVERT.search("convert 100 kg to light years"), "", {})
+    assert checklist.TICK.match("tick bread").group("item3") == "bread"
+    now = dt.datetime(2026, 11, 9, 22, 52)
+    assert "due 30 min ago" in _fmt(dt.datetime(2026, 11, 9, 22, 22).timestamp(), now)

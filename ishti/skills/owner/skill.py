@@ -108,8 +108,14 @@ def match(text):
     t = text.strip()
     return (any(rx.match(t) for rx in (AUDIO_OFF, AUDIO_ON, WHO, KNOW, CAN, DOCTOR, VOICE_SET)) or bool(VOICE_LIST.search(t))
             or bool((TELL.match(t) or SAVE_MEMORY.search(t)) and not SCHEDULING.search(t) and not PERSON.search(t)
-                    and not LIST_ITEM.search(t))
+                    and not LIST_ITEM.search(t) and not _secretish(t))
             or bool(SELF.search(t)) or asks_about_me(t))
+
+
+def _secretish(t):
+    """A password/PIN/key is the vault's (security skill), never an owner fact shown back in plain text."""
+    from ishti.audit import SECRETISH
+    return bool(SECRETISH.search(t) or re.search(r"\b(?:password|passcode|pin)\b", t, re.I))
 
 
 # "add milk to my shopping list": a list item (the checklist skill's), not a fact about the owner
@@ -222,6 +228,12 @@ def learn(text, save=True):
 def about_me(t):
     from ishti import llm
     facts = "\n".join(f"- {a}: {v}" for a, v in get_facts().get("owner").items() if a != "entity") or "(nothing saved)"
+    try:  # "remember that my car is a Civic" lives in memory, not the fact store: "what car do I drive?" missed it
+        from ishti.memstore import retrieval
+        facts += "".join(f"\n- {h['row']['content']}" for h in retrieval.memory_hits(t)[:4])
+    except Exception as _exc:
+        from ishti.core.logutil import swallowed
+        swallowed("ishti/skills/owner/skill.py:about_me.memory", _exc)
     out = llm.ask(f"Saved facts about the owner:\n{facts}\n\nThe owner asks (may have typos): {t}\n\nAnswer in one short "
                   "sentence using only these facts, speaking to the owner as 'you'. If the facts don't contain it, say "
                   "you don't have that saved yet and ask them to tell you once.", system=None, temperature=0, max_tokens=80)

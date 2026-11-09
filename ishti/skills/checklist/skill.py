@@ -23,7 +23,8 @@ ADD = re.compile(rf"^\s*(?:please\s+)?(?:add|put)\s+(?P<item>[\w ,&'-]{{2,120}}?
                  rf"(?P<name>[\w &'-]{{2,40}}?){L}\s*[.!]?$", I)
 REMOVE = re.compile(rf"^\s*(?:remove|delete|take)\s+(?P<item>[\w ,&'-]{{2,60}}?)\s+(?:off|from)\s+(?:the\s+|my\s+)?"
                     rf"(?P<name>[\w &'-]{{2,40}}?){L}\s*[.!]?$", I)
-TICK = re.compile(r"^\s*(?:tick|check)\s+off\s+(?P<item>[\w &'-]{2,60})\s*$|^\s*(?:tick|mark)\s+(?P<item2>[\w &'-]{2,60}?)\s+(?:as\s+)?done\s*$", I)
+TICK = re.compile(r"^\s*(?:tick|check)\s+off\s+(?P<item>[\w &'-]{2,60})\s*$|^\s*(?:tick|mark)\s+(?P<item2>[\w &'-]{2,60}?)\s+(?:as\s+)?done\s*$"
+                  r"|^\s*tick\s+(?!off\b)(?P<item3>[\w &'-]{2,60}?)\s*$", I)  # "tick bread" (not "check X": check the weather)
 # order matters: the "what's on" / "show" forms first, or the bare form reads "what's on my shopping" as a list name
 SHOW = re.compile(rf"^\s*what(?:'s|\s+is)\s+on\s+(?:the\s+|my\s+)?(?P<name3>[\w &'-]{{2,40}}?){L}\s*\??$|"
                   rf"^\s*(?:show|open|read)\s+(?:me\s+)?(?:the\s+|my\s+)?(?P<name2>[\w &'-]{{2,40}}?){L}\s*\??$|"
@@ -129,7 +130,7 @@ def run(text, session):
         return {"reply": _remove(m.group("name"), m.group("item")), "sources": []}
     m = TICK.match(t)
     if m:
-        return {"reply": _tick(m.group("item") or m.group("item2")), "sources": []}
+        return {"reply": _tick(m.group("item") or m.group("item2") or m.group("item3")), "sources": []}
     m = LEFT.match(t)
     if m:
         return {"reply": _show(m.group("name")), "sources": []}

@@ -48,6 +48,9 @@ OPS = [
                              r"|\bwhat(?:'s|\s+is)\s+(?:my|the)\s+(?:saved\s+)?(?:password|login)\s+(?:for|of|on)\s+(?P<site3>[\w.-]+)", I)),
     # "my gmail password is X, remember it": the vault, never chat memory (it used to route to the email skill)
     ("vault_remember", re.compile(r"\bmy\s+(?P<site>[\w.-]+)\s+(?:password|passcode|pin)\s+is\s+(?P<pw>[^\s,;]+?)[.!]?(?=[\s,;]|$)", I)),
+    # "store my pin 4321" / "save my bank pin: 1234" (the owner skill used to save these as plain facts)
+    ("vault_remember2", re.compile(r"\b(?:store|save|remember|keep|note)\s+my\s+(?:(?P<site>[\w.-]+)\s+)?(?P<kind>password|passcode|pin)"
+                                   r"\s*(?:is|:|=)?\s*(?P<pw>[^\s,;]+?)[.!]?(?=[\s,;]|$)", I)),
     ("vault_delete", re.compile(r"\b(?:delete|remove|forget)\s+(?:my\s+)?(?:saved\s+)?(?:login|password|credentials?)\s+for\s+(?P<site>[\w.-]+)", I)),
 ]
 SERVICE = "ISHTI:"  # every vault entry is "ISHTI:<site>" in Credential Manager, so ISHTI only ever sees its own
@@ -254,10 +257,14 @@ def op_vault_save(m, text, session):
 
 
 def op_vault_remember(m, text, session):
+    site = m["site"] if "kind" not in m.re.groupindex or m["site"] else m["kind"]  # "store my pin 4321" -> "pin"
     _hide(session, m["pw"])
-    vault_set(m["site"], _index().get(m["site"].lower()) or "owner", m["pw"])
-    return (f"Saved your {m['site']} password in Windows Credential Manager (encrypted with your Windows account) - not in "
-            "my chat memory, and it's masked in this chat. Say \"what's my " + m["site"] + " password\" to see it again.")
+    vault_set(site, _index().get(site.lower()) or "owner", m["pw"])
+    return (f"Saved your {site} secret in Windows Credential Manager (encrypted with your Windows account) - not in "
+            "my chat memory, and it's masked in this chat. Say \"what's my " + site + " password\" to see it again.")
+
+
+op_vault_remember2 = op_vault_remember
 
 
 def op_vault_list(m, text, session):

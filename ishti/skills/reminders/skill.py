@@ -213,6 +213,8 @@ def _fmt(due: float, now: dt.datetime):
         else d.strftime(" on %a %d %b")
     secs = due - now.timestamp()
     mins = round(secs / 60)
+    if secs < 0:  # a due one waiting to fire was listed as "in -1799 s"
+        return f"{d.strftime('%H:%M')}{day} (due {max(1, round(-secs / 60))} min ago)"
     rel = f"in {round(secs)} s" if secs < 90 else f"in {mins} min" if mins < 120 else f"in {round(mins / 60, 1)} h"
     return f"{d.strftime('%H:%M')}{day} ({rel})"
 
