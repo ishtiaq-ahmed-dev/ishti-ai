@@ -314,6 +314,21 @@ def chat_title(text: str) -> str:
     return (t[:48].rstrip() + "…") if len(t) > 48 else (t or "New chat")
 
 
+def redact_user_text(chat_id: str, raw: str, masked: str) -> int:
+    """A secret the turn masked AFTER the message was stored (the run reads the raw text back, so it can't be masked on
+    the way in): rewrite the stored user message and a sidebar title derived from it."""
+    if not raw or raw == masked:
+        return 0
+    with _lock:
+        c = conn()
+        with c:
+            n = c.execute("UPDATE messages SET text=? WHERE chat_id=? AND role='user' AND text=?",
+                          (masked, str(chat_id), raw)).rowcount
+            n += c.execute("UPDATE chats SET title=? WHERE chat_id=? AND title=?",
+                           (chat_title(masked), str(chat_id), chat_title(raw))).rowcount
+    return n
+
+
 def add_user_message(chat_id: str, text: str, client_msg_id: str | None = None,
                      attachments: list | None = None, channel: str = "text") -> dict:
     """Persist the user message BEFORE any generation. Idempotent on (chat_id, client_msg_id)."""

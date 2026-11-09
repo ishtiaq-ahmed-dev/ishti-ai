@@ -66,7 +66,8 @@ class Facts:
             events.publish("memory_updated", {"type": "fact", "entity": entity, "attr": attr, "value": value})
         except Exception:
             swallowed('ishti/facts.py:set:53')
-        _supersede_memories(attr, prev, value)
+        if k == "owner":  # someone else's changed fact must not rewrite the owner's memories
+            _supersede_memories(attr, prev, value)
         return prev
 
     def keys(self):

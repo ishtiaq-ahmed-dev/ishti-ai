@@ -84,9 +84,14 @@ def context(**kw):
 
 # Secret-looking values (also used by ishti.ftlog and the route log). Defined here, at the bottom of the import
 # graph: audit is imported while other modules initialise, so it must not import them.
+_SECRET_WORD = (r"password|passwd|pwd|pass(?:code|phrase)?|token|api[_-]?key|secret|pin|otp|cvv|cvc|credit\s*card|"
+                r"card\s*number|iban|account\s*number")
 SECRETISH = re.compile(
-    r"(?i)\b(?:password|passwd|pwd|pass|token|api[_-]?key|secret|pin|otp|cvv|cvc|credit\s*card|"
-    r"card\s*number|iban|iban\s*no|account\s*number)\b\s*(?:is|=|:)?\s*[\"']?[A-Za-z0-9_/.+-]{3,}[\"']?"
+    # "<word> is/=/: value" - said as a value, it is one
+    rf"(?i)\b(?:{_SECRET_WORD})\b\s*(?:is|=|:)\s*[\"']?[^\s\"',;]{{3,}}[\"']?"
+    # "<word> value" with no separator only when the value has a digit ("store my pin 4321", "password Zq8!kLm2"),
+    # so "how do I pass the exam" and "The Secret Garden" stay ordinary text
+    rf"|\b(?:{_SECRET_WORD})\s+[\"']?(?=[^\s\"',;]*\d)[^\s\"',;]{{3,}}[\"']?"
     r"|\b(?:sk|pk|ghp|gho|xox[baprs]|AKIA)[A-Za-z0-9_-]{8,}")
 
 

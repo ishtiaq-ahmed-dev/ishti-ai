@@ -47,10 +47,10 @@ OPS = [
     ("vault_get", re.compile(r"\bwhat(?:'s|\s+is)\s+my\s+(?P<site>[\w.-]+)\s+(?:password|login)\b|\b(?:show|reveal|get)\s+(?:my\s+)?(?:saved\s+)?(?:password|login)\s+for\s+(?P<site2>[\w.-]+)"
                              r"|\bwhat(?:'s|\s+is)\s+(?:my|the)\s+(?:saved\s+)?(?:password|login)\s+(?:for|of|on)\s+(?P<site3>[\w.-]+)", I)),
     # "my gmail password is X, remember it": the vault, never chat memory (it used to route to the email skill)
-    ("vault_remember", re.compile(r"\bmy\s+(?P<site>[\w.-]+)\s+(?:password|passcode|pin)\s+is\s+(?P<pw>[^\s,;]+?)[.!]?(?=[\s,;]|$)", I)),
+    ("vault_remember", re.compile(r"\bmy\s+(?P<site>[\w.-]+)\s+(?:password|passcode|pin)\s+is\s+(?P<pw>[^\s,;]+?)\.?(?=[\s,;]|$)", I)),
     # "store my pin 4321" / "save my bank pin: 1234" (the owner skill used to save these as plain facts)
     ("vault_remember2", re.compile(r"\b(?:store|save|remember|keep|note)\s+my\s+(?:(?P<site>[\w.-]+)\s+)?(?P<kind>password|passcode|pin)"
-                                   r"\s*(?:is|:|=)?\s*(?P<pw>[^\s,;]+?)[.!]?(?=[\s,;]|$)", I)),
+                                   r"\s*(?:is|:|=)?\s*(?P<pw>[^\s,;]+?)\.?(?=[\s,;]|$)", I)),
     ("vault_delete", re.compile(r"\b(?:delete|remove|forget)\s+(?:my\s+)?(?:saved\s+)?(?:login|password|credentials?)\s+for\s+(?P<site>[\w.-]+)", I)),
 ]
 SERVICE = "ISHTI:"  # every vault entry is "ISHTI:<site>" in Credential Manager, so ISHTI only ever sees its own
@@ -256,12 +256,26 @@ def op_vault_save(m, text, session):
     return f"Saved your {m['site']} login ({m['user']}) in Windows Credential Manager - encrypted with your Windows account."
 
 
+_NOT_A_SECRET = {"wrong", "not", "safe", "somewhere", "blocked", "expired", "incorrect", "forgotten", "lost", "changed",
+                 "weak", "strong", "same", "working", "broken", "locked", "reset", "invalid", "old", "new", "fine", "ok",
+                 "okay", "here", "there", "secure", "private", "hidden", "too", "very", "still", "always", "never"}
+
+
 def op_vault_remember(m, text, session):
     site = m["site"] if "kind" not in m.re.groupindex or m["site"] else m["kind"]  # "store my pin 4321" -> "pin"
-    _hide(session, m["pw"])
-    vault_set(site, _index().get(site.lower()) or "owner", m["pw"])
-    return (f"Saved your {site} secret in Windows Credential Manager (encrypted with your Windows account) - not in "
-            "my chat memory, and it's masked in this chat. Say \"what's my " + site + " password\" to see it again.")
+    pw = m["pw"]
+    # "my gmail password is wrong, how do I reset it?" overwrote the saved password with "wrong"
+    if pw.lower().strip("!?") in _NOT_A_SECRET or "?" in text or re.search(
+            r"\b(?:how|why|reset|forgot|forgotten|recover|change|isn'?t|not\s+working|doesn'?t)\b", text, I):
+        return None
+    _hide(session, pw)
+    reply = (f"Saved your {site} secret in Windows Credential Manager (encrypted with your Windows account) - not in "
+             "my chat memory, and it's masked in this chat. Say \"what's my " + site + " password\" to see it again.")
+    if _index().get(site.lower()) is not None:  # one is already saved: replacing it is a yes, never silent
+        return ask_first(session, "security", f"Replace your saved {site} password",
+                         lambda: (vault_set(site, _index().get(site.lower()) or "owner", pw), reply)[1])
+    vault_set(site, "owner", pw)
+    return reply
 
 
 op_vault_remember2 = op_vault_remember

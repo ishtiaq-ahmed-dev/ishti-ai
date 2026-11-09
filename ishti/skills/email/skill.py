@@ -206,7 +206,9 @@ def op_email_self(m, text, session):
 def op_forward(m, text, session):
     """Forwarding is a send (T2), and the recipient must be a real address: "my accountant" is a role, not an address,
     so ISHTI asks instead of guessing one (checklist 121). The forwarded email is found by search, never assumed."""
-    to = EMAIL.search(text)
+    # "forward the invoice from ali@x.com to sara@y.com" used to go to ali: the address after the last "to" wins
+    to = next(iter(re.findall(rf"\bto\s+({EMAIL.pattern})", text, I)[-1:]), None) or \
+        (re.findall(rf"(?<!from )({EMAIL.pattern})", text, I)[-1:] or [None])[0]  # never the sender's own address
     if not to:
         return {"reply": "Who should I forward it to? I don't have an email address for them on file - give me their "
                          "email address, never a guess.", "sources": []}
@@ -221,8 +223,8 @@ def op_forward(m, text, session):
     body = (f"---------- Forwarded message ----------\nFrom: {msg['from']}\nDate: {msg['date']}\nSubject: {msg['subject']}\n\n"
             f"{msg['body'][:20000]}")
     preview = body if len(body) < 1500 else body[:1500] + "\n..."
-    return ask_first(session, "email", f"Forward this to {to.group(0)}?\n\n**Subject:** {subj}\n\n{preview}\n\nSend it",
-                     lambda: api.send(to.group(0), subj, body))
+    return ask_first(session, "email", f"Forward this to {to}?\n\n**Subject:** {subj}\n\n{preview}\n\nSend it",
+                     lambda: api.send(to, subj, body))
 
 
 def _address_for(who):

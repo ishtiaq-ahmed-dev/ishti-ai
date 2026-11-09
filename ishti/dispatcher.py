@@ -1665,6 +1665,7 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
     kept = "(a secret was shown here and not saved)" if secret else reply
     # a secret the owner typed ("how strong is Xy7...", "encrypt it with password ...") is masked everywhere it's kept
     hidden = s.pop("redact", None)
+    raw_text = text
     if hidden:
         text, kept = mask(text, hidden), mask(kept, hidden)
         events[:] = json.loads(mask(json.dumps(events, ensure_ascii=False), hidden))
@@ -1676,6 +1677,17 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
         # per string value: run over the JSON text, the pattern's optional quote ate a closing '"' and broke the JSON
         events[:] = _redact_values(events, lambda v: SECRETISH.sub("[redacted]", v))
         secret = True
+    if text != raw_text:
+        # the owner's message was saved BEFORE the turn knew it held a secret (and became the sidebar title); a restart
+        # would reload it into history and send it with the next cloud prompt. Rewrite the stored copy now.
+        try:
+            if _runs_owned(sid):
+                from ishti import runs as _runs
+                _runs.redact_user_text(sid, raw_text, text)
+            else:
+                conv.redact_text(sid, raw_text, text)
+        except Exception as exc:
+            print(f"[dispatcher] stored secret redaction skipped: {type(exc).__name__}")
     from ishti.core.context import normalize_history, RUNTIME_MESSAGES
     # incognito (H3): this conversation writes NOTHING to memory — no chat persistence, no
     # semantic remember, no behavior log, no consolidation, no learning. Explicit memory

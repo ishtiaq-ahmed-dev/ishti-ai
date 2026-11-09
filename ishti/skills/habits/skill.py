@@ -18,7 +18,8 @@ _lock = threading.Lock()
 
 I = re.I
 ADD = re.compile(r"^(?:please\s+)?(?:track|add|start)\s+(?:a\s+|an\s+)?(?:new\s+)?habit\s*[:\-]?\s*(?P<body>.+)$", I)
-TRACK_SHORT = re.compile(r"^track\s+(?P<name>[A-Za-z][A-Za-z &'-]{1,29}?)(?:\s+every\s+day|\s+daily)?\s*[.!]?$", I)  # letters only: "track asset ... 250000" (an amount) is networth's, not a habit
+TRACK_SHORT = re.compile(r"^track\s+(?!(?:my|the|a)\s+(?:orders?|packages?|parcels?|deliver\w*|shipments?|expenses?|spending|"
+                         r"flights?|stocks?|prices?)\b)(?P<name>[A-Za-z][A-Za-z &'-]{1,29}?)(?:\s+every\s+day|\s+daily)?\s*[.!]?$", I)  # letters only: "track asset ... 250000" (an amount) is networth's, not a habit
 DONE = re.compile(r"^(?:i\s+)?(?:did|done|completed|finished)\s+(?:my\s+)?(?P<name>water|gym|walk|run|reading|quran|exercise|workout|meditat\w*|stud\w*)\b[\w &'-]{0,20}(?:\s+(?:today|just\s+now))?\s*[.!]?$", I)
 MARK_DONE = re.compile(r"^mark\s+(?:my\s+)?(?P<name>water|gym|walk|run|reading|quran|exercise|workout|meditat\w*|stud\w*)[\w &'-]{0,20}(?:\s+(?:as\s+)?done)?(?:\s+today)?\s*[.!]?$", I)
 TODAY = re.compile(r"^(?:my\s+)?habits\s+(?:for\s+)?today|^(?:what\s+are\s+)?my\s+habits\b.*$", I)

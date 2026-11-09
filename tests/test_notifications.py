@@ -106,12 +106,16 @@ if __name__ == "__main__":
 
 def test_scheduled_job_question_waits_in_the_bell_and_is_answered_in_its_own_session(store, monkeypatch):
     from interface.web_ui import server
-    seen = []
+    from ishti import dispatcher
+    seen, clock = [], iter(range(1000, 2000))
+    monkeypatch.setattr(dispatcher, "SESSIONS", {})
 
     def fake_handle(text, session_id, channel):
         seen.append((text, session_id, channel))
         if text == "yes":
+            dispatcher.SESSIONS[session_id]["pending"] = None
             return {"final_answer": "Sent."}
+        dispatcher.SESSIONS[session_id] = {"pending": {"at": float(next(clock))}}  # what ask_first leaves behind
         return {"final_answer": "Shall I send the weekly report to Sara? (yes/no)"}
     monkeypatch.setattr(server, "ishti_handle", fake_handle)
     assert server.run_scheduled("every friday email the weekly report to Sara") is None  # nothing spoken
@@ -126,6 +130,26 @@ def test_scheduled_job_question_waits_in_the_bell_and_is_answered_in_its_own_ses
     assert r.status_code == 200 and r.json()["reply"] == "Sent." and seen[-1] == ("yes", sid, "scheduled")
     plain = notifications.add("job", "Brief ready")
     assert client.post(f"/api/notifications/{plain['id']}/answer", json={"answer": "yes"}).status_code == 404
+    assert "weekly report to Sara" in note["body"]  # the whole question is shown, not a truncated title
+
+
+def test_a_bell_yes_only_approves_the_question_it_shows(store, monkeypatch):
+    from interface.web_ui import server
+    from ishti import dispatcher
+    clock = iter(range(1000, 2000))
+    monkeypatch.setattr(dispatcher, "SESSIONS", {})
+
+    def fake_handle(text, session_id, channel):
+        assert text != "yes", "a stale yes must never reach the job's session"
+        dispatcher.SESSIONS[session_id] = {"pending": {"at": float(next(clock))}}
+        return {"final_answer": f"Send reply #{len(dispatcher.SESSIONS)}? (yes/no)"}
+    monkeypatch.setattr(server, "ishti_handle", fake_handle)
+    server.run_scheduled("every hour reply to new mail")
+    first = notifications.recent()[0]
+    server.run_scheduled("every hour reply to new mail")  # the next run asks again: the first question is replaced
+    client = TestClient(server.app, base_url="http://127.0.0.1", client=("127.0.0.1", 50000))
+    assert not notifications.get(first["id"])["meta"]["answerable"]
+    assert client.post(f"/api/notifications/{first['id']}/answer", json={"answer": "yes"}).status_code == 404
 
 
 def test_scheduled_job_failure_is_reported_not_swallowed(store, monkeypatch):

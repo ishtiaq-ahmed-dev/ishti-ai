@@ -52,7 +52,8 @@ def _markets():
 
 def _news():
     from ishti.skills.utilities.skill import op_news
-    lines = op_news(None, "top headlines", {}).splitlines()[1:4]
+    out = op_news(None, "top headlines", {})
+    lines = (out.get("reply", "") if isinstance(out, dict) else str(out)).splitlines()[1:4]
     return "\n".join(lines)
 
 

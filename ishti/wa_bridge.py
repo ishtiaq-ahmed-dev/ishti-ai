@@ -190,9 +190,13 @@ def ensure_running(wait_s: float = 90) -> bool:
     with _lock:
         key = _api_key(create=True)
         state = _container_state()
-        if state and _docker("inspect", "-f", "{{.Config.Image}}", CONTAINER, timeout=30).stdout.strip() != IMAGE:
-            _docker("rm", "-f", CONTAINER, timeout=60)  # config pins a new image: recreate; the volume keeps the session
-            state = ""
+        info = _docker("inspect", "-f", "{{.Config.Image}}", CONTAINER, timeout=30) if state else None
+        if info is not None and info.returncode == 0 and info.stdout.strip() and info.stdout.strip() != IMAGE:
+            # config pins a new image: pull it FIRST (offline, the working container stays), then recreate;
+            # the volume keeps the session, so no re-link
+            if _docker("pull", IMAGE, timeout=600).returncode == 0:
+                _docker("rm", "-f", CONTAINER, timeout=60)
+                state = ""
         if state == "":
             _run_container(key)
         elif state != "running":
@@ -521,7 +525,7 @@ _pace_lock = threading.Lock()
 
 
 def _pace(cid: str, length: int, sleep=time.sleep):
-    """Seen, typing for a moment scaled to the message (1-6 s plus jitter), and at least MIN_GAP_S between sends.
+    """Typing for a moment scaled to the message (1-6 s plus jitter), and at least MIN_GAP_S between sends.
     Best effort: a failed seen/typing call never blocks the send itself."""
     import random
     from ishti.core.logutil import swallowed
@@ -529,11 +533,11 @@ def _pace(cid: str, length: int, sleep=time.sleep):
         gap = MIN_GAP_S + random.uniform(0, 1.5) - (time.monotonic() - _last_send[0])
         if gap > 0:
             sleep(gap)
-        for path in ("sendSeen", "startTyping"):
-            try:
-                _call("POST", f"/api/{path}", {"session": SESSION, "chatId": cid}, timeout=10)
-            except BridgeError as exc:  # pacing is a courtesy; the send decides success
-                swallowed("ishti/wa_bridge.py:_pace", exc)
+        # no sendSeen: it marks the owner's unread messages in that chat as read (blue ticks to the contact)
+        try:
+            _call("POST", "/api/startTyping", {"session": SESSION, "chatId": cid}, timeout=10)
+        except BridgeError as exc:  # pacing is a courtesy; the send decides success
+            swallowed("ishti/wa_bridge.py:_pace", exc)
         sleep(min(6.0, max(1.0, length / 15)) + random.uniform(0.2, 1.0))
         try:
             _call("POST", "/api/stopTyping", {"session": SESSION, "chatId": cid}, timeout=10)

@@ -196,7 +196,7 @@ def test_send_is_paced_like_a_person(monkeypatch):
     monkeypatch.setattr(bridge, "_call", lambda method, path, payload=None, timeout=20: calls.append(path) or {})
     bridge._last_send[0] = 0.0
     bridge._pace("123@c.us", 300, sleep=naps.append)
-    assert calls == ["/api/sendSeen", "/api/startTyping", "/api/stopTyping"]
+    assert calls == ["/api/startTyping", "/api/stopTyping"]  # no sendSeen: it would mark the owner's unread as read
     assert 6.0 <= naps[-1] <= 7.0  # long message: capped typing pause plus jitter
     bridge._pace("123@c.us", 5, sleep=naps.append)
     assert naps[-2] >= 1.5  # the very next send waits out the minimum gap first
@@ -228,4 +228,21 @@ def test_a_new_pinned_image_recreates_the_container(monkeypatch):
     monkeypatch.setattr(bridge, "_docker", lambda *a, **k: (ran.append(a[0]) or P("devlikeapro/waha:old")) if a[0] == "inspect"
                         else (ran.append(a[0]) or P()))
     assert bridge.ensure_running(wait_s=2)
-    assert ran == ["inspect", "rm", "run"]
+    assert ran == ["inspect", "pull", "rm", "run"]  # pulled BEFORE the working container is removed
+
+
+def test_an_offline_image_update_keeps_the_working_container(monkeypatch):
+    ran = []
+    monkeypatch.delenv("ISHTI_TEST_MODE", raising=False)
+    monkeypatch.setattr(bridge, "_ready", lambda: bool(ran and ran[-1] == "start"))
+    monkeypatch.setattr(bridge, "_api_key", lambda create=False: "k")
+    monkeypatch.setattr(bridge, "_container_state", lambda: "exited")
+    monkeypatch.setattr(bridge, "_run_container", lambda key: ran.append("run"))
+
+    class P:
+        def __init__(self, out="", rc=0):
+            self.stdout, self.stderr, self.returncode = out, "offline", rc
+    monkeypatch.setattr(bridge, "_docker", lambda *a, **k: ran.append(a[0]) or (
+        P("devlikeapro/waha:old") if a[0] == "inspect" else P(rc=1) if a[0] == "pull" else P()))
+    assert bridge.ensure_running(wait_s=2)
+    assert ran == ["inspect", "pull", "start"]  # no rm, no run: WhatsApp keeps working on the old image

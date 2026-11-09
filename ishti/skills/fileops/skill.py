@@ -606,8 +606,11 @@ def op_copy(m, text, session):
         return (f"I couldn't find the destination folder '{dst_text.strip()}'. "
                 "Tell me the exact folder or path and I'll copy it there.")
     import shutil
-    dst_file = os.path.join(dst, os.path.basename(src_path))
-    return ask_first(session, "fileops", f"Copy {src_path} to {dst}",
+    from ishti.skills.folders.skill import free_name
+    dst_file = free_name(os.path.join(dst, os.path.basename(src_path)))  # "x (1).pdf" next to an existing "x.pdf"
+    return ask_first(session, "fileops", f"Copy {src_path} to {dst}" + (
+        f" (a file with that name is there - this one will be {os.path.basename(dst_file)})"
+        if os.path.basename(dst_file) != os.path.basename(src_path) else ""),
                      lambda: (shutil.copy2(src_path, dst_file), f"Copied {os.path.basename(src_path)} to {dst}.")[1])
 
 
@@ -632,8 +635,11 @@ def op_move(m, text, session):
     if not dst or not os.path.isdir(dst):
         return f"I couldn't find the destination folder '{dst_text.strip()}'. Tell me the exact folder or path."
     import shutil
-    dst_file = os.path.join(dst, os.path.basename(src_path))
-    return ask_first(session, "fileops", f"Move {src_path} to {dst}",
+    from ishti.skills.folders.skill import free_name
+    dst_file = free_name(os.path.join(dst, os.path.basename(src_path)))
+    return ask_first(session, "fileops", f"Move {src_path} to {dst}" + (
+        f" (a file with that name is there - this one will be {os.path.basename(dst_file)})"
+        if os.path.basename(dst_file) != os.path.basename(src_path) else ""),
                      lambda: (shutil.move(src_path, dst_file), f"Moved {os.path.basename(src_path)} to {dst}.")[1])
 
 

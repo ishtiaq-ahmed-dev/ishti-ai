@@ -28,9 +28,30 @@ def match(text):
     return any(rx.match(text.strip()) for _n, rx in _OPS)
 
 
+# parse_expr EVALUATES its input as Python: "simplify __import__('os').getpid()" ran real code (reachable from the
+# remote channels too). Only maths gets through: digits, operators, single-letter variables, known function names.
+_SAFE = re.compile(r"^[0-9A-Za-z\s+\-*/^().,=%!×÷]+$")
+_FUNCS = {"sin", "cos", "tan", "cot", "sec", "csc", "asin", "acos", "atan", "sinh", "cosh", "tanh", "log", "ln", "exp",
+          "sqrt", "cbrt", "abs", "pi", "oo", "inf", "factorial", "floor", "ceiling", "root", "mod", "sign"}
+
+
+class UnsafeExpression(ValueError):
+    pass
+
+
+def _check(expr: str) -> str:
+    if not _SAFE.match(expr or "") or re.search(r"[A-Za-z]\s*\.|\.\s*[A-Za-z]", expr):
+        raise UnsafeExpression(expr)
+    for word in re.findall(r"[A-Za-z]{2,}", expr):
+        if word.lower() not in _FUNCS:
+            raise UnsafeExpression(word)
+    return expr
+
+
 @lru_cache(maxsize=256)
 def _sympify(expr: str):
-    """Parse human math: implicit multiplication (2x -> 2*x), ^ as power, commas stripped."""
+    """Parse human math: implicit multiplication (2x -> 2*x), ^ as power, commas stripped. Whitelisted first."""
+    _check(expr)
     import sympy
     from sympy.parsing.sympy_parser import (parse_expr, standard_transformations,
                                             implicit_multiplication_application, convert_xor)
@@ -54,62 +75,78 @@ def run(text, session):
         except ImportError:
             return None  # keep routing honest: no sympy -> not our request
         body = (m.groupdict().get("body") or "").strip()
-        if name == "solve":
-            x = symbols("x")
-            expr = body.replace("^", "**").rstrip(".?!")
-            if "=" in expr:
-                lhs, rhs = expr.split("=", 1)
-                roots = sym_solve(Eq(_sympify(lhs), _sympify(rhs)), x)
-            else:
-                roots = sym_solve(_sympify(expr), x)
-            return {"reply": f"x = {_latex_free(roots)}", "sources": []}
-        if name == "derivative":
-            x = symbols("x")
-            d = diff(_sympify(body.replace("^", "**").rstrip(".?!")), x)
-            return {"reply": f"d/dx ({body}) = {_latex_free(d)}", "sources": []}
-        if name == "integral":
-            x = symbols("x")
-            it = integrate(_sympify(body.replace("^", "**").rstrip(".?!")), x)
-            return {"reply": f"∫({body}) dx = {_latex_free(it)} + C", "sources": []}
-        if name == "simplify":
-            s = sym_simp(_sympify(body.replace("^", "**").rstrip(".?!")))
-            return {"reply": f"{body} = {_latex_free(s)}", "sources": []}
-        if name == "percent":
-            g = m.groupdict()
-            if g.get("p"):
-                val = _sympify(g["p"]) * _sympify(g["n"]) / 100
-                return {"reply": f"{g['p']}% of {g['n']} = {_latex_free(val)}", "sources": []}
-            val = _sympify(g["n2"]) / _sympify(g["n3"]) * 100
-            return {"reply": f"{g['n2']} / {g['n3']} = {_latex_free(val)}%", "sources": []}
-        if name == "tip":
-            amt = float(m.group("amt").replace(",", ""))
-            pct = float(m.group("pct") or 15)
-            tip = amt * pct / 100
-            return {"reply": (f"Tip at {pct:.0f}%: {tip:,.2f} — total {amt + tip:,.2f}. "
-                              f"(10%: {amt*0.1:,.2f}, 20%: {amt*0.2:,.2f})"), "sources": []}
-        if name == "loan":
-            P = float(m.group("principal").replace(",", ""))
-            r = float(m.group("rate")) / 100 / 12
-            n = int(m.group("years")) * 12
-            pay = P * r * (1 + r) ** n / ((1 + r) ** n - 1) if r else P / n
-            total = pay * n
-            return {"reply": (f"Monthly payment: {pay:,.2f} ({n} months). Total paid: {total:,.2f}, "
-                              f"interest: {total - P:,.2f}."), "sources": []}
-        if name == "prime":
-            n = int(m.group("n"))
-            fac = sympy.factorint(n)
-            parts = " × ".join(f"{p}^{e}" if e > 1 else str(p) for p, e in sorted(fac.items()))
-            return {"reply": f"{n} = {parts}", "sources": []}
-        if name == "total":
-            nums = [float(n.replace(",", "")) for n in re.findall(r"(?<![\w.])\d[\d,]*(?:\.\d+)?", m.group("body"))]
-            if len(nums) < 2 or re.search(r"\b(?:at|each|per|times|x|for|of|every)\b", m.group("body"), I):
-                return None  # prices times quantities are not a plain sum: the model reasons about those
-            return {"reply": " + ".join(f"{n:,.10g}" for n in nums) + f" = {sum(nums):,.10g}", "sources": []}
-        if name == "gcd":
-            a, b = int(m.group("a")), int(m.group("b"))
-            op = "gcd" if t.lower().startswith(("gcd", "hcf")) else "lcm"
-            val = gcd(a, b) if op == "gcd" else lcm(a, b)
-            return {"reply": f"{op.upper()}({a}, {b}) = {val}", "sources": []}
+        try:
+            return _op(name, m, body, t)
+        except UnsafeExpression:
+            return {"reply": "That doesn't look like a maths expression I can work out - use numbers, single-letter "
+                             "variables and functions like sqrt, sin or log.", "sources": []}
+    return None
+
+
+def _op(name, m, body, t):
+    import sympy
+    from sympy import symbols, Eq, solve as sym_solve, diff, integrate, simplify as sym_simp, gcd, lcm  # noqa
+    if name == "solve":
+        expr = body.replace("^", "**").rstrip(".?!")
+        if "=" in expr:
+            lhs, rhs = expr.split("=", 1)
+            eq = Eq(_sympify(lhs), _sympify(rhs))
+        else:
+            eq = _sympify(expr)
+        # the expression's own variable: "solve 2y + 3 = 11" answered "x = []"
+        free = sorted(eq.free_symbols, key=lambda v: (v.name != "x", v.name))
+        var = free[0] if free else symbols("x")
+        roots = sym_solve(eq, var)
+        return {"reply": f"{var} = {_latex_free(roots)}", "sources": []}
+    if name == "derivative":
+        x = symbols("x")
+        d = diff(_sympify(body.replace("^", "**").rstrip(".?!")), x)
+        return {"reply": f"d/dx ({body}) = {_latex_free(d)}", "sources": []}
+    if name == "integral":
+        x = symbols("x")
+        it = integrate(_sympify(body.replace("^", "**").rstrip(".?!")), x)
+        return {"reply": f"∫({body}) dx = {_latex_free(it)} + C", "sources": []}
+    if name == "simplify":
+        s = sym_simp(_sympify(body.replace("^", "**").rstrip(".?!")))
+        return {"reply": f"{body} = {_latex_free(s)}", "sources": []}
+    if name == "percent":
+        g = m.groupdict()
+        if g.get("p"):
+            val = _sympify(g["p"]) * _sympify(g["n"]) / 100
+            return {"reply": f"{g['p']}% of {g['n']} = {_latex_free(val)}", "sources": []}
+        if _sympify(g["n3"]) == 0:  # "240 is what percent of 0" answered "zoo%"
+            return {"reply": "A percentage of 0 isn't defined - nothing can be a share of zero.", "sources": []}
+        val = _sympify(g["n2"]) / _sympify(g["n3"]) * 100
+        return {"reply": f"{g['n2']} / {g['n3']} = {_latex_free(val)}%", "sources": []}
+    if name == "tip":
+        amt = float(m.group("amt").replace(",", ""))
+        pct = float(m.group("pct") or 15)
+        tip = amt * pct / 100
+        return {"reply": (f"Tip at {pct:.0f}%: {tip:,.2f} — total {amt + tip:,.2f}. "
+                          f"(10%: {amt*0.1:,.2f}, 20%: {amt*0.2:,.2f})"), "sources": []}
+    if name == "loan":
+        P = float(m.group("principal").replace(",", ""))
+        r = float(m.group("rate")) / 100 / 12
+        n = int(m.group("years")) * 12
+        pay = P * r * (1 + r) ** n / ((1 + r) ** n - 1) if r else P / n
+        total = pay * n
+        return {"reply": (f"Monthly payment: {pay:,.2f} ({n} months). Total paid: {total:,.2f}, "
+                          f"interest: {total - P:,.2f}."), "sources": []}
+    if name == "prime":
+        n = int(m.group("n"))
+        fac = sympy.factorint(n)
+        parts = " × ".join(f"{p}^{e}" if e > 1 else str(p) for p, e in sorted(fac.items()))
+        return {"reply": f"{n} = {parts}", "sources": []}
+    if name == "total":
+        nums = [float(n.replace(",", "")) for n in re.findall(r"(?<![\w.])\d[\d,]*(?:\.\d+)?", m.group("body"))]
+        if len(nums) < 2 or re.search(r"\b(?:at|each|per|times|x|for|of|every)\b", m.group("body"), I):
+            return None  # prices times quantities are not a plain sum: the model reasons about those
+        return {"reply": " + ".join(f"{n:,.10g}" for n in nums) + f" = {sum(nums):,.10g}", "sources": []}
+    if name == "gcd":
+        a, b = int(m.group("a")), int(m.group("b"))
+        op = "gcd" if t.lower().startswith(("gcd", "hcf")) else "lcm"
+        val = gcd(a, b) if op == "gcd" else lcm(a, b)
+        return {"reply": f"{op.upper()}({a}, {b}) = {val}", "sources": []}
     return None
 
 
@@ -135,4 +172,10 @@ if __name__ == "__main__":
     assert "2^3" in r4["reply"] and "5" in r4["reply"], r4
     r5 = run("loan payment of 500000 at 18% for 5 years", {})
     assert "Monthly payment" in r5["reply"], r5
+    for evil in ("simplify __import__('os').getpid()", "simplify x.__class__", "derivative of [x for x in ()]",
+                 "solve exec('1') = 1", "integral of open"):
+        assert "doesn't look like a maths" in run(evil, {})["reply"], evil
+    assert run("solve 2y + 3 = 11", {})["reply"] == "y = [4]"
+    assert "isn't defined" in run("240 is what percent of 0", {})["reply"]
+    assert "sqrt" not in run("simplify sqrt(16)", {})["reply"].split("=")[1]
     print("[self-check] calc OK - solve/derive/integrate/simplify/percent/tip/loan/prime/gcd exact")

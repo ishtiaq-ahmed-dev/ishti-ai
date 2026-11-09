@@ -29,11 +29,15 @@ function AnswerButtons({ n }: { n: Notif }) {
       .finally(() => setBusy(false));
   };
   return (
-    <div className="flex gap-2 px-12 pb-2">
+    <div className="space-y-1.5 px-12 pb-2">
+      {/* the whole question - what will be sent or run - not a truncated title: an approval must be informed */}
+      {n.body ? <p className="whitespace-pre-wrap break-words text-[11px] text-foreground">{n.body}</p> : null}
+      <div className="flex gap-2">
       <button type="button" disabled={busy} onClick={() => answer("yes")}
         className="rounded-lg bg-accent px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-50 cursor-pointer">Yes</button>
       <button type="button" disabled={busy} onClick={() => answer("no")}
         className="rounded-lg border border-border px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-muted disabled:opacity-50 cursor-pointer">No</button>
+      </div>
     </div>
   );
 }
@@ -83,7 +87,7 @@ function Row({ n, onOpen }: { n: Notif; onOpen?: (n: Notif) => void }) {
           </span>
           {!n.read && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title="Unread" />}
         </span>
-        {n.body ? <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{n.body}</span> : null}
+        {n.body && !n.meta?.answerable ? <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{n.body}</span> : null}
         <span className="mt-1 block text-[10px] uppercase tracking-wide text-muted-foreground/80">
           {label} · {timeAgo(n.ts)}
         </span>

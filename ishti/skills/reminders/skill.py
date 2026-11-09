@@ -92,8 +92,8 @@ def repeat_of(text):
     if per == "month":  # bills: "on the 12th of every month" (default: today's date)
         d = DAY_OF_MONTH.search(text)
         return f"monthly:{int(d['d']) if d else dt.date.today().day}"
-    if m["n"]:
-        return f"every:{int(m['n']) * (3600 if m['u'].lower().startswith('h') else 60)}"
+    if m["n"]:  # "every 0 minutes" looped next_due forever under the facts lock: at least one minute
+        return f"every:{max(60, int(m['n']) * (3600 if m['u'].lower().startswith('h') else 60))}"
     if per == "weekday":
         return "weekdays"
     if per in DAYS:
@@ -125,7 +125,8 @@ def _fits(d, repeat):
 
 def next_due(due, repeat, now):
     d = dt.datetime.fromtimestamp(due)
-    step = dt.timedelta(seconds=int(repeat[6:])) if repeat.startswith("every:") else dt.timedelta(days=1)
+    # max(60, ...): a stored "every:0" from before the guard must not spin forever
+    step = dt.timedelta(seconds=max(60, int(repeat[6:]))) if repeat.startswith("every:") else dt.timedelta(days=1)
     d += step
     while d.timestamp() <= now or (not repeat.startswith("every:") and not _fits(d, repeat)):
         d += step  # missed while ISHTI was off: skip ahead, don't replay every missed one
@@ -235,8 +236,9 @@ def _done_rows(t):
     m = DONE.match(t.strip())
     if not m:
         return []
-    words = [w for w in re.findall(r"[a-z0-9']+", (m["what"] or m["what2"] or "").lower()) if w not in ("the", "my", "a", "task", "reminder")]
-    return [r for r in _pending(_db()) if words and all(w in r[2].lower() for w in words)]
+    words = [w for w in re.findall(r"[a-z0-9']+", (m["what"] or m["what2"] or "").lower())
+             if w not in ("the", "my", "a", "task", "reminder", "it", "that", "this", "them", "one", "thing")]
+    return [r for r in _pending(_db()) if words and all(re.search(rf"\b{re.escape(w)}\b", r[2].lower()) for w in words)]
 
 
 WHEN_DUE = re.compile(r"^\s*when\s+is\s+(?:my\s+)?(?P<what>[\w\s.-]+?)\s+due\??\s*$", I)
@@ -359,8 +361,13 @@ def run(text, session, now=None):
         elif m["num"]:
             hit = rows[int(m["num"]) - 1: int(m["num"])]
         else:
-            words = m["what"].lower().split()
-            hit = [r for r in rows if words and all(w in r[2].lower() for w in words)] or rows[:1] * (not words)
+            words = [w for w in m["what"].lower().split()
+                     if w not in ("the", "my", "a", "it", "that", "this", "alarm", "reminder", "timer", "next", "one")]
+            hit = [r for r in rows if words and all(re.search(rf"\b{re.escape(w)}\b", r[2].lower()) for w in words)]
+            if not words:
+                return {"reply": "Which one? " + "; ".join(f"{i}. {_fmt(d, now)}: {x}" for i, (_, d, x) in
+                                                          enumerate(rows[:6], 1)) + " - say e.g. \"cancel reminder 2\".",
+                        "sources": []}
         with f.lock, f.db:
             f.db.executemany("UPDATE reminders SET done=1 WHERE id=?", [(r[0],) for r in hit])
         return {"reply": ("Cancelled: " + "; ".join(r[2] for r in hit)) if hit else "No matching reminder.",

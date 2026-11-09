@@ -831,8 +831,11 @@ async def memory_item_edit(mid: str, req: Request):
     content = str((await req.json()).get("content", "")).strip()
     if not content or len(content) > 1000:
         return JSONResponse({"error": "content must be 1-1000 characters"}, status_code=400)
-    if not amem.get(mid):
+    old = amem.get(mid)
+    if not old:
         return JSONResponse({"error": "no such memory"}, status_code=404)
+    if old["content"].strip() == content:  # unchanged: superseding would hide the very row being kept
+        return JSONResponse({"item": old})
     return JSONResponse({"item": amem.supersede(mid, content, source="explicit_user")})
 
 
@@ -1080,7 +1083,14 @@ def run_scheduled(t):
         return None
     _FAIL_STREAK.pop(sid, None)
     if re.search(r"\(yes/no\)\s*$", reply):
-        notifications_store.add("alert", f"Waiting for your yes: {reply[:250]}", meta={"session": sid, "answerable": True})
+        from ishti.dispatcher import SESSIONS
+        pending = (SESSIONS.get(sid) or {}).get("pending") or {}
+        for old in notifications_store.recent(100):  # an older question of this job can no longer be answered
+            if (old.get("meta") or {}).get("session") == sid and (old.get("meta") or {}).get("answerable"):
+                notifications_store.set_meta(old["id"], {**old["meta"], "answerable": False})
+        # the full question in the body (what will be sent/run), the pending's timestamp ties the answer to it
+        notifications_store.add("alert", f"Waiting for your yes: {reply[:120]}", body=reply[:2000],
+                                meta={"session": sid, "answerable": True, "pending_at": pending.get("at")})
         return None
     # silent unless something changed: a repeating check ("every hour check my inbox") with the same answer as last
     # time says nothing. ponytail: in memory, so the first run after a restart always speaks.
@@ -1111,6 +1121,13 @@ async def notification_answer(nid: int, req: Request):
     sid = str(meta.get("session", ""))
     if not (meta.get("answerable") and sid.startswith("scheduled-")):
         return JSONResponse({"error": "nothing is waiting for an answer here"}, status_code=404)
+    from ishti.dispatcher import SESSIONS
+    live = (SESSIONS.get(sid) or {}).get("pending") or {}
+    if meta.get("pending_at") is None or live.get("at") != meta.get("pending_at"):
+        # a later run of the job asked something else: a yes here would approve THAT, not what this entry shows
+        notifications_store.set_meta(nid, {**meta, "answerable": False})
+        return JSONResponse({"error": "That question has expired or been replaced - nothing was done."}, status_code=409)
+    notifications_store.set_meta(nid, {**meta, "answerable": False})
     # a second or late answer is safe: the session's pending action is consumed once and expires after 10 minutes
     notifications_store.mark_read(nid)
     res = await asyncio.to_thread(ishti_handle, answer, session_id=sid, channel="scheduled")

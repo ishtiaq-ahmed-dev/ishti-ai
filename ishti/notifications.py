@@ -64,6 +64,18 @@ def add(kind, title, body="", meta=None):
         return None
 
 
+def set_meta(nid, meta) -> bool:
+    """Replace one notification's meta (a bell question is retired once answered or replaced)."""
+    try:
+        f = _db()
+        with f.lock, f.db:
+            return bool(f.db.execute("UPDATE notifications SET meta=? WHERE id=?",
+                                     (json.dumps(meta or {}, default=str)[:2000], int(nid))).rowcount)
+    except Exception as exc:
+        swallowed("ishti/notifications.py:set_meta", exc)
+        return False
+
+
 def get(nid):
     """One notification by id, or None."""
     try:

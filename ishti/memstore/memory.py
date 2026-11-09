@@ -333,6 +333,8 @@ def _nearest(content: str, limit: int = 40) -> list:
 
 
 _SUBJECT = re.compile(r"^\s*(?:i\s+think\s+)?(?P<s>(?:my|our|the\s+owner'?s)\s+[\w' -]{2,40}?)\s+(?:is|are|was)\s+(?P<v>.+?)\s*[.!]?\s*$", re.I)
+_SINGLE_VALUED = re.compile(r"\b(?:favou?rite|car|city|address|job|employer|company|birthday|age|email|phone|"
+                            r"number|name|wife|husband|blood\s+group|university|school)\b", re.I)
 _CORRECTION = re.compile(r"[,\s]+(?:actually|now|instead|these\s+days|anymore)\s*[.!]?\s*$", re.I)
 
 
@@ -357,7 +359,9 @@ def reconcile(content: str, mtype="semantic", source="inference", importance=0.5
         return semantic(content, source=source, importance=importance, confidence=confidence)
     # "my favourite colour is green (actually)" against "my favourite colour is blue": same subject, new value -
     # superseded without a model call (the small failover model answered ADD and both lines stayed live)
-    if (subj := _subject(content)):
+    # only a correction ("... actually", "... now") or a one-value subject (my car, my city): "my sister is a doctor"
+    # must not erase "my sister is Hina" - several values can be true at once
+    if (subj := _subject(content)) and (_CORRECTION.search(content) or _SINGLE_VALUED.search(subj)):
         for r in existing:
             if _subject(r["content"]) == subj:
                 if _value(r["content"]) == _value(content):

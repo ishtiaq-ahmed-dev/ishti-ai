@@ -70,20 +70,28 @@ def _find(q: str) -> str:
     return "Found:\n" + "\n".join(f"- {h}" for h in hits[:10])
 
 
-def _delete(q: str) -> str:
-    words = [w for w in re.findall(r"\w{3,}", q.lower())]
+_STOP = {"the", "about", "note", "notes", "that", "this", "with", "from", "and", "for", "my", "one"}
+
+
+def _delete(q: str, session=None):
+    words = [w for w in re.findall(r"\w{3,}", q.lower()) if w not in _STOP]
     with _lock, _db() as c:
         rows = c.execute("SELECT id, body FROM notes ORDER BY ts DESC").fetchall()
-    victims = [(i, b) for i, b in rows if (not words or any(w in b.lower() for w in words))]
+    victims = [(i, b) for i, b in rows if words and all(re.search(rf"\b{re.escape(w)}\b", b.lower()) for w in words)]
     if not victims:
         return f"No note matches \"{q.strip()}\" - nothing deleted."
     if len(victims) > 1:
         return ("Several notes match - which one?\n"
                 + "\n".join(f"- {b}" for _i, b in victims[:8])
                 + "\nSay 'delete the note <exact words>' to pick one.")
-    with _lock, _db() as c:
-        c.execute("DELETE FROM notes WHERE id=?", (victims[0][0],))
-    return f"Deleted the note: \"{victims[0][1]}\"."
+    def remove():
+        with _lock, _db() as c:
+            c.execute("DELETE FROM notes WHERE id=?", (victims[0][0],))
+        return f"Deleted the note: \"{victims[0][1]}\"."
+    if session is None:
+        return remove()
+    from ishti.skills import ask_first
+    return ask_first(session, "notes", f"Delete the note \"{victims[0][1][:80]}\"", remove)
 
 
 def match(text):
@@ -104,7 +112,8 @@ def run(text, session):
         return {"reply": _find(m.group("q") or m.group("q2") or ""), "sources": []}
     m = DELETE.match(t)
     if m:
-        return {"reply": _delete(m.group("q")), "sources": []}
+        out = _delete(m.group("q"), session)
+        return out if isinstance(out, dict) else {"reply": out, "sources": []}
     return None
 
 
@@ -126,8 +135,11 @@ if __name__ == "__main__":
     assert "projector" in r2["reply"], r2
     r3 = run("find the note about projector", {})
     assert "projector" in r3["reply"], r3
-    r4 = run("delete the note about projector", {})
-    assert "Deleted" in r4["reply"], r4
+    sess = {}
+    r4 = run("delete the note about projector", sess)
+    assert "(yes/no)" in r4["reply"], r4  # a delete is confirmed first
+    assert "Deleted" in sess["pending"]["action"](), sess
+    assert "nothing deleted" in run("delete the note about the car", {})["reply"]  # "car" is not "card"
     r5 = run("note the projector cable is broken", {})  # r4 deleted it: adding again must work
     assert "Noted" in r5["reply"], r5
     r6 = run("note the projector cable is broken", {})

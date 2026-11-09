@@ -247,6 +247,27 @@ class ConversationManager:
                 return False
         return False
 
+    def redact_text(self, session_id: str, raw: str, masked: str) -> int:
+        """Replace a saved message (and a title made from it) that still holds a secret the turn masked afterwards."""
+        sid = str(session_id or "")
+        if not sid or "/" in sid or "\\" in sid or not raw or raw == masked:
+            return 0
+        with self._write_lock:
+            session = self.load_session(sid)
+            if not session:
+                return 0
+            n = 0
+            for m in session.get("messages", []):
+                if m.get("role") == "user" and raw in str(m.get("content") or ""):
+                    m["content"], n = str(m["content"]).replace(raw, masked), n + 1
+            clean_raw = " ".join(re.findall(r"\w+", raw, flags=re.UNICODE))
+            if clean_raw and str(session.get("title") or "").rstrip(".").startswith(clean_raw[:38]):
+                clean = " ".join(re.findall(r"\w+", masked, flags=re.UNICODE))
+                session["title"], n = ((clean[:38] + "...") if len(clean) > 38 else (clean or "Conversation")), n + 1
+            if n:
+                self._save_session(sid, session)
+            return n
+
     def rename_session(self, session_id: str, title: str) -> Optional[str]:
         """Set a chat's title (one line, max 80 chars). Returns the saved title, or None if the chat is gone."""
         sid = str(session_id or "")

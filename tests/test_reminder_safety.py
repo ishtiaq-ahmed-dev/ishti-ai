@@ -1,0 +1,45 @@
+"""Reminder edge cases from the skill review: a zero interval can't freeze the app, "I did it" closes nothing it
+doesn't name, and a bare "stop the alarm" asks which one. Scratch facts store (conftest)."""
+import datetime as dt
+import time
+
+from ishti.facts import get_facts
+from ishti.skills.reminders import skill as reminders
+
+
+def _add(text, due):
+    reminders._db()
+    f = get_facts()
+    with f.lock, f.db:
+        f.db.execute("INSERT INTO reminders(due, text, created) VALUES(?,?,?)", (due, text, time.time()))
+
+
+def test_zero_interval_is_clamped_and_cannot_spin():
+    assert reminders.repeat_of("remind me every 0 minutes to drink water") == "every:60"
+    start = time.monotonic()
+    nxt = reminders.next_due(time.time() - 86400, "every:0", time.time())  # a stored zero from before the guard
+    assert nxt > time.time() and time.monotonic() - start < 1
+
+
+def test_pronoun_done_closes_nothing_and_whole_words_only():
+    for text in ("submit the report", "visit the doctor", "call mom"):
+        _add(text, time.time() + 3600)
+    assert reminders._done_rows("I did it") == []
+    assert reminders._done_rows("mark call mom as done") and not reminders._done_rows("mark car as done")
+
+
+def test_bare_cancel_asks_which_one():
+    _add("call the bank", time.time() + 600)
+    out = reminders.run("stop the alarm", {})
+    assert out and "Which one?" in out["reply"]
+    assert any("call the bank" in r[2] for r in reminders._pending(reminders._db()))
+
+
+def test_skill_review_regressions_calc_notes_email_habits():
+    from ishti.skills.calc import skill as calc
+    from ishti.skills.habits.skill import TRACK_SHORT
+    from ishti.skills.notes import skill as notes
+    assert "doesn't look like a maths" in calc.run("simplify __import__('os').getpid()", {})["reply"]
+    assert not TRACK_SHORT.match("track my order") and TRACK_SHORT.match("track water")
+    notes.run("note bank card is in the drawer", {})
+    assert "nothing deleted" in notes.run("delete the note about the car", {})["reply"]
