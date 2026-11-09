@@ -88,6 +88,29 @@ def _write_defaults():
     _write(DEFAULTS)
 
 
+def in_quiet_hours(spec=None, now=None) -> bool:
+    """True inside the owner's quiet hours. The Connectors page saves "22:00-07:00"; older configs held
+    {"start": 22, "end": 7}. push() read only the dict form, so with quiet hours set every push failed silently."""
+    import datetime as dt
+    spec = load().get("quiet_hours") if spec is None else spec
+    if isinstance(spec, dict):
+        s, e = spec.get("start"), spec.get("end")
+    elif isinstance(spec, str) and "-" in spec:
+        s, e = spec.split("-", 1)
+    else:
+        return False
+
+    def hm(x):  # "7", "7:00", "07:30", 22
+        h, _, m = str(x).strip().partition(":")
+        return dt.time(int(h), int(m or 0))
+    try:
+        start, end = hm(s), hm(e)
+    except (TypeError, ValueError):
+        return False
+    t = (now or dt.datetime.now()).time()
+    return start <= t < end if start <= end else (t >= start or t < end)
+
+
 def load(force=False) -> dict:
     """The effective policy: file values over DEFAULTS (so new keys always exist)."""
     now = time.time()

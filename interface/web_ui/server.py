@@ -303,20 +303,23 @@ async def _capture_loop():
     from ishti import CONFIG
     from ishti.skills.reminders.skill import start as start_reminders
 
-    def announce(msg, kind="job"):  # due reminders: HUD always, spoken unless the owner muted audio
+    def announce(msg, kind="job"):  # due reminders: HUD and bell always, spoken unless muted or in quiet hours
+        if msg is None:  # the job already left its own bell entry (a question waiting for a yes, or a failure)
+            return
         sync_event_callback("assistant_message", {"reply": "⏰ " + msg})
         text = str(msg or "").strip()
         # persistent bell entry (survives restarts); the announced prefix tells reminders/timers apart
         notifications_store.add("reminder" if text.lower().startswith(("reminder", "timer")) else kind, text)
-        if get_user_memory().get_preferences().audio_output:
+        from ishti.channels import policy as _policy
+        if get_user_memory().get_preferences().audio_output and not _policy.in_quiet_hours():
             from ishti.voice import speak as piper_speak
             piper_speak(msg)
 
     # scheduled tasks ("every morning at 8 give me my brief") run through the dispatcher; the answer is announced
-    start_reminders(announce, run_task=lambda t: ishti_handle(t, session_id="scheduled", channel="scheduled")["final_answer"])
+    start_reminders(announce, run_task=run_scheduled)
     from ishti.skills.automation.skill import start as start_automations
     # "when a pdf appears in downloads, summarize it": the action runs like a scheduled task, its answer is announced
-    start_automations(announce, run_task=lambda t: ishti_handle(t, session_id="scheduled", channel="scheduled")["final_answer"])
+    start_automations(announce, run_task=run_scheduled)
     from ishti.skills.focus.skill import start as start_focus
     start_focus(announce)  # focus sprints: "start a 25 minute focus sprint" ends with an announcement
     from ishti.skills.webtools.skill import _start as start_page_watch
@@ -1051,6 +1054,45 @@ async def notifications_mark_read(req: Request):
     nid = body.get("id") if isinstance(body, dict) else None
     return JSONResponse({"unread": notifications_store.mark_read(nid),
                          "marked": "all" if nid in (None, "") else nid})
+
+
+def run_scheduled(t):
+    """A scheduled task / automation runs in its OWN session, so its yes/no question belongs to it: in the one shared
+    "scheduled" session a question could only be answered from that session (nobody could) and concurrent jobs
+    overwrote each other's. The question waits in the bell with Yes/No; a failure is reported, never swallowed."""
+    import hashlib
+    sid = "scheduled-" + hashlib.sha1(t.encode("utf-8")).hexdigest()[:10]  # no ":" - session ids become file names
+    try:
+        reply = ishti_handle(t, session_id=sid, channel="scheduled").get("final_answer") or ""
+    except Exception as exc:
+        notifications_store.add("error", f"Scheduled task failed: {t[:120]}", f"{type(exc).__name__}: {exc}"[:300])
+        return None
+    if re.search(r"\(yes/no\)\s*$", reply):
+        notifications_store.add("alert", f"Waiting for your yes: {reply[:250]}", meta={"session": sid, "answerable": True})
+        return None
+    return reply
+
+
+@app.post("/api/notifications/{nid}/answer")
+async def notification_answer(nid: int, req: Request):
+    """The owner's yes/no to a scheduled job's question, sent into that job's own session (the dispatcher's approval
+    rules apply unchanged, including the 10-minute expiry)."""
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    answer = str((body or {}).get("answer", "")).strip().lower()
+    if answer not in ("yes", "no"):
+        return JSONResponse({"error": "answer must be yes or no"}, status_code=400)
+    n = notifications_store.get(nid) or {}
+    meta = n.get("meta") or {}
+    sid = str(meta.get("session", ""))
+    if not (meta.get("answerable") and sid.startswith("scheduled-")):
+        return JSONResponse({"error": "nothing is waiting for an answer here"}, status_code=404)
+    # a second or late answer is safe: the session's pending action is consumed once and expires after 10 minutes
+    notifications_store.mark_read(nid)
+    res = await asyncio.to_thread(ishti_handle, answer, session_id=sid, channel="scheduled")
+    return JSONResponse({"reply": res.get("final_answer", "")})
 
 
 # ========================================================

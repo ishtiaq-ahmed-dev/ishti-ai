@@ -165,13 +165,7 @@ class RemoteService:
             swallowed('ishti/channels/service.py:RemoteService.push', _exc)
         try:
             from ishti.channels import output
-            quiet = policy_mod.load().get("quiet_hours") or {}
-            import datetime as dt
-            now_h = dt.datetime.now().hour
-            s, e = quiet.get("start"), quiet.get("end")
-            in_quiet = (s is not None and e is not None and
-                        ((s <= e and (now_h >= s and now_h < e)) or (s > e and (now_h >= s or now_h < e))))
-            if urgent or not in_quiet:
+            if urgent or not policy_mod.in_quiet_hours():
                 if self.poller and self.poller.running and self.client and security.status()["paired_ids"]:
                     chat_id = security.status()["paired_ids"][0]
                     for ch in output.prepare_reply(text)[0]:

@@ -102,3 +102,45 @@ if __name__ == "__main__":
     test_add_publishes_on_the_event_bus(None)
     test_api_list_and_mark_read(None)
     print("[self-check] notifications tests OK")
+
+
+def test_scheduled_job_question_waits_in_the_bell_and_is_answered_in_its_own_session(store, monkeypatch):
+    from interface.web_ui import server
+    seen = []
+
+    def fake_handle(text, session_id, channel):
+        seen.append((text, session_id, channel))
+        if text == "yes":
+            return {"final_answer": "Sent."}
+        return {"final_answer": "Shall I send the weekly report to Sara? (yes/no)"}
+    monkeypatch.setattr(server, "ishti_handle", fake_handle)
+    assert server.run_scheduled("every friday email the weekly report to Sara") is None  # nothing spoken
+    note = notifications.recent()[0]
+    sid = note["meta"]["session"]
+    assert note["meta"]["answerable"] and sid.startswith("scheduled-") and ":" not in sid
+    assert server.run_scheduled("summarise my downloads") is None
+    assert notifications.recent()[0]["meta"]["session"] != sid  # each job has its own session
+    client = TestClient(server.app, base_url="http://127.0.0.1", client=("127.0.0.1", 50000))
+    assert client.post(f"/api/notifications/{note['id']}/answer", json={"answer": "maybe"}).status_code == 400
+    r = client.post(f"/api/notifications/{note['id']}/answer", json={"answer": "yes"})
+    assert r.status_code == 200 and r.json()["reply"] == "Sent." and seen[-1] == ("yes", sid, "scheduled")
+    plain = notifications.add("job", "Brief ready")
+    assert client.post(f"/api/notifications/{plain['id']}/answer", json={"answer": "yes"}).status_code == 404
+
+
+def test_scheduled_job_failure_is_reported_not_swallowed(store, monkeypatch):
+    from interface.web_ui import server
+    monkeypatch.setattr(server, "ishti_handle", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("network down")))
+    assert server.run_scheduled("give me my brief") is None
+    row = notifications.recent()[0]
+    assert row["kind"] == "error" and "give me my brief" in row["title"] and "network down" in row["body"]
+
+
+def test_quiet_hours_understands_the_saved_string_and_the_old_dict():
+    import datetime as dt
+    from ishti.channels.policy import in_quiet_hours
+    at = lambda h, m=0: dt.datetime(2026, 11, 9, h, m)
+    assert in_quiet_hours("22:00-07:00", at(23)) and in_quiet_hours("22:00-07:00", at(6, 59))
+    assert not in_quiet_hours("22:00-07:00", at(7)) and not in_quiet_hours("22:00-07:00", at(12))
+    assert in_quiet_hours({"start": 22, "end": 7}, at(1)) and not in_quiet_hours({"start": 22, "end": 7}, at(9))
+    assert in_quiet_hours("13:00-14:30", at(14, 0)) and not in_quiet_hours("", at(3)) and not in_quiet_hours("junk", at(3))

@@ -12,7 +12,31 @@ export type Notif = {
   title: string;
   body?: string;
   read: boolean;
+  meta?: { answerable?: boolean };
 };
+
+/** A scheduled job's yes/no question, answered from the bell (the job runs in its own session server-side). */
+function AnswerButtons({ n }: { n: Notif }) {
+  const [reply, setReply] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (!n.meta?.answerable) return null;
+  if (reply !== null) return <p className="px-12 pb-2 text-[11px] text-muted-foreground" role="status">{reply}</p>;
+  const answer = (a: "yes" | "no") => {
+    setBusy(true);
+    postJSON<{ reply?: string }>(`/api/notifications/${n.id}/answer`, { answer: a })
+      .then((r) => setReply(r.reply || (a === "yes" ? "Done." : "Cancelled.")))
+      .catch((e) => setReply(e instanceof Error ? e.message : String(e)))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div className="flex gap-2 px-12 pb-2">
+      <button type="button" disabled={busy} onClick={() => answer("yes")}
+        className="rounded-lg bg-accent px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-50 cursor-pointer">Yes</button>
+      <button type="button" disabled={busy} onClick={() => answer("no")}
+        className="rounded-lg border border-border px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-muted disabled:opacity-50 cursor-pointer">No</button>
+    </div>
+  );
+}
 
 const KIND: Record<string, { label: string; icon: typeof Bell; tint: string }> = {
   reminder: { label: "Reminder", icon: BellRing, tint: "bg-violet-500/12 text-violet-500 dark:text-violet-400" },
@@ -115,7 +139,12 @@ export function NotificationPopover({
       </div>
       <div className="scroll-thin max-h-[min(60vh,400px)] overflow-y-auto p-1.5">
         {items.length ? (
-          items.map((n) => <Row key={n.id} n={n} onOpen={(x) => { if (!x.read) onMarkOne(x.id); }} />)
+          items.map((n) => (
+            <div key={n.id}>
+              <Row n={n} onOpen={(x) => { if (!x.read) onMarkOne(x.id); }} />
+              <AnswerButtons n={n} />
+            </div>
+          ))
         ) : (
           <p className="px-3 py-8 text-center text-xs text-muted-foreground">You're all caught up.</p>
         )}
@@ -186,7 +215,10 @@ export function NotificationsPanel() {
       <div className="divide-y divide-border/40">
         {items.length ? (
           items.map((n) => (
-            <Row key={n.id} n={n} onOpen={(x) => { if (!x.read) void mark({ id: x.id }); }} />
+            <div key={n.id}>
+              <Row n={n} onOpen={(x) => { if (!x.read) void mark({ id: x.id }); }} />
+              <AnswerButtons n={n} />
+            </div>
           ))
         ) : (
           <p className="px-4 py-10 text-center text-sm text-muted-foreground">
