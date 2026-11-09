@@ -31,7 +31,9 @@ OPS = [
     ("install", re.compile(r"\binstall\s+(?:the\s+|a\s+)?skill\b.*github\.com|\badd\s+(?:the\s+)?skill\s+from\b", I)),
     ("remove", re.compile(r"\b(?:remove|uninstall|delete)\s+(?:the\s+)?(?P<name>[\w-]+)\s+skill\b", I)),
     ("list", re.compile(r"\b(?:list|show)\s+(?:the\s+)?(?:installed|added|custom|external)\s+skills\b", I)),
-    ("create", re.compile(r"\b(?:create|build|make|write)\s+(?:a\s+|me\s+a\s+)?(?:new\s+)?skill\s+(?:that|to|for|which)\b|\blearn\s+(?:how\s+)?to\s+\w+", I)),
+    # "learn how to cook" is a question, not a request to write and run code on this PC: only an explicit
+    # "create a skill that ..." builds one.
+    ("create", re.compile(r"\b(?:create|build|make|write)\s+(?:a\s+|me\s+a\s+)?(?:new\s+)?skill\s+(?:that|to|for|which)\b", I)),
 ]
 
 
@@ -148,6 +150,13 @@ def op_install(m, text, session):
 
 
 def op_create(m, text, session):
+    """Building a skill runs model-written code on this PC (its self-check), so the owner says yes BEFORE any code is
+    generated or executed; the finished skill is then shown, scanned and installed only after a second yes."""
+    return ask_first(session, "skillsmith", "Write a new skill for this and run its self-test on this PC "
+                     "(model-written code; I'll show it before installing)", lambda: _build(m, text, session))
+
+
+def _build(m, text, session):
     """The coder model writes a new skill in ISHTI's shape; it is shown and scanned before anything is installed."""
     example = open(os.path.join(SKILLS_DIR, "utilities", "skill.py"), encoding="utf-8").read()[:2500]
     trace(session, "coder", "writing the new skill", status="start")
@@ -233,10 +242,15 @@ def op_remove(m, text, session):
 if __name__ == "__main__":
     import tempfile
     cases = {"install the skill from https://github.com/x/y": "install", "create a skill that tells me a random quote": "create",
-             "learn to convert roman numerals": "create", "list installed skills": "list", "remove the quotes skill": "remove"}
+             "learn to convert roman numerals": None, "learn how to cook biryani": None,
+             "list installed skills": "list", "remove the quotes skill": "remove"}
     for t, want in cases.items():
         got = next((n for n, rx in OPS if rx.search(t)), None)
         assert got == want, (t, got, want)
+    ran = []
+    s = {}
+    out = op_create(OPS[3][1].search("create a skill that says hi"), "create a skill that says hi", s)
+    assert s.get("pending") and not ran, "no model-written code may be generated or run before the owner's yes"
     d = tempfile.mkdtemp()
     assert validate(d)[1].startswith("it isn't")
     json.dump({"name": "demo_skill"}, open(os.path.join(d, "manifest.json"), "w"))

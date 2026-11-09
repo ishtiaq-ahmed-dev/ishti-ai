@@ -29,11 +29,11 @@ def digits(value: str) -> str:
 
 
 def numbers_match(left: str, right: str) -> bool:
-    """Match international/local spellings without ever treating a LID as a phone number."""
-    a, b = digits(left), digits(right)
-    if len(a) < 10 or len(b) < 10:
-        return False
-    return any(a[-size:] == b[-size:] for size in range(min(12, len(a), len(b)), 9, -1))
+    """Full international digits must be equal (control numbers are saved as E.164; WhatsApp IDs carry the country
+    code). A 10-digit suffix match let a number in another country with the same national digits pass the
+    allowlist. "00" international prefixes are normalised; a LID is never treated as a phone number."""
+    a, b = (d[2:] if d.startswith("00") else d for d in (digits(left), digits(right)))
+    return len(a) >= 10 and a == b
 
 
 def _phone_candidates(row: dict) -> list[str]:

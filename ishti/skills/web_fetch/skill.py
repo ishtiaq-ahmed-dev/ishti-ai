@@ -11,7 +11,7 @@ import requests
 from ishti import llm
 from ishti.untrusted import fence, guard
 from ishti.skills import trace
-from ishti.skills.browser.skill import TRIGGER as BROWSER_TRIGGER
+from tools.web.fetch import BlockedURL, safe_get
 
 URL = re.compile(r"https?://[^\s<>\"')]+|(?<![@\w.])(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|org|net|edu|gov|pk|io|ai|"
                  r"co|info|uk|us|dev|app)(?:\.[a-z]{2})?(?:/[^\s<>\"')]*)?(?![\w.])", re.I)
@@ -25,6 +25,9 @@ FILLER = re.compile(r"\b(?:please|can|could|you|search|find|look|check|try|here|
                     r"for|me|and|give|get|show|official|from|it|there|now|go|to|a|of)\b", re.I)
 
 
+# "open/go to <url>" or "... in the browser" means SHOW the page (the apps skill opens the default browser), not read it.
+BROWSER_TRIGGER = re.compile(r"^(?:please\s+)?(?:go\s+to|navigate\s+to|visit|browse\s+to|open)\s|"
+                             r"\b(?:in|on|using|with)\s+(?:the\s+|a\s+|my\s+)?(?:web\s+)?browser\b", re.I)
 SOCIAL = re.compile(r"(?:linkedin|instagram|facebook|twitter|x\.com|whatsapp|mail\.google|gmail)", re.I)
 ACT_ON_SITE = re.compile(r"\b(?:send|reply|message|connect|comment|post|write|forward|accept|invite)\b", re.I)
 
@@ -107,16 +110,9 @@ from ishti import PDFIUM_LOCK as PDF_LOCK  # noqa: E402
 
 
 def read(url):
-    """(title, text) of a page or PDF.
-
-    Section 8: Obscura (the Rust headless browser) is the DEFAULT reader - real JavaScript,
-    ~30 MB RAM, markdown for LLMs, robots.txt obeyed. Static fetch + pdfium remain the fallbacks;
-    logged-in/interactive pages belong to the browser skill (Playwright MCP), not here."""
-    from ishti import obscura
-    o = obscura.read_page(url)
-    if o.get("ok") and o.get("content", "").strip():
-        return o.get("title") or url, o["content"]
-    r = requests.get(url, headers=UA, timeout=15)
+    """(title, text) of a public page or PDF over plain HTTP (SSRF-guarded: public hosts only, every redirect checked).
+    Pages that only render with JavaScript or behind a login come back empty and are reported as unreadable."""
+    r = safe_get(url, headers=UA, timeout=15)
     if url.lower().endswith(".pdf") or "pdf" in r.headers.get("content-type", ""):
         import pypdfium2 as pdfium
         with PDF_LOCK:  # pdfium is not thread-safe: downloads overlap, parsing takes turns (it crashed otherwise)
@@ -139,7 +135,7 @@ def links(url, goal):
     extra = strong - own if own & (strong | {"semester", "term"}) else set()
     import datetime
     year = datetime.date.today().year
-    html = requests.get(url, headers=UA, timeout=15).text
+    html = safe_get(url, headers=UA, timeout=15).text
     host = urlparse(url).netloc.removeprefix("www.")
     scored = {}
     for href, label in re.findall(r'<a[^>]+href="([^"#]+)"[^>]*>(.*?)</a>', html, re.S | re.I):
@@ -160,9 +156,19 @@ def links(url, goal):
 
 
 def answers(goal, title, body):
-    v = llm.ask(f"Does this page contain {goal}? Page: {title}\n{fence(focus(body, goal, 2500), title)}\nReply yes or no.", system=None,
-                temperature=0, max_tokens=3).lower()
-    return v.startswith("yes")
+    return bool(which_answer(goal, [(title, body)]))
+
+
+def which_answer(goal, pages):
+    """Indexes of the pages that contain the goal - ONE model call for all candidates (it used to be one per page,
+    up to 9 calls per request)."""
+    if not pages:
+        return []
+    per = max(600, 6000 // len(pages))
+    blocks = "\n\n".join(f"[{i}] {t}\n{fence(focus(b, goal, per), t)}" for i, (t, b) in enumerate(pages, 1))
+    v = llm.ask(f"Which of these pages contain {goal}?\n\n{blocks}\n\nReply with the page numbers separated by commas, "
+                "or 'none'.", system=None, temperature=0, max_tokens=20).lower()
+    return [int(n) - 1 for n in re.findall(r"\d+", v) if 0 < int(n) <= len(pages)]
 
 
 def run(text, session):
@@ -173,6 +179,8 @@ def run(text, session):
     goal, url = goal_of(text, found), full_url(found)
     try:
         title, body = read(url)
+    except BlockedURL as exc:
+        return {"reply": f"I won't read {url}: {exc}.", "sources": [], "no_escalate": True}
     except Exception as exc:
         return {"reply": f"Couldn't read {url}: {type(exc).__name__}", "sources": []}
     pages = [(url, title, body)]
@@ -192,22 +200,20 @@ def run(text, session):
             for hub in hubs:
                 try:
                     more = [u for u in deeper[hub].result() if u not in cands][:3]
-                except requests.RequestException:
+                except (requests.RequestException, BlockedURL):
                     continue
                 cands[cands.index(hub) + 1:cands.index(hub) + 1] = more
             order = list(dict.fromkeys(cands))[:8]
             fetched = {u: pool.submit(read, u) for u in order}  # all candidate pages download at once
-            pages, checked = [], []
-            for u in order:  # ...but are judged in the same order as before, so the result is the same
+            checked = []
+            for u in order:
                 try:
                     t, b = fetched[u].result()
                 except Exception:
                     continue
                 checked.append((u, t, b))
-                if len(b.strip()) > 80 and answers(goal, t, b):
-                    pages.append((u, t, b))
-                if len(pages) >= 2:
-                    break
+            readable = [c for c in checked if len(c[2].strip()) > 80]
+            pages = [readable[i] for i in which_answer(goal, [(t, b) for _, t, b in readable])][:2]
         if not pages and checked:  # nothing is exactly it: answer from the closest document, saying what is there
             best = max(checked, key=lambda c: hits(c[2], goal))
             if hits(best[2], goal) >= 6:

@@ -24,10 +24,14 @@ DEFAULT_TIMEOUT = 45
 WRITE_HINTS = re.compile(
     r"\b(?:install|uninstall|remove|delete|push|commit|reset|clean|mv|move|rm|del|copy|cp|"
     r"mkdir|chmod|chown|pip\s+install|npm\s+(?:i|install)|git\s+(?:push|reset|clean|rm))\b", re.I)
-# read-only: safe to run without confirmation when the exe is allow-listed
+# read-only: the ONLY shapes that run without confirmation. Everything else asks first: an interpreter
+# (python -c, node -e), a package script (npm run), a test runner (pytest imports project code) or a git
+# option can execute arbitrary code without containing a single "write" word.
 READ_ONLY = re.compile(
-    r"^(?:git\s+(?:status|log|diff|show|branch)|pytest|pip\s+(?:list|show|freeze)|python\s+--version|"
-    r"python\s+-[vc]\s|node\s+--version|npm\s+(?:ls|run\s+test)|dir|ls|echo|type|where|get-?location)\b", re.I)
+    r"^(?:git\s+(?:status|log|diff|show|branch)|pip\s+(?:list|show|freeze)|python\s+(?:--version|-V)|"
+    r"node\s+(?:--version|-v)|npm\s+(?:ls|--version)|dir|ls|echo|where|get-?location)(?:\s|$)", re.I)
+# options that turn a read-only git/pip command into one that writes files or runs helpers
+UNSAFE_ARGS = re.compile(r"(?:^|\s)(?:--output|--ext-diff|--textconv|-c\s|--exec|--upload-pack|-o\s)", re.I)
 
 
 def _lists() -> tuple[list, list]:
@@ -68,7 +72,7 @@ def parse(command: str) -> dict:
     if allow and not any(exe == a.lower() or exe.startswith(a.lower()) for a in allow):
         return {"ok": False, "exe": exe,
                 "reason": f"'{exe}' is not on the terminal allow-list (Settings -> Skills -> terminal_allow)"}
-    write = bool(WRITE_HINTS.search(cmd)) and not READ_ONLY.match(cmd)
+    write = bool(WRITE_HINTS.search(cmd)) or not READ_ONLY.match(cmd) or bool(UNSAFE_ARGS.search(cmd))
     return {"ok": True, "exe": exe, "args": args, "write": write,
             "reason": "read-only" if not write else "changes the system"}
 
@@ -174,4 +178,7 @@ if __name__ == "__main__":
     # the T2 path is decided in run() — verify the decision logic only (no UI here)
     assert parse("git push origin main")["write"] is True
     assert parse("git log --oneline")["write"] is False
+    for code_exec in ('python -c "import os"', 'node -e "1"', "npm run build", "pytest -q", "git -c core.pager=x log",
+                      "git log --output=x.txt", "python script.py"):
+        assert parse(code_exec)["write"] is True, code_exec  # runs code: always asks first
     print("[self-check] terminal OK — parse (allow/deny/no-shell/write-detect), execute (real cmd, missing exe, timeout)")

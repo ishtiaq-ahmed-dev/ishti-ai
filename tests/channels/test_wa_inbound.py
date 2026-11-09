@@ -52,14 +52,16 @@ def inbound(tmp_path, bridge, dispatch=None, **kwargs):
 def test_allowed_number_dispatches_and_stranger_is_silently_ignored(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "_audit", lambda *_a, **_k: None)
     calls, alerts = [], []
-    bridge = FakeBridge([row("OK", sender="user@example.com"),
-                         row("NO", sender="15550001111@s.whatsapp.net", observed=1001)])
+    bridge = FakeBridge([row("OK", sender="923001234567@s.whatsapp.net"),
+                         # same 10 national digits, another country: the old suffix match let this through
+                         row("SPOOF", sender="443001234567@s.whatsapp.net", chat="443001234567@s.whatsapp.net", observed=1001),
+                         row("NO", sender="15550001111@s.whatsapp.net", observed=1002)])
     poller = inbound(tmp_path, bridge, lambda text, **kw: calls.append((text, kw)) or {"final_answer": "done"},
                      alert=lambda *args: alerts.append(args))
     poller.poll_once()
-    assert calls == [("hello", {"session_id": "wa:03001234567", "channel": "whatsapp"})]
+    assert calls == [("hello", {"session_id": "wa:923001234567", "channel": "whatsapp"})]
     assert len(bridge.sent) == 1 and bridge.sent[0]["chat"] == CHAT
-    assert alerts and "ending 111" in alerts[0][1]
+    assert [a[1] for a in alerts] == ["WhatsApp sender ending 567", "WhatsApp sender ending 111"]  # spoof + stranger
 
 
 def test_own_reply_is_not_reingested_but_phone_typed_self_chat_works(tmp_path, monkeypatch):
