@@ -60,3 +60,14 @@ def test_money_and_city_parsing():
     assert money.search("$100 to pkr") and money.search("convert Rs 5000 to dollars") and not money.search("100 to pkr")
     assert extract_city("weather in lahore") == "Lahore" and extract_city("prayer times in Lahore tomorrow") == "Lahore"
     assert extract_city("karachi mein mausam") == "Karachi" and extract_city("weather in the morning") is None
+
+
+def test_wake_phrase_ignores_the_owners_own_name_and_stt_never_auto_downloads(monkeypatch):
+    from ishti import voice
+    from ishti.wake import phrase_in
+    assert phrase_in("hey ishtiaq how are you") is None and phrase_in("hey ishty") == "hey ishti"
+    monkeypatch.setitem(voice._cfg, "whisper_model", r"Z:\no\such\model")
+    monkeypatch.setitem(voice._cfg, "whisper_model_fallback", "")
+    import pytest
+    with pytest.raises(RuntimeError, match="isn't installed"):
+        voice.model_source()

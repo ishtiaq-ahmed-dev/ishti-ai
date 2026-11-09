@@ -78,7 +78,10 @@ export function LiveMode({ sessionId, onTurn, onClose }: {
           else if (type === "audio_stop") { playing.forEach((p) => { try { p.stop(); } catch {} }); playing = []; playAt = 0; }
           else if (type === "voice_state") setState(data.state);
           else if (type === "stt_partial") setHeard(data.text);
-          else if (type === "stt_final") { if (!data.ignored) { setHeard(data.text); setReply(""); setStep(""); } }
+          else if (type === "stt_final") {
+            if (!data.ignored) { setHeard(data.text); setReply(""); setStep(""); }
+            else setHeard(data.text ? `${data.text} - didn't catch that as a request` : "Didn't catch that - say it again?");
+          }
           else if (type === "trace") {
             const s = data.type === "route" ? `Using ${data.skill}` : data.type === "escalate" ? `Trying ${data.to} instead`
               : data.label ?? (data.type === "step" ? data.skill : null);
@@ -111,7 +114,6 @@ export function LiveMode({ sessionId, onTurn, onClose }: {
       </div>
 
       <div
-        aria-live="polite"
         className="flex w-full max-w-xl flex-col items-center gap-3.5 text-center rounded-2xl border border-border/80 bg-card/95 p-6 shadow-2xl"
       >
         <div className="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-accent">
@@ -127,7 +129,7 @@ export function LiveMode({ sessionId, onTurn, onClose }: {
 
         {heard && (
           <div className="rounded-xl border border-border bg-muted/60 px-4 py-2 text-sm text-foreground/90 font-medium max-w-lg shadow-sm">
-            “{heard}”
+            <span dir="auto">“{heard}”</span>
           </div>
         )}
 
@@ -147,7 +149,8 @@ export function LiveMode({ sessionId, onTurn, onClose }: {
         </AnimatePresence>
 
         {reply && (
-          <div className="w-full max-h-[30vh] overflow-y-auto text-left rounded-xl border border-border/70 bg-muted/40 p-4 text-sm leading-relaxed text-foreground whitespace-pre-wrap shadow-inner">
+          <div role="status" aria-live="polite" dir="auto"
+            className="w-full max-h-[30vh] overflow-y-auto text-start rounded-xl border border-border/70 bg-muted/40 p-4 text-sm leading-relaxed text-foreground whitespace-pre-wrap shadow-inner">
             {reply}
           </div>
         )}

@@ -59,7 +59,8 @@ def phrase_in(text):
     """The configured wake phrase heard in text (fuzzy, word by word), or None."""
     import difflib
     words = [("ishti" if w in _ISHTI else "hey" if w in _HEY else "jarvis" if w in _JARVIS else w) for w in re.findall(r"[a-z']+", text.lower())]
-    close = lambda a, b: a == b or difflib.SequenceMatcher(None, a, b).ratio() >= 0.75
+    # 0.85 and no longer than the target + 1 letter: "ishtiaq" (0.83, the owner's own name) is not "ishti"
+    close = lambda a, b: a == b or (len(a) <= len(b) + 1 and difflib.SequenceMatcher(None, a, b).ratio() >= 0.85)
     for phrase in wake_phrases():
         target = phrase.split()
         for i in range(len(words) - len(target) + 1):  # every word must be close: "is my assistant" is not a wake
@@ -106,7 +107,8 @@ class Listener:
         cfg = CONFIG["voice"]
         self.live = live                      # Live mode: no wake word, back to listening after every answer
         self.talker = talker                  # who speaks: this PC's speakers (default) or a browser (Live)
-        self.oww = Model(wakeword_models=[cfg["wake_model"]], inference_framework="onnx")
+        self.oww = Model(wakeword_models=[cfg["wake_model"]], inference_framework="onnx",
+                         vad_threshold=0.5)  # fires only on frames its VAD hears as speech: fewer TV/noise wakes
         self.burst, self.burst_quiet = [], 0  # speech burst being collected for wake-phrase spotting
         self.spot_vad = VAD()
         self._spotting = False
@@ -312,7 +314,7 @@ class Listener:
                                             or BACKCHANNEL.match(heard)) else heard
             else:  # thinking, nothing playing: no echo possible. Words start a new command (the task carries on in
                 # the background unless they say stop); that command still passes the stray-word filter
-                self._decision = heard if words else "echo"
+                self._decision = heard if words and not BACKCHANNEL.match(heard) and not stray(heard) else "echo"
         threading.Thread(target=decide, daemon=True).start()
         return None
 
@@ -335,7 +337,8 @@ class Listener:
                 self.on_event("stt_final", {"text": text, "ignored": True})
                 return
             self.on_event("stt_final", {"text": text})
-            print(f"[wake] heard: {text!r}" + (f" (misheard as '{wrong_name}')" if wrong_name else ""))
+            # the log is not a transcript store: length only (the words are in the chat, which the owner controls)
+            print(f"[wake] heard {len(text)} chars" + (" (wake name misheard)" if wrong_name else ""))
             if CONTINUE.match(text) and self.interrupted and self.interrupted.get("rest"):
                 self.state("speaking")
                 Sentences(talker).flush(self.interrupted["rest"])

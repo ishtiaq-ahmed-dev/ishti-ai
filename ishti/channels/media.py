@@ -70,6 +70,11 @@ def _voice(v: dict, client) -> str:
         text = (transcribe(path) or "").strip()
     except Exception as exc:
         return f"[could not transcribe the voice note locally: {type(exc).__name__}: {str(exc)[:80]}]"
+    finally:
+        try:  # the text is what's used; the recording itself was kept forever
+            os.remove(path)
+        except OSError as _exc:
+            swallowed('ishti/channels/media.py:_voice.remove', _exc)
     if not text:
         return "[the voice note transcribed to nothing]"
     try:

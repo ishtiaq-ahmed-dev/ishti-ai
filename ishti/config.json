@@ -68,7 +68,7 @@
   },
   "voice": {
     "whisper_model": "D:\\ISHTI\\data\\models\\whisper-large-v3-turbo",
-    "whisper_model_fallback": "large-v3",
+    "whisper_model_fallback": "",
     "whisper_device": "cuda",
     "whisper_compute": "float16",
     "wake_enabled": true,

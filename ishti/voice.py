@@ -135,7 +135,10 @@ def model_source():
     ref = _cfg.get("whisper_model", "")
     if ref and os.path.isdir(ref):
         return ref, None
-    fallback = _cfg.get("whisper_model_fallback") or ref
+    fallback = _cfg.get("whisper_model_fallback") or ""
+    if not fallback:  # never a silent multi-GB download + 3 GB of VRAM: the owner installs the model on purpose
+        raise RuntimeError("The speech model isn't installed. Run `venv\\Scripts\\python tests\\download_whisper_turbo.py` "
+                           "once (about 1.6 GB) to turn on voice.")
     return fallback, (f"[voice] {ref} is not on disk - falling back to '{fallback}' "
                       f"(run tests/download_whisper_turbo.py for the fast one)")
 
