@@ -163,11 +163,23 @@ def _run_container(key: str):
         raise BridgeError(f"Docker could not start WAHA: {(p.stderr or p.stdout).strip()[-200:]}")
 
 
-def ensure_running(wait_s: float = 60) -> bool:
+def _ready() -> bool:
+    """WAHA answers its unauthenticated /ping. Docker publishes the port BEFORE the server inside is up (measured:
+    connections are accepted and reset for ~10 s), so an open port alone is not readiness."""
+    if not _port_open():
+        return False
+    try:
+        with _open(urllib.request.Request(BASE + "/ping"), timeout=3) as response:
+            return response.status == 200
+    except (urllib.error.URLError, OSError, TimeoutError):
+        return False
+
+
+def ensure_running(wait_s: float = 90) -> bool:
     """Start ISHTI's WAHA container (create it on first use). -> True when its API answers."""
     if _test_mode():
         raise BridgeError("Live WAHA start disabled in test mode")
-    if _port_open():
+    if _ready():
         return True
     with _lock:
         key = _api_key(create=True)
@@ -180,10 +192,10 @@ def ensure_running(wait_s: float = 60) -> bool:
                 raise BridgeError(f"Docker could not restart WAHA: {(p.stderr or p.stdout).strip()[-200:]}")
     end = time.monotonic() + wait_s
     while time.monotonic() < end:
-        if _port_open():
+        if _ready():
             return True
         time.sleep(1)
-    raise BridgeError("WAHA did not start within a minute; check Docker Desktop")
+    raise BridgeError("WAHA did not become ready in time; check Docker Desktop (docker logs ishti-waha)")
 
 
 def stop() -> bool:
