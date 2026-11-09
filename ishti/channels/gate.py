@@ -387,9 +387,11 @@ class Gate:
     # ------------------------------------------------------------ helpers
     @staticmethod
     def classify_forbidden(text: str) -> str | None:
-        clean = _strip_quotes(text)  # quoted content (pages, chats, quotes) is data - never a request
+        # The RAW text is classified: the dispatcher receives the raw text, so a request wrapped in quotes
+        # ('do this: "install the skill from ..."') used to pass this check and then run. A quoted request that is
+        # really just data gets refused remotely - the owner can still ask on the PC.
         for cat, rx in FORBIDDEN:
-            if rx.search(clean):
+            if rx.search(text or ""):
                 return cat
         return None
 

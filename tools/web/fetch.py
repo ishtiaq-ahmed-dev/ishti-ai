@@ -54,11 +54,13 @@ def check_public(url: str) -> str:
     return host
 
 
-def safe_get(url: str, *, max_bytes: int = MAX_BYTES, **kw) -> requests.Response:
-    """requests.get with SSRF protection: public hosts only, each redirect hop re-checked, body capped."""
+def safe_get(url: str, *, max_bytes: int = MAX_BYTES, stream_body: bool = False, **kw) -> requests.Response:
+    """requests.get with SSRF protection: public hosts only, each redirect hop re-checked, body capped.
+    stream_body=True returns the open response of the final public hop (for large downloads); the caller reads it."""
     kw.setdefault("headers", DEFAULT_HEADERS)
     kw.setdefault("timeout", 15)
     kw.pop("allow_redirects", None)
+    kw.pop("stream", None)
     for _ in range(MAX_REDIRECTS + 1):
         check_public(url)
         r = requests.get(url, allow_redirects=False, stream=True, **kw)
@@ -69,6 +71,9 @@ def safe_get(url: str, *, max_bytes: int = MAX_BYTES, **kw) -> requests.Response
                 raise BlockedURL("the site redirected without a destination")
             url = urljoin(url, location)
             continue
+        if stream_body:
+            r.url = url
+            return r
         body = r.raw.read(max_bytes + 1, decode_content=True) if getattr(r, "raw", None) is not None else r.content
         r.close()
         if len(body) > max_bytes:

@@ -68,9 +68,12 @@ def op_download(text, session):
     url = URL.search(text).group(0)
     from ishti.skills.folders.skill import known_folders
     folder = known_folders()["downloads"]
+    from tools.web.fetch import BlockedURL, safe_get  # public hosts only, every redirect re-checked (SSRF)
     try:
-        head = requests.get(url, stream=True, timeout=20, headers=UA, allow_redirects=True)
+        head = safe_get(url, stream_body=True, timeout=20, headers=UA)
         head.raise_for_status()
+    except BlockedURL as exc:
+        return f"I won't download that: {exc}."
     except requests.RequestException as exc:
         return f"Couldn't reach that link: {type(exc).__name__}."
     name = _filename(url, head)
@@ -97,7 +100,8 @@ def _page_text(url):
     got = WebFetcher().fetch(url, max_chars=20000) or {}
     text = got.get("content") or ""
     if not text:
-        text = re.sub(r"<[^>]+>", " ", requests.get(url, timeout=20, headers=UA).text)
+        from tools.web.fetch import safe_get
+        text = re.sub(r"<[^>]+>", " ", safe_get(url, timeout=20, headers=UA).text)
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -197,11 +201,13 @@ def op_tables(text, session):
     import pandas as pd
     url = URL.search(text).group(0)
     trace(session, "fetch", f"reading tables on {urlparse(url).netloc}", status="start")
+    from tools.web.fetch import safe_get
     try:
-        html = requests.get(url, timeout=25, headers=UA).text
+        html = safe_get(url, timeout=25, headers=UA).text  # BlockedURL is a ValueError: refused like an unreadable page
         tables = [t for t in pd.read_html(io.StringIO(html)) if t.shape[0] >= 2]
     except (ValueError, requests.RequestException) as exc:
-        return f"No readable tables on that page ({type(exc).__name__}). If it builds tables with JavaScript, ask me to open it in the browser."
+        return (f"No readable tables on that page ({type(exc).__name__}: {str(exc)[:80]}). Pages that build their tables "
+                "with JavaScript can't be read.")
     trace(session, "fetch", f"{len(tables)} tables", status="done")
     if not tables:
         return "That page has no data tables."

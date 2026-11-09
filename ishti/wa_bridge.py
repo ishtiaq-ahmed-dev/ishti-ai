@@ -394,7 +394,8 @@ def _row(m: dict, chat: str) -> dict:
             "text": str(m.get("body") or ""), "kind": _kind(m), "restricted": '"viewonce": true' in raw or '"isviewonce": true' in raw,
             "media": {"mimetype": media.get("mimetype"), "fileName": media.get("filename")} if m.get("hasMedia") else None,
             "senderJid": "" if from_me else chat_id(sender), "ts": ts, "observedAt": ts,
-            "viaApi": m.get("source") == "api", "delivery": ACK.get(str(m.get("ackName") or "").upper(), "")}
+            "viaApi": m.get("source") == "api", "delivery": ACK.get(str(m.get("ackName") or "").upper(), ""),
+            "forwarded": '"isforwarded": true' in raw or bool(re.search(r'"forwardingscore": [1-9]', raw))}
 
 
 def chats(limit: int = 100) -> list:

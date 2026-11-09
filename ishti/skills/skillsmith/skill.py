@@ -94,10 +94,19 @@ def install_folder(src, manifest, source):
     dst = os.path.join(SKILLS_DIR, name)
     if os.path.exists(dst):
         return f"A skill named {name} already exists - not overwriting it."
+    pkgs = [p for p in manifest.get("needs", {}).get("python", []) if re.fullmatch(r"[A-Za-z0-9_.-]+(?:==[\w.]+)?", p)]
+    if pkgs:  # typosquats, unknown/new releases, non-permissive licences and known-malicious versions are refused
+        from ishti.skills.skill_creator import vetting
+        verdict = vetting.vet(pkgs)
+        if not verdict["ok"]:
+            return "Not installing: " + "; ".join(f"{b['name']}: {b['reason']}" for b in verdict["blocked"][:3])
+        pkgs = verdict["pinned"] or pkgs
     shutil.copytree(src, dst, ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"))
-    manifest.update(source=source, tier=manifest.get("tier", "T2"), status=manifest.get("status", "working"))
+    # A third-party skill never sets its own trust (OWASP LLM03/ASI04): whatever its manifest claims, it is T2 (every
+    # run asks first), it gets no network/app scope until the owner widens it, and it never outranks built-in skills.
+    manifest.update(source=source, tier="T2", status=manifest.get("status", "working"), priority=90,
+                    scope={"write": ["data"], "net": [], "apps": False})
     json.dump(manifest, open(os.path.join(dst, "manifest.json"), "w", encoding="utf-8"), indent=2)
-    pkgs = [p for p in manifest.get("needs", {}).get("python", []) if re.fullmatch(r"[A-Za-z0-9_.-]+", p)]
     if pkgs:
         subprocess.run([sys.executable, "-m", "pip", "install", "-q", *pkgs], capture_output=True, timeout=900)
     check = subprocess.run([sys.executable, "-m", f"ishti.skills.{name}.skill"], cwd=ROOT, capture_output=True, text=True,
@@ -116,8 +125,11 @@ def install_folder(src, manifest, source):
 def _review(folder, manifest, source):
     findings = scan(folder)
     size = sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(folder) for f in fs if f.endswith(".py"))
+    # the description is the repo author's text: one line, capped, so it cannot fake a "Scan: ..." line below
+    desc = re.sub(r"[\r\n\t]+", " ", str(manifest.get("description") or "(no description)"))[:200]
     lines = [f"**{manifest.get('name')}** v{manifest.get('version', '?')} from {source}",
-             f"What it does: {manifest.get('description', '(no description)')}",
+             f"What it says it does: {desc}",
+             "It will be installed as T2 (asks before every run) with no network access, whatever its manifest claims.",
              f"Python packages it needs: {', '.join(manifest.get('needs', {}).get('python', [])) or 'none'}",
              f"Code: {size / 1024:.1f} KB of Python"]
     lines.append("Things to know before installing:\n" + "\n".join(f"- {f}: {why}" for f, why in findings) if findings

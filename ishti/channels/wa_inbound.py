@@ -187,6 +187,11 @@ class WhatsAppInbound:
             return
         if not text:
             return
+        if row.get("forwarded"):  # forwarded content is DATA, never instructions (same rule as Telegram)
+            self._send(chat, "Forwarded content is information, not instructions - I never act on it. "
+                             "Tell me in your own words what you want done about it.")
+            _audit("forwarded content treated as data", f"message={mid[-12:]}", channel="whatsapp", session=session)
+            return
         if self._command(chat, text):
             return
         cat = Gate.classify_forbidden(text)

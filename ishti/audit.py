@@ -85,6 +85,9 @@ def _mask(value, secrets):
     for secret in ([secrets] if isinstance(secrets, str) else secrets or []):
         if secret and value:
             value = value.replace(secret, "•" * 8)
+    if value:  # secrets the session never marked ("my key is sk-proj-...", "password: x") are caught by pattern too
+        from ishti.ftlog import SECRETISH
+        value = SECRETISH.sub("[redacted]", value)
     return value
 
 
