@@ -31,6 +31,19 @@ with automatic local failover, and every turn makes fewer model calls.
 - **Hard boundary for mass deletion:** wiping a drive, the whole PC or system folders is refused and audited.
 - `tools/web/fetch.safe_get`: SSRF-guarded HTTP (public hosts only, every redirect re-checked, size cap).
 - `SECURITY.md`, this changelog entry, and offline tests for WAHA, SSRF, provider failover and WhatsApp safety.
+- **Learning > Memory shows everything ISHTI remembers** (active, needs confirmation, past). A correction replaces
+  the memory but keeps the old line as "was true until"; faded memories wait for "Still true" or Forget. Memory
+  decay now actually runs (daily) into that review queue.
+- **Knowledge updates:** "I moved to Lahore" replaces the stored city and every memory line that said Peshawar;
+  "remember that ..." reconciles with what is already known instead of adding a duplicate. Recalled memories carry
+  their date and newer lines win.
+- **Learning loop fixes:** typed feedback ("wrong, use Chrome") is credited to the answer it is about; a thumbs-down
+  reason given three times ("too long") becomes a preference question; a rule the owner confirmed that keeps going
+  wrong is put back to them; faded rules no longer crowd out preferences and retire when they did more harm than good.
+- **First-run setup tests the provider** with a 4-token call (no failover) and says why if it refuses.
+- **UI:** keyboard and screen-reader access throughout (native dialogs, Stop button and Esc, aria-live replies,
+  labelled icon buttons, focusable rows), right-to-left text, reduced motion, 4.5:1 contrast, starter prompts, and
+  on-demand loading of LiveMode, activity graphs and the code highlighter.
 
 ### Changed
 
@@ -71,6 +84,8 @@ with automatic local failover, and every turn makes fewer model calls.
   - standing automations and scheduled tasks are approved at creation and rate-limited;
   - third-party skills are installed as T2 with no network scope, after package vetting;
   - memory is extracted only from the owner's words, and a model-proposed "forget" needs the owner's ask;
+  - lessons are mined only from the owner's requests, never from ISHTI's replies (which can quote emails or pages);
+  - yes/no buttons work only on the latest question while nothing is running;
   - remote channels classify the raw text, and forwarded WhatsApp messages are treated as data;
   - webtools downloads go through the SSRF guard;
   - secrets are redacted by pattern in the audit and route logs;
