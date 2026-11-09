@@ -226,7 +226,7 @@ def run(text, session):
                              + near, "sources": [], "no_escalate": True}
     context = "\n\n".join(f"[{i}] {t} ({u})\n" + guard(outline(b) + focus(b, goal or text), u, session)
                         for i, (u, t, b) in enumerate(pages, 1))
-    answer = llm.ask(f"Owner's request: {text}\n\n{context}\n\nAnswer from these pages only, citing [n]. Use only the section "
+    answer = llm.ask(f"Owner's request: {text}\n\n{context}\n\nAnswer from these pages only, citing each fact with its page number like [1] or [2]. Use only the section "
                      "whose heading matches what was asked (programme, semester, group). If no heading matches, don't "
                      "answer from a different one: say plainly it isn't published and list the closest sections that are.",
                      temperature=0.2)

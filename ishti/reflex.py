@@ -140,8 +140,31 @@ def pure(text):
     return None
 
 
+_MASH = frozenset("asdf asdfg asdfgh asdfghjkl qwer qwert qwerty qwertyuiop zxcv zxcvb zxcvbn zxcvbnm hjkl jkl sdfg fghj "
+                   "ghjk wasd lkjh poiu poiuy mnbv mnbvc".split())
+
+
+def gibberish(text):
+    """True for keyboard mash ("asdfgh qwerty zxcvb", "sdkjfhsdkjf"): every word is a known mash run, has almost no vowels,
+    or a run of 5+ consonants. Real words, Roman Urdu ("kya haal hai") and short replies ("ok", "hmm") never qualify."""
+    words = re.findall(r"[^\W\d_]+", (text or "").lower())
+    if not words or len(words) > 6 or re.search(r"\d|[^\x00-\x7f]", text or ""):
+        return False
+
+    if len(words) == 1:  # one word: only a known mash run or a long vowel-less string ("strengths", "rhythm" are words)
+        w = words[0]
+        return w in _MASH or (len(w) >= 7 and not re.search(r"[aeiou]", w))
+
+    def mash(w):
+        return w in _MASH or (len(w) >= 4 and not re.search(r"[aeiou]", w)) or \
+            bool(re.search(r"[bcdfghjklmnpqrstvwxz]{5,}", w))
+    return all(mash(w) for w in words)
+
+
 def answer(text):
     """(reply, kind) for an instant command, else None."""
+    if gibberish(text):
+        return ("I didn't catch that - it looks like random keys. What would you like me to do?", "unclear")
     for rx, fn in TABLE:
         if m := rx.match(text.strip()):
             return fn(m, text), fn.__name__.strip("_")

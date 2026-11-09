@@ -44,7 +44,8 @@ OPS = [
     ("vault_login", re.compile(r"\b(?:log|sign)\s*(?:in|into|on)\s+(?:to\s+)?(?P<site>[\w.-]+)\s+(?:with|using)\s+(?:my\s+)?"
                                r"(?:saved\s+)?(?:login|password|credentials)\b", I)),
     ("vault_list", re.compile(r"\b(?:list|show|which)\s+(?:my\s+)?(?:saved\s+)?(?:logins|passwords|credentials)\b|\bwhat\s+logins\s+(?:have\s+you|did\s+i)\s+save", I)),
-    ("vault_get", re.compile(r"\bwhat(?:'s|\s+is)\s+my\s+(?P<site>[\w.-]+)\s+(?:password|login)\b|\b(?:show|reveal|get)\s+(?:my\s+)?(?:saved\s+)?(?:password|login)\s+for\s+(?P<site2>[\w.-]+)", I)),
+    ("vault_get", re.compile(r"\bwhat(?:'s|\s+is)\s+my\s+(?P<site>[\w.-]+)\s+(?:password|login)\b|\b(?:show|reveal|get)\s+(?:my\s+)?(?:saved\s+)?(?:password|login)\s+for\s+(?P<site2>[\w.-]+)"
+                             r"|\bwhat(?:'s|\s+is)\s+(?:my|the)\s+(?:saved\s+)?(?:password|login)\s+(?:for|of|on)\s+(?P<site3>[\w.-]+)", I)),
     ("vault_delete", re.compile(r"\b(?:delete|remove|forget)\s+(?:my\s+)?(?:saved\s+)?(?:login|password|credentials?)\s+for\s+(?P<site>[\w.-]+)", I)),
 ]
 SERVICE = "ISHTI:"  # every vault entry is "ISHTI:<site>" in Credential Manager, so ISHTI only ever sees its own
@@ -257,7 +258,7 @@ def op_vault_list(m, text, session):
 
 
 def op_vault_get(m, text, session):
-    site = (m["site"] or m["site2"]).lower()
+    site = (m["site"] or m["site2"] or m["site3"]).lower().rstrip("?.!")
     if not vault_get(site):
         return f"I have no saved login for {site}."
 

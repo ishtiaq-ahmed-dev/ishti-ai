@@ -50,7 +50,7 @@ def match(text):
 
 
 def query_of(text):
-    q = re.sub(r"^(?:please\s+)?(?:search|find|locate|look)\b.*?\\b(?:for|file|files|pc)\s+(?:for\s+|named\s+|called\s+)?",
+    q = re.sub(r"^(?:please\s+)?(?:search|find|locate|look)\b.*?\b(?:for|file|files|pc)\s+(?:for\s+|named\s+|called\s+)?",
                "", text, flags=re.I)
     q = re.sub(r"\b(?:on|in)\s+(?:my\s+)?(?:pc|computer|downloads|documents|desktop)\b|\bcontaining\b.*", "", q, flags=re.I)
     return q.strip(" .?!'\\\"") or text

@@ -106,7 +106,8 @@ def _invoke(skills, name, text, session, action=None):
             pending["action"] = _once(lambda: _invoke(skills, target, recap, session, callback), target)
             out = dict(out) if isinstance(out, dict) else {"reply": str(out or recap)}
             out["confirm_required"] = True
-        return out or {"reply": f"The {name} skill had nothing to do for this.", "sources": []}
+        # declined: the skill does not claim this request. A one-step plan then falls back to the normal route (brain.py)
+        return out or {"reply": f"The {name} skill had nothing to do for this.", "sources": [], "declined": True}
 
 
 def execute(skills, name, text, session):

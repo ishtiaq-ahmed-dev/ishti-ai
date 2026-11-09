@@ -128,7 +128,9 @@ def op_money(m, text, session):
 
 
 def op_time_in(m, text, session):
-    city = m.group("city").strip(" ?.").title()
+    # "what time is it in London right now?" captured "London Right Now" as the city
+    city = re.sub(r"\s+(?:right\s+now|now|currently|at\s+the\s+moment|today|please)\s*$", "",
+                  m.group("city").strip(" ?.!"), flags=re.I).strip().title()
     raw = llm.ask(f"IANA time zone name for the city '{city}'. Output only the zone, e.g. Asia/Karachi.",
                   system=None, temperature=0, max_tokens=12).strip()
     try:

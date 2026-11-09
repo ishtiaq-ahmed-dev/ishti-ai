@@ -261,6 +261,20 @@ def _line(label, value, tag) -> str:
     return f"- {label}: {value} [{tag}]"
 
 
+def _inference_line() -> str:
+    """Where model inference runs right now - the old fixed text claimed 'entirely on this PC, offline' even in API mode."""
+    try:
+        from ishti import llm
+        if llm.provider() == "api":
+            name = llm.api_settings().get("provider", "a cloud API")
+            if llm._cloud_open() and llm.failover_model():
+                return f"My cloud model ({name}) is unavailable right now, so a small local model on this PC is answering."
+            return (f"My thinking runs on a cloud model ({name}); my memory, files and tools stay on this PC.")
+        return "My thinking runs on a local model on this PC (Ollama); nothing is sent to a cloud model."
+    except Exception:
+        return "Inference location unknown."
+
+
 def render(block=None, budget=BUDGET_CHARS) -> str:
     """The compact resident block, capped at `budget` characters.
 
@@ -272,8 +286,7 @@ def render(block=None, budget=BUDGET_CHARS) -> str:
     os_d, cpu, ram, disk = (data.get(k) or {} for k in ("os", "cpu", "ram", "disk"))
     gpu, models, skills = (data.get(k) or {} for k in ("gpu", "models", "skills"))
     head = [f"SELF-MODEL (measured {data.get('measured_at', '?')}, age {data.get('age_s', '?')} s)",
-            "- I am ISHTI, a local-first personal AI assistant. I run entirely on this PC, offline. "
-            "I am not a cloud service. [declared]"]
+            "- I am ISHTI, the owner's private personal AI assistant on this PC. " + _inference_line() + " [declared]"]
     body: list[str] = []
     # A probe that FAILED must be visible, not silently omitted - "I have no GPU" and "reading the GPU
     # failed" are different facts and the owner must be able to tell them apart.

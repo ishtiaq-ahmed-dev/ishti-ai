@@ -136,6 +136,10 @@ def execute(session, plan, run_tool, skills):
                 plan["state"] = "approval"
                 save(session, plan)
                 return result(plan, out)
+            if out.get("declined") and len(plan["steps"]) == 1:  # nothing ran: close it; the caller re-routes the request
+                plan["state"] = "cancelled"
+                save(session, plan)
+                return {**result(plan, out), "declined": True}
             if (out.get("execution_blocked") or out.get("needs_input") or out.get("verified") is False
                     or out.get("test_mode_blocked") or out.get("status") in ("failed", "partial", "needs_input", "unknown")):
                 plan["state"] = "blocked"

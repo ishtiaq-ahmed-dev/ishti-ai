@@ -52,8 +52,8 @@ SCHEDULE_COORD = re.compile(
 
 
 # Clause split and filler test used to strip greetings from a search query ("Hi, how are you... can you search X").
-_CLAUSE = re.compile(r"\s*(?:,?\s*(?:and\s+(?:also|then)|and|also|then|after\s+that|plus)|[;.!?]+(?:\s+|$))\s*", re.I)
-_SMALLTALK = re.compile(r"^\W*(?:hi|hello|hey|thanks?|thank you|ok(?:ay)?|how are you|good (?:morning|evening|night)|salam|bye)", re.I)
+_CLAUSE = re.compile(r"\s*(?:,?\s*\b(?:and\s+(?:also|then)|and|also|then|after\s+that|plus)\b|[;.!?]+(?:\s+|$))\s*", re.I)
+_SMALLTALK = re.compile(r"^\W*(?:hi|hello|hey|thanks?|thank you|ok(?:ay)?|how are you|good (?:morning|evening|night)|salam|bye)\b", re.I)
 
 def match(text):
     t = text.strip()

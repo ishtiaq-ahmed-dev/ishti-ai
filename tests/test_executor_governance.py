@@ -10,6 +10,7 @@ from ishti.skills import ask_first
 @pytest.fixture(autouse=True)
 def isolated_executor(monkeypatch):
     flags = {"skills": {}}
+    monkeypatch.setenv("ISHTI_TEST_MODE", "1")  # these tests assert the test-mode block; never rely on another module setting it
     monkeypatch.setattr(execution, "get_settings_service", lambda: SimpleNamespace(get=lambda: flags))
     monkeypatch.setattr(audit, "record", lambda *_a, **_k: None)
     monkeypatch.setattr(scope, "record", lambda *_a, **_k: None)
