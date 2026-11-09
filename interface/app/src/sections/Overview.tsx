@@ -210,7 +210,7 @@ export function Overview({ onToggleNav }: { onToggleNav?: () => void }) {
   useEffect(() => {
     const load = () => getJSON<Overview>("/api/overview").then(setO);
     load();
-    const t = setInterval(load, 10000);
+    const t = setInterval(() => { if (!document.hidden) load(); }, 10000);
     return () => clearInterval(t);
   }, []);
 

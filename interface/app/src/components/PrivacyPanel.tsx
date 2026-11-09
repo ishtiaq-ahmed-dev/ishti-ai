@@ -44,7 +44,7 @@ export function PrivacyPanel() {
   }, []);
   useEffect(() => {
     load();
-    const t = setInterval(load, 5000);
+    const t = setInterval(() => { if (!document.hidden) load(); }, 5000);
     return () => clearInterval(t);
   }, [load]);
 

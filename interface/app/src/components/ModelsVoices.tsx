@@ -145,7 +145,7 @@ export function useManage() {
 
   useEffect(() => {
     if (!downloading) return;
-    const t = setInterval(load, 2000);
+    const t = setInterval(() => { if (!document.hidden) load(); }, 2000);
     return () => clearInterval(t);
   }, [downloading, load]);
 

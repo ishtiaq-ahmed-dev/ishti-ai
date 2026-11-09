@@ -422,14 +422,19 @@ def fire_due(announce, now=None, run_task=None):
 
 
 def start(announce, run_task=None):
-    """Background loop (1 s tick) the server starts once."""
+    """Background loop the server starts once: it sleeps until the next due reminder (0.5-5 s), not a fixed 1 s tick."""
     def loop():
         while True:
             try:
                 fire_due(announce, run_task=run_task)
+                f = _db()
+                with f.lock:
+                    nxt = f.db.execute("SELECT MIN(due) FROM reminders WHERE done=0").fetchone()[0]
+                wait = 5.0 if nxt is None else min(5.0, max(0.5, float(nxt) - time.time()))
             except Exception as exc:
                 print(f"[reminders] {exc}")
-            time.sleep(1)
+                wait = 5.0
+            time.sleep(wait)
     threading.Thread(target=loop, daemon=True, name="reminders").start()
 
 

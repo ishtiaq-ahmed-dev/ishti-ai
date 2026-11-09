@@ -444,7 +444,7 @@ export function Tasks({ onToggleNav }: { onToggleNav?: () => void }) {
     const t = setTimeout(() => setUndo(null), 8000);
     return () => clearTimeout(t);
   }, [undo]);
-  useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, []);
+  useEffect(() => { load(); const t = setInterval(() => { if (!document.hidden) load(); }, 5000); return () => clearInterval(t); }, []);
   useEffect(() => {
     const loadUnread = () => getJSON<{ unread: number }>("/api/notifications")
       .then((d) => setUnreadNotifs(d.unread ?? 0))
@@ -1988,7 +1988,7 @@ export function Connectors({ onToggleNav }: { onToggleNav?: () => void }) {
   // WebSocket changes refresh immediately; polling recovers completion after a dropped connection.
   useEffect(() => {
     if (!(data?.connectors ?? []).some((c) => c.progress?.state === "waiting")) return;
-    const t = setInterval(load, 2000);
+    const t = setInterval(() => { if (!document.hidden) load(); }, 2000);
     return () => clearInterval(t);
   }, [data?.connectors, load]);
 
@@ -3436,7 +3436,7 @@ export function SystemBody() {
 
   useEffect(() => {
     const load = () => getJSON<Telemetry>("/api/system").then(setT);
-    load(); const id = setInterval(load, 3000);
+    load(); const id = setInterval(() => { if (!document.hidden) load(); }, 3000);
     getJSON<typeof activity>("/api/activity").then(setActivity).catch(() => {});
     getJSON<any>("/api/self_heal/status").then(setHealStatus).catch(() => {});
     return () => clearInterval(id);

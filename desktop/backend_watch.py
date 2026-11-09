@@ -29,7 +29,7 @@ except Exception:  # pragma: no cover
 
 GRACE_S = float(os.environ.get("ISHTI_BACKEND_LOST_GRACE_S", "25"))
 FLAG_GRACE_S = float(os.environ.get("ISHTI_FLAG_GRACE_S", "2.5"))   # let the overlay finish gracefully
-POLL_S = 2.0
+POLL_S = 5.0  # crash detection waits GRACE_S (25 s) anyway; the shutdown flag (a file) is still checked every 1 s
 FLAG_POLL_S = 1.0
 
 

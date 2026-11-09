@@ -119,7 +119,7 @@ export function Markets({ onToggleNav, embedded }: { onToggleNav?: () => void; e
       setLoading(false);
     }
   }, []);
-  useEffect(() => { void load(); const t = setInterval(() => void load(), 60_000); return () => clearInterval(t); }, [load]);
+  useEffect(() => { void load(); const t = setInterval(() => { if (!document.hidden) void load(); }, 60_000); return () => clearInterval(t); }, [load]);
 
   const analyze = async (what: string) => {
     if (!what.trim()) return;

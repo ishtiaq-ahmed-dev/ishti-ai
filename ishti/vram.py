@@ -1123,7 +1123,9 @@ def start_sampler():
                         last, last_sent = key, time.time()
             except Exception as exc:  # never let the watcher die
                 print(f"[vram] sampler: {type(exc).__name__}: {exc}", flush=True)
-            time.sleep(1.0)
+            # 1 s while a GPU job is running or waiting (partial-offload watch, upshift); 5 s when idle: each tick
+            # launches nvidia-smi and two Ollama HTTP calls, ~86k process launches a day at a fixed 1 s.
+            time.sleep(1.0 if (_jobs["active"] or _jobs["queued"]) else 5.0)
     threading.Thread(target=loop, daemon=True, name="vram-sampler").start()
 
 

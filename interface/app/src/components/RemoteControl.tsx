@@ -79,7 +79,7 @@ export function RemoteControl() {
 
   useEffect(() => {
     refresh();
-    const t = setInterval(refresh, 5000);
+    const t = setInterval(() => { if (!document.hidden) refresh(); }, 5000);
     return () => clearInterval(t);
   }, [refresh]);
 

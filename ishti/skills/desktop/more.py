@@ -120,10 +120,17 @@ def start_clipboard_history():
 
     def loop():
         import pyperclip
-        db = _clip_db()
+        try:
+            from win32clipboard import GetClipboardSequenceNumber as _seq  # bumps on every clipboard change
+        except Exception:
+            _seq = None
+        db, last = _clip_db(), None
         while True:
             try:
-                remember_clip(pyperclip.paste(), db)
+                now = _seq() if _seq else None
+                if now is None or now != last:  # only read (open) the clipboard when it actually changed
+                    last = now
+                    remember_clip(pyperclip.paste(), db)
             except Exception as _exc:
                 swallowed('ishti/skills/desktop/more.py:start_clipboard_history.loop', _exc)
             time.sleep(1.5)
