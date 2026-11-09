@@ -165,6 +165,8 @@ def answer(text):
     """(reply, kind) for an instant command, else None."""
     if gibberish(text):
         return ("I didn't catch that - it looks like random keys. What would you like me to do?", "unclear")
+    if (text or "").strip() and not re.search(r"\w", text):  # "???", "...", "!!" - nothing to act on
+        return ("What would you like me to do?", "unclear")
     for rx, fn in TABLE:
         if m := rx.match(text.strip()):
             return fn(m, text), fn.__name__.strip("_")

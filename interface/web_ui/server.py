@@ -51,7 +51,7 @@ app.include_router(ishti_api)  # /api/chat, /api/skills, /api/facts (the dispatc
 
 app.add_middleware(SelectiveGZipMiddleware)  # 1.02 MB JS -> ~290 KB, 107 KB CSS -> ~16 KB on the wire
 
-# Remote access (Cloudflare tunnel, remote/tunnel_setup.md) arrives from cloudflared on 127.0.0.1,
+# Remote access (tunnel, docs/REMOTE_ACCESS.md) arrives from cloudflared on 127.0.0.1,
 # so "is it localhost?" is not enough: anything proxied or non-local must carry the token.
 TOKEN_PATH = os.path.join(ROOT_DIR, "data", "api_token")
 

@@ -1,5 +1,5 @@
-"""CONTRACT v2 mock server (frontend/mock/server.py) - implements docs/API_CONTRACT.md §14
-exactly so the UI never waits for the backend. Run: python frontend/mock/server.py [port]
+"""CONTRACT v2 mock server (interface/mock/server.py) - implements docs/API_CONTRACT.md §14
+exactly so the UI never waits for the backend. Run: python interface/mock/server.py [port]
 
 Offline-only: stdlib http.server + threads. Synthetic data. No real sends, no network.
 WS replay is emulated by long-poll GET /api/events?since_seq=N (same envelope shapes).

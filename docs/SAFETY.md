@@ -203,7 +203,7 @@ desktop. ISHTI does not take screenshots. T2 replies get Approve/Deny buttons bo
 dispatcher's own gate still has the final say. The bot token is held in Windows Credential Manager via DPAPI.
 Defaults are safe: everything is off except read-only panic commands. The policy file is local-edit-only; no remote
 message can write it. `ui_act` is never remotely controllable. Contract: [API_CONTRACT.md](API_CONTRACT.md)
-section 11; setup for tunnelled access: `remote/tunnel_setup.md`.
+section 11; setup for tunnelled access: [REMOTE_ACCESS.md](REMOTE_ACCESS.md).
 
 The local HTTP server trusts only unproxied loopback requests. Anything proxied or non-local must present the token in
 `data/api_token` (header, cookie or `?token=`), compared in constant time (`server.authorized`). Shutdown, Ollama,

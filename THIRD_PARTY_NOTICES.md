@@ -22,7 +22,7 @@ Upstream: https://github.com/henryklunaris/hey-jev @ 24e4b378350d999d2b45ff2549e
 Use: **behaviour reference only** (wake/PTT/dictation/compound/timers/vocabulary flows). No source text,
 assets, or names are copied. Owner outreach for a license was tracked in the retired `NEEDS.md` (N36);
 that record is no longer in this tree, so it is not re-verifiable here — carry it into the commercial
-review in [docs/COMMERCIAL_READINESS.md](docs/COMMERCIAL_READINESS.md).
+review in [docs/history/COMMERCIAL_READINESS.md](docs/history/COMMERCIAL_READINESS.md).
 
 ## 4. agent-reach — MIT, (c) 2025 Agent Eyes
 Upstream: https://github.com/Panniantong/agent-reach @ a19a171fa980a0785849596492e0af4db800c82f (tag v1.5.0)

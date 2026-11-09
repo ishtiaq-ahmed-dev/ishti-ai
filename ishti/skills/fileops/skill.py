@@ -78,8 +78,10 @@ def match(text):
         if rx.search(text):
             if _n == "move" and TIME_WORD.search(text):
                 return False
-            # "compare three TTS engines for Urdu support and recommend one" is research, not a file diff (checklist #8).
-            if _n == "compare" and re.search(r"\b(?:tts|engine|model|method|approach|service|tool|framework|library|solution|option|product|software|system|solution|algorithm|technique|strategy|platform|provider|vendor|api|protocol)\b", text, I):
+            # A file diff needs files: a path, a drive, an extension or the word file/folder. "compare three TTS engines"
+            # (checklist #8) and "compare iPhone 16 and Samsung S25 in a table" are research/shopping, not diffs.
+            if _n == "compare" and not re.search(r"[\\/]|\b[a-z]:|\.\w{1,5}\b|\b(?:files?|folders?|director(?:y|ies))\b",
+                                                text, I):
                 return False
             return True
     return False

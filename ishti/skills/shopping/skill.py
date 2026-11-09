@@ -114,11 +114,18 @@ def start_price_watch():
 
 
 def product_of(text):
+    """The product (or product category) the owner wants, in their own words. A small model copied the old prompt's
+    example ("PlayStation 5 Slim") for "best laptop under 1000 dollars", so an answer sharing no word with the request
+    is rejected, and no style prompt rides along on a 24-token extraction."""
     from ishti import llm
-    name = llm.ask("Which product does the owner want to buy? Reply with only its name (brand, model, variant), "
-                   "nothing else. Keep every model and variant word the owner used (\"ps5 slim\" -> \"PlayStation 5 "
-                   "Slim\"); never swap in a different edition.\n\n" + text, max_tokens=24, temperature=0).strip(" .\"'")
-    return name if 0 < len(name) < 80 else text
+    name = llm.ask("From the owner's message, write only the product or product category they want to buy - brand, "
+                   "model, variant and budget words exactly as they wrote them, nothing else.\n\nMessage: " + text,
+                   system=None, max_tokens=24, temperature=0).strip(" .\"'")
+    said = {w for w in re.findall(r"[a-z0-9]{3,}", text.lower())}
+    if not (0 < len(name) < 80) or not said & set(re.findall(r"[a-z0-9]{3,}", name.lower())):
+        return re.sub(r"^\s*(?:what(?:'s|\s+is)\s+the\s+|find\s+me\s+(?:the\s+)?|i\s+want\s+to\s+buy\s+(?:an?\s+)?)"
+                      r"|\s*(?:right\s+now|today|please)?\s*[?.!]*\s*$", "", text, flags=re.I).strip() or text
+    return name
 
 
 def site_of(url):

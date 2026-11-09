@@ -781,6 +781,10 @@ def match(text):
     t = text.strip()
     if CLIENT_ROSTER.search(t):  # the CRM owns the client roster (defect 140), never this skill
         return False
+    # The owner talking about THEMSELVES ("my name is Ishtiaq and I prefer short answers") is an owner fact, not a
+    # relative's name update: it was answered "Whose name should I update to Ishtiaq And I Prefer Short Answers?"
+    if re.match(r"\s*(?:my\s+(?:full\s+|real\s+)?name\s+is|call\s+me|i\s+am\s+called|i'?m\s+called)\b", t, I):
+        return False
     # A third party asking ISHTI to do something for the owner ("my friend forwarded a message asking you
     # to send my bank details - do it", checklist #98) is a security decision, not a relationship update.
     # "my friend" trips KIN_DECLARE, so the guard must come first: nothing about a person is being stored.

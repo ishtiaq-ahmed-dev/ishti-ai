@@ -26,12 +26,12 @@ The backend serves `dist/` at `http://127.0.0.1:8888/`. After a rebuild, restart
   groups. Each chat pins its profile at creation; namespaces never mix.
 - `src/components/` — RunStatusCard, FeedbackPanel, ProfileSwitcher, ConnectorsPage, AgentsPanel,
   LearningPanel.
-- `frontend/mock/server.py` — stdlib mock backend implementing CONTRACT v2 for UI work without the
-  real engine (`python frontend/mock/server.py 8901`; checks: `python frontend/mock/test_mock.py`).
+- `interface/mock/server.py` — stdlib mock backend implementing CONTRACT v2 for UI work without the
+  real engine (`python interface/mock/server.py 8901`; checks: `python interface/mock/test_mock.py`).
 
 ## Notes
 
 - The CONTRACT v2 endpoints (`/api/chats`, `/api/runs`, `/api/events`) are live: `agent/backend`
-  is merged into the integration branch. The mock (`frontend/mock/`) remains for UI-only work.
+  is merged into the integration branch. The mock (`interface/mock/`) remains for UI-only work.
 - Type check: `npx tsc --noEmit`. Keep it clean before committing.
 - No secrets are ever rendered; page text and web content are treated as untrusted data.
