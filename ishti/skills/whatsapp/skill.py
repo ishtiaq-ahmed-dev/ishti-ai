@@ -337,7 +337,8 @@ def voice_note(words):
     src = os.path.join(tempfile.mkdtemp(), "note.wav")
     with open(src, "wb") as f:
         f.write(wav)
-    out = os.path.join(ROOT, "data", "media_output", f"voice_note_{time.strftime('%Y%m%d_%H%M%S')}.ogg")
+    from ishti.test_mode import scratch_path
+    out = os.path.join(scratch_path(os.path.join(ROOT, "data", "media_output")), f"voice_note_{time.strftime('%Y%m%d_%H%M%S')}.ogg")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     try:
         ff("-i", src, "-c:a", "libopus", "-b:a", "32k", "-ac", "1", "-ar", "48000", out)

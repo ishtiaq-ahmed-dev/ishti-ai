@@ -44,7 +44,7 @@ if os.path.normcase(ROOT) != os.path.normcase(r"D:\ISHTI"):
 # consumer; modules with their own hard-coded data paths call test_mode.scratch_path() themselves.
 from ishti import test_mode as _test_mode  # noqa: E402
 
-if _test_mode.enabled() and os.environ.get("ISHTI_SCRATCH") == "1":
+if os.environ.get("ISHTI_SCRATCH") == "1":  # explicit opt-in; the test suite sets it without test mode (conftest)
     _scratch = _test_mode.scratch_dir()
     _mem = CONFIG.setdefault("memory", {})
     _db = _mem.get("db_path") or os.path.join(ROOT, "data", "ishti.db")

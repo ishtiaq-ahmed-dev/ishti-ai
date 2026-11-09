@@ -63,7 +63,9 @@ def scratch_dir() -> str:
     processes (server + seeder + verifier) to share ONE store sets ISHTI_SCRATCH_DIR, so every
     process lands in the same place. Creating the dir is part of the contract: a caller about to
     bind a store path must be able to rely on the parent existing."""
-    if not enabled() or os.environ.get("ISHTI_SCRATCH") != "1":
+    # ISHTI_SCRATCH alone opts in: the pytest suite needs scratch stores WITHOUT test mode (test mode turns T2 actions
+    # into dry runs, which the tests exercise for real) - it wrote ~2,300 rows into the owner's audit log per day of runs
+    if os.environ.get("ISHTI_SCRATCH") != "1":
         return ""
     pinned = os.environ.get("ISHTI_SCRATCH_DIR")
     if pinned:

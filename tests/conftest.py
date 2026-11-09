@@ -33,6 +33,13 @@ with INTERNALERROR. Its contract-style sibling tests/test_lifecycle_contract.py 
 (e2e-marked) and still runs.
 """
 import os
+import tempfile
+
+# Every store the suite touches lives in a throwaway folder, set BEFORE any ishti module binds a path. Without this the
+# suite wrote into the owner's real data/ (audit log, facts, learning, telemetry): ~2,300 audit rows per day of runs.
+if os.environ.get("ISHTI_SCRATCH") != "1":
+    os.environ["ISHTI_SCRATCH"] = "1"
+    os.environ["ISHTI_SCRATCH_DIR"] = tempfile.mkdtemp(prefix="ishti_pytest_")
 
 import pytest
 

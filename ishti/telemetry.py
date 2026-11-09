@@ -27,7 +27,8 @@ except Exception:  # pragma: no cover
         return None
 
 
-DB_PATH = os.path.join(ROOT, "data", "telemetry.jsonl")
+from ishti.test_mode import scratch_path  # noqa: E402
+DB_PATH = scratch_path(os.path.join(ROOT, "data", "telemetry.jsonl"))
 MAX_LINES = 4000                     # rolling retention (H4: policy is configurable)
 _lock = threading.Lock()
 _spans: deque = deque(maxlen=MAX_LINES)
@@ -229,8 +230,9 @@ def run_eval(tests: list | None = None) -> dict:
     out = {"score": round(score, 3), "passed": sum(1 for r in results if r["ok"]),
            "total": len(results), "results": results, "at": time.time()}
     os.makedirs(os.path.dirname(EVAL_SET_PATH), exist_ok=True)
-    with open(os.path.join(ROOT, "data", "eval",
-                           f"eval-{time.strftime('%Y%m%d_%H%M')}.json"), "w", encoding="utf-8") as f:
+    report = scratch_path(os.path.join(ROOT, "data", "eval"))
+    os.makedirs(report, exist_ok=True)
+    with open(os.path.join(report, f"eval-{time.strftime('%Y%m%d_%H%M')}.json"), "w", encoding="utf-8") as f:
         json.dump(out, f, indent=1)
     return out
 

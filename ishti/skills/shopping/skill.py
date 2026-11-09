@@ -46,7 +46,8 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 # Price-drop tracking: "tell me when the S25 gets cheaper", "watch the price of airpods pro 2".
 WATCH = re.compile(r"\b(?:tell|notify|alert)\s+me\s+when\s+.+\s+(?:gets?\s+cheaper|drops?|price\s+(?:drops?|falls?|goes\s+down))\b|"
                    r"\b(?:watch|track|monitor)\s+(?:the\s+)?price\s+(?:of|for)\b|\bprice\s+(?:drop\s+)?alert\b", re.I)
-WATCHES = os.path.join(ROOT, "data", "price_watch.json")
+from ishti.test_mode import scratch_path  # noqa: E402
+WATCHES = scratch_path(os.path.join(ROOT, "data", "price_watch.json"))
 CHECK_EVERY_S = 6 * 3600
 
 

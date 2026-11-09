@@ -19,7 +19,8 @@ from ishti.skills import ask_first, trace
 
 I = re.I
 URL = re.compile(r"https?://[^\s<>\"')\]]+", I)
-WATCHES = os.path.join(ROOT, "data", "watches.json")
+from ishti.test_mode import scratch_path  # noqa: E402
+WATCHES = scratch_path(os.path.join(ROOT, "data", "watches.json"))
 EVERY_S = 15 * 60
 RISKY_EXT = (".exe", ".msi", ".bat", ".cmd", ".ps1", ".scr", ".vbs", ".jar", ".apk", ".dll")
 from ishti.skills.webtools import browser_data  # noqa: E402

@@ -14,6 +14,14 @@ def test_config_paths_follow_the_install_folder(monkeypatch):
 
 
 def test_nothing_in_this_checkout_points_outside_it():
+    import json
     import ishti
+    # the shipped config (the live CONFIG is rebased to the suite's scratch folder by conftest)
+    raw = ishti._relocate(json.load(open(os.path.join(ishti.ROOT, "ishti", "config.json"), encoding="utf-8")))
     for key in ("db_path", "chroma_dir"):
-        assert os.path.normcase(ishti.CONFIG["memory"][key]).startswith(os.path.normcase(ishti.ROOT)), key
+        assert os.path.normcase(raw["memory"][key]).startswith(os.path.normcase(ishti.ROOT)), key
+
+
+def test_the_suite_never_writes_the_owners_data_folder():
+    import ishti
+    assert not os.path.normcase(ishti.CONFIG["memory"]["db_path"]).startswith(os.path.normcase(os.path.join(ishti.ROOT, "data")))

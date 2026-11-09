@@ -19,7 +19,8 @@ import uuid
 
 from ishti import CONFIG, ROOT
 
-DEFAULT_DB = os.path.join(ROOT, "data", "learning.db")
+from ishti.test_mode import scratch_path  # noqa: E402
+DEFAULT_DB = scratch_path(os.path.join(ROOT, "data", "learning.db"))
 DEFAULTS = {
     "enabled": True,
     "proactive": False,

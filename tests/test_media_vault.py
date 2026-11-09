@@ -175,6 +175,8 @@ assert key.read_bytes() == b"owner-key-sentinel"
 assert (vault / "old.enc").read_bytes() == b"owner-ciphertext-sentinel"
 '''
     result = subprocess.run([sys.executable, "-c", code, str(tmp_path / "owner")],
-                            env={**os.environ, "ISHTI_TEST_MODE": "1", "ISHTI_SCRATCH": "1"},
+                            # the per-pid default ("_work/scratch"), not the suite's pinned scratch folder
+                            env={**{k: v for k, v in os.environ.items() if k != "ISHTI_SCRATCH_DIR"},
+                                 "ISHTI_TEST_MODE": "1", "ISHTI_SCRATCH": "1"},
                             capture_output=True, text=True, timeout=15)
     assert result.returncode == 0, result.stderr

@@ -2,10 +2,11 @@
 import os
 
 
-def test_scratch_path_requires_both_flags(tmp_path, monkeypatch):
+def test_scratch_path_follows_the_scratch_flag(tmp_path, monkeypatch):
     import ishti
     from ishti.test_mode import scratch_path
     monkeypatch.setattr(ishti, "ROOT", str(tmp_path))
+    monkeypatch.delenv("ISHTI_SCRATCH_DIR", raising=False)  # the per-pid default, not the suite's pinned folder
     owner_path = str(tmp_path / "owner" / "facts.db")
     monkeypatch.setenv("ISHTI_TEST_MODE", "1")
     monkeypatch.setenv("ISHTI_SCRATCH", "1")
@@ -15,8 +16,8 @@ def test_scratch_path_requires_both_flags(tmp_path, monkeypatch):
     monkeypatch.delenv("ISHTI_SCRATCH")
     assert scratch_path(owner_path) == owner_path
     monkeypatch.setenv("ISHTI_SCRATCH", "1")
-    monkeypatch.setenv("ISHTI_TEST_MODE", "0")
-    assert scratch_path(owner_path) == owner_path
+    monkeypatch.setenv("ISHTI_TEST_MODE", "0")  # scratch is its own opt-in: the pytest suite uses it without test mode
+    assert scratch_path(owner_path) != owner_path
 
 
 def test_explicit_fact_store_and_conversation_paths_are_preserved(tmp_path):
@@ -38,6 +39,7 @@ def test_default_conversation_constructor_uses_scratch(tmp_path, monkeypatch):
     import ishti
     from orchestrator.memory.conversation import ConversationManager
     monkeypatch.setattr(ishti, "ROOT", str(tmp_path))
+    monkeypatch.delenv("ISHTI_SCRATCH_DIR", raising=False)
     monkeypatch.setenv("ISHTI_TEST_MODE", "1")
     monkeypatch.setenv("ISHTI_SCRATCH", "1")
     manager = ConversationManager()
