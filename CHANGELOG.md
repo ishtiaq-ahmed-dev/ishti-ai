@@ -100,6 +100,10 @@ with automatic local failover, and every turn makes fewer model calls.
   longer auto-downloaded, and a newly pinned WAHA image actually replaces the running one.
 - **The test suite never writes your data folder** (it wrote into the real audit log, facts and learning stores).
 - The launcher checks that the app on port 8888 is ISHTI before focusing it; the packaged exe is no longer UPX-packed.
+- **Voice:** "Hey Ishtiaq" no longer wakes ISHTI (the fuzzy wake match was too loose), the wake model uses its own
+  speech gate against TV and noise, "okay" while ISHTI is thinking no longer hijacks the answer, transcripts stay out
+  of the log, Telegram voice notes are deleted once transcribed, a missing speech model is never replaced by a silent
+  3 GB download, and Live mode announces only the reply to screen readers.
 - **OWASP LLM Top 10 (2025) / Agentic Top 10 (2026) audit fixes:**
   - running code from the `dev` skill asks first, and remote channels can never trigger code execution;
   - a T1 workflow step fed another step's output (web, file or message text) asks first;
