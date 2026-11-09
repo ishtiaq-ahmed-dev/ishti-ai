@@ -125,10 +125,28 @@ def test_is_running_does_not_pay_the_closed_port_penalty():
     t = time.time()
     assert is_running(free) is False
     assert time.time() - t < 1.0
-    with socket.socket() as srv:
+    with socket.socket() as srv:  # something else holding the port is not ISHTI
         srv.bind(("127.0.0.1", 0))
         srv.listen(1)
-        assert is_running(srv.getsockname()[1]) is True
+        assert is_running(srv.getsockname()[1]) is False
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Health(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = b'{"ok": true, "state": "ready"}' if self.path == "/api/health" else b"{}"
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+    server = HTTPServer(("127.0.0.1", 0), Health)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        assert is_running(server.server_address[1]) is True
+    finally:
+        server.shutdown()
 
 
 def test_launcher_registers_shell_off_the_critical_path():

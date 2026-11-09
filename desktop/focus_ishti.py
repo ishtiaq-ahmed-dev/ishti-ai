@@ -20,7 +20,15 @@ def is_running(port=8888) -> bool:
             pass
     except OSError:
         return False
-    return True
+    # an open port is not ISHTI: another app holding 8888 used to get a window pointed at it while ISHTI never started.
+    # ISHTI's /api/health carries a "state"; anything else is someone else (ISHTI still booting shows up on retry).
+    import json
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1.5) as r:
+            return "state" in json.loads(r.read(65536) or b"{}")
+    except Exception:
+        return False
 
 
 def get_ishti_windows() -> list[int]:
