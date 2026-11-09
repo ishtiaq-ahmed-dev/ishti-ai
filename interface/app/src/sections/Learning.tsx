@@ -165,7 +165,7 @@ const KIN_PRESETS = [
 const GENERATIONS = [
   { id: 1, label: "Generation 1 · Grandparents & Elders", desc: "Elder roots, grandparents, and ancestors", badgeColor: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30" },
   { id: 2, label: "Generation 2 · Parents & Aunts/Uncles", desc: "Parents, aunts, uncles, and senior mentors", badgeColor: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30" },
-  { id: 3, label: "Generation 3 · Self, Siblings & Peers", desc: "Self (Ishtiaq Ahmed), spouse, brothers, sisters, and cousins", badgeColor: "bg-accent/10 text-accent border-accent/30" },
+  { id: 3, label: "Generation 3 · Self, Siblings & Peers", desc: "Self, spouse, brothers, sisters, and cousins", badgeColor: "bg-accent/10 text-accent border-accent/30" },
   { id: 4, label: "Generation 4 · Children & Next Generation", desc: "Children, nephews, nieces, and future descendants", badgeColor: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30" },
 ];
 
@@ -1450,7 +1450,7 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
                           ) : (
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                               {tierMembers.map((m) => {
-                                const isMe = m.id === "me" || m.name.toLowerCase() === "ishtiaq ahmed";
+                                const isMe = m.id === "me";
                                 const isDeleting = deleteConfirm === m.name;
                                 const initials = m.name
                                   .split(" ")

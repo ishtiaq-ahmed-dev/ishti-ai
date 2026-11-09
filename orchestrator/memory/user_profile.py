@@ -124,10 +124,10 @@ class UserMemory:
 
     def _init_default_profile(self):
         self._profile = UserProfile(
-            name="Ishtiaq Ahmed",
+            name="",
             relationship="owner",
-            role="AI student",
-            location={"city": "Peshawar", "country": "Pakistan"},
+            role="",
+            location={},
             known_since=time.strftime("%Y-%m-%dT%H:%M:%S"),
             updated_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
         )

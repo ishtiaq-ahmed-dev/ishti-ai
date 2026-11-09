@@ -102,3 +102,7 @@ tests/fixtures_new.zip
 
 # imported assistant conversations (personal)
 .cloud-attachments/
+
+# generated benchmark output and internal audit sheets (local only; may contain chat content)
+metrics/
+audit/

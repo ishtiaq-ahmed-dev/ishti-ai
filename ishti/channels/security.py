@@ -118,12 +118,23 @@ def _expire_pairings():
         _pairings.pop(code, None)
 
 
+_pair_failures: list[float] = []
+MAX_PAIR_FAILURES = 5  # wrong codes inside a code's lifetime before every pending code is burned
+
+
 def try_pair(code: str, telegram_user_id: int) -> bool:
-    """Consume a pairing code on behalf of a Telegram numeric ID. Single-use, expiring."""
+    """Consume a pairing code on behalf of a Telegram numeric ID. Single-use, expiring. A 6-digit code is guessable,
+    so after MAX_PAIR_FAILURES wrong guesses within 10 minutes all pending codes are invalidated (issue a new one)."""
     _expire_pairings()
     rec = _pairings.pop(code, None) if code else None
     if not rec:
+        now = time.time()
+        _pair_failures[:] = [t for t in _pair_failures if now - t < 600] + [now]
+        if len(_pair_failures) >= MAX_PAIR_FAILURES and _pairings:
+            _pairings.clear()
+            _pair_failures.clear()
         return False
+    _pair_failures.clear()
     pol = policy_mod.load(force=True)
     ids = sorted({int(x) for x in pol.get("allowed_telegram_ids", [])} | {int(telegram_user_id)})
     policy_mod.save({"allowed_telegram_ids": ids})
@@ -292,6 +303,10 @@ if __name__ == "__main__":
     code2 = new_pairing_code(ttl_s=-1)
     time.sleep(0.01)
     assert not try_pair(code2, 333)
+    code3 = new_pairing_code()
+    for guess in range(MAX_PAIR_FAILURES):
+        try_pair(f"{(int(code3) + 1 + guess) % 1000000:06d}", 444)
+    assert not try_pair(code3, 444), "the code must be burned after repeated wrong guesses"
     # rate limiter: burst then dry
     rl = RateLimiter(60, burst=3)
     assert [rl.allow() for _ in range(3)] == [True, True, True] and not rl.allow()

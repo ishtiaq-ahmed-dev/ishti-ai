@@ -62,7 +62,7 @@ def test_manager_starts_from_fake_agent_api_and_stops_owned_child(tmp_path, fake
     started = manager.start(8890, timeout_s=2)
     assert started == {"running": True, "public_url": "https://owner-test.ngrok-free.app",
                        "port": 8890, "last_error": ""}
-    assert commands[0][0] == ["C:/fake/ngrok.exe", "http", "127.0.0.1:8890", "--log=stdout"]
+    assert commands[0][0] == ["C:/fake/ngrok.exe", "http", "127.0.0.1:8890", "--log=stdout", "--inspect=false"]
     assert commands[0][1]["creationflags"] == getattr(tunnel.subprocess, "CREATE_NO_WINDOW", 0)
     assert json.loads((tmp_path / "tunnel.json").read_text(encoding="utf-8"))["public_url"].startswith("https://")
     assert manager.stop()["running"] is False and process.ended

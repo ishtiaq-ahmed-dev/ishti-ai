@@ -62,7 +62,9 @@ def requires_local(method: str, path: str) -> bool:
 
 def client_ip(conn) -> str:
     if any(header in conn.headers for header in PROXY_HEADERS):
-        forwarded = conn.headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
+        # The tunnel (ngrok) APPENDS the address it saw; everything before it is whatever the client sent. Taking the
+        # first value let an attacker pick a fresh "IP" per guess and walk past the per-IP login lockout.
+        forwarded = conn.headers.get("x-forwarded-for", "").rsplit(",", 1)[-1].strip()
         return forwarded[:80] or str(conn.headers.get("cf-connecting-ip") or conn.headers.get("x-real-ip") or "proxy")[:80]
     return str(conn.client.host if conn.client else "unknown")[:80]
 

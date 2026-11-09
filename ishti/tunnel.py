@@ -152,7 +152,9 @@ class TunnelManager:
                 self._log_handle = log_path.open("a+", encoding="utf-8")
                 self._log_handle.seek(0, os.SEEK_END); self._log_offset = self._log_handle.tell()
                 self.process = self.process_factory(
-                    [executable, "http", f"127.0.0.1:{port}", "--log=stdout"],
+                    # --inspect=false: ngrok's local inspector (port 4040) would otherwise keep every request in full,
+                    # Authorization headers, cookies and login bodies included.
+                    [executable, "http", f"127.0.0.1:{port}", "--log=stdout", "--inspect=false"],
                     stdout=self._log_handle, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
                     errors="replace", creationflags=flags,
                 )

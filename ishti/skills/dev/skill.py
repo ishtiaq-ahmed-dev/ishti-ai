@@ -50,7 +50,12 @@ def match(text):
 
 
 def op_scaffold(m, text, session):
-    return scaffold.op_scaffold(m, text, session)
+    # A scaffold downloads and runs a starter generator from npm (create-next-app / create-vite) with the owner's
+    # rights: that is the owner's call, every time.
+    # ponytail: generators stay @latest (their maintainers ship fixes there); pin them here if a supply-chain
+    # incident ever makes that the wrong trade-off.
+    return ask_first(session, "dev", "Create this project? (it downloads a starter generator from npm and runs it)",
+                     lambda: scaffold.op_scaffold(m, text, session))
 
 
 def op_run_script(m, text, session):

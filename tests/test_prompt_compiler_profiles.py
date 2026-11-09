@@ -10,7 +10,7 @@ from orchestrator import persona
 def test_compiled_prompt_contains_every_locked_rule_and_specs():
     prompt = persona.build_system_prompt()
     expected = (
-        "Ishtiaq Ahmed", "Windows 11", "RTX 5070 Ti", "16 GB VRAM", "64 GB RAM",
+        "Windows PC", "OWNER_MEMORY", "measured runtime",
         "PLAN:", "CALL:", "VERIFY:", "ANSWER:", "T0 READ-ONLY", "T1 REVERSIBLE",
         "T2 EXPLICIT OWNER YES REQUIRED", "T3 BLOCKED", "Never claim an action occurred",
         "Cite the actual supporting source", "ACTIVE MODE: PERSONAL",

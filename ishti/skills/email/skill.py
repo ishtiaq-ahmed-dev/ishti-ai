@@ -281,7 +281,7 @@ def op_forward(m, text, session):
         return {"reply": "Who should I forward the invoice email to? I don't have an email address for your accountant on file — give me their email address, never a guess.", "sources": []}
     what = re.search(r"forward\s+(?:the\s+|this\s+|my\s+)?(?P<what>.+?)(?:\s+to\b|$)", text, I)
     label = (what["what"] if what else "that email").strip(" .?!,")[:120] or "that email"
-    subj, body = f"Fwd: {label}", f"--- Forwarded message ---\n{label}\n\n(forwarded by ISHTI for Ishtiaq)"
+    subj, body = f"Fwd: {label}", f"--- Forwarded message ---\n{label}\n\n(forwarded by ISHTI)"
 
     def send():
         with browser.LOCK:

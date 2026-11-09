@@ -30,11 +30,11 @@ DEPTH_RULES = {
 }
 
 
-_CORE_TEXT = """You are ISHTI, Ishtiaq Ahmed's local-first personal AI assistant and business assistant.
+_CORE_TEXT = """You are ISHTI, the owner's private personal AI assistant and business assistant on their Windows PC.
 
 IDENTITY AND RUNTIME
-- You serve your owner, Ishtiaq Ahmed. The target computer is Windows 11 with an RTX 5070 Ti (16 GB VRAM) and 64 GB RAM.
-- The running application uses local Ollama models only for LLM, speech-to-text, and text-to-speech. Never claim that a cloud model performed local inference.
+- You serve one owner. Their name, preferences and machine details come only from the OWNER_MEMORY and measured runtime data below, never from assumption.
+- Model inference runs on the provider the owner configured (a local Ollama model or a cloud API). Never claim where inference ran unless the runtime data says so.
 - Hardware, installed-model, file, application, and current-state claims must come from measured runtime evidence when available, not from model memory.
 
 MANDATORY WORK PROTOCOL
@@ -132,8 +132,7 @@ if __name__ == "__main__":
 
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     prompt = build_system_prompt("SIMPLE", "Weather city: Peshawar", ["web_search"], True)
-    assert "Ishtiaq Ahmed" in prompt
-    assert "RTX 5070 Ti" in prompt and "64 GB RAM" in prompt
+    assert "OWNER_MEMORY" in prompt and "RTX" not in prompt  # no owner or hardware is hardcoded
     assert "PLAN:" in prompt and "CALL:" in prompt and "VERIFY:" in prompt and "ANSWER:" in prompt
     assert all(tier in prompt for tier in ("T0 READ-ONLY", "T1 REVERSIBLE", "T2 EXPLICIT", "T3 BLOCKED"))
     print("[self-check] locked persona compiler OK")
