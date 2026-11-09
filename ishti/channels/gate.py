@@ -51,6 +51,9 @@ FORBIDDEN = [
     ("read_secrets", re.compile(r"\b(?:read|show|reveal|give|print|export|send|text|share|paste)\b[^.?!]{0,30}\b(?:secrets?|passwords?|api\s?keys?|tokens?|credentials?)\b", re.I)),
     ("desktop_control", re.compile(r"\b(?:control|operate|take\s+over|drive)\b[^.?!]{0,30}\b(?:my\s+)?(?:pc|computer|desktop|screen|mouse|keyboard)\b", re.I)),
     ("screenshots", re.compile(r"\b(?:take|grab|capture|send)\b[^.?!]{0,20}\b(?:a\s+)?screenshot\b", re.I)),
+    # running code from a phone is never allowed: a stolen paired device would own the PC
+    ("code_exec", re.compile(r"\b(?:run|execute|exec|eval)\b[^.?!]{0,40}\b(?:code|script|python|py|powershell|cmd|"
+                             r"terminal|command|snippet|\.py|\.ps1|\.bat|\.exe)\b|```", re.I)),
 ]
 
 _alert_lock = threading.Lock()

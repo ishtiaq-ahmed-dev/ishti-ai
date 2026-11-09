@@ -140,6 +140,25 @@ def _save(rule):
 
 
 # ---------------------------------------------------------------- the loop
+MAX_FIRES_PER_HOUR = 20      # a rule that triggers itself (its action creates the file it watches) cannot run away
+_RUNNING = threading.BoundedSemaphore(3)  # at most 3 automation actions run at once; the rest wait their turn
+
+
+def _allow_fire(rule) -> bool:
+    now = time.time()
+    fires = [t for t in rule["state"].get("_fires", []) if now - t < 3600]
+    if len(fires) >= MAX_FIRES_PER_HOUR:
+        rule["state"]["_fires"] = fires
+        return False
+    rule["state"]["_fires"] = fires + [now]
+    return True
+
+
+def _run_bounded(announce, run_task, action):
+    with _RUNNING:
+        announce(run_task(action))
+
+
 def tick(announce, run_task):
     """One pass over the active rules; returns the actions started (for tests)."""
     started = []
@@ -151,15 +170,17 @@ def tick(announce, run_task):
             continue
         if rule["cond"]["kind"] == "file":
             for path in (detail or [])[:10]:
+                if not _allow_fire(rule):
+                    break
                 action = re.sub(r"\b(?:it|the\s+file|that\s+file|this\s+file)\b", lambda _, p=path: f'"{p}"', rule["action"], flags=I)
                 started.append(action)
             rule["fired"] += len(detail or [])
         elif rule["cond"]["kind"] == "log":
-            if true:  # every new batch of matching lines is news (a log doesn't "stay" true)
+            if true and _allow_fire(rule):  # every new batch of matching lines is news (a log doesn't "stay" true)
                 started.append(rule["action"])
                 rule["fired"] += 1
                 announce(f"Automation #{rule['id']}: {describe(rule['cond'])} - {detail}")
-        elif true and rule["armed"]:
+        elif true and rule["armed"] and _allow_fire(rule):
             started.append(rule["action"])
             rule["armed"], rule["fired"] = 0, rule["fired"] + 1
             detail and announce(f"Automation #{rule['id']}: {describe(rule['cond'])} ({detail}).")
@@ -167,7 +188,7 @@ def tick(announce, run_task):
             rule["armed"] = 1  # re-arm once the condition clears
         _save(rule)
     for action in started:
-        threading.Thread(target=lambda a=action: announce(run_task(a)), daemon=True).start()
+        threading.Thread(target=_run_bounded, args=(announce, run_task, action), daemon=True).start()
     return started
 
 
@@ -215,12 +236,19 @@ def run(text, session):
     state = {}
     if cond["kind"] == "file":
         check(cond, state)  # remember what's already in the folder: only new files count
-    with f.lock, f.db:
-        cur = f.db.execute("INSERT INTO automations(cond, action, created, state) VALUES(?,?,?,?)",
-                           (json.dumps(cond), action, time.time(), json.dumps(state)))
-    trace(session, "automation", f"when {describe(cond)} -> {action}")
-    return {"reply": f"Automation #{cur.lastrowid}: when {describe(cond)}, I'll {action[0].lower()}{action[1:]}. "
-                     "(\"list my automations\" to see them all.)", "sources": []}
+
+    def create():
+        with f.lock, f.db:
+            cur = f.db.execute("INSERT INTO automations(cond, action, created, state) VALUES(?,?,?,?)",
+                               (json.dumps(cond), action, time.time(), json.dumps(state)))
+        trace(session, "automation", f"when {describe(cond)} -> {action}")
+        return (f"Automation #{cur.lastrowid}: when {describe(cond)}, I'll {action[0].lower()}{action[1:]}. "
+                "(\"list my automations\" to see them all.)")
+    # A standing rule acts later with nobody watching (OWASP ASI08/ASI10): the owner approves the exact trigger and
+    # action once, at creation.
+    from ishti.skills import ask_first
+    return ask_first(session, "automation", f"Create this standing rule? When {describe(cond)}, run: \"{action}\" "
+                     f"(at most {MAX_FIRES_PER_HOUR} times an hour). Create it", create)
 
 
 if __name__ == "__main__":
@@ -247,9 +275,12 @@ if __name__ == "__main__":
     assert match(f"when a pdf appears in {folder}, summarize it") and match("list my automations")
     assert not match("when is my exam") and not match("if it rains tomorrow")
     s = {}
-    r = run(f"whenever a new pdf appears in {folder}, summarize it", s)["reply"]
+    q = run(f"whenever a new pdf appears in {folder}, summarize it", s)["reply"]
+    assert q.startswith("Create this standing rule?") and not rules(), q  # nothing is stored before the owner's yes
+    r = s.pop("pending")["action"]()
     assert r.startswith("Automation #1") and "summarize" in r, r
     run("when memory goes above 1%, remind me to close some tabs", s)  # true right now: fires once
+    s.pop("pending")["action"]()
     heard, ran = [], []
     fake = lambda t: ran.append(t) or f"done: {t}"
     assert tick(heard.append, fake) == ["remind me to close some tabs"]  # old.pdf doesn't count

@@ -1026,12 +1026,15 @@ def _run_single(text, session):
                         found.append(wname)
         except Exception:
             swallowed('ishti/skills/relationships/skill.py:_run_single:929')
+        # This used to invent recipients ("Ali, Usman") when none were saved and answer "Sent message to ..." on yes
+        # with nothing sent. Group sends are not implemented: say who matched and how to send for real.
         if not found:
-            found = ["Ali", "Usman"]
+            return {"reply": f"I don't have any {group + ' ' if group else ''}{rel}s saved, so there's no one to message. "
+                             f"Tell me who they are (e.g. \"Ali is my {rel}\").", "sources": [], "verified": False}
         recipients = ", ".join(found)
-        session["pending"] = {"skill": "relationships", "action": lambda: f"Sent message to {recipients}.", "gate": f"send message to all {group} {rel}s ({recipients})"}
-        return {"reply": f"About to message all your {group or ''} {rel}s ({recipients}) about {topic}: \"Hi everyone, let's meet for a study group this weekend.\" Confirm sending to all recipients? (yes/no)",
-                "sources": []}
+        return {"reply": f"Your {group + ' ' if group else ''}{rel}s I know: {recipients}. I don't send group messages in one go - "
+                         f"say \"send <message> to <name> on WhatsApp\" for each and I'll show each draft for your yes.",
+                "sources": [], "verified": False}
 
     if (m := DESCRIBE.match(t)) and ACT_ON_THEM.search(m["tail"] or ""):  # defect 148: ask, never guess
         return _describe_people(rgraph, m["rel"].lower(), m["ctx"], m["tail"] or "", session)

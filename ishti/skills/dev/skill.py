@@ -114,13 +114,21 @@ def tail(text, n=25):
 
 # ---------------------------------------------------------------- running code
 def op_run_code(m, text, session):
+    """Running code is the owner's call every time (OWASP ASI05): the snippet is shown and runs only after a yes."""
     code = CODE.search(text)
     if not code:
         return "Put the code in a ```python``` block."
+    snippet = code.group("code")
+    preview = snippet if len(snippet) < 1500 else snippet[:1500] + "\n# ..."
+    return ask_first(session, "dev", f"Run this Python code on your PC (30 s limit)?\n```python\n{preview}\n```\nRun it",
+                     lambda: _run_snippet(snippet, session))
+
+
+def _run_snippet(snippet, session):
     os.makedirs(SANDBOX, exist_ok=True)
     path = os.path.join(SANDBOX, f"snippet_{int(time.time())}.py")
     with open(path, "w", encoding="utf-8") as f:
-        f.write(code.group("code"))
+        f.write(snippet)
     trace(session, "python", "running your snippet in data/sandbox (30 s limit)", status="start")
     try:
         rc, out = sh([sys.executable, path], SANDBOX, timeout=30)
@@ -134,6 +142,10 @@ def op_run_file(m, text, session):
     path = m.group("path")
     if not os.path.isfile(path):
         return f"{path} doesn't exist."
+    return ask_first(session, "dev", f"Run {path} with Python on your PC (2 min limit)", lambda: _run_file(path))
+
+
+def _run_file(path):
     try:
         rc, out = sh([sys.executable, path], os.path.dirname(path), timeout=120)
     except subprocess.TimeoutExpired:

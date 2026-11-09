@@ -127,6 +127,18 @@ def execute(session, plan, run_tool, skills):
                 plan["state"] = "blocked"
                 save(session, plan)
                 return result(plan, {"reply": str(exc), "execution_blocked": True})
+            skill = skills.get(step["tool"])
+            tier = skill.manifest.get("tier", "T1") if skill is not None else "T2"
+            if "{{step:" in step["input"] and tier == "T1":
+                # Another step's output (a web page, a file, a message) is untrusted data. A state-changing T1 tool fed
+                # with it asks first (OWASP LLM01/ASI01); T2 tools ask anyway, T0 tools only read.
+                from ishti.skills import ask_first
+                plan["state"] = "approval"
+                save(session, plan)
+                out = ask_first(session, step["tool"],
+                                f"Use the previous step's result as input to {step['tool']}?\n\n{text[:600]}\n\nGo ahead",
+                                lambda tool=step["tool"], bound=text: run_tool(skills, tool, bound, session))
+                return result(plan, {**out, "confirm_required": True})
             plan["state"] = "executing"
             save(session, plan)  # durable BEFORE dispatch, so a crash cannot auto-replay
             out = run_tool(skills, step["tool"], text, session)

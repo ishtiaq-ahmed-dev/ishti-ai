@@ -747,7 +747,7 @@ def _run(text, s, dec):
                     gate_txt = f"run '{mask(text, s.get('redact'))[:120]}'"
                     out = test_mode.gated_reply(name, gate_txt, tier)
                     if out.get("confirm_required"):
-                        s["pending"] = {"skill": name, "gate": gate_txt, "request": text,
+                        s["pending"] = {"skill": name, "gate": gate_txt, "request": text, "at": time.time(),
                                         "action": (lambda n=name, g=gate_txt, t=tier:
                                                    test_mode.blocked(n, g, None, t))}
                 else:
@@ -1097,8 +1097,11 @@ def _handle(text, sid, conv, s, events, t0, channel):
     # 1. Pending confirmation check (T2 yes/no gate). The pending is consumed under a lock:
     #    two simultaneous "yes" answers (voice + UI double trigger) must not both run the action.
     pending = s.get("pending")
-    ans = answer_of(text) if (pending and pending.get("action")) else None
-    if pending and pending.get("action") and ans == "yes" and time.time() - pending.get("at", time.time()) > APPROVAL_TTL_S:
+    # Only a CALLABLE action is an approval (capcut stores "action": "pick_video", a string, for its own picker flow).
+    # A pending with no timestamp counts as expired: an approval must prove it is fresh (fail closed).
+    approval = bool(pending and callable(pending.get("action")))
+    ans = answer_of(text) if approval else None
+    if approval and ans == "yes" and time.time() - pending.get("at", 0) > APPROVAL_TTL_S:
         # An approval left waiting is not consent later: a stray "yes" an hour on must not run an old action.
         with _PENDING_LOCK:
             if s.get("pending") is pending:
@@ -1109,13 +1112,13 @@ def _handle(text, sid, conv, s, events, t0, channel):
                         "so nothing was done. Ask again if you still want it.", "sources": []}
         return _finish(text, sid, conv, s, events, t0, channel, pending.get("skill") or "pending", out,
                        {"skill": pending.get("skill"), "source": "pending", "confidence": 1.0})
-    if pending and pending.get("action") and ans:
+    if approval and ans:
         with _PENDING_LOCK:
             if s.get("pending") is pending:
                 s["pending"] = None
             else:
                 pending, ans = None, None
-    if pending and pending.get("action") and ans:
+    if approval and pending and ans:
         tier = SKILLS[pending["skill"]].manifest.get("tier", "T1") if pending["skill"] in SKILLS else "T2"
         audit.record(f"{'confirmed' if ans == 'yes' else 'declined'}: {pending.get('gate', '')[:150]}", text, skill=pending["skill"],
                      initiator="owner", tier=tier, confirmed=time.time() if ans == "yes" else None, session=sid)

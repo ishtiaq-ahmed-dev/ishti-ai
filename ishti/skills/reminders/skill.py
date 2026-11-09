@@ -13,6 +13,7 @@ from ishti import llm
 from ishti.facts import get_facts
 
 I = re.I
+MIN_TASK_EVERY_S = 900  # scheduled tasks (not plain reminders) repeat at most every 15 min
 UNIT = {"s": 1, "sec": 1, "second": 1, "m": 60, "min": 60, "minute": 60, "h": 3600, "hr": 3600, "hour": 3600, "day": 86400}
 # A secret ASSIGNED a value ("my password is Hunter2", "api key: sk-...", "the 2FA code is 918273") must
 # not be stored: reminder text is plain text in the task list and is shown on screen when it fires (same
@@ -339,7 +340,7 @@ def run(text, session, now=None):
                     f.db.executemany("UPDATE reminders SET done=1 WHERE id=?", [(i,) for i in ids])
                 return f"Deleted all {len(ids)} reminder(s)."
 
-            session["pending"] = {"skill": "reminders", "action": _wipe}
+            session["pending"] = {"skill": "reminders", "action": _wipe, "at": time.time()}
             return {"reply": f"You have {len(rows)} reminder(s) set. Delete all of them? Say 'yes' to "
                              f"confirm.", "sources": []}
         if m["all"]:
@@ -359,17 +360,29 @@ def run(text, session, now=None):
         if repeat.startswith("monthly:"):
             body = re.sub(r"\s*\b(?:on\s+)?(?:the\s+)?(?:[12]?\d|3[01])(?:st|nd|rd|th)(?:\s+of)?\b", "", body, flags=I).strip(" ,.")
         body = re.sub(r"^(?:please\s+)?(?:remind\s+me\s+)?(?:to\s+)?", "", body, flags=I).strip(" ,.") or "Reminder"
+        if task and repeat.startswith("every:") and int(repeat[6:]) < MIN_TASK_EVERY_S:
+            repeat = f"every:{MIN_TASK_EVERY_S}"  # a scheduled TASK runs a request each time: never more often than this
         due = first_due(t, repeat, now)
-        with f.lock, f.db:
-            f.db.execute("INSERT INTO reminders(due, text, created, repeat, task) VALUES(?,?,?,?,?)",
-                         (due.timestamp(), body, time.time(), repeat, int(task)))
         every = {"daily": "every day", "weekdays": "every weekday"}.get(repeat) or (
             f"every {DAYS[int(repeat[7:])].title()}" if repeat.startswith("weekly") else
             f"on day {repeat[8:]} of every month" if repeat.startswith("monthly") else f"every {int(repeat[6:]) // 60} min")
-        return {"reply": f"{'Scheduled' if task else 'Repeating reminder'} {every}"
+
+        def schedule():
+            with f.lock, f.db:
+                f.db.execute("INSERT INTO reminders(due, text, created, repeat, task) VALUES(?,?,?,?,?)",
+                             (due.timestamp(), body, time.time(), repeat, int(task)))
+            return {"reply": f"{'Scheduled' if task else 'Repeating reminder'} {every}"
+                             + (f" at {due:%H:%M}" if not repeat.startswith("every:") else "")
+                             + f": {body}. First: {_fmt(due.timestamp(), now)}."
+                             + (" I'll do it and tell you the result." if task else ""), "sources": []}
+        if not task:
+            return schedule()
+        # A scheduled TASK runs a request later with nobody watching (OWASP ASI08/ASI10): the owner approves the exact
+        # request once, now. Plain reminders only notify, so they need no approval.
+        from ishti.skills import ask_first
+        return ask_first(session, "reminders", f"Schedule this to run {every}"
                          + (f" at {due:%H:%M}" if not repeat.startswith("every:") else "")
-                         + f": {body}. First: {_fmt(due.timestamp(), now)}." + (" I'll do it and tell you the result." if task else ""),
-                "sources": []}
+                         + f" without asking again: \"{body}\"", schedule)
     if (m := todo(t)) and not SET.match(t):
         body = m["what"]
         due = when(body, now)
@@ -482,7 +495,10 @@ if __name__ == "__main__":
     assert dt.datetime.fromtimestamp(next_due(first.timestamp(), "monthly:31", first.timestamp() + 60)) == dt.datetime(2026, 10, 31, 10)
     r = run("remind me to pay the electricity bill on the 12th of every month", {}, now)["reply"]
     assert "on day 12 of every month" in r and "pay the electricity bill" in r and "12th" not in r, r
-    r = run("every weekday at 9 give me my brief", {}, now)["reply"]
+    sess = {}
+    q = run("every weekday at 9 give me my brief", sess, now)["reply"]
+    assert q.startswith("Schedule this to run every weekday at 09:00") and sess.get("pending"), q  # a task asks first
+    r = sess.pop("pending")["action"]()["reply"]
     assert r.startswith("Scheduled every weekday at 09:00") and "give me my brief" in r, r
     ran = []
     fire_due(heard.append, now=dt.datetime(2026, 9, 28, 9, 0, 5).timestamp(), run_task=lambda t: ran.append(t) or "BRIEF")
