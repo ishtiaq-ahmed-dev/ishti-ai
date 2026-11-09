@@ -101,7 +101,8 @@ def test_chat_retry_preserves_older_context(monkeypatch):
     monkeypatch.setattr(skill, "trace", lambda *a, **k: None)
     checks = iter([(False, None), (True, None)])
     monkeypatch.setattr(skill, "inspect", lambda _answer: next(checks))
-    monkeypatch.setattr(llm, "style", lambda: "style")
+    monkeypatch.setattr(llm, "style", lambda **_k: "style")
+    monkeypatch.setattr(llm, "dynamic_block", lambda *_a, **_k: "NOW")
     monkeypatch.setattr(llm, "model_for", lambda _role: "fixture")
     monkeypatch.setattr(cstate, "get_manager", lambda: cstate.ConversationStateManager(cstate.MemoryStore()))
     seen = []
@@ -122,7 +123,8 @@ def test_brain_keeps_older_context_in_its_one_call(monkeypatch):
     from ishti import skill_execution
     monkeypatch.setattr(retrieval, "assemble_context", lambda *a, **k: "")
     monkeypatch.setattr(skill_execution, "execute", lambda *a, **k: {"reply": "fixture read", "sources": []})
-    monkeypatch.setattr(llm, "style", lambda: "style")
+    monkeypatch.setattr(llm, "style", lambda **_k: "style")
+    monkeypatch.setattr(llm, "dynamic_block", lambda *_a, **_k: "NOW")
     monkeypatch.setattr(llm, "model_for", lambda _role: "fixture")
     monkeypatch.setattr(cstate, "get_manager", lambda: cstate.ConversationStateManager(cstate.MemoryStore()))
     seen = []

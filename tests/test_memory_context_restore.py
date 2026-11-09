@@ -182,7 +182,8 @@ def test_chat_skill_sends_bounded_older_context_and_pinned_state(monkeypatch):
     monkeypatch.setattr(chat_skill, "build_context", lambda *_args, **_kwargs: "")
     monkeypatch.setattr(chat_skill, "trace", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(chat_skill, "inspect", lambda _answer: (True, None))
-    monkeypatch.setattr(llm, "style", lambda: "style")
+    monkeypatch.setattr(llm, "style", lambda **_k: "style")
+    monkeypatch.setattr(llm, "dynamic_block", lambda *_a, **_k: "NOW")
     monkeypatch.setattr(llm, "model_for", lambda _role: "local-test")
 
     def fake_chat(messages, **_kwargs):

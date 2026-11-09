@@ -194,7 +194,7 @@ def did_you(text, session):
                   "Answer whether that action was actually DONE, using only the conversation above. It counts as done only if an ISHTI "
                   "message clearly reports the finished result (not a plan, not a question, not \"I will\"). If it was not done or you "
                   "cannot tell, say plainly that it was not done yet and offer to do it now. Two sentences at most.",
-                  role="planner", system=llm.style(), temperature=0, max_tokens=120)
+                  role="planner", system=llm.style(about=text), temperature=0, max_tokens=120)
     return {"reply": out or "No - I haven't done that yet. Shall I do it now?", "sources": []}
 
 
@@ -235,8 +235,11 @@ def run(text, session):
     trace(session, "model", f"thinking with {llm.model_for(role)}", status="start")
     # memory goes in the system prompt, not the owner's turn: in the user turn the model echoed the
     # "KNOWN FACTS" header back into its answer
-    system = llm.style() + (f"\n\nContext you may use (never mention these headings; the known facts are exact "
-                           f"and override anything else you recall):\n{ctx}" if ctx else "")
+    # stable style first, per-request context next, the clock/self-model last (prompt-cache friendly)
+    system = (llm.style(about=text, dynamic=False)
+              + (f"\n\nContext you may use (never mention these headings; the known facts are exact "
+                 f"and override anything else you recall):\n{ctx}" if ctx else "")
+              + "\n\n" + llm.dynamic_block(text))
     # Keep the live conversation state pinned and summarize older turns instead of silently
     # throwing away everything outside the last dozen messages after a long chat resumes.
     try:
