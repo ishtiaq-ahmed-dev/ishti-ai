@@ -9,6 +9,7 @@ import json
 import os
 import re
 import sys
+import time
 
 if "pytest" not in sys.modules:  # every request path imports the skills: a dead console/pipe must never fail a request
     from ishti import safe_stdio
@@ -280,7 +281,8 @@ def answer_of(text):
 def ask_first(session, skill, question, action):
     """The one yes/no gate for sensitive (T2) actions: nothing runs until the owner says yes. action() -> reply
     text. The dispatcher runs it on "yes", cancels on "no", and drops it if the owner moves on to something else."""
-    session["pending"] = {"skill": skill, "gate": question, "action": action}
+    # "at": a yes that arrives after dispatcher.APPROVAL_TTL_S is refused - an old approval is not consent now
+    session["pending"] = {"skill": skill, "gate": question, "action": action, "at": time.time()}
     return {"reply": question.rstrip(" ?") + "? (yes/no)", "sources": []}
 
 

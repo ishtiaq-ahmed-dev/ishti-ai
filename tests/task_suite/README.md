@@ -73,7 +73,7 @@ you commit it.
   the project's own runner. Nobody outside the project has reproduced it.
 - **Not valid across revisions.** A result belongs to the revision it ran against. The tree has
   changed materially since the 2026-10-04 runs; a fresh full run is an outstanding release gate
-  (`docs/RELEASE_READINESS.md`).
+  (`docs/history/RELEASE_READINESS.md`).
 - **Not real user data.** Every fixture is synthetic. Nothing here has been scored against a real
   chat, file or message.
 - **Not the author's own idea of *your* work.** It measures whether ISHTI does what its author

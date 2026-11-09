@@ -142,6 +142,7 @@ class View(dict):
 
 INFLIGHT = {}  # session id -> threading.Condition guarding its count of running requests
 _PENDING_LOCK = threading.Lock()  # atomic consume of s["pending"] so one yes/no runs the action once
+APPROVAL_TTL_S = 600  # a yes to an approval older than this is refused (the action must be asked for again)
 
 
 def _runs_owned(sid) -> bool:
@@ -1088,6 +1089,17 @@ def _handle(text, sid, conv, s, events, t0, channel):
     #    two simultaneous "yes" answers (voice + UI double trigger) must not both run the action.
     pending = s.get("pending")
     ans = answer_of(text) if (pending and pending.get("action")) else None
+    if pending and pending.get("action") and ans == "yes" and time.time() - pending.get("at", time.time()) > APPROVAL_TTL_S:
+        # An approval left waiting is not consent later: a stray "yes" an hour on must not run an old action.
+        with _PENDING_LOCK:
+            if s.get("pending") is pending:
+                s["pending"] = None
+        audit.record(f"expired approval: {pending.get('gate', '')[:150]}", text, skill=pending.get("skill", ""),
+                     initiator="system", session=sid)
+        out = {"reply": f"That request expired - it waited more than {APPROVAL_TTL_S // 60} minutes for your answer, "
+                        "so nothing was done. Ask again if you still want it.", "sources": []}
+        return _finish(text, sid, conv, s, events, t0, channel, pending.get("skill") or "pending", out,
+                       {"skill": pending.get("skill"), "source": "pending", "confidence": 1.0})
     if pending and pending.get("action") and ans:
         with _PENDING_LOCK:
             if s.get("pending") is pending:
