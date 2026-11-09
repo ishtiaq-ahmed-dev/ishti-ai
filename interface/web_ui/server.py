@@ -64,6 +64,8 @@ def _api_token() -> str:
                 f.write(secrets.token_urlsafe(32))
         except FileExistsError:
             pass  # another server process created it
+    from ishti.secure_store import restrict_to_owner
+    restrict_to_owner(TOKEN_PATH)  # it inherited Users:(RX) from the folder: other accounts could read the owner's token
     with open(TOKEN_PATH) as f:
         return f.read().strip()
 

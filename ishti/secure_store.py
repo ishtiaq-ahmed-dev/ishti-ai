@@ -42,6 +42,34 @@ def _cipher():
             raise RuntimeError("The configured sensitive-storage key is invalid.") from None
 
 
+def restrict_to_owner(path) -> bool:
+    """Make a secret file readable only by the current Windows user and SYSTEM (protected DACL, no inherited
+    'Users'/'Authenticated Users' entries). -> True when applied. Best effort: never raises, and a no-op off Windows."""
+    if os.name != "nt":
+        try:
+            os.chmod(path, 0o600)
+            return True
+        except OSError:
+            return False
+    try:
+        import ntsecuritycon as con
+        import win32api
+        import win32security
+        token = win32security.OpenProcessToken(win32api.GetCurrentProcess(), win32security.TOKEN_QUERY)
+        user = win32security.GetTokenInformation(token, win32security.TokenUser)[0]
+        system = win32security.CreateWellKnownSid(win32security.WinLocalSystemSid)
+        acl = win32security.ACL()
+        for sid in (user, system):
+            acl.AddAccessAllowedAce(win32security.ACL_REVISION, con.FILE_ALL_ACCESS, sid)
+        win32security.SetNamedSecurityInfo(
+            str(path), win32security.SE_FILE_OBJECT,
+            win32security.DACL_SECURITY_INFORMATION | win32security.PROTECTED_DACL_SECURITY_INFORMATION,
+            None, None, acl, None)
+        return True
+    except Exception:
+        return False
+
+
 def seal_text(text):
     return PREFIX + _cipher().encrypt(text.encode("utf-8")).decode("ascii")
 
