@@ -33,6 +33,22 @@ Editing, deleting and reacting to messages are deliberately not enabled. Group a
 The session lives in the Docker volume `ishti_waha_sessions`, so you scan once. ISHTI stops the container when it
 shuts down and starts it again on the next link or connect.
 
+**Disconnect is not unlink.** *Disconnect* in Connectors only stops ISHTI's WhatsApp service; the device stays
+linked to your account. To really unlink it, open **WhatsApp → Linked devices** on your phone and log out the
+ISHTI device. To also remove its keys from this PC: `docker rm -f ishti-waha` then
+`docker volume rm ishti_waha_sessions`.
+
+### Keeping your number safe
+
+WhatsApp bans numbers that behave like bots. ISHTI follows WAHA's guidance
+(<https://waha.devlike.pro/docs/overview/how-to-avoid-blocking/>):
+
+- every send is paced like a person: marked seen, "typing…" for a moment scaled to the message, at least 2 s
+  between sends;
+- it never messages everyone at once, and warns before a first message to a number you have no chat with;
+- when WhatsApp starts limiting the number (HTTP 429/463/475), ISHTI says to wait - re-linking makes it worse;
+- media is downloaded only when you ask for a specific item.
+
 ### Configuration (`ishti/config.json`)
 
 ```json
