@@ -48,32 +48,26 @@ EXACT_REPLACEMENTS = {
     "to dos": "to-dos",
 }
 
-# Canonical site and app names for fuzzy matching
+# Canonical site and app names for fuzzy matching. Brand names only: ordinary English words here rewrote real words
+# before routing (measured: whether->weather, water->weather, calculate->calculator, contract->contacts,
+# browse->browser, reminded->reminders), so "Calculate a 15 percent tip" went to the apps skill.
 CANONICAL_TERMS = [
     "whatsapp",
-    "classroom",
-    "assignment",
-    "assignments",
     "google classroom",
     "youtube",
     "gmail",
     "github",
-    "browser",
     "calendar",
-    "reminders",
-    "weather",
-    "calculator",
-    "contacts",
-    "relationships",
-    "fileops",
-    "files",
-    "download",
-    "downloads",
-    "settings",
-    "profile",
     "notebook",
     "ipynb",
 ]
+# the typos the fuzzy list used to catch, now exact (a typo table can't eat a real word)
+EXACT_REPLACEMENTS.update({"wether": "weather", "wheather": "weather", "weahter": "weather", "waether": "weather",
+              "remider": "reminder", "reminer": "reminder", "remindr": "reminder", "calculater": "calculator",
+              "calcualtor": "calculator", "contcts": "contacts", "dowloads": "downloads", "downlods": "downloads",
+              "downlaods": "downloads", "donwloads": "downloads", "downloda": "download", "dowload": "download",
+              "downlaod": "download", "settigns": "settings", "setings": "settings", "browswer": "browser",
+              "brower": "browser", "relatinships": "relationships", "documnets": "documents", "docuemnts": "documents"})
 
 # Patterns for payload separation
 _CODE_BLOCK = re.compile(r"```[\s\S]*?```", re.M)

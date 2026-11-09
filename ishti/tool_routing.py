@@ -47,7 +47,7 @@ _CUES = (
     ("apps", re.compile(r"\b(?:outlook|notepad|calculator|brave|spotify|discord)\b", re.I)),
     ("pdftables", re.compile(r"\b(?:extract|pull|get|export|turn)\b.{0,55}\btable|\bpdf tables?\b|"
                               r"\btabular data\b.{0,45}\b(?:pdf|csv)\b", re.I)),
-    ("chart", re.compile(r"\b(?:bar chart|line (?:chart|graph)|histogram|chart|plot|visuali[sz]e)\b", re.I)),
+    ("chart", re.compile(r"\b(?:bar chart|line (?:chart|graph)|histogram|chart|visuali[sz]e)\b|\bplot\b(?!\s+(?:of|twist|summary|holes?))", re.I)),
     ("security_scan", re.compile(r"\b(?:security[- ]scan|security scan|scan mcp|audit (?:the )?skill manifests?|"
                                   r"(?:repository|repo).{0,30}(?:committed )?secrets?|shell true|verify false)\b", re.I)),
     ("fileops", re.compile(r"\b(?:rename|zip|unzip|duplicate files?|compare (?:these two |these |two )?(?:files?|folders?)|"
@@ -58,10 +58,10 @@ _CUES = (
                             r"short answer|notes for this|solve it|solve this|draft (?:a )?(?:linkedin|social) post|declining (?:this )?meeting)\b", re.I)),
     ("email", re.compile(r"\b(?:gmail|unread (?:mail|email)|search my (?:mail|email)|newest email|email to|"
                           r"read .{0,12}email from|send the approved email)\b", re.I)),
-    ("budget", re.compile(r"\b(?:i spent|spending|expenses?|budget limit|dining limit|log (?:salary )?income|"
+    ("budget", re.compile(r"\bi spent\s+(?:rs\.?\s*|pkr\s*|\$\s*)?\d|\b(?:spending|expenses?|budget limit|dining limit|log (?:salary )?income|"
                            r"monthly .{0,12}limit)\b", re.I)),
     ("study", re.compile(r"\b(?:quiz me|flashcards?|explain .{0,30} simply|study plan|grade my answer|exam prep)\b", re.I)),
-    ("travel", re.compile(r"\b(?:flights?|airfare|hotels?|place to stay)\b", re.I)),
+    ("web_search", re.compile(r"\b(?:flights?|airfare|hotels?|place to stay)\b", re.I)),
     ("shopping", re.compile(r"\b(?:cheapest|compare .{0,20}prices?|verified price|official store|retailers?|"
                              r"where can i buy|genuine .{0,20}(?:battery|ssd|monitor|product))\b", re.I)),
     ("markets", re.compile(r"\b(?:stock price|shares?|crypto|btc|bitcoin|gold price|silver|currency rate|"
@@ -69,11 +69,13 @@ _CUES = (
     ("docs", re.compile(r"\b(?:merge .{0,20}pdfs?|convert .{0,30}(?:word|pdf)|powerpoint|word (?:file|document|report)|"
                          r"summari[sz]e this spreadsheet|compare .{0,20}word documents?)\b", re.I)),
     ("calc", re.compile(r"\b(?:derivative|integral|percent|prime factors?|gcd|lcm|"
-                         r"how much .{0,20}cost)\b|(?:\d\s*[+*/=-]\s*\d)|"
+                         r"how much .{0,20}cost)\b|(?<![\d-])(?!\d{4}-\d{2}-\d{2})\d+(?:\.\d+)?\s*[+*/=-]\s*\d|"
                          r"\b\d[\d.,]*\s+(?:plus|minus|times|divided\s+by|multiplied\s+by|over)\s+\d[\d.,]*\b", re.I)),
     ("calendar", re.compile(r"\b(?:calendar|schedule|free slots?|add (?:a )?(?:meeting|event)|cancel .{0,20}event|ics)\b", re.I)),
     ("reminders", re.compile(r"\b(?:remind|reminder|timer|alarm|wake me|utha dena|uthao|yaad dila|alarm lagao)\b", re.I)),
-    ("relationships", re.compile(r"\b(?:brother|sister|mother|father|wife|husband|client|classmate|colleague|cousin|manager|friend)\b", re.I)),
+    ("relationships", re.compile(r"\bmy\s+(?:elder\s+|younger\s+|best\s+|older\s+)?(?:brother|sister|mother|father|wife|husband|client|"
+                                  r"classmate|colleague|cousin|manager|friend|boss)s?\b|\b(?:brother|sister|mother|father|wife|husband|"
+                                  r"cousin|friend)s?\s+(?:is|name|named|called)\b", re.I)),
     ("memory", re.compile(r"\b(?:remember that|what do you remember|forget the saved|project .{0,25}(?:status|is in)|"
                            r"update the status of project|where did i store)\b", re.I)),
     ("files", re.compile(r"\b(?:find|locate|where is|search my pc for)\b.{0,70}\b(?:file|folder|pdf|docx|csv|png|"
@@ -81,8 +83,9 @@ _CUES = (
     ("weather", re.compile(r"\b(?:weather|forecast|temperature|rain|umbrella|how hot|how cold|mausam|hawa|barish|mosam)\b|موسم", re.I)),
     # the owner's own PC locations: "3 newest files in downloads" is a folder question, never a web search
     ("folders", re.compile(r"\b(?:in|from|on|inside)\s+(?:my\s+|the\s+)?(?:downloads?|desktop|documents|pictures)\b"
-                           r"|\bmy\s+(?:downloads?|desktop|documents|pictures)\b|\b[A-Za-z]:\\", re.I)),
-    ("web_search", re.compile(r"\b(?:search the web|look up|latest|newest|today'?s? .{0,25}news|currently leads|"
+                           r"|\bmy\s+(?:downloads?|desktop|documents|pictures)\b"
+                           r"|\b(?:list|show|open|what'?s\s+in|how\s+many\s+\w+\s+in|organi[sz]e|clean\s+up)\b.{0,20}\b[A-Za-z]:\\(?![^\s]*\.\w{2,4}\b)", re.I)),
+    ("web_search", re.compile(r"\b(?:search the web|look up|(?:the\s+)?(?:latest|newest)\s+(?!i\b|you\b|we\b)\w+|today'?s? .{0,25}news|currently leads|"
                               r"actively maintained|what changed in)\b", re.I)),
 )
 
@@ -213,7 +216,8 @@ def _clarification(text: str, candidates: list[tuple[str, float]]) -> str:
 _COMPOUND = re.compile(
     r",?\s*(?:and\s+then|then\s+also|and\s+also|also\s+(?=(?:tell|remind|check|show|send|find|give|fetch|search))"
     r"|and\s+(?=(?:tell|remind|check|show|send|find|give|fetch|search|book|add|create|make|draft|write|set|list|compare|get|read|open|run|"
-    r"convert|calculate|translate|summari[sz]e|explain|play|schedule|note|save|download|rename|move|look\s+up|look\s+for))"
+    r"convert|calculate|translate|summari[sz]e|explain|play|schedule|note|save|download|rename|move|look\s+up|look\s+for|"
+    r"remember|log|rewrite|chart|plot|email|message|text|remove|delete))"
     r"|plus\s+|and\s+what(?:'s| is| are))\s*", re.I)
 
 # Skill pairs that read like two requests but are one task: opening a browser to search, and researching
