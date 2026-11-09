@@ -206,13 +206,21 @@ def clean(text: str, context: str = "") -> str:
     return (text or "").strip()
 
 
+BACKGROUND_ROLES = ("main", "validation")
+
+
 def model_for(role: str) -> str:
     """The model to use for a role right now: the configured one (with fallbacks below), unless the VRAM governor has
     moved the role to a lighter rung (planner downshifted while a heavy job runs, vision tier 2/3)."""
     if provider() == "api":  # one model for every role: one model call per pass, and no VRAM to govern
         if _cloud_open() and (fallback := failover_model()):
             return fallback  # the cloud is refusing: name the model that actually answers
-        return api_settings()["model"]
+        cfg = api_settings()
+        # Background roles (memory extraction = "main"/"validation") never face the owner: with
+        # api.background_local they run on the light local model when Ollama already has it, costing no API tokens.
+        if role in BACKGROUND_ROLES and cfg.get("background_local") and (local := failover_model()):
+            return local
+        return (cfg.get("models") or {}).get(role) or cfg["model"]  # api.models: a cheaper model per role, optional
     from ishti import vram
     if role in ("vision2", "vision3"):  # no config entry: the ladder's best installed rung
         rs = vram.rungs(role)
@@ -262,6 +270,12 @@ def _create(**args):
     local = args.pop("_local", False)
     if provider() == "api" and not local:  # a cloud model: no GPU to govern and no local service to restart
         fallback = failover_model()
+        if fallback and args.get("model") == fallback and fallback != api_settings().get("model"):
+            # model_for() chose the local model on purpose (a background role with api.background_local)
+            args.pop("stream_options", None)
+            args.pop("prompt_cache_key", None)
+            args.setdefault("reasoning_effort", "none")
+            return _create(**args, _role=None, _recover=recover, _local=True)
         if not (fallback and _cloud_open()):  # the breaker is only honoured when something can answer instead
             try:
                 return _create_api(dict(args), openai)
@@ -530,6 +544,8 @@ def _chat(messages, role="planner", system=STYLE, tools=None, temperature=0.3, m
         args["stream_options"] = {"include_usage": True} if not tools else None
         if args["stream_options"] is None:
             args.pop("stream_options")
+    if provider() == "api" and api_settings().get("provider") in ("openai", "openrouter") and args["model"] == api_settings()["model"]:
+        args["prompt_cache_key"] = f"ishti-{role}"  # keeps a role's calls on one cache shard / OpenRouter upstream
     if tools:
         args["tools"] = tools
     elif on_token:

@@ -7,7 +7,9 @@
       "model": "gpt-6.1-sol",
       "api_key_env": "ISHTI_API_KEY",
       "failover_local_model": "gemma3:4b",
-      "note": "Key: OS credential store (Settings card) or the ISHTI_API_KEY variable, never this file. failover_local_model answers only while the cloud refuses, and only if Ollama is already running with it pulled; empty string disables failover."
+      "note": "Key: OS credential store (Settings card) or the ISHTI_API_KEY variable, never this file. failover_local_model answers only while the cloud refuses, and only if Ollama is already running with it pulled; empty string disables failover. background_local: memory extraction runs on the local failover model when Ollama already has it (no API tokens). models: optional cheaper model per role, e.g. {\"translator\": \"<mini model>\"}.",
+      "background_local": true,
+      "models": {}
     },
     "base_url": "http://127.0.0.1:11434/v1",
     "models": {

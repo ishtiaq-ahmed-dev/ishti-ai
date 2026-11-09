@@ -102,6 +102,19 @@ def test_no_failover_model_means_the_plain_error_reaches_the_owner(api_mode, mon
         llm._create(model="x", messages=[], _role="planner")
 
 
+def test_background_roles_use_the_local_model_only_when_enabled_and_available(api_mode, monkeypatch):
+    cloud = llm.api_settings()["model"]
+    monkeypatch.setattr(llm, "failover_model", lambda: "light:4b")
+    monkeypatch.setattr(llm, "api_settings", lambda: {"model": cloud, "background_local": True, "models": {}})
+    assert llm.model_for("main") == "light:4b" and llm.model_for("planner") == cloud
+    monkeypatch.setattr(llm, "api_settings", lambda: {"model": cloud, "background_local": False,
+                                                     "models": {"translator": "mini-x"}})
+    assert llm.model_for("main") == cloud and llm.model_for("translator") == "mini-x"
+    monkeypatch.setattr(llm, "failover_model", lambda: "")  # no local model running: background stays on the cloud
+    monkeypatch.setattr(llm, "api_settings", lambda: {"model": cloud, "background_local": True, "models": {}})
+    assert llm.model_for("main") == cloud
+
+
 def test_agentrouter_is_a_known_provider():
     from ishti import setup_choice
     assert llm.PROVIDERS["agentrouter"] == "https://agentrouter.org/v1"

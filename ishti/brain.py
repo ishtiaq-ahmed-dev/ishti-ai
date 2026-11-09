@@ -24,7 +24,7 @@ except Exception:  # pragma: no cover
         return None
 
 
-SHORTLIST_MAX = 12   # tools the model sees for one request (rules first, then lexical rank, then priority)
+SHORTLIST_MAX = 10   # tools the model sees for one request (rules first, then lexical rank, then priority)
 MAX_CALLS = 3        # tool calls one reply may carry (a request with three separate parts)
 EXCLUDED = frozenset({"chat"})  # chat is the direct answer itself: it needs no tool, so the model is not shown it
 LOST = "Sorry - I lost the thread there. Could you say that once more?"
@@ -83,7 +83,7 @@ def shortlist(skills: dict, text: str, hint: dict | None = None) -> list[str]:
 
 
 def _tool_lines(skills: dict, names: list[str]) -> str:
-    return "\n".join(f"- {n}: {str(skills[n].manifest.get('description', ''))[:140]}" for n in names) or "(none)"
+    return "\n".join(f"- {n}: {str(skills[n].manifest.get('description', ''))[:120]}" for n in names) or "(none)"
 
 
 def _parse_calls(reply: str) -> list[dict]:
