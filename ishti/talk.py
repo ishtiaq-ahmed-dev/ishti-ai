@@ -257,6 +257,13 @@ class RemoteTalker(Talker):
             time.sleep(max(0.0, nxt - time.perf_counter()))
             nxt = max(nxt, time.perf_counter() - self.STEP)  # after a stall, don't burst to catch up
 
+    def say(self, text):
+        # captions in step with the voice: each sentence is shown as it is queued, not the whole reply at the end
+        spoken = speakable(text)
+        if spoken and not is_process_chatter(spoken) and not self.closed:
+            self.send({"type": "caption", "data": {"text": spoken}})
+        super().say(text)
+
     def stop(self):
         rest = super().stop()
         self.send({"type": "audio_stop", "data": {}})  # drop what the browser has buffered, too

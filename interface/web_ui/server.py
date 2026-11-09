@@ -1268,7 +1268,16 @@ async def live_ws(ws: WebSocket):
     live_send_lock = asyncio.Lock()
     frames, stop = queue_mod.Queue(), threading.Event()
     from ishti.voice import stt_model
-    threading.Thread(target=stt_model, daemon=True).start()  # load Whisper while the owner starts talking (was ~2.3 s on turn 1)
+
+    def _warm_voice():  # Whisper AND the reply voice load while the owner starts talking (turn 1 paid both)
+        stt_model()
+        try:
+            from ishti.voice import current_voice, kokoro, tts_voice
+            v = current_voice()
+            kokoro(v) if v.get("engine") == "kokoro" else tts_voice(v)
+        except Exception as exc:
+            print(f"[live] voice warm-up skipped: {type(exc).__name__}")
+    threading.Thread(target=_warm_voice, daemon=True).start()
     if LIVE["stop"]:
         LIVE["stop"].set()
     LIVE["stop"] = stop
@@ -1325,6 +1334,9 @@ async def live_ws(ws: WebSocket):
                     carry = carry[wake.BLOCK:]
             elif msg.get("text") == "end":
                 break
+            elif msg.get("text") == "stop":  # "Stop talking" without ending the call: like speaking over ISHTI
+                listener.interrupted = {"request": getattr(listener, "request", ""), "rest": voice.stop()}
+                listener.cancel.set()
     except WebSocketDisconnect:
         return
     finally:

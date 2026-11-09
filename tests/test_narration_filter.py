@@ -70,9 +70,18 @@ def test_the_talker_drops_chatter_and_keeps_the_answer():
     assert [text for _gen, text in spoken] == ["Tomorrow in Peshawar it is sunny and 34 degrees."]
 
 
-def test_the_remote_talker_uses_the_same_rule():
-    """Live mode speaks through RemoteTalker, which inherits Talker.say - so the filter covers it too."""
-    assert talk.RemoteTalker.say is talk.Talker.say
+def test_the_remote_talker_uses_the_same_rule(monkeypatch):
+    """Live mode speaks through RemoteTalker: its say() only adds captions and hands every sentence to Talker.say,
+    so the same filter decides what is voiced - and process chatter is not captioned either."""
+    handed, sent = [], []
+    monkeypatch.setattr(talk.Talker, "say", lambda self, text: handed.append(text))
+    t = talk.RemoteTalker(sent.append)
+    for line in CHATTY:
+        t.say(line)
+    t.say("The capital of France is Paris.")
+    t.close()
+    assert handed == CHATTY + ["The capital of France is Paris."]  # Talker.say (the filter) sees every line
+    assert [m["data"]["text"] for m in sent if m.get("type") == "caption"] == ["The capital of France is Paris."]
 
 
 def test_the_dispatcher_no_longer_has_a_step_narration_path():

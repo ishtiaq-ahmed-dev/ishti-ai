@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { PhoneOff } from "lucide-react";
+import { PhoneOff, Square } from "lucide-react";
 import { AgentOrb, type OrbState } from "@/components/AgentOrb";
 
 type VoiceState = "idle" | "listening" | "thinking" | "speaking";
@@ -38,6 +38,7 @@ export function LiveMode({ sessionId, onTurn, onClose }: {
   turn.current = onTurn;
 
   const session = useRef(sessionId);  // fixed for the call: a first turn creating the chat must not reconnect it
+  const socket = useRef<WebSocket | null>(null);  // the Stop button talks to the same socket
 
   useEffect(() => {
     let ws: WebSocket | null = null, ctx: AudioContext | null = null, stream: MediaStream | null = null, closed = false;
@@ -68,6 +69,7 @@ export function LiveMode({ sessionId, onTurn, onClose }: {
         ctx.createMediaStreamSource(stream).connect(node);
         const proto = location.protocol === "https:" ? "wss" : "ws";
         ws = new WebSocket(`${proto}://${location.host}/ws/live${session.current ? `?session=${encodeURIComponent(session.current)}` : ""}`);
+        socket.current = ws;
         ws.binaryType = "arraybuffer";
         ws.onopen = () => { node.port.onmessage = (e) => ws?.readyState === WebSocket.OPEN && ws.send(e.data); };
         ws.onclose = () => { if (!closed) setError("Live connection closed."); };
@@ -89,6 +91,7 @@ export function LiveMode({ sessionId, onTurn, onClose }: {
           }
           else if (type === "task_background") setBackground((b) => [...b, data.request].filter(Boolean));
           else if (type === "task_done") setBackground((b) => b.filter((r) => r !== data.request));
+          else if (type === "caption") setReply((r) => (r ? `${r} ` : "") + data.text);  // in step with the voice
           else if (type === "reply") { setReply(data.reply); setStep(""); turn.current(data.user, data.reply, data.session_id); }
         };
       } catch (err) {
@@ -166,6 +169,12 @@ export function LiveMode({ sessionId, onTurn, onClose }: {
         </ul>
       )}
 
+      {(state === "speaking" || state === "thinking") && (
+        <button type="button" onClick={() => { try { socket.current?.send("stop"); } catch { /* socket closed */ } }}
+          className="flex items-center gap-2 rounded-full border border-border px-5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted cursor-pointer">
+          <Square className="h-3.5 w-3.5 fill-current" /> Stop talking
+        </button>
+      )}
       <button type="button" onClick={onClose} autoFocus
         className="flex items-center gap-2 rounded-full bg-danger px-6 py-3 text-sm font-semibold text-white shadow-lg transition-transform active:scale-95 cursor-pointer hover:bg-danger/90">
         <PhoneOff className="h-4 w-4" /> End Live

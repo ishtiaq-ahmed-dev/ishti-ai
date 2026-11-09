@@ -71,3 +71,13 @@ def test_wake_phrase_ignores_the_owners_own_name_and_stt_never_auto_downloads(mo
     import pytest
     with pytest.raises(RuntimeError, match="isn't installed"):
         voice.model_source()
+
+
+def test_live_captions_follow_the_voice(monkeypatch):
+    from ishti import talk
+    sent = []
+    monkeypatch.setattr(talk.Talker, "say", lambda self, text: None)  # no TTS engine in a unit test
+    t = talk.RemoteTalker(sent.append)
+    t.say("The capital of France is Paris.")
+    t.close()
+    assert sent[0]["type"] == "caption" and "Paris" in sent[0]["data"]["text"]
