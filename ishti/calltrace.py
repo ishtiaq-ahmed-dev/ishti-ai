@@ -64,6 +64,7 @@ def _totals(rec):
             "llm_ms": sum(c["ms"] or 0 for c in calls if c["kind"] == "llm"),
             "input_tokens": sum(c.get("input_tokens", 0) for c in usage) if usage else None,
             "output_tokens": sum(c.get("output_tokens", 0) for c in usage) if usage else None,
+            "cached_tokens": sum(c.get("cached_tokens", 0) for c in usage) if usage else None,
             "usage_reports": len(usage), "usage_complete": by["llm"] > 0 and len(usage) == by["llm"],
             "background_calls": sum(bool(c.get("background")) for c in calls),
             "background_pending": rec["pending"], "lifecycle_complete": rec["pending"] == 0,

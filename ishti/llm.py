@@ -114,7 +114,7 @@ def _provider_error(exc, provider_name: str) -> ModelUnavailable:
         msg = f"{who} returned an error ({status or type(exc).__name__}). Try again shortly."
     err = ModelUnavailable(msg)
     # how long the breaker skips the provider: a refused key will not fix itself in seconds; a blip might
-    err.retry_s = 600 if status in (401, 403, 404) else 60 if status == 429 else 20
+    err.retry_s = 600 if status in (401, 403, 404) else 60 if status == 429 else 0 if status in (400, 413, 422) else 20
     return err
 
 
@@ -268,7 +268,8 @@ def _create(**args):
             except ModelUnavailable as exc:
                 if not fallback:
                     raise
-                _trip(exc)
+                if getattr(exc, "retry_s", 60):  # 0 = this request was malformed: fail over once, keep the provider
+                    _trip(exc)
         from ishti import calltrace
         calltrace.note("failover", "model", model=fallback, why=_cloud_state["error"])
         args.pop("stream_options", None)
@@ -351,6 +352,10 @@ def _create_api(args, openai):
         # Newer Claude models reject sub-1 temperatures/top-p overrides. Omit sampling controls instead.
         args.pop("temperature", None)
         args.pop("top_p", None)
+        # Its OpenAI-compatibility layer answers json_object with HTTP 400 (only strict json_schema is accepted); the
+        # prompts already ask for JSON and every caller parses leniently, so the hint is dropped.
+        if (args.get("response_format") or {}).get("type") == "json_object":
+            args.pop("response_format")
     base = cfg.get("base_url") or PROVIDERS.get(cfg.get("provider", "openai"), PROVIDERS["openai"])
     name = cfg.get("provider", "")
     grant = contextlib.ExitStack()
@@ -437,8 +442,10 @@ def _usage(response):
     from ishti import calltrace
     usage = getattr(response, "usage", None)
     if usage is not None:
+        details = getattr(usage, "prompt_tokens_details", None)
         calltrace.note("usage", "model", input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
-                       output_tokens=getattr(usage, "completion_tokens", 0) or 0)
+                       output_tokens=getattr(usage, "completion_tokens", 0) or 0,
+                       cached_tokens=getattr(details, "cached_tokens", 0) or 0)
 
 
 class Cancelled(Exception):
@@ -519,7 +526,7 @@ def _chat(messages, role="planner", system=STYLE, tools=None, temperature=0.3, m
     context = " ".join(str(m.get("content", "")) for m in messages if m.get("role") == "user")
     from ishti import calltrace
     calltrace.remaining()
-    if provider() == "api" and api_settings().get("provider") in ("openai", "openrouter", "agentrouter"):
+    if provider() == "api" and api_settings().get("provider") in ("openai", "openrouter", "agentrouter", "anthropic", "gemini"):
         args["stream_options"] = {"include_usage": True} if not tools else None
         if args["stream_options"] is None:
             args.pop("stream_options")

@@ -53,11 +53,16 @@ Rules:
   to explain what you can do.
 - Output only the JSON object or the prose answer. No preamble, no explanation.
 
-Tools available for this request:
+""" + "{tail}"
+# The per-request part (shortlist + retrieved context). Kept apart so cloud providers that cache at message boundaries
+# (OpenAI GPT-5.6+, OpenRouter) see an identical opening system block on every call.
+TAIL = """Tools available for this request:
 {tools}
 
 Context (known facts and measured values are exact; they override anything else):
 {context}"""
+RULES = SYSTEM.replace("{tail}", "").rstrip()
+SYSTEM = SYSTEM.replace("{tail}", TAIL)
 
 # Spark/GLM-style native call: <tool_call>web_search<arg_key>query</arg_key><arg_value>...</arg_value></tool_call>
 NATIVE_CALL = re.compile(r"<tool_call>\s*(?P<tool>[\w.-]+)(?P<args>.*?)(?:</tool_call>|$)", re.S)
@@ -114,8 +119,9 @@ def _context(text: str, s) -> str:
         if "unexpected keyword argument" not in str(exc):
             raise
         ctx = retrieval.assemble_context(text)
-    state = s.get("state_summary") or ""
-    return f"CONVERSATION STATE:\n{state}\n\n{ctx}".strip() if state else (ctx or "")
+    # The conversation state is NOT repeated here: assemble_session_context() already pins it as its own system
+    # message (it was sent twice, ~225 tokens per decision call).
+    return ctx or ""
 
 
 def _run_tool(skills, name, text, session):
@@ -146,12 +152,19 @@ def run(text: str, s, skills: dict, hint: dict | None = None, calls: list[dict] 
     if calls is not None:
         return _execute_plan(s, skills, calls)
     names = shortlist(skills, text, hint)
-    # stable first (style + decision rules), then what changes per request (tools, context), the clock last:
-    # the long identical prefix is what OpenAI-compatible providers cache
-    system = (llm.style(about=text, dynamic=False) + "\n\n"
-              + SYSTEM.format(tools=_tool_lines(skills, names), context=_context(text, s) or "(none)")
-              + "\n\n" + llm.dynamic_block(text))
+    # stable first (style + decision rules), then what changes per request (tools, context), the clock last.
+    tail = (TAIL.format(tools=_tool_lines(skills, names), context=_context(text, s) or "(none)")
+            + "\n\n" + llm.dynamic_block(text))
     dialogue = assemble_session_context(s, text, verbatim_turns=4, max_msg_chars=1400)
+    if llm.provider() == "api":
+        # Cloud: the opening system block is byte-identical every call (style + rules, ~1.5k tokens) and the
+        # per-request tail rides in a system message just before the owner's turn - caches that match on message
+        # boundaries reuse the prefix. Local chat templates (gemma, qwen) keep one system block: some drop or mangle
+        # a second system message.
+        system = llm.style(about=text, dynamic=False) + "\n\n" + RULES.format()
+        dialogue = dialogue + [{"role": "system", "content": tail}]
+    else:
+        system = llm.style(about=text, dynamic=False) + "\n\n" + RULES.format() + "\n\n" + tail
     trace(s, "model", f"deciding with {llm.model_for('planner')}", status="start")
     t0 = time.monotonic()
     reply = (llm.chat(dialogue + [{"role": "user", "content": text}], role="planner", system=system,
