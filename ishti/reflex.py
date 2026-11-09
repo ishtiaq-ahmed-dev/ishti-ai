@@ -104,7 +104,40 @@ def _schedule_video(m, text):
             "the video' and I will set that reminder.")
 
 
+_FIXED_DAYS = {"new year": (1, 1), "new years": (1, 1), "new year's": (1, 1), "christmas": (12, 25), "xmas": (12, 25),
+               "valentine's day": (2, 14), "valentines day": (2, 14), "pakistan day": (3, 23), "independence day": (8, 14),
+               "labour day": (5, 1), "labor day": (5, 1), "quaid day": (12, 25), "iqbal day": (11, 9)}
+
+
+def _days_until(m, text):
+    """Date arithmetic is computed, never guessed: a small model answered "23 days" to "how many days until new year?"
+    on 9 November (it is 53). Fixed-date holidays and explicit dates only; lunar holidays (Eid) are not fixed dates."""
+    raw = re.sub(r"^(?:the\s+)?|\s*[?.!]*$", "", m["what"].strip().lower()).strip()
+    target = re.sub(r"\s+day$", "", raw)
+    today = dt.date.today()
+    named = next((_FIXED_DAYS[k] for k in (raw, target, target.rstrip("s")) if k in _FIXED_DAYS), None)
+    if named:
+        month, day = named
+        when = dt.date(today.year, month, day)
+        if when <= today:
+            when = dt.date(today.year + 1, month, day)
+    else:
+        try:
+            from dateutil import parser as dparser
+            when = dparser.parse(target, default=dt.datetime(today.year, today.month, today.day)).date()
+        except (ValueError, OverflowError):
+            return None
+        if when < today and not re.search(r"\b\d{4}\b", target):  # "25 December" already passed: the next one
+            when = when.replace(year=when.year + 1)
+    days = (when - today).days
+    if days < 0:
+        return f"{when:%A %d %B %Y} was {-days} day{'s' if days != -1 else ''} ago."
+    return f"**{days} day{'s' if days != 1 else ''}** - {when:%A %d %B %Y}." if days else f"That's today ({when:%A %d %B %Y})."
+
+
 TABLE = [
+    (re.compile(r"^\W*how\s+(?:many|much)\s+days?\s+(?:are\s+)?(?:left\s+|remain(?:ing)?\s+)?(?:until|till|til|to|before)\s+"
+                r"(?P<what>[\w' /,.-]{3,40}?)\W*$", I), _days_until),
     (re.compile(r"^\W*(?:never\s*mind|forget\s+it|cancel(?:\s+that)?|abort|nvm)" + END, I), _cancel),
     (re.compile(r"^\W*schedule\s+(?:this\s+)?video\s+to\s+publish\b.*$", I), _schedule_video),
     (re.compile(r"^\W*(?:can\s+you\s+)?help\s+me\s+with\s+that\s+thing\??\s*$", I), _vague_help),
@@ -169,7 +202,9 @@ def answer(text):
         return ("What would you like me to do?", "unclear")
     for rx, fn in TABLE:
         if m := rx.match(text.strip()):
-            return fn(m, text), fn.__name__.strip("_")
+            reply = fn(m, text)
+            if reply is not None:  # a handler may decline (e.g. a date it cannot parse): normal routing answers
+                return reply, fn.__name__.strip("_")
     return None
 
 

@@ -18,7 +18,8 @@ from ishti.skills.dev import scaffold
 I = re.I
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 SANDBOX = scratch_path(os.path.join(ROOT, "data", "sandbox"))
-CODE = re.compile(r"```(?:python|py)?\s*\n(?P<code>.+?)```", I | re.S)
+# a fenced block with or without a language tag, on one line ("```print(2+2)```") or several
+CODE = re.compile(r"```(?:python|py)?[ \t]*\n?(?P<code>.+?)```", I | re.S)
 OPS = [
     ("scaffold", scaffold.SCAFFOLD),
     ("run_script", scaffold.RUN_SCRIPT),

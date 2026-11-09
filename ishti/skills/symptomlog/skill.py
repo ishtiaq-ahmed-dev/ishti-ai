@@ -28,6 +28,9 @@ LOG = re.compile(
 RECENT = re.compile(r"^\s*(?:my\s+)?symptoms?\s+(?:this|last)\s+(?:week|month)|^\s*(?:my\s+)?(?:recent|latest)\s+symptoms?\s*$", I)
 HISTORY = re.compile(r"^\s*(?P<sym>[a-z][\w \-]{2,40}?)\s+(?:history|log|record)\s*$", I)
 STATS = re.compile(r"^\s*symptom\s+stats?\s*$", I)
+SYMPTOM_WORD = re.compile(r"\b(?:head\s*aches?|migraines?|fever|cough|pain|aches?|nausea|dizz(?:y|iness)|fatigue|tired(?:ness)?|"
+                          r"cold|flu|allerg(?:y|ies)|rash|insomnia|anxiety|sore\s+throat|cramps?|vomit\w*|diarrh\w*|"
+                          r"bloating|heartburn|acidity|asthma|wheez\w*|sneez\w*|itch\w*|swelling|bp|blood\s+pressure|sugar)\b", I)
 DOCTOR = re.compile(r"^\s*(?:doctor|dr)\s+(?:summary|visit|prep|report)|^\s*(?:prepare|get)\s+(?:a\s+)?doctor\s+summary\s*$", I)
 LIST = re.compile(r"^\s*(?:symptom\s+log|my\s+symptom\s+log)\s*$", I)
 # never match: anything in the emergency class must not be filed as a diary entry
@@ -125,7 +128,8 @@ def match(text):
         return False        # emergency class must never be filed as a diary entry
     if RECENT.match(t) or STATS.match(t) or DOCTOR.match(t) or LIST.match(t):
         return True
-    if HISTORY.match(t) and re.search(r"\b(history|log|record)\b", t, I):
+    # "<X> history" only when X is a symptom: "rock and roll music history" was filed as a symptom-log query
+    if (h := HISTORY.match(t)) and (re.search(r"\bsymptoms?\b", t, I) or SYMPTOM_WORD.search(h["sym"])):
         return True
     m = LOG.match(t)
     return bool(m and not re.match(r"^\s*log\s+(in|into|out)\b", t, I))

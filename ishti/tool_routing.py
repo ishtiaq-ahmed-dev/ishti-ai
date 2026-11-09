@@ -37,6 +37,11 @@ _ALIASES = {
     "outlook": "apps",
 }
 _CUES = (
+    # "when a pdf appears in my downloads, tell me its name" is a standing rule, not a folder listing: a trigger
+    # clause (when/whenever ... appears/contains/goes above ...) outranks the nouns inside it
+    ("automation", re.compile(r"^\s*(?:when(?:ever)?|every\s+time|each\s+time)\b.{3,90}?\b(?:appears?|arrives?|shows\s+up|"
+                              r"(?:is|gets)\s+(?:added|created|saved|downloaded)|contains|goes\s+(?:above|below|over|under)|"
+                              r"drops\s+below|exceeds|reaches|is\s+(?:above|below|over|under|low|full))\b", re.I)),
     ("apps", re.compile(r"\b(?:outlook|notepad|calculator|brave|spotify|discord)\b", re.I)),
     ("pdftables", re.compile(r"\b(?:extract|pull|get|export|turn)\b.{0,55}\btable|\bpdf tables?\b|"
                               r"\btabular data\b.{0,45}\b(?:pdf|csv)\b", re.I)),
@@ -205,7 +210,8 @@ def _clarification(text: str, candidates: list[tuple[str, float]]) -> str:
 
 _COMPOUND = re.compile(
     r",?\s*(?:and\s+then|then\s+also|and\s+also|also\s+(?=(?:tell|remind|check|show|send|find|give|fetch|search))"
-    r"|and\s+(?=(?:tell|remind|check|show|send|find|give|fetch|search|book|add|create|make|draft|write|set|list|compare|get|read|open|run))"
+    r"|and\s+(?=(?:tell|remind|check|show|send|find|give|fetch|search|book|add|create|make|draft|write|set|list|compare|get|read|open|run|"
+    r"convert|calculate|translate|summari[sz]e|explain|play|schedule|note|save|download|rename|move|look\s+up|look\s+for))"
     r"|plus\s+|and\s+what(?:'s| is| are))\s*", re.I)
 
 # Skill pairs that read like two requests but are one task: opening a browser to search, and researching
@@ -301,7 +307,7 @@ def route(text: str, skills: dict, exclude=(), *, session: dict | None = None) -
             cues.insert(0, cues.pop(cues.index("writing")))
         elif "calc" in cues and re.search(r"\b(?:calculate|derivative|integral|simplify)\b", text, re.I):
             cues.insert(0, cues.pop(cues.index("calc")))
-        if "reminders" in cues and re.search(r"\b(?:remind|set (?:a )?(?:timer|alarm)|wake me|utha dena|alarm)\b", text, re.I):
+        if "reminders" in cues and "automation" not in cues and re.search(r"\b(?:remind|set (?:a )?(?:timer|alarm)|wake me|utha dena|alarm)\b", text, re.I):
             cues.insert(0, cues.pop(cues.index("reminders")))
         return {"skill": cues[0], "confidence": 0.92, "source": "shortlist",
                 "scores": [(name, 0.92) for name in cues[:3]]}
