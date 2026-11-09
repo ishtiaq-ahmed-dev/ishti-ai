@@ -18,14 +18,26 @@ DEFAULT_MODELS = {"openai": "gpt-4.1-mini", "anthropic": "claude-haiku-5-5",
                   "agentrouter": "gpt-6.1-sol"}
 
 
+_cache = {"key": None, "data": None}
+
+
 def load() -> dict | None:
-    """The saved choice, or None when the owner has not chosen yet (or the file is unreadable)."""
+    """The saved choice, or None when the owner has not chosen yet (or the file is unreadable). Cached by path+mtime:
+    llm.provider() asks several times per model call, and re-reading the file each time was pure disk churn."""
+    try:
+        key = (PATH, os.stat(PATH).st_mtime_ns)
+    except OSError:
+        return None
+    if _cache["key"] == key:
+        return dict(_cache["data"]) if _cache["data"] else None
     try:
         with open(PATH, encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, ValueError):
         return None
-    return data if isinstance(data, dict) and data.get("provider") in ("local", "api") else None
+    data = data if isinstance(data, dict) and data.get("provider") in ("local", "api") else None
+    _cache.update(key=key, data=data)
+    return dict(data) if data else None
 
 
 def save(provider: str, api_provider: str = "", model: str = "", *, credential_source=None) -> dict:
