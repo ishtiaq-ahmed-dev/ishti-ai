@@ -46,6 +46,12 @@ with automatic local failover, and every turn makes fewer model calls.
   they keep failing), late runs are labelled catch-up, and a repeating check that finds nothing new stays quiet.
 - **The brief** adds today's calendar (Google Calendar read-only when connected), unread Gmail and jobs waiting for
   your yes. Page and price watches reach the bell even when the window is closed.
+- **Lists:** "add milk and eggs to my shopping list", "what's on my shopping list", "remove eggs from it" work on any
+  named list (they used to be saved as facts about you).
+- **Routing precision:** the spell-fixer no longer rewrites real words ("whether" -> "weather", "calculate" ->
+  "calculator"); the folder, relationship, calculator, budget, chart and travel cues stop claiming look-alikes
+  ("the plot of Inception", "I spent the whole day coding", ISO dates). Date gaps ("days between X and Y") and
+  "who wrote X" get exact, one-step answers.
 - **UI:** keyboard and screen-reader access throughout (native dialogs, Stop button and Esc, aria-live replies,
   labelled icon buttons, focusable rows), right-to-left text, reduced motion, 4.5:1 contrast, starter prompts, and
   on-demand loading of LiveMode, activity graphs and the code highlighter.
@@ -85,6 +91,15 @@ with automatic local failover, and every turn makes fewer model calls.
 - Tests no longer read the owner's saved provider choice or the OS credential store.
 - Quiet hours work: they were saved as "22:00-07:00" but read as a dict, so phone pushes failed silently once set.
   Spoken announcements now respect them too.
+- **The data folder is locked to you** at startup (it inherited Modify for every signed-in Windows account from the
+  drive root); SYSTEM and Administrators keep access for backups and antivirus.
+- **Less leaves the PC:** a cloud prompt carries only the people the question is about (not every family and friend
+  line), and the fine-tuning log of every exchange is now opt-in (`learning.collect_finetune_data`).
+- **WhatsApp number protection:** sends are paced like a person (seen, typing, pause, at least 2 s apart), WhatsApp's
+  rate-limit errors say "wait, don't re-link", a first message to a stranger gets a ban-risk warning, media is no
+  longer auto-downloaded, and a newly pinned WAHA image actually replaces the running one.
+- **The test suite never writes your data folder** (it wrote into the real audit log, facts and learning stores).
+- The launcher checks that the app on port 8888 is ISHTI before focusing it; the packaged exe is no longer UPX-packed.
 - **OWASP LLM Top 10 (2025) / Agentic Top 10 (2026) audit fixes:**
   - running code from the `dev` skill asks first, and remote channels can never trigger code execution;
   - a T1 workflow step fed another step's output (web, file or message text) asks first;
