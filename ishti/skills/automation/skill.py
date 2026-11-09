@@ -229,9 +229,9 @@ def run(text, session):
             f"{r['id']}. When {describe(r['cond'])} -> {r['action']}" + ("" if r["active"] else " (paused)")
             + (f" - ran {r['fired']}x" if r["fired"] else "") for r in rs), "sources": []}
     m = RULE.match(text)
-    if not m:
+    # same test as match(): the brain calls run() directly, and a condition we can't parse crashed on cond["kind"]
+    if not m or not (cond := parse_condition(m["cond"])):
         return None
-    cond = parse_condition(m["cond"])
     action = m["action"].strip(" .")
     state = {}
     if cond["kind"] == "file":

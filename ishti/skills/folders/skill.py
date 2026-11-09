@@ -218,8 +218,16 @@ def match(text):
     # downloads": a folder question/action. Either the folder resolves to a real path (folder_in) or it is an
     # explicit folder name (folder_name_candidate) - run() answers honestly when the name has no real folder.
     if ASK.search(t) or ORGANIZE.search(t):
-        return bool(folder_in(t)[1] or folder_name_candidate(t))
+        if folder_in(t)[1]:
+            return True
+        # a bare "my X" is only a folder when the sentence talks about folders/files: "what's my favourite colour?"
+        # was claimed here as a folder named 'favourite colour'
+        return bool(folder_name_candidate(t) and (ORGANIZE.search(t) or FOLDERISH.search(t)))
     return False
+
+
+FOLDERISH = re.compile(r"\b(?:folders?|director(?:y|ies)|dir|files?|pdfs?|docs?|documents?|photos?|pictures?|images?|"
+                       r"videos?|songs?|music|downloads?|desktop|zips?|items?|inside|in\s+my|open\s+my)\b", re.I)
 
 
 def plan_moves(path, now=None):

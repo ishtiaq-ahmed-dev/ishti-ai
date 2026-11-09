@@ -271,6 +271,11 @@ def run(text, session, now=None):
                          "fires. Save it in the credential vault instead (\"save my login for <site>: user ... "
                          "password ...\"), or I can remind you about it WITHOUT the secret (\"remind me to "
                          "rotate that password at 5pm\").", "sources": []}
+    if re.search(r"\b(?:yesterday|last\s+(?:night|week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b", t, I) \
+            and not re.search(r"\b(?:since|from|about|what\s+i\s+did)\b", t, I) and (SET.match(t) or re.search(r"\breminder\b", t, I)):
+        # "set a reminder for yesterday at 5pm" was set for tomorrow, text "for yesterday"
+        return {"reply": "That time has already passed - reminders only go forward. Did you mean today or tomorrow at "
+                         "that time?", "sources": []}
     if SET.match(t) and _CONDITIONAL.search(t):
         return {"reply": "I can't set a reminder that only fires on a condition - I do fixed times and "
                          "simple every-day repeats, not 'only if X'. Closest thing I can do: set a plain "

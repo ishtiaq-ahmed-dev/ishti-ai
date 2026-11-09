@@ -266,6 +266,16 @@ DANGEROUS = re.compile(
     r"\b(?:(?<!bath )(?<!photo )(?<!seed )(?<!glitter )(?<!calorie )bombs?|explosives?|ieds?|"
     r"pipe\s*bombs?|grenades?|napalm|thermite|detonators?|nerve\s+agents?|sarin|vx\s+gas|ricin|anthrax|chemical\s+weapons?|"
     r"bio\s*weapons?|biological\s+weapons?|dirty\s+bombs?)\b", re.I)
+BARE_WRONG = re.compile(r"^\s*(?:no+[,.!]?\s*)?(?:that(?:'s|\s+is|\s+was)\s+|it(?:'s|\s+is|\s+was)\s+|you(?:'re|\s+are)\s+)?"
+                        r"(?:(?:completely|totally|so|all)\s+)?(?:wrong|incorrect|not\s+(?:right|correct|true)|false|"
+                        r"bad\s+answer|nope)\s*[.!]*\s*$", re.I)
+BULK_SEND = re.compile(
+    r"\b(?:send|message|text|forward|broadcast|email|whatsapp)\b.{0,60}\b(?:to\s+)?(?:every(?:one|body)|all\s+(?:of\s+)?(?:my\s+)?"
+    r"(?:contacts|chats|groups|friends|numbers|people|customers|clients|emails?))\b", re.I)
+BOOKING = re.compile(
+    r"\b(?:book|reserve|buy)\s+(?:me\s+|us\s+)?(?:a\s+|an\s+|the\s+|two\s+|2\s+)?(?:cheap\s+|return\s+|one[- ]way\s+)?"
+    r"(?P<thing>flights?|plane\s+tickets?|air\s*tickets?|hotels?|hotel\s+rooms?|rooms?|train\s+tickets?|bus\s+tickets?|"
+    r"movie\s+tickets?|concert\s+tickets?|tickets?|cabs?|taxis?|ubers?|careem|rides?|table)\b", re.I)
 # Provenance tags from the self-model ("[declared]", "[live:nvidia-smi]") are for grounding; the model sometimes echoes them.
 _PROVENANCE = re.compile(r"\s*\[(?:declared|measured|cached|live:[\w.-]+)\]")
 # Replies that quote ISHTI's own instructions are never shown (second layer behind PROMPT_EXTRACTION).
@@ -878,6 +888,13 @@ def _rule_owned(text):
             pass
         if dec.get("source") in ("rule", "learned", "shortlist", "preference_hint") and skill not in GENERAL:
             return True
+        if skill == "memory" and dec.get("source") == "rule":
+            # An exact memory statement runs the skill on the owner's own words: the brain on the small failover model
+            # rewrote "I live in Peshawar" into "owner is at peshar, pakistan" and filed it as a folder location.
+            from ishti.skills.memory import skill as _mem
+            t = text.strip()
+            if _mem.DELETE_ALL.match(t) or any(_mem.RX[k].match(t) for k in ("city", "status_i", "status_is", "forget")):
+                return True
         # A GENERAL skill matched by rule for a specific request: treat it as rule-owned too.
         # "Is Ollama still maintained?" -> web_search (QUICK_SEARCH), not an open-ended debate.
         if dec.get("source") in ("rule", "learned") and skill in GENERAL:
@@ -1247,17 +1264,43 @@ def _handle(text, sid, conv, s, events, t0, channel):
         # Boundary 42.6: wiping a whole drive / the whole PC / system folders is refused outright (T3). It used to fall
         # through to the file SEARCH skill ("No files matching 'delete all files on my D drive'"), which answered the
         # wrong question; specific files still go to fileops and its confirmation gate.
-        if (re.search(r"\b(?:delete|erase|wipe|remove|format|destroy|clear)\b", text, re.I)
+        if (re.search(r"\b(?:delet(?:e|es|ed|ing)|eras(?:e|es|ed|ing)|wip(?:e|es|ed|ing)|remov(?:e|es|ed|ing)|"
+                      r"format(?:s|ted|ting)?|destroy(?:s|ed|ing)?|clear(?:s|ed|ing)?|nuke)\b", text, re.I)
                 and re.search(r"\b(?:all|every|entire|whole|everything)\b.{0,30}\b(?:files?|folders?|data|drive|disk|pc|computer|"
                               r"laptop|system)\b|(?<!\w)[a-z]:[\\/]?(?=\s|$|[?.!])|\b(?:[a-z]\s+drive|system32|windows\s+folder|"
-                              r"program\s+files)\b",
+                              r"program\s+files|(?:my\s+)?(?:home|user|profile)\s+(?:folder|directory|dir))\b",
                               text, re.I)
                 and not re.search(r"\b(?:duplicates?|temp(?:orary)?|cache|junk|empty\s+folders?|old\s+downloads?)\b", text, re.I)):
-            out = {"reply": "I won't wipe a whole drive, the whole PC or system folders - that can't be undone. If you want to "
+            out = {"reply": "I won't wipe a whole drive, your home folder, the whole PC or system folders - and I won't write "
+                            "or run a script that does - that can't be undone. If you want to "
                             "free space or remove specific files, tell me which folder or file type and I'll show you exactly "
                             "what would be deleted first.", "sources": [], "no_escalate": True}
             s["trace"](type="route", skill="boundary", source="rule", confidence=1.0, why="mass deletion is refused (T3)")
             audit.record("hard_boundary: mass deletion refused", text[:120], skill="boundary", initiator="system", session=sid)
+            return _finish(text, sid, conv, s, events, t0, channel, "boundary", out, {"skill": "boundary", "source": "rule", "confidence": 1.0})
+
+        # Boundary 42.5: no bulk sends. "send hi to everyone on whatsapp" was offered as one confirmable send; messaging
+        # every contact at once gets a WhatsApp number banned and cannot be taken back.
+        if BULK_SEND.search(text):
+            out = {"reply": "I don't message everyone at once - bulk sending gets WhatsApp and email accounts flagged as spam "
+                            "and can't be taken back. Tell me who it's for (a few names or one group) and I'll confirm each one.",
+                   "sources": [], "no_escalate": True}
+            s["trace"](type="route", skill="boundary", source="rule", confidence=1.0, why="bulk send refused")
+            audit.record("hard_boundary: bulk send refused", text[:120], skill="boundary", initiator="system", session=sid)
+            return _finish(text, sid, conv, s, events, t0, channel, "boundary", out, {"skill": "boundary", "source": "rule", "confidence": 1.0})
+
+        # Bookings are payments too (42.8): ISHTI cannot buy tickets or rooms. A small model used to invent "live
+        # Google Flights data retrieved seconds ago"; the honest answer is a prefilled search the owner opens.
+        if (bk := BOOKING.search(text)):
+            what = re.sub(r"^\W+|\W+$", "", text[bk.end():]) or bk.group("thing")
+            from urllib.parse import quote_plus
+            thing = bk.group("thing").lower()
+            url = (f"https://www.google.com/travel/flights?q={quote_plus('flights ' + what)}" if thing.startswith("flight")
+                   else f"https://www.google.com/search?q={quote_plus(bk.group('thing') + ' ' + what)}")
+            out = {"reply": f"I can't book or pay for {thing}s - I have no booking or payment access, by design. "
+                            f"Here's a search with your details filled in: {url}\nTell me the date you settle on and I'll set a reminder.",
+                   "sources": [], "no_escalate": True}
+            s["trace"](type="route", skill="boundary", source="rule", confidence=1.0, why="bookings are not possible (T3)")
             return _finish(text, sid, conv, s, events, t0, channel, "boundary", out, {"skill": "boundary", "source": "rule", "confidence": 1.0})
 
         # Boundary 42.4: an instruction to send without confirmation (often injected by a page or a
@@ -1324,6 +1367,14 @@ def _handle(text, sid, conv, s, events, t0, channel):
                        why="a question about my own last turn - answered from the route log")
             return _finish(text, sid, conv, s, events, t0, channel, "meta", out,
                            {"skill": "meta", "source": "rule", "confidence": 1.0})
+
+    # 3b2. A bare "that was wrong": the learning hook credits it to the previous answer; the reply asks for the fix
+    # instead of a small model improvising about whatever came up earlier in the chat.
+    if not pending and BARE_WRONG.match(text):
+        out = {"reply": "Sorry about that - what should it have been? Tell me the right answer and I'll use it.",
+               "sources": []}
+        s["trace"](type="route", skill="chat", source="rule", confidence=1.0, why="bare negative feedback")
+        return _finish(text, sid, conv, s, events, t0, channel, "chat", out, {"skill": "chat", "source": "rule", "confidence": 1.0})
 
     # 3c. Memory commands (arch2 four-layer store): "what do you remember about me", "forget that",    # "remember that I ...", "who is Ahmed". Always available - they manage the store both archs read.
     if not pending:
@@ -1600,6 +1651,12 @@ def _finish(text, sid, conv, s, events, t0, channel, name, out, dec):
         text, kept = mask(text, hidden), mask(kept, hidden)
         events[:] = json.loads(mask(json.dumps(events, ensure_ascii=False), hidden))
         secret = True  # and nothing from this exchange goes to long-term memory
+    from ishti.audit import SECRETISH
+    if SECRETISH.search(text):  # a password/key typed into a turn no skill took charge of: the same treatment -
+        # masked in the saved chat, and nothing from it reaches memory, learning, recall or a later cloud prompt
+        text, kept = SECRETISH.sub("[redacted]", text), SECRETISH.sub("[redacted]", kept)
+        events[:] = json.loads(SECRETISH.sub("[redacted]", json.dumps(events, ensure_ascii=False)))
+        secret = True
     from ishti.core.context import normalize_history, RUNTIME_MESSAGES
     # incognito (H3): this conversation writes NOTHING to memory — no chat persistence, no
     # semantic remember, no behavior log, no consolidation, no learning. Explicit memory

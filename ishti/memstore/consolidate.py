@@ -213,7 +213,12 @@ LEARNED_RE = re.compile(r"\b(?:what\s+preferences\s+have\s+you\s+learned|what\s+
 FORGET_RE = re.compile(r"\bforget\s+(?:everything\s+about\s+)?(?:that\b\.?|about\s+)?(?P<what>.{2,120}?)\.?$", re.I)
 REMEMBER_RE = re.compile(r"\b(?:remember|keep\s+in\s+mind)\s+that\s+(?P<fact>.{3,200})", re.I)
 NOTHING_RE = re.compile(r"\b(?:don'?t|do\s+not|never)\s+remember\s+this(?:\s+conversation)?\b", re.I)
-FORGET_ALL_RE = re.compile(r"\bforget\s+(?:everything|all|it\s+all)\b", re.I)
+# The whole store, said as the whole message. "forget all the details of my trip" is not a wipe; the old unanchored
+# pattern matched it (and "forget it all" said as "never mind") and deleted every memory with no question asked.
+FORGET_ALL_RE = re.compile(
+    r"^\s*(?:please\s+)?(?:just\s+)?(?:forget\s+(?:everything|it\s+all|all\s+of\s+it|all)(?:\s+(?:you\s+know|about\s+me))?"
+    r"|(?:delete|erase|wipe|clear|remove|purge|reset)\s+(?:all\s+(?:of\s+)?)?(?:my\s+|your\s+)?"
+    r"(?:memories|memory|everything\s+you\s+(?:know|remember))(?:\s+about\s+me)?)\s*[.!]*\s*$", re.I)
 FORGET_ALL_ABOUT_RE = re.compile(r"\bforget\s+everything\s+about\s+(?P<who>[a-z][a-z .'-]{1,40})\b", re.I)
 # "delete all data about my <role/relationship>, I want it gone completely" (checklist 237): a FULL
 # scoped deletion whose target may be named by role, not by name. Resolved before anything is removed.
@@ -304,6 +309,22 @@ def _forget_facts(name: str) -> int:
     except Exception as _exc:  # noqa: BLE001
         swallowed('ishti/memstore/consolidate.py:_forget_facts', _exc)
     return removed
+
+
+def _confirm_wipe(session):
+    """Deleting every memory can't be undone: it always asks first (and never runs without a session to ask in)."""
+    n = len(memory.search(limit=1000))
+    if not n:
+        return "There are no memories to delete."
+    if not isinstance(session, dict):
+        return "Deleting every memory needs a yes from you - ask me in the chat."
+
+    def wipe():
+        memory.wipe_all()
+        return f"Forgot everything ({n} memories) - deleted, not just hidden. The deletion is in my audit log."
+    from ishti.skills import ask_first
+    return ask_first(session, "memory_manager",
+                     f"This can't be undone - delete all {n} memor{'y' if n == 1 else 'ies'} for good", wipe)
 
 
 def handle_command(text: str, session=None) -> str | None:  # noqa: C901
@@ -402,6 +423,8 @@ def handle_command(text: str, session=None) -> str | None:  # noqa: C901
             p = get_user_memory().get_profile()
             loc = getattr(p, "location", None) or {}
             city = loc.get("city", "") if isinstance(loc, dict) else ""
+            from ishti.facts import get_facts as _gf
+            city = _gf().get("owner").get("city") or city  # "I moved to Lahore" updates the facts, not the profile
             role = next((getattr(p, k) for k in ("occupation", "role", "profession", "work")
                          if getattr(p, k, None)), "")
             head = "You are " + (getattr(p, "name", "") or "the owner")
@@ -447,6 +470,8 @@ def handle_command(text: str, session=None) -> str | None:  # noqa: C901
         memory.reconcile(m.group("fact").strip().rstrip("."), source="explicit_user",
                          importance=0.8, confidence=0.95)
         return f"Remembered: {m.group('fact').strip().rstrip('.')}"
+    if FORGET_ALL_RE.search(t):  # before FORGET_RE: "delete all my memories" has no "forget" in it
+        return _confirm_wipe(session)
     m = FORGET_RE.search(t)
     if m:
         what = m.group("what").strip().rstrip(".")
@@ -459,11 +484,6 @@ def handle_command(text: str, session=None) -> str | None:  # noqa: C901
             return (f"Forgot everything about {who.title()} - {res['memories']} memories, "
                     f"{res['entities']} entity record(s) and {res['edges']} relationship edge(s) deleted "
                     f"for good. (audit #{res['audit_id']})")
-        # 'forget everything' / 'forget it all': real deletion + audit (H2)
-        if FORGET_ALL_RE.search(t):
-            n = len(memory.search(limit=1000))
-            memory.wipe_all()
-            return f"Forgot everything ({n} memories) - deleted, not just hidden. The deletion is in my audit log."
         # 'forget that' / 'forget <thing>': soft delete (audit trail kept) unless 'for good'
         hard = bool(re.search(r"\b(?:for\s+good|permanently|completely|delete\s+it)\b", t, re.I))
         if hard:
@@ -472,9 +492,7 @@ def handle_command(text: str, session=None) -> str | None:  # noqa: C901
                     f"(audit #{res['audit_id']})") if res["memories"] else \
                 f"I don't have a memory matching '{what}'."
         if what.lower() in ("everything", "all of it", "it all"):
-            n = len(memory.search(limit=1000))
-            memory.wipe_all()
-            return f"Forgot everything ({n} memories)."
+            return _confirm_wipe(session)
         if what.lower() in ("note", "that note", "that fact", "this", "that", "preference", "it"):
             lead = re.split(r"[,;.]\s*forget", t, flags=re.I)[0]
             words = [w for w in re.findall(r"\b\w+\b", lead.lower()) if w not in ("i", "don", "t", "dont", "actually", "prefer", "like", "want", "my", "a", "the", "that", "this", "is", "not")]

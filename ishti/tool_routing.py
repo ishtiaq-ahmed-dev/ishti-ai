@@ -42,6 +42,8 @@ _CUES = (
     ("automation", re.compile(r"^\s*(?:when(?:ever)?|every\s+time|each\s+time)\b.{3,90}?\b(?:appears?|arrives?|shows\s+up|"
                               r"(?:is|gets)\s+(?:added|created|saved|downloaded)|contains|goes\s+(?:above|below|over|under)|"
                               r"drops\s+below|exceeds|reaches|is\s+(?:above|below|over|under|low|full))\b", re.I)),
+    # a password / PIN statement or question belongs to the vault, even when it names gmail or whatsapp
+    ("security", re.compile(r"\bmy\s+[\w.-]+\s+(?:password|passcode|pin)\b|\b(?:password|login)\s+for\s+\w|\bsaved\s+logins?\b", re.I)),
     ("apps", re.compile(r"\b(?:outlook|notepad|calculator|brave|spotify|discord)\b", re.I)),
     ("pdftables", re.compile(r"\b(?:extract|pull|get|export|turn)\b.{0,55}\btable|\bpdf tables?\b|"
                               r"\btabular data\b.{0,45}\b(?:pdf|csv)\b", re.I)),

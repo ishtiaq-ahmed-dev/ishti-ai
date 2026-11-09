@@ -332,6 +332,21 @@ def _nearest(content: str, limit: int = 40) -> list:
     return list(rows.values())[:limit]
 
 
+_SUBJECT = re.compile(r"^\s*(?:i\s+think\s+)?(?P<s>(?:my|our|the\s+owner'?s)\s+[\w' -]{2,40}?)\s+(?:is|are|was)\s+(?P<v>.+?)\s*[.!]?\s*$", re.I)
+_CORRECTION = re.compile(r"[,\s]+(?:actually|now|instead|these\s+days|anymore)\s*[.!]?\s*$", re.I)
+
+
+def _subject(text):
+    """'my favourite colour' for 'My favourite colour is blue' (None when the sentence isn't 'my X is Y')."""
+    m = _SUBJECT.match(text or "")
+    return " ".join(m["s"].lower().split()) if m else None
+
+
+def _value(text):
+    m = _SUBJECT.match(_CORRECTION.sub("", text or ""))
+    return " ".join(m["v"].lower().split()) if m else None
+
+
 def reconcile(content: str, mtype="semantic", source="inference", importance=0.5, confidence=0.5) -> dict:
     """mem0-style reconciliation: before storing a candidate fact, ask the model to classify it
     against the closest existing memories as ADD (new) / UPDATE (same subject, changed value ->
@@ -340,6 +355,15 @@ def reconcile(content: str, mtype="semantic", source="inference", importance=0.5
     existing = _nearest(content, 40)
     if not existing:
         return semantic(content, source=source, importance=importance, confidence=confidence)
+    # "my favourite colour is green (actually)" against "my favourite colour is blue": same subject, new value -
+    # superseded without a model call (the small failover model answered ADD and both lines stayed live)
+    if (subj := _subject(content)):
+        for r in existing:
+            if _subject(r["content"]) == subj:
+                if _value(r["content"]) == _value(content):
+                    return {"id": r["id"], "action": "NOOP"}
+                return supersede(r["id"], _CORRECTION.sub("", content).strip(), source=source,
+                                 importance=importance, confidence=confidence)
     try:
         from ishti.memstore.jsonio import ask_json  # lazy: pulls ishti.llm/openai only when used
     except Exception:  # no model stack (self-checks, CI): plain add, never worse than storing

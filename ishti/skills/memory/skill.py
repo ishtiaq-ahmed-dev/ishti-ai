@@ -66,7 +66,10 @@ RX = {
     # (checklist #91) still match.
     "forget": re.compile(r"^\s*(?:(?:actually|well|look|listen|ok|okay|so|right|hey),?\s+)?forget\s+(?:about\s+)?(?P<e>.+?)[.!]?$", I),
     "city": re.compile(r"^i\s+(?:now\s+)?(?:live|am\s+living|have\s+moved|moved)\s+(?:to|in)\s+"
-                       r"(?P<c>[A-Za-z][A-Za-z .'-]{1,40}?)[.!]?$", I),
+                       r"(?P<c>[A-Za-z][A-Za-z .'-]{1,40}?)"
+                       # "I moved to Lahore last month": the time phrase is not part of the city
+                       r"(?:\s+(?:last|this|a|an|one|two|few|\d+)\s+(?:few\s+)?(?:days?|weeks?|months?|years?)(?:\s+ago)?|"
+                       r"\s+(?:recently|now|yesterday|today|ago))?[.!]?$", I),
     "remember": re.compile(r"^remember\b", I),
     "open": re.compile(r"^(?:open|show)\s+(?:up\s+)?(?P<e>.+?)(?:\s+(?:in|with)\s+(?P<app>vs\s*code|code|"
                        r"(?:file\s+)?explorer|terminal))?[.!]?$", I),
@@ -408,8 +411,11 @@ def run(text, session):
             if m := RX[k].search(t):
                 return _store(_resolve(m["e"], session), "location", path, session)
     elif m := RX["city"].match(t):
-        prev = facts.set("owner", "city", m["c"].strip())
-        return R(f"Updated: you live in {m['c'].strip()}" + (f" (was {prev})." if prev else "."))
+        city = m["c"].strip()
+        prev = facts.set("owner", "city", city)
+        if prev and prev.lower() == city.lower():
+            return R(f"Noted - you live in {city}.")
+        return R(f"Updated: you live in {city}" + (f" (was {prev})." if prev else "."))
     if m := RX["status_i"].match(t) or RX["status_is"].match(t):
         return _store(_resolve(m["e"], session), "status", STATUS[m["s"].lower()], session)
     if m := RX["where"].match(t):

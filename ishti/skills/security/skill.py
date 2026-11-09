@@ -46,6 +46,8 @@ OPS = [
     ("vault_list", re.compile(r"\b(?:list|show|which)\s+(?:my\s+)?(?:saved\s+)?(?:logins|passwords|credentials)\b|\bwhat\s+logins\s+(?:have\s+you|did\s+i)\s+save", I)),
     ("vault_get", re.compile(r"\bwhat(?:'s|\s+is)\s+my\s+(?P<site>[\w.-]+)\s+(?:password|login)\b|\b(?:show|reveal|get)\s+(?:my\s+)?(?:saved\s+)?(?:password|login)\s+for\s+(?P<site2>[\w.-]+)"
                              r"|\bwhat(?:'s|\s+is)\s+(?:my|the)\s+(?:saved\s+)?(?:password|login)\s+(?:for|of|on)\s+(?P<site3>[\w.-]+)", I)),
+    # "my gmail password is X, remember it": the vault, never chat memory (it used to route to the email skill)
+    ("vault_remember", re.compile(r"\bmy\s+(?P<site>[\w.-]+)\s+(?:password|passcode|pin)\s+is\s+(?P<pw>[^\s,;]+?)[.!]?(?=[\s,;]|$)", I)),
     ("vault_delete", re.compile(r"\b(?:delete|remove|forget)\s+(?:my\s+)?(?:saved\s+)?(?:login|password|credentials?)\s+for\s+(?P<site>[\w.-]+)", I)),
 ]
 SERVICE = "ISHTI:"  # every vault entry is "ISHTI:<site>" in Credential Manager, so ISHTI only ever sees its own
@@ -249,6 +251,13 @@ def op_vault_save(m, text, session):
     _hide(session, m["pw"])
     vault_set(m["site"], m["user"], m["pw"])
     return f"Saved your {m['site']} login ({m['user']}) in Windows Credential Manager - encrypted with your Windows account."
+
+
+def op_vault_remember(m, text, session):
+    _hide(session, m["pw"])
+    vault_set(m["site"], _index().get(m["site"].lower()) or "owner", m["pw"])
+    return (f"Saved your {m['site']} password in Windows Credential Manager (encrypted with your Windows account) - not in "
+            "my chat memory, and it's masked in this chat. Say \"what's my " + m["site"] + " password\" to see it again.")
 
 
 def op_vault_list(m, text, session):

@@ -19,8 +19,15 @@ def match(text):
     return bool(TRIGGER.search(text)) and not CREATIVE.match(text)
 
 
+OFF_EARTH = re.compile(r"\b(?:on|in|at|for)\s+(?:the\s+)?(?:mars|moon|venus|mercury|jupiter|saturn|uranus|neptune|pluto|sun|"
+                       r"titan|europa|space)\b", re.I)
+
+
 def run(text, session):
     import difflib
+    if (m := OFF_EARTH.search(text)):  # "weather on Mars" used to fall back to the owner's home city
+        return {"reply": f"I only have Earth forecasts (Open-Meteo), so I can't tell you the weather {m.group(0).strip()}. "
+                         "Ask me about any city on Earth.", "sources": []}
     home = get_facts().get("owner").get("city")
     city = extract_city(text) or home
     if city and home and city.lower() != home.lower() and difflib.SequenceMatcher(None, city.lower(), home.lower()).ratio() >= 0.8:

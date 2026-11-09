@@ -91,3 +91,12 @@ def test_owner_can_read_correct_confirm_and_forget_every_memory(mem):
     assert client.delete(f"/api/memory/items/{new_id}").json()["forgotten"] == 1
     assert [i["content"] for i in client.get("/api/memory/items").json()["items"]] == ["I go to the gym on Mondays"]
     assert client.get("/api/memory/items?status=forgotten").status_code == 400  # forgotten rows are not browsable
+
+
+def test_same_subject_new_value_supersedes_without_a_model(mem, monkeypatch):
+    from ishti.memstore import jsonio
+    monkeypatch.setattr(jsonio, "ask_json", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no model call")))
+    mem.reconcile("my favourite colour is blue", source="explicit_user")
+    mem.reconcile("my favourite colour is green actually", source="explicit_user")
+    assert [r["content"] for r in mem.search(mtype="semantic")] == ["my favourite colour is green"]
+    assert mem.reconcile("My favourite colour is green.", source="explicit_user")["action"] == "NOOP"
