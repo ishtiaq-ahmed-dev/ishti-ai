@@ -115,6 +115,12 @@ with automatic local failover, and every turn makes fewer model calls.
   - no bulk sends to "everyone"; bookings get an honest no with a prefilled search instead of invented results;
     scripts that delete a home folder are refused;
   - third-party skill packages install as prebuilt wheels only, and a failed install leaves nothing behind;
+  - the calculator only evaluates maths (its parser ran Python: "simplify __import__('os')..." executed code);
+  - a typed secret is rewritten out of the saved chat and its sidebar title after the turn, an ordinary sentence
+    ("my password is wrong") can no longer overwrite a saved password, and replacing one needs a yes;
+  - a bell Yes only approves the exact question it shows, which is displayed in full;
+  - deleting a note or an automation asks first; copy/move never overwrite an existing file; "every 0 minutes"
+    can no longer freeze the app; "I did it" / "stop the alarm" no longer close or cancel the wrong reminder;
   - remote channels classify the raw text, and forwarded WhatsApp messages are treated as data;
   - webtools downloads go through the SSRF guard;
   - secrets are redacted by pattern in the audit and route logs;

@@ -212,9 +212,18 @@ def match(text):
 def run(text, session):
     f = _db()
     if m := DELETE.search(text):
-        with f.lock, f.db:
-            n = f.db.execute("DELETE FROM automations WHERE id=?", (int(m["n"]),)).rowcount
-        return {"reply": f"Deleted automation #{m['n']}." if n else f"There's no automation #{m['n']}.", "sources": []}
+        rid = int(m["n"])
+        if not f.db.execute("SELECT 1 FROM automations WHERE id=?", (rid,)).fetchone():
+            return {"reply": f"There's no automation #{rid}.", "sources": []}
+
+        def delete():
+            with f.lock, f.db:
+                f.db.execute("DELETE FROM automations WHERE id=?", (rid,))
+            return f"Deleted automation #{rid}."
+        # "stop rule 2" used to delete it outright; pausing keeps it ("pause rule 2"), deleting is a yes
+        from ishti.skills import ask_first
+        return ask_first(session, "automation", f"Delete automation #{rid} for good (say \"pause rule {rid}\" to keep it)",
+                         delete)
     if m := PAUSE.search(text):
         on = m["act"].lower() in ("resume", "enable")
         with f.lock, f.db:
@@ -292,6 +301,7 @@ if __name__ == "__main__":
     assert f'done: summarize "{os.path.join(folder, "new.pdf")}"' in heard and any(h.startswith("Automation #2") for h in heard)
     assert "ran 1x" in run("list my automations", s)["reply"]
     assert "paused" in run("pause automation 2", s)["reply"] and tick(heard.append, fake) == []
-    assert "Deleted" in run("delete automation 1", s)["reply"] and len(rules()) == 1
+    assert "(yes/no)" in run("delete automation 1", s)["reply"] and len(rules()) == 2  # asks first
+    assert "Deleted" in s["pending"]["action"]() and len(rules()) == 1
     print("[self-check] automation OK - conditions (file/battery/disk/cpu/memory/app), fire once + re-arm, new files "
           "only, 'it' = the file, list/pause/delete")

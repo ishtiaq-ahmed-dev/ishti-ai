@@ -28,7 +28,7 @@ TICK = re.compile(r"^\s*(?:tick|check)\s+off\s+(?P<item>[\w &'-]{2,60})\s*$|^\s*
 # order matters: the "what's on" / "show" forms first, or the bare form reads "what's on my shopping" as a list name
 SHOW = re.compile(rf"^\s*what(?:'s|\s+is)\s+on\s+(?:the\s+|my\s+)?(?P<name3>[\w &'-]{{2,40}}?){L}\s*\??$|"
                   rf"^\s*(?:show|open|read)\s+(?:me\s+)?(?:the\s+|my\s+)?(?P<name2>[\w &'-]{{2,40}}?){L}\s*\??$|"
-                  rf"^\s*(?:my\s+|the\s+)?(?P<name>[\w&'-]+(?:\s+[\w&'-]+){{0,3}}?){L}\s*\??$", I)
+                  rf"^\s*(?:my\s+|the\s+)?(?P<name>[\w&'-]+(?:\s+[\w&'-]+)?){L}\s*\??$", I)  # 1-2 words: not "send me the price list"
 LEFT = re.compile(rf"^\s*what(?:'s| is)\s+left\s+on\s+(?:the\s+|my\s+)?(?P<name>[\w &'-]{{2,40}}?){L}\s*\??$", I)
 RESET = re.compile(r"^\s*reset\s+(?:the\s+|my\s+)?(?P<name>[\w &'-]{2,40}?)\s+checklist\s*$", I)
 LISTS = re.compile(r"^\s*(?:my\s+)?checklists?\s*$", I)
