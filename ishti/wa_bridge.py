@@ -48,7 +48,8 @@ except Exception:  # pragma: no cover
 BASE = (os.environ.get("ISHTI_WAHA_URL") or _WA.get("waha_url") or "http://127.0.0.1:3747").rstrip("/")
 SESSION = _WA.get("session") or "default"
 CONTAINER = _WA.get("container") or "ishti-waha"
-IMAGE = _WA.get("image") or "devlikeapro/waha:gows"
+# pinned by digest (config whatsapp.image); a floating tag could change under the owner's account
+IMAGE = _WA.get("image") or "devlikeapro/waha@sha256:280bdc8f860267a2488a45d00ec88529646f7468c0bf0283c595d6efdd1b5e3b"
 ENGINE = _WA.get("engine") or "GOWS"
 VOLUME = _WA.get("volume") or "ishti_waha_sessions"
 KEYRING_SERVICE, KEYRING_USER = "ishti-waha", "api-key"
@@ -118,6 +119,9 @@ def _call(method: str, path: str, payload=None, timeout=20):
         if exc.code == 401:
             raise BridgeError("WAHA refused ISHTI's API key (the container was created with another key). "
                               f"Remove the '{CONTAINER}' container and link WhatsApp again.") from exc
+        if exc.code in (429, 463, 475):  # WhatsApp is limiting this number (WAHA docs: wait; re-pairing makes it worse)
+            raise BridgeError("WhatsApp is limiting this number right now. Wait a few hours before sending more - "
+                              "re-linking won't help and can make it worse.") from exc
         raise BridgeError(f"WhatsApp service rejected this operation (HTTP {exc.code})") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise BridgeError("WhatsApp service unavailable or outcome uncertain; nothing was retried") from exc
@@ -158,6 +162,8 @@ def _run_container(key: str):
                 "-e", "WAHA_DASHBOARD_ENABLED=false", "-e", "WHATSAPP_SWAGGER_ENABLED=false",
                 "-e", "WAHA_PRINT_QR=False", "-e", "WHATSAPP_RESTART_ALL_SESSIONS=True",
                 "-e", "WAHA_LOG_LEVEL=warn", "--memory", "768m",
+                # no automatic media downloads: read_media asks for one item at a time (downloadMedia=true)
+                "-e", "WAHA_EVENTS_DOWNLOAD_MEDIA=false", "-e", "WAHA_API_DOWNLOAD_MEDIA=false",
                 IMAGE, timeout=600)
     if p.returncode != 0:
         raise BridgeError(f"Docker could not start WAHA: {(p.stderr or p.stdout).strip()[-200:]}")
@@ -184,6 +190,9 @@ def ensure_running(wait_s: float = 90) -> bool:
     with _lock:
         key = _api_key(create=True)
         state = _container_state()
+        if state and _docker("inspect", "-f", "{{.Config.Image}}", CONTAINER, timeout=30).stdout.strip() != IMAGE:
+            _docker("rm", "-f", CONTAINER, timeout=60)  # config pins a new image: recreate; the volume keeps the session
+            state = ""
         if state == "":
             _run_container(key)
         elif state != "running":
@@ -506,6 +515,33 @@ def _media_payload(media: str, kind: str, expected_hash: str | None) -> tuple[st
     return endpoint, {"mimetype": mime, "filename": path.name, "data": base64.b64encode(data).decode()}
 
 
+MIN_GAP_S = 2.0
+_last_send = [0.0]
+_pace_lock = threading.Lock()
+
+
+def _pace(cid: str, length: int, sleep=time.sleep):
+    """Seen, typing for a moment scaled to the message (1-6 s plus jitter), and at least MIN_GAP_S between sends.
+    Best effort: a failed seen/typing call never blocks the send itself."""
+    import random
+    from ishti.core.logutil import swallowed
+    with _pace_lock:
+        gap = MIN_GAP_S + random.uniform(0, 1.5) - (time.monotonic() - _last_send[0])
+        if gap > 0:
+            sleep(gap)
+        for path in ("sendSeen", "startTyping"):
+            try:
+                _call("POST", f"/api/{path}", {"session": SESSION, "chatId": cid}, timeout=10)
+            except BridgeError as exc:  # pacing is a courtesy; the send decides success
+                swallowed("ishti/wa_bridge.py:_pace", exc)
+        sleep(min(6.0, max(1.0, length / 15)) + random.uniform(0.2, 1.0))
+        try:
+            _call("POST", "/api/stopTyping", {"session": SESSION, "chatId": cid}, timeout=10)
+        except BridgeError as exc:
+            swallowed("ishti/wa_bridge.py:_pace.stop", exc)
+        _last_send[0] = time.monotonic()
+
+
 def send(chat: str, text: str = "", media: str = "", caption: str = "", *, action_id: str,
          media_kind: str = "", expected_hash: str | None = None) -> dict:
     """Send ONE approved item. An action id that was already attempted is never sent again."""
@@ -522,6 +558,7 @@ def send(chat: str, text: str = "", media: str = "", caption: str = "", *, actio
         else:
             endpoint, payload = "sendText", {"session": SESSION, "chatId": cid, "text": text}
         _record(action_id, {"state": "attempting", "chat": cid})
+    _pace(cid, len(text or caption or ""))  # after the ledger says "attempting": a crash here never causes a resend
     try:
         result = _call("POST", f"/api/{endpoint}", payload, timeout=60)
     except BridgeError:

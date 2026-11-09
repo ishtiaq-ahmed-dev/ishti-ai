@@ -42,12 +42,16 @@ def _cipher():
             raise RuntimeError("The configured sensitive-storage key is invalid.") from None
 
 
-def restrict_to_owner(path) -> bool:
+def restrict_to_owner(path, inherit=False) -> bool:
     """Make a secret file readable only by the current Windows user and SYSTEM (protected DACL, no inherited
-    'Users'/'Authenticated Users' entries). -> True when applied. Best effort: never raises, and a no-op off Windows."""
+    'Users'/'Authenticated Users' entries). -> True when applied. Best effort: never raises, and a no-op off Windows.
+
+    inherit=True is for a FOLDER: the entries are inheritable (and Administrators is added, so the owner's elevated
+    backup/AV tools keep working). Windows recomputes every existing child's inherited entries, so one call locks the
+    whole tree - the data folder inherited Modify for 'Authenticated Users' from the drive root."""
     if os.name != "nt":
         try:
-            os.chmod(path, 0o600)
+            os.chmod(path, 0o700 if inherit else 0o600)
             return True
         except OSError:
             return False
@@ -59,7 +63,12 @@ def restrict_to_owner(path) -> bool:
         user = win32security.GetTokenInformation(token, win32security.TokenUser)[0]
         system = win32security.CreateWellKnownSid(win32security.WinLocalSystemSid)
         acl = win32security.ACL()
-        for sid in (user, system):
+        if inherit:
+            admins = win32security.CreateWellKnownSid(win32security.WinBuiltinAdministratorsSid)
+            flags = win32security.OBJECT_INHERIT_ACE | win32security.CONTAINER_INHERIT_ACE
+            for sid in (user, system, admins):
+                acl.AddAccessAllowedAceEx(win32security.ACL_REVISION_DS, flags, con.FILE_ALL_ACCESS, sid)
+        for sid in (() if inherit else (user, system)):
             acl.AddAccessAllowedAce(win32security.ACL_REVISION, con.FILE_ALL_ACCESS, sid)
         win32security.SetNamedSecurityInfo(
             str(path), win32security.SE_FILE_OBJECT,

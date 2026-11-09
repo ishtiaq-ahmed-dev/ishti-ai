@@ -60,6 +60,8 @@ def waha(monkeypatch, tmp_path):
     monkeypatch.setattr(bridge, "TEST_DESTINATION_FILE", tmp_path / "test_destination")
     monkeypatch.setattr(bridge, "_api_key", lambda create=False: "synthetic-waha-key")
     monkeypatch.setattr(bridge, "_lids", {})
+    real_pace = bridge._pace
+    monkeypatch.setattr(bridge, "_pace", lambda cid, n: real_pace(cid, n, sleep=lambda s: None))  # same calls, no waiting
     yield fake
     fake.server.shutdown()
 
@@ -187,3 +189,43 @@ def test_authorize_self_test_requires_the_linked_account(waha):
 def test_deferred_mutations_never_call_network(waha):
     assert bridge.delete("x", "y")["ok"] is False and bridge.edit() == bridge.delete() and bridge.react()["ok"] is False
     assert waha.seen == []
+
+
+def test_send_is_paced_like_a_person(monkeypatch):
+    calls, naps = [], []
+    monkeypatch.setattr(bridge, "_call", lambda method, path, payload=None, timeout=20: calls.append(path) or {})
+    bridge._last_send[0] = 0.0
+    bridge._pace("123@c.us", 300, sleep=naps.append)
+    assert calls == ["/api/sendSeen", "/api/startTyping", "/api/stopTyping"]
+    assert 6.0 <= naps[-1] <= 7.0  # long message: capped typing pause plus jitter
+    bridge._pace("123@c.us", 5, sleep=naps.append)
+    assert naps[-2] >= 1.5  # the very next send waits out the minimum gap first
+
+
+def test_whatsapp_rate_limit_means_wait_not_relink(monkeypatch):
+    import io
+    import urllib.error
+
+    def refuse(request, timeout=20):
+        raise urllib.error.HTTPError(request.full_url, 463, "limited", {}, io.BytesIO(b""))
+    monkeypatch.setattr(bridge, "_api_key", lambda create=False: "k")
+    monkeypatch.setattr(bridge, "_open", refuse)
+    with pytest.raises(bridge.BridgeError, match="limiting this number"):
+        bridge._call("POST", "/api/sendText", {})
+
+
+def test_a_new_pinned_image_recreates_the_container(monkeypatch):
+    ran = []
+    monkeypatch.delenv("ISHTI_TEST_MODE", raising=False)
+    monkeypatch.setattr(bridge, "_ready", lambda: bool(ran and ran[-1] == "run"))
+    monkeypatch.setattr(bridge, "_api_key", lambda create=False: "k")
+    monkeypatch.setattr(bridge, "_container_state", lambda: "exited")
+    monkeypatch.setattr(bridge, "_run_container", lambda key: ran.append("run"))
+
+    class P:
+        def __init__(self, out=""):
+            self.stdout, self.stderr, self.returncode = out, "", 0
+    monkeypatch.setattr(bridge, "_docker", lambda *a, **k: (ran.append(a[0]) or P("devlikeapro/waha:old")) if a[0] == "inspect"
+                        else (ran.append(a[0]) or P()))
+    assert bridge.ensure_running(wait_s=2)
+    assert ran == ["inspect", "rm", "run"]

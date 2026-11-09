@@ -301,6 +301,13 @@ async def _capture_loop():
         business_killswitch.on_kill(lambda: business_engine.pause() or "business observation paused")
     self_heal.ensure_loop()  # idles until the owner turns Auto-Heal ON
     from ishti import CONFIG
+    from ishti.test_mode import enabled as _test_mode_on, scratch_dir as _scratch_dir
+    if not _test_mode_on() and not _scratch_dir():
+        # data/ inherited Modify for every signed-in Windows account from the drive root: lock the tree to the owner
+        # (+ SYSTEM and Administrators). Off the startup path - propagating to thousands of files takes a moment.
+        from ishti.secure_store import restrict_to_owner
+        threading.Thread(target=restrict_to_owner, args=(os.path.dirname(CONFIG["memory"]["db_path"]),),
+                         kwargs={"inherit": True}, daemon=True, name="lock-data-dir").start()
     from ishti.skills.reminders.skill import start as start_reminders
 
     def announce(msg, kind="job"):  # due reminders: HUD and bell always, spoken unless muted or in quiet hours

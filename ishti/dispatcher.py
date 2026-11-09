@@ -235,6 +235,10 @@ def _ftlog(text, reply, name, dec, channel):
     """Behavior-data collection (Part 3): one exchange with its routing decision for the
     fine-tuning pipeline. Secrets are redacted in ishti.ftlog; secrets this request marked
     (session redact) never arrive here at all."""
+    # opt-in (config learning.collect_finetune_data): a fifth copy of every exchange, kept for a local fine-tune that an
+    # owner on a cloud model never runs, is data held for nothing
+    if not CONFIG.get("learning", {}).get("collect_finetune_data", False):
+        return
     try:
         from ishti import ftlog
         ftlog.record(text, reply, name, dec.get("source", ""), channel=channel)

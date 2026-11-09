@@ -131,10 +131,17 @@ def build_context(text, domain="", session=None):
         if family_edges:
             f_lines = []
             owner_name = (get_facts().get("owner").get("name") or "").lower()
+            low = text.lower()
+            everyone = re.search(r"\b(?:family|relatives?|people\s+in\s+my\s+life|who\s+do\s+i\s+know)\b", low)
             for e in family_edges:
                 rel = e.get("rel", "").title()
                 name = e.get("d_name", "").title()
                 if name.lower() in ("me", "you", owner_name, "owner"):
+                    continue
+                # data minimisation: only the people this question is about leave the PC (every family/friend line
+                # used to ride along with every cloud prompt, "what's the capital of France" included)
+                if not (everyone or re.search(rf"\b{re.escape(rel.lower())}s?\b", low)
+                        or (name and re.search(rf"\b{re.escape(name.lower())}\b", low))):
                     continue
                 detail = f" ({e['detail']})" if e.get("detail") else ""
                 f_lines.append(f"- {name}: your {rel}{detail}")

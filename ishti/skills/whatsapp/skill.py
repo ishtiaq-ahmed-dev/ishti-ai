@@ -703,7 +703,14 @@ def _approve_send(cid, name, path, messages, voice, text, session, draft_ready=F
         return {**_out(f"Sent {len(outcomes)} item(s) to {name} on WhatsApp (accepted by WhatsApp; that does not mean "
                        "it was read yet).", True), "outcomes": outcomes}
     shown = name if _digits_only(name) else f"{name} ({cid.split('@')[0]})"
-    return ask_first(session, "whatsapp", f"Send this to {shown} on WhatsApp?\n\n{recap}\n\nSend it", approved)
+    # WAHA's ban guidance: message people who know you; a few spam reports from cold contacts get a number banned
+    try:
+        known = cid in {c.get("id") for c in bridge.chats(200)}
+    except bridge.BridgeError:
+        known = True  # can't tell: don't cry wolf
+    cold = ("" if known else "\n\nHeads-up: you have no chat with this number yet. WhatsApp bans numbers that message "
+                            "strangers who report them, so only send if they expect it.")
+    return ask_first(session, "whatsapp", f"Send this to {shown} on WhatsApp?\n\n{recap}{cold}\n\nSend it", approved)
 
 
 def _digits_only(value):
