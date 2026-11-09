@@ -102,8 +102,8 @@ def memory_hits(query: str) -> list:
 
 
 def _score_row(row, overlap: int) -> float:
-    return overlap * 2 + row["importance"] * 3 + (2 if row["type"] == "procedural" else 0) \
-        + (1.5 if row["source"] == "explicit_user" else 0)
+    return (overlap * 2 + row["importance"] * 3 + (2 if row["type"] == "procedural" else 0)
+            + (1.5 if row["source"] == "explicit_user" else 0)) * memory.recency(row)
 
 
 def _entities_of_row(row) -> list:

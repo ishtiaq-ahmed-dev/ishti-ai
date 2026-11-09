@@ -102,7 +102,8 @@ def assemble(request: str, *, state_summary: str = "", memories: list | None = N
     if include_request:
         parts.append(f"CURRENT USER REQUEST: {request}")
     _add(parts, used, "CONVERSATION STATE", [state_summary] if state_summary else [], b["conversation_state"])
-    _add(parts, used, "RELEVANT MEMORIES", memories or [], b["relevant_memories"])
+    _add(parts, used, "RELEVANT MEMORIES (dated: a newer line overrides an older one)", memories or [],
+         b["relevant_memories"])
     _add(parts, used, "RELEVANT PEOPLE", people or [], b["relevant_people"])
     _add(parts, used, "RELEVANT RELATIONSHIPS", relationships or [], b["relevant_relationships"])
     _add(parts, used, "RELEVANT PROCEDURES", procedures or [], b["relevant_procedures"])
@@ -118,7 +119,8 @@ def arch2_block(request: str, state_summary: str = "", session_id=None, capture=
     context block). Returns the assembled memory context, '' when nothing is relevant."""
     from ishti.memstore import retrieval, people
     mems = retrieval.memory_hits(request)
-    memories = [m["row"]["content"] for m in mems if m["row"]["type"] != "procedural"]
+    from ishti.memstore.memory import stated_on
+    memories = [stated_on(m["row"]) + m["row"]["content"] for m in mems if m["row"]["type"] != "procedural"]
     procedures = [m["row"]["content"] for m in mems if m["row"]["type"] == "procedural"]
     graph = retrieval.graph_hits(request)
     people_lines, rel_lines = [], []
@@ -155,7 +157,7 @@ def arch2_block(request: str, state_summary: str = "", session_id=None, capture=
     except Exception as _exc:
         swallowed('ishti/core/assemble.py:arch2_block.glossary', _exc)
     if convo:
-        blocks.append("POSSIBLY RELEVANT PAST CONTEXT:\n" + "\n".join(f"- {c}" for c in convo))
+        blocks.append("POSSIBLY RELEVANT PAST CONTEXT (dated: newer overrides older):\n" + "\n".join(f"- {c}" for c in convo))
     out = "\n\n".join(x for x in blocks if x)
     if mems:
         retrieval.touch_hits(mems)

@@ -61,6 +61,7 @@ class Facts:
             events.publish("memory_updated", {"type": "fact", "entity": entity, "attr": attr, "value": value})
         except Exception:
             swallowed('ishti/facts.py:set:53')
+        _supersede_memories(attr, prev, value)
         return prev
 
     def keys(self):
@@ -112,6 +113,14 @@ class Facts:
             swallowed('ishti/facts.py:forget:93')
         return rc
 
+    def owner_profile(self, limit: int = 20) -> list:
+        """The owner's personal facts [(attr, value)], newest first - settings the app keeps under
+        "owner" (voice, languages, app preferences, standing instructions) are not facts about them.
+        ponytail: capped at `limit` rows so a long-lived owner doesn't grow every chat prompt."""
+        with self.lock:
+            rows = self.db.execute("SELECT attr, value FROM facts WHERE key='owner' ORDER BY updated_at DESC").fetchall()
+        return [(a, v) for a, v in rows if a not in OWNER_SETTINGS and not a.startswith("prefers_")][:limit]
+
     def mentioned_in(self, text: str) -> list:
         """Facts whose entity appears (whole words) in text: [(entity, attr, value)]."""
         t = f" {norm(text)} "
@@ -128,6 +137,26 @@ class Facts:
                             (time.time(), text, skill, confidence, source, detail))
 
 
+OWNER_SETTINGS = {"entity", "instructions", "voice", "enabled_languages"}
+
+
+def _supersede_memories(attr, prev, value):
+    """Memory rows stating the old value of a fact that just changed are superseded (valid_until stamped,
+    conflict logged) by the same sentence with the new value. ponytail: whole-word text substitution - right for
+    "lives in Peshawar" -> "lives in Lahore"; a value too short or numeric (counters, settings) is skipped."""
+    prev, value = str(prev or "").strip(), str(value or "").strip()
+    if (not prev or prev.lower() == value.lower() or len(prev) < 3 or prev.replace(".", "").isdigit()
+            or attr in OWNER_SETTINGS or attr.startswith("prefers_")):
+        return
+    try:
+        import re
+        from ishti.memstore import memory
+        old_word = re.compile(rf"\b{re.escape(prev)}\b", re.I)
+        for row in memory.search(text=prev, mtype="semantic", limit=10):
+            if old_word.search(row["content"]):
+                memory.supersede(row["id"], old_word.sub(value, row["content"]), source="explicit_user")
+    except Exception as _exc:
+        swallowed('ishti/facts.py:_supersede_memories', _exc)
 _facts = None
 
 

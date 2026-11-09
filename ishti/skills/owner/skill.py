@@ -161,7 +161,8 @@ def tell(t, session):
 # Only messages that can carry a lasting fact: a standing preference, or the owner describing themselves.
 LEARNABLE = re.compile(r"\b(?:prefer|always|never|not\s+needed|no\s+need|don'?t\s+(?:want|need|like)|should(?:n'?t)?|"
                        r"i\s+(?:like|love|hate|want\s+(?:it|you|ishti|them|the)|usually|mostly|am|'m|work|study|use|build|"
-                       r"make|develop|run|teach|manage|have\s+been)|i'm)\b", I)
+                       r"make|develop|run|teach|manage|have\s+been|live|moved|relocated|switched|changed|quit|left|"
+                       r"joined|started)|i'm|no\s+longer|anymore)\b", I)
 LEARN_EXAMPLES = (
     'how many pdfs are in my downloads -> {}\n'
     'tell me a joke -> {}\n'

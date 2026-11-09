@@ -419,10 +419,21 @@ def search(text=None, mtype=None, status="active", limit=20) -> list:
     return rows
 
 
+def recency(row, now=None) -> float:
+    """1.0 for a memory confirmed in the last 30 days, fading linearly to 0.5 at a year."""
+    age_days = max(0.0, ((now or time.time()) - (row["last_confirmed_at"] or row["created_at"] or 0)) / 86400)
+    return 1.0 if age_days < 30 else max(0.5, 1.0 - age_days / 365)
+
+
+def stated_on(row) -> str:
+    """'[YYYY-MM-DD] ' for a memory row, so the model can tell a newer statement from an older one."""
+    ts = row.get("created_at")
+    return time.strftime("[%Y-%m-%d] ", time.localtime(ts)) if ts else ""
+
+
 def _score(row, now) -> float:
     """Retrieval rank: importance x recency of confirmation. Simple, explainable, no surprises."""
-    age_days = max(0.0, (now - (row["last_confirmed_at"] or row["created_at"])) / 86400)
-    return row["importance"] * (1.0 if age_days < 30 else max(0.5, 1.0 - age_days / 365))
+    return row["importance"] * recency(row, now)
 
 
 def promote_observations() -> list:

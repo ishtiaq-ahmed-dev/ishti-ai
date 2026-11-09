@@ -315,11 +315,16 @@ def _learn(text):
 def _learn_turn(text, reply, name, dec, sid, channel, message_id=None):
     """Background learning hook: turn observation, feedback harvesting, reward attribution."""
     try:
-        from ishti.learning import observe, feedback, policy, reflect, lessons
-        # 1. Check for feedback/corrections on this turn
-        fb = feedback.detect(text, last_skill=name)
-        # A completed turn has unknown correctness until the owner confirms it.
-        reward = feedback.reward_of("unreviewed", fb=fb)
+        from ishti.learning import observe, feedback, policy, reflect, lessons, store as lstore
+        # 1. Typed feedback ("wrong", "no, use Chrome", "perfect") is ABOUT the previous turn in this
+        #    session, not the turn that carries it: credit/blame lands there (thumbs ratings already did).
+        prev = lstore.row("SELECT id, request, skill, decision FROM interactions WHERE session_id=? "
+                          "ORDER BY ts DESC LIMIT 1", (sid,)) if sid else None
+        fb = feedback.detect(text, last_request=(prev or {}).get("request", ""),
+                             last_skill=(prev or {}).get("skill") or name)
+        fb_reward = feedback.reward_of("unreviewed", fb=fb) if fb else 0.0
+        # The carrying turn itself has unknown correctness until the owner rates it.
+        reward = 0.0 if prev else fb_reward
 
         # 2. Log interaction
         decision = dict(dec or {}) if isinstance(dec, dict) else {}
@@ -333,8 +338,17 @@ def _learn_turn(text, reply, name, dec, sid, channel, message_id=None):
             if rating:
                 feedback.apply_answer_rating(sid, message_id, rating)
 
-        # 3. If explicit feedback, apply it
-        if fb:
+        # 3. If explicit feedback, apply it to the turn it is about
+        if fb and prev:
+            observe.end(prev["id"], reward=fb_reward)
+            feedback.apply(fb, interaction={"id": prev["id"], "skill": prev.get("skill"), "request": prev.get("request")})
+            if fb_reward and (prev.get("skill") or "") in lessons.CONTEXT_INJECTING_SKILLS:
+                stored = lstore.js(prev.get("decision"), {}) or {}
+                if applied := [str(i) for i in stored.get("applied_lesson_ids", []) if isinstance(i, str)]:
+                    lessons.apply_turn_outcome(prev["id"], fb_reward, applied, reason="owner's typed feedback on the answer")
+            reflect.for_turn({"id": prev["id"], "request": prev.get("request", ""), "skill": prev.get("skill") or ""},
+                             fb_reward, fb)
+        elif fb:
             feedback.apply(fb, interaction={"id": iid, "skill": name, "request": text})
 
         # 4. Check for temporary instructions
@@ -355,7 +369,7 @@ def _learn_turn(text, reply, name, dec, sid, channel, message_id=None):
         #    the sentence too. Only when there is a signal - a store full of "nothing happened"
         #    reflections is noise that drowns out the ones that mean something. Reflections are
         #    kept for *every* skill: they are a record of the turn, recalled later by words.
-        if reward or fb:
+        if (reward or fb) and not prev:
             reflect.for_turn({"id": iid, "request": text, "skill": name or ""}, reward, fb)
 
         # 7. Daily maintenance (AdMem): fade un-confirmed lessons that have gone stale.

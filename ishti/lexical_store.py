@@ -14,6 +14,8 @@ import uuid
 
 from ishti import embeddings, secure_store
 
+MAX_ROWS = 5000  # ponytail: every recall decrypts every row, so the index keeps the newest 5,000 turns
+
 
 class LexicalStore:
     def __init__(self, path):
@@ -55,18 +57,23 @@ class LexicalStore:
             payload = self._seal({'text':text,'vector':vector,'meta':meta})
             with closing(self._db()) as db, db:
                 db.execute('INSERT INTO recall VALUES(?,?,?)',(uuid.uuid4().hex,time.time(),payload))
+                db.execute('DELETE FROM recall WHERE id NOT IN (SELECT id FROM recall ORDER BY ts DESC LIMIT ?)',(MAX_ROWS,))
 
     def recall(self, query, k=4, max_distance=0.45):
         vector = embeddings.lexical(['search_query: '+query])[0]
         def candidates(db):
-            for payload, in db.execute('SELECT payload FROM recall'):
+            for ts, payload in db.execute('SELECT ts, payload FROM recall'):
                 record = self._open(payload)
                 score = sum(a*b for a,b in zip(vector,record['vector']))
                 if score >= 1-max_distance:
-                    yield score, record['text']
+                    yield score, ts, record['text']
         with self._lock, closing(self._db()) as db:
             hits=heapq.nlargest(k,candidates(db),key=lambda item:item[0])
-            return list(dict.fromkeys(text.split('\nISHTI:')[0] for _,text in hits))
+            # dated, so "I live in Peshawar" from March can't outvote "I moved to Lahore" from May
+            first = {}
+            for _,ts,text in hits:
+                first.setdefault(text.split('\nISHTI:')[0], ts)
+            return [time.strftime('[%Y-%m-%d] ',time.localtime(ts))+text for text,ts in first.items()]
 
     def delete_where_text(self, text):
         with self._lock, closing(self._db()) as db, db:

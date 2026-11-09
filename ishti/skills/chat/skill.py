@@ -110,8 +110,7 @@ def build_context(text, domain="", session=None):
     except Exception as _exc:
         swallowed('ishti/skills/chat/skill.py:build_context.glossary', _exc)
     f = get_facts()
-    rows = f.mentioned_in(text) + [("owner", a, v) for a, v in f.get("owner").items()  # instructions/prefs: llm.style()
-                                   if a not in ("entity", "instructions") and not a.startswith("prefers_")]
+    rows = f.mentioned_in(text) + [("owner", a, v) for a, v in f.owner_profile()]  # instructions/prefs: llm.style()
     seen = {e.lower() for e, _, _ in rows if e != "owner"}
     try:
         from ishti.semantic import get_semantic
@@ -142,7 +141,8 @@ def build_context(text, domain="", session=None):
     except Exception as _exc:
         swallowed('ishti/skills/chat/skill.py:build_context.rgraph', _exc)
     if recalled:
-        parts.append("Possibly relevant past context:\n" + "\n".join(f"- {s[:300]}" for s in recalled))
+        parts.append("Possibly relevant past context (dated: newer overrides older):\n"
+                     + "\n".join(f"- {s[:300]}" for s in recalled))
     # The apply end of the learning loop: without this line every lesson ISHTI ever learned is
     # write-only - recorded, scored, displayed on the dashboard, and never read by the model.
     try:

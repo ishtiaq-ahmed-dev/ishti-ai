@@ -95,7 +95,7 @@ def _tokens(text):
     return {w for w in re.findall(r"[a-z0-9]{3,}", (text or "").lower()) if w not in stop}
 
 
-def _find(kind, scope, context, correct="", entity=""):
+def _find(kind, scope, context, correct="", entity="", statement=""):
     """The active lesson this evidence belongs to (same kind + scope + context + target)."""
     sql = "SELECT * FROM lessons WHERE status='active' AND kind=? AND scope=? AND context=?"
     args = [kind, scope, context]
@@ -105,6 +105,9 @@ def _find(kind, scope, context, correct="", entity=""):
     if correct:
         sql += " AND lower(correct)=?"
         args.append(correct.lower())
+    elif statement:  # no target: the statement is the lesson (all reflections used to fold into the first one)
+        sql += " AND lower(statement)=?"
+        args.append(statement.strip().lower()[:400])
     return store.row(sql + " ORDER BY updated DESC LIMIT 1", tuple(args))
 
 
@@ -133,6 +136,9 @@ def contradictions(scope, context, correct, kind=None, entity=""):
 
 
 
+PINNED_SOURCES = ("explicit_user_correction", "user_confirmation", "owner_statement", "temporary_instruction", "dashboard")
+
+
 def add(kind, statement, scope="domain", context="", incorrect="", correct="", source="repeated_observation",
         confidence=0.5, evidence=1, action=None, entity="", expires=None, note="", occasion=False,
         interaction_id="", allow_supersede=True):
@@ -145,7 +151,7 @@ def add(kind, statement, scope="domain", context="", incorrect="", correct="", s
     ctx = (context or "").strip()[:160]
     if kind == "temporary" and not expires:
         expires = store.now() + float(store.cfg().get("temporary_ttl_s", 3600))
-    existing = _find(kind, scope, ctx, correct, entity)
+    existing = _find(kind, scope, ctx, correct, entity, statement)
     if existing:  # the same lesson again: this is evidence, not a duplicate
         adjust(existing["lesson_id"], 0.0, "repeated evidence", interaction_id, occasion=True,
                evidence={"statement": statement})
@@ -227,13 +233,34 @@ def attribute(lesson_ids, reward, interaction_id="", reason=""):
                 "SELECT 1 FROM lesson_events WHERE lesson_id=? AND interaction_id=? "
                 "AND reason LIKE 'owner-rated exact answer%'", (lesson_id, interaction_id)):
             continue
-        # the owner confirmed it explicitly: their statement outranks our own outcome signal
+        # the owner confirmed it explicitly: their statement outranks our own outcome signal - but a rule
+        # that keeps steering failures is counted and, past a bar, put back to the owner to keep or drop
         if int(got.get("confirmed") or 0):
+            if gain < 0:
+                _review_confirmed(adjust(lesson_id, 0.0, reason or "turn went wrong under a confirmed rule",
+                                         interaction_id, negative=1))
             continue
         adjust(lesson_id, gain, reason or f"turn outcome reward {gain:+.2f}", interaction_id,
                positive=1 if gain > 0 else 0, negative=1 if gain < 0 else 0)
         touched.append(lesson_id)
     return touched
+
+
+REVIEW_AFTER = 3  # failures under an owner-confirmed rule before asking whether to keep it
+
+
+def _review_confirmed(lesson):
+    neg, pos = int(lesson.get("negative") or 0), int(lesson.get("positive") or 0)
+    if neg < REVIEW_AFTER or neg <= pos:
+        return
+    sig = f"review:{lesson['lesson_id']}"
+    question = (f"The rule \"{lesson['statement'][:120]}\" went wrong {neg} times (right {pos}). Keep it?")
+    payload = {"kind": "review", "lesson_id": lesson["lesson_id"], "statement": lesson["statement"]}
+    if (open_one := store.row("SELECT id FROM candidates WHERE status='open' AND signature=?", (sig,))):
+        store.write("UPDATE candidates SET question=?, ts=? WHERE id=?", (question, store.now(), open_one["id"]))
+    else:
+        store.add("candidates", ts=store.now(), kind="review", signature=sig, payload=store.dump(payload),
+                  status="open", question=question, source="confirmed_rule_failing")
 
 
 def decay(days=None, floor=0.05):
@@ -268,8 +295,11 @@ def decay(days=None, floor=0.05):
         new = max(float(floor), float(row["confidence"] or 0) - drop)
         if new >= float(row["confidence"] or 0):
             continue
-        store.write("UPDATE lessons SET confidence=?, decayed=? WHERE lesson_id=?", (new, now, row["lesson_id"]))
-        _event(row["lesson_id"], -drop, f"decayed: no new evidence in {age:.0f} days")
+        retire = new <= float(floor) and int(row["negative"] or 0) >= int(row["positive"] or 0)
+        store.write("UPDATE lessons SET confidence=?, decayed=?, status=? WHERE lesson_id=?",
+                    (new, now, "retired" if retire else "active", row["lesson_id"]))
+        _event(row["lesson_id"], -drop, f"decayed: no new evidence in {age:.0f} days"
+                                        + ("; retired (at the floor, never more help than harm)" if retire else ""))
         faded += 1
     return faded
 
@@ -287,6 +317,10 @@ def maybe_decay(force=False):
     except Exception:
         return 0
     store.set_setting("last_decay", store.now())
+    try:  # the same daily pass turns repeated mistakes / feedback reasons into questions for the owner
+        detect_patterns()
+    except Exception as _exc:
+        swallowed('ishti/learning/lessons.py:maybe_decay.detect_patterns', _exc)
     return faded
 
 
@@ -414,10 +448,13 @@ def expire_stale():
                        "AND expires IS NOT NULL AND expires < ?", (store.now(), store.now())) or 0
 
 
-def active(kind=None, scope=None, context=None, entity=None, limit=200):
+def active(kind=None, scope=None, context=None, entity=None, limit=200, min_confidence=None):
     expire_stale()
     sql = "SELECT * FROM lessons WHERE status='active'"
     args = []
+    if min_confidence is not None:  # pinned (owner-said) lessons pass regardless of confidence
+        sql += f" AND (confidence>=? OR confirmed=1 OR source IN ({','.join('?' * len(PINNED_SOURCES))}))"
+        args += [float(min_confidence), *PINNED_SOURCES]
     for col, val in (("kind", kind), ("scope", scope), ("context", context), ("entity", entity)):
         if val:
             sql += f" AND {col}=?"
@@ -501,7 +538,7 @@ def guidance_for(text, domain=None, limit=4, session_id=None):
         return []
     floor = float(thresholds().get("weak", 0.3))
     scored = []
-    for ls in active(limit=200):
+    for ls in active(limit=200, min_confidence=floor):
         if ls.get("kind") == "temporary" and (not session_id or str(ls.get("entity") or "") != str(session_id)):
             continue
         pinned = bool(int(ls.get("confirmed") or 0)) or ls.get("source") in (
@@ -550,6 +587,38 @@ RULE_TEXT = {
 }
 
 
+# A thumbs-down reason the owner keeps giving becomes a standing preference they can accept (CIPHER/PRELUDE: a
+# written preference inferred from feedback, no fine-tuning). Accepted, it lands in the owner's prefers_* facts,
+# which llm.style() puts in every prompt.
+STYLE_RULES = {
+    "too_long": ("prefers_answer_length", "short answers - lead with the answer, no preamble"),
+    "ignored_context": ("prefers_context", "re-read what I said earlier in the conversation before answering"),
+    "wrong_fact": ("prefers_uncertainty", "say you're not sure rather than guess a fact"),
+    "hallucinated_action": ("prefers_action_reports", "never say something was done unless the tool confirmed it"),
+}
+STYLE_AFTER = 3
+
+
+def _reason_candidates():
+    made = []
+    for r in store.rows("SELECT reason_type, COUNT(*) AS n FROM typed_feedback WHERE rating IN ('negative','correction') "
+                        "GROUP BY reason_type HAVING n>=?", (STYLE_AFTER,)):
+        if r["reason_type"] not in STYLE_RULES:
+            continue
+        attr, value = STYLE_RULES[r["reason_type"]]
+        sig = f"style:{r['reason_type']}"
+        if store.row("SELECT 1 FROM candidates WHERE signature=? AND status IN ('open','discarded','confirmed')", (sig,)):
+            continue  # asked once; a "no" is an answer, not a prompt to ask again
+        question = (f"You marked {r['n']} answers as {r['reason_type'].replace('_', ' ')}. "
+                    f"Should I always follow this: {value}?")
+        payload = {"kind": "preference", "scope": "global", "context": "", "statement": value.capitalize() + ".",
+                   "action": {"fact": ["owner", attr, value]}}
+        cid = store.add("candidates", ts=store.now(), kind="preference", signature=sig, payload=store.dump(payload),
+                        status="open", question=question, source="repeated_feedback_reason")
+        made.append({"id": cid, **payload, "question": question, "status": "open", "signature": sig})
+    return made
+
+
 def detect_patterns(min_count=None):
     """Repeated mistakes -> candidate rules, for the owner to confirm (spec 10/23). Each
     signature produces one open candidate; repeats update its count instead of duplicating."""
@@ -573,7 +642,7 @@ def detect_patterns(min_count=None):
         cid = store.add("candidates", ts=store.now(), kind="rule", signature=group["signature"],
                         payload=store.dump(payload), status="open", question=question, source="repeated_mistake")
         created.append({"id": cid, **payload, "question": question, "status": "open", "signature": group["signature"]})
-    return created
+    return created + _reason_candidates()
 
 
 def accept_candidate(candidate_id, keep, edits=None):
@@ -584,6 +653,16 @@ def accept_candidate(candidate_id, keep, edits=None):
     status = "confirmed" if keep else "discarded"
     store.write("UPDATE candidates SET status=?, answered=? WHERE id=?", (status, store.now(), candidate_id))
     lesson = {}
+    review = store.js(got["payload"], {}) or {}
+    if review.get("kind") == "review":
+        lid = review.get("lesson_id", "")
+        if keep:
+            store.write("UPDATE lessons SET negative=0, positive=0, updated=? WHERE lesson_id=?", (store.now(), lid))
+            _event(lid, 0.0, "owner kept the rule after it went wrong; failure count reset")
+            lesson = _out(store.row("SELECT * FROM lessons WHERE lesson_id=?", (lid,)) or {})
+        else:
+            lesson = forget(lid)
+        return {"candidate": {**got, "status": status}, "lesson": lesson}
     if keep:
         payload = store.js(got["payload"], {}) or {}
         payload.update({k: v for k, v in (edits or {}).items() if v is not None})

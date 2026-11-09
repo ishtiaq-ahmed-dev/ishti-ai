@@ -50,7 +50,9 @@ PROMPT_RE = re.compile(r"\{.*\}", re.S)
 _LASTING = re.compile(r"\b(?:remember|my name|i am|i'm|i live|i work|i study|i have|i like|i love|i hate|i prefer|"
                       r"i always|i never|my (?:wife|husband|brother|sister|mother|father|son|daughter|boss|manager|"
                       r"client|friend|job|company|project|birthday|phone|address|city|family|kids?)|"
-                      r"is my|are my|called|named|from now on|always|never)\b", re.I)
+                      r"is my|are my|called|named|from now on|always|never|"
+                      r"i (?:moved|relocated|switched|changed|quit|left|joined|started|got married|got divorced)|"
+                      r"no longer|anymore)\b", re.I)
 
 
 def worth_extracting(text: str) -> bool:
@@ -408,6 +410,13 @@ def handle_command(text: str, session=None) -> str | None:  # noqa: C901
             lines.insert(0, head.rstrip(" ,-") + ".")
         except Exception as _exc:
             swallowed('ishti/memstore/consolidate.py:handle_command', _exc)
+        try:  # facts the owner stated ("I work as a data analyst") live in the facts store, not here
+            from ishti.facts import get_facts
+            said = {ln.lower() for ln in lines}
+            lines[1:1] = [f"- {a.replace('_', ' ')}: {v}" for a, v in get_facts().owner_profile()
+                          if not any(str(v).lower() in s for s in said)]
+        except Exception as _exc:
+            swallowed('ishti/memstore/consolidate.py:handle_command.facts', _exc)
         return ("Here is what I remember about you:\n" + "\n".join(lines)) \
             if lines else "Nothing yet - tell me things and I'll remember them."
     if LEARNED_RE.search(t):
@@ -435,8 +444,8 @@ def handle_command(text: str, session=None) -> str | None:  # noqa: C901
         return f"I don't know who {who} is yet. Tell me about them and I'll remember."
     m = REMEMBER_RE.search(t)
     if m:
-        memory.semantic(m.group("fact").strip().rstrip("."), source="explicit_user",
-                        importance=0.8, confidence=0.95)
+        memory.reconcile(m.group("fact").strip().rstrip("."), source="explicit_user",
+                         importance=0.8, confidence=0.95)
         return f"Remembered: {m.group('fact').strip().rstrip('.')}"
     m = FORGET_RE.search(t)
     if m:
