@@ -540,7 +540,12 @@ async def setup_post(req: Request):
         return JSONResponse({"error": str(exc)}, status_code=400)
     except Exception:
         return JSONResponse({"error": "The OS credential store could not save the key. Use the configured environment variable instead."}, status_code=503)
-    return JSONResponse({"saved": True, "choice": d})
+    from ishti import llm
+    try:  # one 4-token call, off the event loop, so a rejected key shows up here and not on the first question
+        check = await asyncio.wait_for(asyncio.to_thread(llm.check_provider), timeout=25)
+    except Exception:
+        check = {"ok": False, "message": "The provider did not answer in time. Saved anyway - try a question to check."}
+    return JSONResponse({"saved": True, "choice": d, "check": check})
 
 
 _REMOTE_HEALTH = {"value": {"available": False}, "at": 0.0, "busy": False}

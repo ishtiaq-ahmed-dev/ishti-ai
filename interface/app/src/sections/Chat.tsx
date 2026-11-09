@@ -1,14 +1,19 @@
+import { Modal } from "@/components/Modal";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowUp, AudioLines, Check, Copy, Maximize2, MessageSquare, Mic, Minimize2, Network, PanelLeft, PanelLeftClose, Paperclip, Pencil, Plus, Square, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { AgentOrb } from "@/components/AgentOrb";
-import { ActivityGraph, ActivityList, ConversationGraph, type Turn } from "@/components/ActivityGraph";
+import type { Turn } from "@/components/ActivityGraph";
+// on-demand panels load when first opened, not at startup
+const ActivityGraph = lazy(() => import("@/components/ActivityGraph").then((m) => ({ default: m.ActivityGraph })));
+const ActivityList = lazy(() => import("@/components/ActivityGraph").then((m) => ({ default: m.ActivityList })));
+const ConversationGraph = lazy(() => import("@/components/ActivityGraph").then((m) => ({ default: m.ConversationGraph })));
+const LiveMode = lazy(() => import("@/components/LiveMode").then((m) => ({ default: m.LiveMode })));
 import BorderBeam from "border-beam";
 import VoiceBeam from "voice-glow";
 import { IshtiBrand } from "@/components/IshtiBrand";
 import { Markdown } from "@/components/Markdown";
 import { MediaPreview } from "@/components/MediaPreview";
-import { LiveMode } from "@/components/LiveMode";
 import { cn } from "@/lib/utils";
 import { useBootState } from "@/lib/boot";
 import { chatStore, type StoreChat, type StoreMessage, type StoreRun } from "@/lib/chat-store";
@@ -115,6 +120,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
   const liveRuns = activeChatId ? chatStore.runsOfChat(activeChatId).filter((r) => r.state === "running" || r.state === "queued") : [];
   const pendingRun = liveRuns.length ? liveRuns[liveRuns.length - 1] : null;
   const busy = liveRuns.length > 0;
+  const lastMessageId = storeMsgs.length ? storeMsgs[storeMsgs.length - 1].message_id : null;
   const chats = chatStore.chatList();
   // T2: offer Expand/Collapse-all when this chat shows more than one thinking block.
   const thinkingCount = storeMsgs.filter((m) => {
@@ -405,6 +411,19 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     }
   }, [clearFocusedSkill]);
 
+  // Keyboard: Esc stops the running reply, Shift+Esc jumps to the composer, Ctrl+Shift+O starts a new chat.
+  // An open dialog owns Esc (it closes the dialog instead).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (document.querySelector("dialog[open]")) return;
+      if (e.key === "Escape" && e.shiftKey) { e.preventDefault(); box.current?.focus(); }
+      else if (e.key === "Escape" && pendingRun) { e.preventDefault(); void chatStore.cancelRun(pendingRun.run_id); }
+      else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "o") { e.preventDefault(); void newChat(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [pendingRun, newChat]);
+
   // Deep links: #chat/new starts a chat, #chat/{id} selects it once the store knows the chats.
   // Runs on mount/ready/hashchange ONLY - never on activeChatId changes, or clicking a row would
   // race the (still stale) URL hash and flip straight back.
@@ -573,8 +592,8 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
       className={m.role === "user" ? "group/msg flex justify-end min-w-0" : "group/msg flex gap-3 min-w-0 max-w-full"}>
       {m.role === "user" ? (
         <div className="group/msg flex min-w-0 max-w-full items-center gap-1">
-          <div
-            className="ishti-selectable max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-accent-foreground shadow-xs"
+          <div dir="auto"
+            className="ishti-selectable max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-accent-foreground shadow-xs text-start"
             style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-leading)" }}
           >
           {(() => {
@@ -602,7 +621,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
             style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-leading)" }}
           >
             {m.run_id && <Thinking runId={m.run_id} run={chatStore.runs.get(m.run_id)} />}
-            <Markdown text={m.text} />
+            <div dir="auto" className="text-start"><Markdown text={m.text} /></div>
             <MediaPreview text={m.text} onSend={(p) => { setInput(`send "${p}" on whatsapp to `); box.current?.focus(); }} />
             <Sources run={m.run_id ? chatStore.runs.get(m.run_id) : undefined} />
             {/* WP6: channel tag for messages that arrived via WhatsApp/Telegram commands */}
@@ -625,8 +644,10 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                 </button>
               )}
             </div>
-            {/* T2 quick-replies: only the orchestrator asks, only the owner answers */}
-            {m.text && /\(yes\/no\)\s*$/i.test(m.text) && (
+            {/* T2 quick-replies: only the orchestrator asks, only the owner answers - and only on the LATEST
+                question while nothing is running: an old "Go ahead" would send a bare "yes" that the backend
+                applies to whatever is pending now, not to the action that message described */}
+            {m.message_id === lastMessageId && !busy && m.text && /\(yes\/no\)\s*$/i.test(m.text) && (
               <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
                 className="mt-2.5 flex flex-wrap gap-2">
                 <button onClick={() => void send("yes")}
@@ -646,6 +667,8 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
     return (
       <div
         key={c.chat_id}
+        role="button" tabIndex={0} aria-current={isSelected ? "page" : undefined}
+        aria-pressed={selecting ? selected.has(c.chat_id) : undefined}
         onClick={() => (selecting ? toggleSelected(c.chat_id) : chatStore.setActiveChat(c.chat_id))}
         onDoubleClick={(e) => { if (!selecting) { e.stopPropagation(); setRenaming(c.chat_id); setRenameDraft(c.title || ""); } }}
         className={cn(
@@ -692,11 +715,11 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
           </span>
         )}
         <div className="shrink-0 relative flex items-center justify-end h-5 min-w-[50px] ml-1">
-          <span className={cn("text-[10.5px] tabular-nums transition-opacity duration-150 group-hover:opacity-0",
+          <span className={cn("text-[10.5px] tabular-nums transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0",
             isSelected ? "rounded-md bg-accent/20 px-1.5 py-0.5 text-accent font-semibold text-[10px]" : "text-muted-foreground/60")}>
             {ago(c.updated_at)}
           </span>
-          <div className="absolute right-0 flex items-center gap-0.5 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150">
+          <div className="absolute right-0 flex items-center gap-0.5 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto transition-opacity duration-150">
             <button type="button" title="Rename chat"
               onClick={(e) => { e.stopPropagation(); setRenaming(c.chat_id); setRenameDraft(c.title || ""); }}
               className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer">
@@ -946,6 +969,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                 className="relative flex flex-col items-center justify-center cursor-pointer group select-none"
                 onClick={() => void newChat()}
                 title="ISHTI - Start New Chat"
+                role="button" tabIndex={0} aria-label="Start a new chat"
               >
                 <div className="absolute inset-0 -m-6 rounded-3xl bg-accent/15 blur-2xl pointer-events-none" />
                 <IshtiBrand
@@ -967,6 +991,16 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                 <p className="mt-1.5 text-sm text-muted-foreground max-w-md">
                   Your AI workspace. What would you like to accomplish today?
                 </p>
+              </div>
+              {/* starters fill the composer, never send: the owner reads and edits before anything runs */}
+              <div className="flex max-w-xl flex-wrap justify-center gap-2">
+                {["What's on my schedule today?", "Summarise my unread WhatsApp messages",
+                  "Remind me in 1 hour to stretch", "What do you know about me?"].map((p) => (
+                  <button key={p} type="button" onClick={() => { setInput(p); box.current?.focus(); }}
+                    className="rounded-full border border-border bg-card/60 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-accent/50 hover:text-foreground cursor-pointer">
+                    {p}
+                  </button>
+                ))}
               </div>
             </div>
           ) : (
@@ -1009,6 +1043,12 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               <div ref={bottom} />
             </div>
           )}
+        </div>
+        {/* screen readers hear the state change and the finished reply once - not every streamed token */}
+        <div role="status" aria-live="polite" className="sr-only">
+          {busy ? "ISHTI is working on it."
+            : storeMsgs.length && storeMsgs[storeMsgs.length - 1].role !== "user"
+              ? `ISHTI replied: ${storeMsgs[storeMsgs.length - 1].text.slice(0, 200)}` : ""}
         </div>
 
         <form onSubmit={(e) => { e.preventDefault(); if (!recording && !transcribing && !uploading) void send(input); }}
@@ -1058,7 +1098,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               className="mx-auto w-full max-w-4xl xl:max-w-5xl rounded-2xl"
             >
               <div className="flex w-full items-end gap-2 rounded-2xl border border-border bg-background p-2 shadow-[0_2px_12px_rgba(29,27,46,0.06)] transition-shadow focus-within:shadow-[0_2px_18px_rgba(110,86,207,0.18)]">
-                <textarea ref={box} value={input} onChange={(e) => { setInput(e.target.value); if (activeChatId) chatStore.setDraft(activeChatId, e.target.value); }} rows={1}
+                <textarea dir="auto" ref={box} value={input} onChange={(e) => { setInput(e.target.value); if (activeChatId) chatStore.setDraft(activeChatId, e.target.value); }} rows={1}
                   onPaste={onComposerPaste}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!recording && !transcribing && !uploading) void send(input); } }}
                   placeholder={focusedSkill ? `Assign a task using ${focusedSkill} skill…` : "Ask or tell ISHTI to do anything…"}
@@ -1067,6 +1107,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                 <button type="button" onClick={() => uploadInput.current?.click()} disabled={uploading} title="Attach files for ISHTI to inspect" aria-label="Attach files"
                   className="grid h-9 w-9 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40 cursor-pointer"><Paperclip className="h-4 w-4" /></button>
                 <button type="button" onClick={toggleMic} title="Record a voice message (reply comes as text)"
+                  aria-label={recording ? "Stop recording" : "Record a voice message"} aria-pressed={recording}
                   className={`grid h-9 w-9 place-items-center rounded-xl transition-colors cursor-pointer ${recording ? "bg-danger text-white" : "text-muted-foreground hover:bg-muted"}`}>
                   {recording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                 </button>
@@ -1074,10 +1115,18 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                   className="flex h-9 items-center gap-1.5 rounded-xl border border-accent/40 px-2.5 text-xs font-semibold text-accent transition-colors hover:bg-accent-soft/40 cursor-pointer">
                   <AudioLines className="h-4 w-4" /> Live
                 </button>
-                <button type="submit" disabled={(!input.trim() && !uploads.length) || uploading || recording || transcribing} title={recording ? "Stop the recording first" : transcribing ? "Writing down what you said…" : "Send"}
-                  className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-white transition-opacity disabled:opacity-40 cursor-pointer">
-                  <ArrowUp className="h-4 w-4" />
-                </button>
+                {pendingRun ? (
+                  <button type="button" onClick={() => void chatStore.cancelRun(pendingRun.run_id)} title="Stop (Esc)" aria-label="Stop the current reply"
+                    className="grid h-9 w-9 place-items-center rounded-xl bg-foreground text-background transition-opacity hover:opacity-85 cursor-pointer">
+                    <Square className="h-3.5 w-3.5 fill-current" />
+                  </button>
+                ) : (
+                  <button type="submit" disabled={(!input.trim() && !uploads.length) || uploading || recording || transcribing} title={recording ? "Stop the recording first" : transcribing ? "Writing down what you said…" : "Send"}
+                    aria-label="Send"
+                    className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-white transition-opacity disabled:opacity-40 cursor-pointer">
+                    <ArrowUp className="h-4 w-4" />
+                  </button>
+                )}
               </div>
             </VoiceBeam>
           ) : (
@@ -1089,7 +1138,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               className="mx-auto w-full max-w-4xl xl:max-w-5xl rounded-2xl"
             >
               <div className="flex w-full items-end gap-2 rounded-2xl border border-border bg-background p-2 shadow-[0_2px_12px_rgba(29,27,46,0.06)] transition-shadow focus-within:shadow-[0_2px_18px_rgba(110,86,207,0.18)]">
-                <textarea ref={box} value={input} onChange={(e) => { setInput(e.target.value); if (activeChatId) chatStore.setDraft(activeChatId, e.target.value); }} rows={1}
+                <textarea dir="auto" ref={box} value={input} onChange={(e) => { setInput(e.target.value); if (activeChatId) chatStore.setDraft(activeChatId, e.target.value); }} rows={1}
                   onPaste={onComposerPaste}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!recording && !transcribing && !uploading) void send(input); } }}
                   placeholder={focusedSkill ? `Assign a task using ${focusedSkill} skill…` : "Ask or tell ISHTI to do anything…"}
@@ -1098,6 +1147,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                 <button type="button" onClick={() => uploadInput.current?.click()} disabled={uploading} title="Attach files for ISHTI to inspect" aria-label="Attach files"
                   className="grid h-9 w-9 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40 cursor-pointer"><Paperclip className="h-4 w-4" /></button>
                 <button type="button" onClick={toggleMic} title="Record a voice message (reply comes as text)"
+                  aria-label={recording ? "Stop recording" : "Record a voice message"} aria-pressed={recording}
                   className={`grid h-9 w-9 place-items-center rounded-xl transition-colors cursor-pointer ${recording ? "bg-danger text-white" : "text-muted-foreground hover:bg-muted"}`}>
                   {recording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                 </button>
@@ -1105,10 +1155,18 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                   className="flex h-9 items-center gap-1.5 rounded-xl border border-accent/40 px-2.5 text-xs font-semibold text-accent transition-colors hover:bg-accent-soft/40 cursor-pointer">
                   <AudioLines className="h-4 w-4" /> Live
                 </button>
-                <button type="submit" disabled={(!input.trim() && !uploads.length) || uploading || recording || transcribing} title={recording ? "Stop the recording first" : transcribing ? "Writing down what you said…" : "Send"}
-                  className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-white transition-opacity disabled:opacity-40 cursor-pointer">
-                  <ArrowUp className="h-4 w-4" />
-                </button>
+                {pendingRun ? (
+                  <button type="button" onClick={() => void chatStore.cancelRun(pendingRun.run_id)} title="Stop (Esc)" aria-label="Stop the current reply"
+                    className="grid h-9 w-9 place-items-center rounded-xl bg-foreground text-background transition-opacity hover:opacity-85 cursor-pointer">
+                    <Square className="h-3.5 w-3.5 fill-current" />
+                  </button>
+                ) : (
+                  <button type="submit" disabled={(!input.trim() && !uploads.length) || uploading || recording || transcribing} title={recording ? "Stop the recording first" : transcribing ? "Writing down what you said…" : "Send"}
+                    aria-label="Send"
+                    className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-white transition-opacity disabled:opacity-40 cursor-pointer">
+                    <ArrowUp className="h-4 w-4" />
+                  </button>
+                )}
               </div>
             </BorderBeam>
           )}
@@ -1117,11 +1175,13 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
 
       <AnimatePresence>
         {liveOpen && (
+          <Suspense fallback={null}>
           <LiveMode sessionId={activeChatId} onClose={() => setLiveOpen(false)}
             onTurn={(user, reply) => {
               setLiveTurns((all) => [...all, { user, reply }]);
               if (activeChatId) void chatStore.persistLiveTurn(activeChatId, user, reply);
             }} />
+          </Suspense>
         )}
       </AnimatePresence>
 
@@ -1152,7 +1212,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
 
       {/* Delete confirmation dialog: Yes / No (server-side trash; undo restores) */}
       {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+        <Modal label="Delete chat" onClose={() => setDeleteTarget(null)} className="items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
           onClick={() => setDeleteTarget(null)}>
           <div className="w-full max-w-sm rounded-2xl border border-border bg-background p-5 shadow-2xl"
             onClick={(e) => e.stopPropagation()}>
@@ -1179,12 +1239,12 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Share: copy the selected chats' text locally. Nothing is uploaded. */}
       {shareOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+        <Modal label="Share chats" onClose={() => setShareOpen(false)} className="items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
           <div className="w-full max-w-md rounded-2xl border border-border bg-background p-5 shadow-2xl">
             <h3 className="text-sm font-semibold text-foreground">Share {selected.size} chat{selected.size > 1 ? "s" : ""}</h3>
             <p className="mt-1 text-[11px] text-muted-foreground">Copies the conversation text to your clipboard - nothing is uploaded.</p>
@@ -1192,7 +1252,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               <p className="text-xs text-muted-foreground">Markdown text</p>
             </div>
             {shareError && <p className="mt-3 text-[11px] text-danger">{shareError}</p>}
-            {shareResult?.copied && <p className="mt-3 text-[11px] text-emerald-500">Copied to the clipboard.</p>}
+            {shareResult?.copied && <p className="mt-3 text-[11px] text-emerald-700 dark:text-emerald-500">Copied to the clipboard.</p>}
             <div className="mt-5 flex items-center justify-end gap-2">
               <button type="button" onClick={() => { setShareOpen(false); setShareResult(null); setShareError(""); }}
                 className="rounded-xl border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted cursor-pointer">
@@ -1204,7 +1264,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Activity panel: a plain list of real run steps (default) plus the SVG graph as the second tab. */}
@@ -1261,6 +1321,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                       ? (graphRun.steps[graphRun.steps.length - 1]?.label || "Run steps")
                       : `${turns.length} question${turns.length === 1 ? "" : "s"} in this chat`}
                 </div>
+                <Suspense fallback={<div className="text-[11px] text-muted-foreground">Loading…</div>}>
                 {activityView === "list" ? (
                   <ActivityList runs={graphView === "answer" && graphFor !== "chat" ? [graphRun] : chatRuns} />
                 ) : graphView === "answer" ? (
@@ -1273,6 +1334,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
                 ) : (
                   <ConversationGraph turns={turns} />
                 )}
+                </Suspense>
                 <p className="text-[11px] leading-relaxed text-muted-foreground">
                   {activityView === "list"
                     ? "Every row is a real step from this run. Tap a row for its detail. Updates live while ISHTI works."
@@ -1298,7 +1360,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               <button onClick={() => setFullGraph(false)} className="rounded-xl border border-border p-2 text-muted-foreground hover:bg-muted cursor-pointer">
                 <Minimize2 className="h-4 w-4" /></button>
             </div>
-            <div className="min-h-0 flex-1">
+            <div className="min-h-0 flex-1"><Suspense fallback={null}>
               {graphView === "answer" ? (
                 <ActivityGraph
                   steps={graphRun.steps || []}
@@ -1310,7 +1372,7 @@ export function Chat({ owner, onBusy, showNav = true, onToggleNav }: Props) {
               ) : (
                 <ConversationGraph turns={turns} full />
               )}
-            </div>
+            </Suspense></div>
           </motion.div>
         )}
       </AnimatePresence>

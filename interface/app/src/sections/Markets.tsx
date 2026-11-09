@@ -80,7 +80,7 @@ function PriceChart({ chart }: { chart: Chart }) {
 }
 
 const actionTone = (a: string) =>
-  a.startsWith("BUY") ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
+  a.startsWith("BUY") ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-500"
     : a === "WAIT" ? "border-amber-500/30 bg-amber-500/10 text-amber-500"
       : a === "AVOID" ? "border-red-500/30 bg-red-500/10 text-red-500"
         : "border-border bg-muted text-muted-foreground";

@@ -57,10 +57,10 @@ const STAGE_THEMES = [
     countColor: "text-amber-500",
   },
   {
-    iconBg: "bg-emerald-500/10 dark:bg-emerald-500/15 text-emerald-500",
+    iconBg: "bg-emerald-500/10 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-500",
     borderHover: "hover:border-emerald-500/50 hover:shadow-[0_0_15px_rgba(16,185,129,0.15)]",
     pill: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20",
-    countColor: "text-emerald-500",
+    countColor: "text-emerald-700 dark:text-emerald-500",
   },
   {
     iconBg: "bg-teal-500/10 dark:bg-teal-500/15 text-teal-500",

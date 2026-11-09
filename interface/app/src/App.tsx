@@ -1,3 +1,4 @@
+import { Modal } from "./components/Modal";
 import { AnimatePresence, motion } from "motion/react";
 import { Building2, Bot, Cpu, GraduationCap, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, Power, Cable, Settings as SettingsIcon, Sparkles, Minimize2, X, Zap } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
@@ -628,14 +629,14 @@ export default function App() {
 
       {/* Exit confirmation dialog: Quit / Minimize to tray / Cancel + Remember choice */}
       {showExitModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+        <Modal label="Exit ISHTI" onClose={() => setShowExitModal(false)} className="items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
           <div className="w-full max-w-md rounded-2xl border border-border/80 bg-background/95 p-6 shadow-2xl backdrop-blur-md">
             <div className="flex items-center gap-3">
               <div className="grid h-10 w-10 place-items-center rounded-xl bg-danger/15 text-danger shrink-0">
                 <Power className="h-5 w-5" />
               </div>            <div>
               <h3 className="text-base font-semibold text-foreground">Do you want to exit ISHTI?</h3>
-              <p className="text-xs text-emerald-500 font-medium mt-0.5">All data is auto-saved • Closes safely</p>
+              <p className="text-xs text-emerald-700 dark:text-emerald-500 font-medium mt-0.5">All data is auto-saved • Closes safely</p>
             </div>
             </div>
             <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
@@ -681,12 +682,12 @@ export default function App() {
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Unified Shutdown Progress Overlay */}
       {isShuttingDown && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-300">
+        <Modal label="Shutting down ISHTI" className="items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-300">
           <div className="w-full max-w-sm rounded-2xl border border-accent/30 bg-background/95 p-6 shadow-2xl backdrop-blur-md flex flex-col items-center text-center">
             <div className="relative mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-accent/10 text-accent border border-accent/20">
               <Sparkles className="h-7 w-7 animate-pulse text-accent" />
@@ -714,7 +715,7 @@ export default function App() {
               Everything is saved — see you soon!
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {apiError && (

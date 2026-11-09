@@ -354,6 +354,21 @@ def _create(**args):
     return stream()
 
 
+def check_provider() -> dict:
+    """One tiny call straight to the configured cloud provider, no failover: does the saved key + model really answer?
+    The first-run screen shows the verdict, so a rejected key is found at setup, not on the first real question."""
+    if provider() != "api":
+        return {"ok": True, "message": "Using the model on this PC."}
+    import openai
+    cfg = api_settings()
+    try:
+        _create_api({"model": cfg["model"], "max_tokens": 4,
+                     "messages": [{"role": "user", "content": "Reply with the single word OK."}]}, openai)
+    except ModelUnavailable as exc:
+        return {"ok": False, "message": str(exc)}
+    return {"ok": True, "message": f"{cfg.get('provider', 'The provider')} answered with {cfg['model']}."}
+
+
 def _create_api(args, openai):
     """One cloud call. Provider failures become ModelUnavailable (one plain sentence); a stream keeps the narrow
     network grant open until it is closed. The request is sent eagerly, so a refusal surfaces here, where the

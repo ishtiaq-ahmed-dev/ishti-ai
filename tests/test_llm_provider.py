@@ -124,3 +124,14 @@ def test_agentrouter_is_a_known_provider():
 if __name__ == "__main__":
     import sys
     sys.exit(pytest.main([__file__, "-q"]))
+
+
+def test_setup_check_hits_the_provider_directly_never_the_failover(api_mode, monkeypatch):
+    import openai
+    monkeypatch.setattr(llm, "failover_model", lambda: "gemma3:4b")  # a local model that WOULD answer
+    monkeypatch.setattr(llm, "_create_call", lambda a, o, local=False: (_ for _ in ()).throw(
+        _status_error(openai.AuthenticationError, 401, {})))
+    verdict = llm.check_provider()
+    assert verdict["ok"] is False and verdict["message"]  # the refusal is reported, not hidden by failover
+    monkeypatch.setattr(llm, "_create_call", lambda a, o, local=False: object())
+    assert llm.check_provider()["ok"] is True

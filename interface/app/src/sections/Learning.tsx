@@ -1,3 +1,4 @@
+import { Modal } from "@/components/Modal";
 import { AnimatePresence, motion } from "motion/react";
 import {
   Brain,
@@ -320,7 +321,7 @@ function Pill({ children, tone = "muted" }: { children: ReactNode; tone?: "accen
   const tones = {
     accent: "border-accent/15 bg-accent/10 text-accent",
     muted: "border-transparent bg-muted/60 text-muted-foreground",
-    success: "border-emerald-500/20 bg-emerald-500/10 text-emerald-500",
+    success: "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-500",
     danger: "border-red-500/20 bg-red-500/10 text-red-500",
     warn: "border-amber-500/20 bg-amber-500/10 text-amber-500",
     outline: "border-border bg-transparent text-muted-foreground",
@@ -351,7 +352,7 @@ const bucketFill = (bucket: unknown): string => {
 
 const statusTone = (status: unknown): string => {
   const s = str(status);
-  if (["ok", "done", "active", "confirmed", "working"].includes(s)) return "border-emerald-500/20 bg-emerald-500/10 text-emerald-500";
+  if (["ok", "done", "active", "confirmed", "working"].includes(s)) return "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-500";
   if (["error", "failed", "rejected", "broken", "retired"].includes(s)) return "border-red-500/20 bg-red-500/10 text-red-500";
   if (["paused", "open", "waiting", "expired"].includes(s)) return "border-amber-500/20 bg-amber-500/10 text-amber-500";
   return "border-border bg-muted/60 text-muted-foreground";
@@ -681,7 +682,7 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
       <div className="space-y-4">
         {notice && (
           <div className={cn("flex items-start justify-between gap-3 rounded-2xl border px-3.5 py-2.5 text-xs",
-            notice.kind === "error" ? "border-red-500/30 bg-red-500/10 text-red-500" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-500")}>
+            notice.kind === "error" ? "border-red-500/30 bg-red-500/10 text-red-500" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-500")}>
             <span className="min-w-0 break-words">{notice.text}</span>
             <button type="button" onClick={() => setNotice(null)} className="shrink-0 cursor-pointer opacity-70 hover:opacity-100">
               <X className="h-3.5 w-3.5" />
@@ -966,7 +967,7 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
                                     <p className="mt-1 text-xs">
                                       {l.incorrect && <span className="text-red-500 line-through decoration-red-500/40">{l.incorrect}</span>}
                                       {l.incorrect && l.correct && <span className="mx-1.5 text-muted-foreground">→</span>}
-                                      {l.correct && <span className="text-emerald-500">{l.correct}</span>}
+                                      {l.correct && <span className="text-emerald-700 dark:text-emerald-500">{l.correct}</span>}
                                     </p>
                                   )}
                                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -1211,7 +1212,7 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
                                 <span className="inline-flex items-center gap-1.5">
                                   {str(f.polarity) === "negative"
                                     ? <ThumbsDown className="h-3 w-3 text-red-500" />
-                                    : <ThumbsUp className="h-3 w-3 text-emerald-500" />}
+                                    : <ThumbsUp className="h-3 w-3 text-emerald-700 dark:text-emerald-500" />}
                                   <Pill tone={str(f.polarity) === "negative" ? "danger" : "success"}>{f.kind || f.polarity || "feedback"}</Pill>
                                 </span>
                               </td>
@@ -1219,7 +1220,7 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
                               <td className="px-3 py-2">
                                 {f.incorrect && <span className="text-red-500 line-through decoration-red-500/40">{f.incorrect}</span>}
                                 {f.incorrect && f.correct && <span className="mx-1 text-muted-foreground">→</span>}
-                                {f.correct && <span className="text-emerald-500">{f.correct}</span>}
+                                {f.correct && <span className="text-emerald-700 dark:text-emerald-500">{f.correct}</span>}
                                 {!f.incorrect && !f.correct && <span className="text-foreground/80">{f.message || f.target || "—"}</span>}
                               </td>
                               <td className="px-3 py-2 text-muted-foreground">
@@ -1269,7 +1270,7 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
                                 <td className="px-3 py-2">
                                   {m.wrong && <span className="text-red-500 line-through decoration-red-500/40">{m.wrong}</span>}
                                   {m.wrong && m.right && <span className="mx-1 text-muted-foreground">→</span>}
-                                  {m.right && <span className="text-emerald-500">{m.right}</span>}
+                                  {m.right && <span className="text-emerald-700 dark:text-emerald-500">{m.right}</span>}
                                   {!m.wrong && !m.right && <span className="text-muted-foreground">—</span>}
                                 </td>
                                 <td className="px-3 py-2 font-semibold tabular-nums text-foreground">{num(m.count)}</td>
@@ -1856,7 +1857,7 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
         </AnimatePresence>
         {/* Family Member Add / Edit Modal */}
         {familyModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <Modal label="Family member" onClose={() => setFamilyModal(null)} className="items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
             <div className="w-full max-w-md rounded-2xl border border-border bg-background p-6 shadow-2xl">
               <div className="flex items-center justify-between border-b border-border pb-3.5">
                 <div>
@@ -1989,7 +1990,7 @@ export function Learning({ onToggleNav }: { onToggleNav?: () => void }) {
                 </button>
               </div>
             </div>
-          </div>
+          </Modal>
         )}
       </div>
     </Page>

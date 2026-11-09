@@ -98,7 +98,7 @@ export function PrivacyPanel() {
       <div className="rounded-2xl border border-border/80 bg-card/40 shadow-xs overflow-hidden">
         <div className="flex items-center justify-between gap-3 p-4">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-500/15 text-emerald-500">
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-500/15 text-emerald-700 dark:text-emerald-500">
               <ShieldCheck className="h-4.5 w-4.5" />
             </div>
             <div className="min-w-0">

@@ -416,6 +416,7 @@ export function ModelsCard({
     <div className="rounded-2xl border border-border/80 bg-card/40 shadow-xs overflow-hidden transition-all duration-200">
       {/* Header */}
       <div
+        role="button" tabIndex={0}
         className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
         onClick={onToggle}
       >
@@ -803,6 +804,7 @@ export function VoiceCard({
     <div className="rounded-2xl border border-border/80 bg-card/40 shadow-xs overflow-hidden transition-all duration-200">
       {/* Header */}
       <div
+        role="button" tabIndex={0}
         className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
         onClick={onToggle}
       >
@@ -858,6 +860,7 @@ export function VoiceCard({
           <button
             type="button"
             onClick={onToggle}
+            aria-label={isOpen ? "Collapse" : "Expand"} aria-expanded={isOpen}
             className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           >
             <ChevronDown
@@ -1184,11 +1187,12 @@ export function WhisperCard({
     <div className="rounded-2xl border border-border/80 bg-card/40 shadow-xs overflow-hidden transition-all duration-200">
       {/* Header */}
       <div
+        role="button" tabIndex={0}
         className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
         onClick={onToggle}
       >
         <div className="flex items-center gap-3 min-w-0">
-          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-500/15 text-emerald-500">
+          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-500/15 text-emerald-700 dark:text-emerald-500">
             <Radio className="h-4.5 w-4.5" />
           </div>
           <div className="min-w-0">

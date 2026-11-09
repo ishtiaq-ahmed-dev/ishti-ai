@@ -27,6 +27,7 @@ export function FirstRunSetup() {
   const [apiKey, setApiKey] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [check, setCheck] = useState<{ ok: boolean; message: string } | null>(null);
 
   useEffect(() => {
     getJSON<SetupState>("/api/setup").then(s => {
@@ -38,16 +39,19 @@ export function FirstRunSetup() {
   }, []);
 
   if (!state) return error ? <p role="alert" className="p-3 text-sm text-danger">Model setup: {error}</p> : null;
-  if (state.chosen && (state.choice.provider !== "api" || state.api_key_set)) return null;
+  // stays open while the saved provider is refusing, so the owner sees why instead of failing on the first question
+  if (state.chosen && (state.choice.provider !== "api" || state.api_key_set) && check?.ok !== false) return null;
 
   const save = async () => {
     setBusy(true);
     setError("");
+    setCheck(null);
     try {
-      await postJSON("/api/setup", mode === "local"
+      const res = await postJSON<{ check?: { ok: boolean; message: string } }>("/api/setup", mode === "local"
         ? { provider: "local" }
         : { provider: "api", api_provider: apiProvider, model: model.trim(), ...(apiKey ? { api_key: apiKey } : {}) });
       setApiKey("");
+      if (res.check) setCheck(res.check);
       const fresh = await getJSON<SetupState>("/api/setup");
       setState(fresh);
     } catch (e) {
@@ -63,16 +67,17 @@ export function FirstRunSetup() {
       <p className="mt-1 text-xs text-muted-foreground">
         Choose how answers are generated. Cloud mode uses a local keyword memory index; voice components are optional.
       </p>
-      <div className="mt-3 space-y-2 text-xs">
+      <fieldset className="mt-3 space-y-2 text-xs">
+        <legend className="sr-only">Where answers are generated</legend>
         <label className="flex items-start gap-2">
-          <input type="radio" name="mode" checked={mode === "local"} onChange={() => setMode("local")} />
+          <input type="radio" name="mode" checked={mode === "local"} onChange={() => setMode("local")} autoFocus={mode === "local"} />
           <span><strong>On this PC</strong> (Ollama, needs an NVIDIA graphics card). Model inference stays on this PC. Requested web tools and connected services can use the internet.</span>
         </label>
         <label className="flex items-start gap-2">
-          <input type="radio" name="mode" checked={mode === "api"} onChange={() => setMode("api")} />
+          <input type="radio" name="mode" checked={mode === "api"} onChange={() => setMode("api")} autoFocus={mode === "api"} />
           <span><strong>Cloud API</strong> (you pay the provider per message; no graphics card needed). Your messages go to that provider.</span>
         </label>
-      </div>
+      </fieldset>
       {mode === "api" && (
         <div className="mt-3 space-y-2 text-xs">
           <select className="w-full rounded-lg border border-border bg-background px-2 py-1" value={apiProvider}
@@ -92,6 +97,9 @@ export function FirstRunSetup() {
         </div>
       )}
       {error && <p role="alert" className="mt-2 text-xs text-danger">{error}</p>}
+      {check && !check.ok && (
+        <p role="alert" className="mt-2 text-xs text-danger">Saved, but the provider refused a test message: {check.message}</p>
+      )}
       <div className="mt-3 flex justify-end">
         <button type="button" onClick={save} disabled={busy}
           className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">

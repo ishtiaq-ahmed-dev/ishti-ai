@@ -295,7 +295,7 @@ function StepListRow({ run, index }: { run: StoreRun; index: number }) {
         ) : status === "failed" ? (
           <XCircle className="h-3.5 w-3.5 shrink-0 text-destructive" aria-hidden />
         ) : (
-          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" aria-hidden />
+          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-700 dark:text-emerald-500" aria-hidden />
         )}
         <span className="shrink-0 rounded border border-border/70 bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
           {kind}

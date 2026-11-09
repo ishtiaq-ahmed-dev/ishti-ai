@@ -1,5 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { MotionConfig } from "motion/react";
 import "./index.css";
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -13,10 +14,22 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
+// role="button" elements that are not real <button>s get the keyboard behaviour of one (Enter / Space).
+window.addEventListener("keydown", (e) => {
+  const t = e.target as HTMLElement | null;
+  if ((e.key === "Enter" || e.key === " ") && t?.getAttribute?.("role") === "button" && t.tagName !== "BUTTON") {
+    e.preventDefault();
+    t.click();
+  }
+});
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary>
-      <App />
+      {/* every motion component honours the OS "reduce motion" setting */}
+      <MotionConfig reducedMotion="user">
+        <App />
+      </MotionConfig>
     </ErrorBoundary>
   </StrictMode>
 );

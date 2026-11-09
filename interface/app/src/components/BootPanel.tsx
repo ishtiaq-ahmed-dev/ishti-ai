@@ -55,7 +55,7 @@ export function BootPanel({ boot }: { boot: Boot | null }) {
                 return (
                   <li key={s.id} className="flex items-start gap-2 text-xs" title={svc.hint}>
                     <span className="mt-0.5 shrink-0">
-                      {st === "done" ? <Check className="h-3.5 w-3.5 text-emerald-500" /> :
+                      {st === "done" ? <Check className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-500" /> :
                         st === "loading" ? <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" /> :
                         st === "error" ? <AlertTriangle className="h-3.5 w-3.5 text-amber-500" /> :
                         <Circle className="h-3.5 w-3.5 text-muted-foreground/50" />}

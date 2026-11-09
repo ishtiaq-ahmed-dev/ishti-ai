@@ -151,6 +151,11 @@ function CrispCanvas({
       cancelAnimationFrame(rafId);
     };
 
+    // reduced motion: one still frame, no loop
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      render(0);
+      return;
+    }
     start();
 
     const onVis = () => {

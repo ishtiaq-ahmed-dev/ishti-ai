@@ -1,5 +1,6 @@
-import { Fragment, useState, type ReactNode } from "react";
-import { CodeBlock } from "@/components/rare/code-block";
+import { Fragment, lazy, Suspense, useState, type ReactNode } from "react";
+// the highlighter (Prism) loads with the first code block, not at startup
+const CodeBlock = lazy(() => import("@/components/rare/code-block").then((m) => ({ default: m.CodeBlock })));
 
 // Safe, structured markdown parser for ISHTI answers: builds React elements with zero dangerouslySetInnerHTML.
 function inline(text: string): ReactNode[] {
@@ -106,7 +107,7 @@ function DigestTable({ rows, no }: { rows: string[][]; no: number }) {
         </button>
       </div>
       <div className="max-h-[70vh] max-w-full overflow-auto rounded-b-xl">
-        <table className="w-max min-w-full border-collapse text-left text-xs">
+        <table className="w-max min-w-full border-collapse text-start text-xs">
           <thead className="bg-muted/95 sticky top-0 z-10 backdrop-blur">
             <tr>
               {head.map((c, k) => (
@@ -161,10 +162,10 @@ export function Markdown({ text }: { text: string }) {
           blocks.push(
             <ul
               key={`ul-${i}-${blocks.length}`}
-              className="my-2 list-disc space-y-1 pl-5 text-foreground leading-relaxed"
+              className="my-2 list-disc space-y-1 ps-5 text-foreground leading-relaxed"
             >
               {bulletList.map((item, idx) => (
-                <li key={idx} className="pl-1">
+                <li key={idx} className="ps-1">
                   {inline(item)}
                 </li>
               ))}
@@ -176,10 +177,10 @@ export function Markdown({ text }: { text: string }) {
           blocks.push(
             <ol
               key={`ol-${i}-${blocks.length}`}
-              className="my-2 list-decimal space-y-1 pl-5 text-foreground leading-relaxed"
+              className="my-2 list-decimal space-y-1 ps-5 text-foreground leading-relaxed"
             >
               {orderedList.map((item, idx) => (
-                <li key={idx} className="pl-1">
+                <li key={idx} className="ps-1">
                   {inline(item)}
                 </li>
               ))}
@@ -277,8 +278,8 @@ export function Markdown({ text }: { text: string }) {
     if (parts[i + 2] !== undefined && parts[i + 2].trim()) {
       const lang = parts[i + 1]?.trim() || "text";
       blocks.push(
+        <Suspense key={`c-${i}`} fallback={<pre className="my-3 overflow-x-auto rounded-2xl border border-border p-3 text-xs">{parts[i + 2].trimEnd()}</pre>}>
         <CodeBlock
-          key={`c-${i}`}
           code={parts[i + 2].trimEnd()}
           language={lang}
           filename={lang.toUpperCase()}
@@ -287,6 +288,7 @@ export function Markdown({ text }: { text: string }) {
           accent="#6e56cf"
           className="my-3 rounded-2xl overflow-hidden border border-border shadow-xs"
         />
+        </Suspense>
       );
     }
   }

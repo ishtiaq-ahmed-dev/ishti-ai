@@ -69,7 +69,7 @@ function StepRow({ step, status, duration, errorText }: {
       ) : status === "failed" ? (
         <XCircle className="mt-0.5 h-3 w-3 shrink-0 text-destructive" aria-hidden />
       ) : (
-        <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-emerald-500" aria-hidden />
+        <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-emerald-700 dark:text-emerald-500" aria-hidden />
       )}
       <span className="min-w-0 flex-1">
         <span ref={textRef}
@@ -161,9 +161,10 @@ export function Thinking({ run, runId, onCancel }: {
 
   return (
     <div className="mb-2 text-[12px]" data-testid={live ? "run-status" : "persisted-thinking"}>
+      <div className="flex w-full items-center gap-1.5">
       <button type="button" onClick={() => setOpenAndRemember(!expanded)} aria-expanded={expanded} aria-controls={detailsId}
         data-testid="thinking-toggle"
-        className="flex w-full items-center gap-1.5 rounded-md py-0.5 text-left text-muted-foreground transition-colors hover:text-foreground">
+        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md py-0.5 text-start text-muted-foreground transition-colors hover:text-foreground">
         {live ? (
           run.steps.some((s) => s.kind === "research")
             ? <FlaskConical className="h-3.5 w-3.5 shrink-0 animate-pulse text-accent" aria-hidden />
@@ -171,19 +172,18 @@ export function Thinking({ run, runId, onCancel }: {
         ) : run.state === "failed" ? (
           <XCircle className="h-3.5 w-3.5 shrink-0 text-destructive" aria-hidden />
         ) : (
-          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" aria-hidden />
+          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-700 dark:text-emerald-500" aria-hidden />
         )}
         <span className={cn("min-w-0 flex-1 truncate", live && "font-medium text-foreground")}>{headline}</span>
-        {live && onCancel && (
-          <span role="button" tabIndex={0} data-testid="run-cancel"
-            onClick={(e) => { e.stopPropagation(); onCancel(run.run_id); }}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); e.preventDefault(); onCancel(run.run_id); } }}
-            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:border-destructive hover:text-destructive cursor-pointer">
-            <CircleStop className="h-3.5 w-3.5" aria-hidden /> Stop
-          </span>
-        )}
         <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform", expanded && "rotate-180")} aria-hidden />
       </button>
+      {live && onCancel && (  /* a sibling, not nested: a button inside a button is invalid and unreachable by keyboard */
+        <button type="button" data-testid="run-cancel" onClick={() => onCancel(run.run_id)}
+          className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:border-destructive hover:text-destructive cursor-pointer">
+          <CircleStop className="h-3.5 w-3.5" aria-hidden /> Stop
+        </button>
+      )}
+      </div>
       {expanded && (
         <ol id={detailsId} className="mt-1.5 space-y-1 border-l-2 border-sky-500/25 pl-3 text-muted-foreground">
           {run.steps.map((step, index) => (

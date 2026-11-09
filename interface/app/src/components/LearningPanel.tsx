@@ -56,7 +56,7 @@ export function LearningPanel() {
       {stats && (
         <div className="grid grid-cols-3 gap-2 text-center">
           <div className="rounded-lg border border-border bg-card p-2" data-testid="fb-pos">
-            <div className="text-lg font-bold text-emerald-500">{stats.pos}</div>
+            <div className="text-lg font-bold text-emerald-700 dark:text-emerald-500">{stats.pos}</div>
             <div className="text-[10px] text-muted-foreground">helpful</div>
           </div>
           <div className="rounded-lg border border-border bg-card p-2" data-testid="fb-neg">

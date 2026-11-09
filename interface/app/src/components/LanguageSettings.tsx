@@ -33,6 +33,7 @@ export function LanguageSettings({ isOpen = false, onToggle }: { isOpen?: boolea
   return (
     <div className="rounded-2xl border border-border/80 bg-card/40 shadow-xs overflow-hidden" data-testid="language-settings">
       <div
+        role="button" tabIndex={0}
         className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
         onClick={onToggle}
       >

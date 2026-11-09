@@ -1,3 +1,4 @@
+import { Modal } from "@/components/Modal";
 import { Markets } from "@/sections/Markets";
 import { AnimatePresence, motion } from "motion/react";
 import {
@@ -239,7 +240,7 @@ function CRMAndLeadsPanel() {
         </div>
         <div className="rounded-xl border border-border bg-card p-3 shadow-xs">
           <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Verified Leads</div>
-          <div className="mt-1 text-2xl font-semibold text-emerald-500">{leadsStats?.verified ?? leads.filter((l) => l.verified).length}</div>
+          <div className="mt-1 text-2xl font-semibold text-emerald-700 dark:text-emerald-500">{leadsStats?.verified ?? leads.filter((l) => l.verified).length}</div>
         </div>
         <div className="flex items-center gap-2 rounded-xl border border-border bg-card p-3 shadow-xs">
           <button
@@ -330,7 +331,7 @@ function CRMAndLeadsPanel() {
                     <td className="py-2 px-3">
                       <span className={cn(
                         "rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize",
-                        c.status === "active" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
+                        c.status === "active" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-500"
                         : c.status === "lead" ? "border-blue-500/30 bg-blue-500/10 text-blue-500"
                         : "border-border bg-muted/30 text-muted-foreground"
                       )}>
@@ -394,7 +395,7 @@ function CRMAndLeadsPanel() {
                     <td className="py-2 px-3">
                       <span className={cn(
                         "rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize",
-                        l.verified ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-500" : "border-border bg-muted/30 text-muted-foreground"
+                        l.verified ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-500" : "border-border bg-muted/30 text-muted-foreground"
                       )}>
                         {l.status || (l.verified ? "verified" : "unverified")}
                       </span>
@@ -949,6 +950,7 @@ export function MemoryBody() {
                 >
                   {/* Entity Header Bar */}
                   <div
+                    role="button" tabIndex={0}
                     className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-muted/20 border-b border-border/60 cursor-pointer hover:bg-muted/30 transition-colors"
                     onClick={() => toggleEntity(entity)}
                   >
@@ -1100,6 +1102,7 @@ export function MemoryBody() {
 
                           return (
                             <div
+                              role="button" tabIndex={0}
                               key={f.attr}
                               onClick={() => toggleFact(factKey)}
                               className={cn(
@@ -1321,7 +1324,7 @@ export function MemoryBody() {
       {/* New Entity / Fact Modal */}
       <AnimatePresence>
         {showNewModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+          <Modal label="New memory entry" onClose={() => setShowNewModal(false)} className="items-center justify-center bg-black/50 backdrop-blur-xs p-4">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -1404,7 +1407,7 @@ export function MemoryBody() {
                 </button>
               </div>
             </motion.div>
-          </div>
+          </Modal>
         )}
       </AnimatePresence>
     </>
@@ -1440,7 +1443,7 @@ type InputsPayload = {
 };
 
 const STATE_TONE: Record<string, string> = {
-  on: "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20",
+  on: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-500 border border-emerald-500/20",
   waiting: "bg-amber-500/10 text-amber-500 border border-amber-500/20",
   ready: "bg-sky-500/10 text-sky-500 border border-sky-500/20",
   off: "bg-muted text-muted-foreground border border-border",
@@ -1734,7 +1737,7 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
                 <h2 className="text-sm font-bold text-foreground">Sensors, Audio &amp; System Modalities</h2>
                 <p className="text-xs text-muted-foreground">Direct sensory inputs running locally on this machine.</p>
               </div>
-              <span className="text-[11px] font-mono text-emerald-500 font-semibold">{live} live now</span>
+              <span className="text-[11px] font-mono text-emerald-700 dark:text-emerald-500 font-semibold">{live} live now</span>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 items-start">
               {devices.map((c) => (
@@ -1768,7 +1771,7 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
       {/* WHATSAPP QR CODE SCANNER MODAL - PURE BLACK AND WHITE WITH TARGETING GUIDES */}
       <AnimatePresence>
         {qrModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
+          <Modal label="Link WhatsApp" onClose={() => setQrModalOpen(false)} className="items-center justify-center p-4 bg-black/75 backdrop-blur-md">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -1785,7 +1788,7 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
               </button>
 
               <div className="flex items-center gap-3 mb-5">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-600/15 text-emerald-500 font-bold border border-emerald-500/25">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-600/15 text-emerald-700 dark:text-emerald-500 font-bold border border-emerald-500/25">
                   <QrCode className="h-5 w-5" />
                 </div>
                 <div>
@@ -1813,7 +1816,7 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
                   </div>
                   <h4 className="text-sm font-bold text-foreground">WhatsApp is Connected!</h4>
                   <p className="text-xs text-muted-foreground font-mono">{qrData.me || "Device Authenticated"}</p>
-                  <p className="text-xs text-emerald-500 font-medium">Messages stream live 100% locally through your machine.</p>
+                  <p className="text-xs text-emerald-700 dark:text-emerald-500 font-medium">The bridge runs on your machine (WAHA in Docker); messages still travel through WhatsApp's own servers.</p>
                   <div className="pt-2">
                     <button
                       type="button"
@@ -1912,282 +1915,9 @@ export function Inputs({ onToggleNav }: { onToggleNav?: () => void }) {
                 </div>
               )}
             </motion.div>
-          </div>
+          </Modal>
         )}
       </AnimatePresence>
-    </Page>
-  );
-}
-
-// ---------------------------------------------------------------- Connectors
-// A proper section for the accounts ISHTI plugs into. Every card is driven by ishti/connectors.py:
-// real registry, real credential state, real token lifetime. Nothing here is a mock.
-type Connector = {
-  service: string; name: string; family: string; kind: "oauth" | "token";
-  api: string; auth: string; scopes: string[]; granted: string[];
-  website?: string; capabilities?: string;
-  has_credentials: boolean; one_click?: boolean; connected: boolean; account: string;
-  has_refresh: boolean; expires_at: number; connected_at: number;
-  state: "connected" | "ready" | "empty" | "reconnect";
-  setup: { console?: string; steps?: string; note?: string; callback_url?: string };
-  callback_url?: string;
-  status_text: string;
-  progress: { state?: string; reply?: string; at?: number };
-};
-type ConnectorsPayload = {
-  connectors: Connector[]; connected: number; ready: number;
-  total: number; families: string[]; note: string;
-};
-
-const FAMILY_LABEL: Record<string, string> = {
-  google: "Google", microsoft: "Microsoft", github: "GitHub",
-  meta: "Meta", linkedin: "LinkedIn", telegram: "Telegram",
-};
-const CONN_TONE: Record<string, string> = {
-  connected: "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20",
-  ready: "bg-amber-500/10 text-amber-500 border border-amber-500/20",
-  empty: "bg-muted text-muted-foreground border border-border",
-};
-
-export function Connectors({ onToggleNav }: { onToggleNav?: () => void }) {
-  const [data, setData] = useState<ConnectorsPayload | null>(null);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [busy, setBusy] = useState("");
-  const [editing, setEditing] = useState<string | null>(null);
-  const [cid, setCid] = useState("");
-  const [csec, setCsec] = useState("");
-  const [group, setGroup] = useState<string>("all");
-  const loadGeneration = useRef(0);
-
-  const load = useCallback(() => {
-    const generation = ++loadGeneration.current;
-    getJSON<ConnectorsPayload>("/api/connectors").then((fresh) => {
-      if (generation !== loadGeneration.current) return;
-      setData(fresh); setError("");
-      const terminal = fresh.connectors.filter((c) => ["done", "error"].includes(c.progress?.state || ""))
-        .sort((a, b) => (b.progress.at || 0) - (a.progress.at || 0))[0];
-      if (terminal?.progress.reply) setNotice(terminal.progress.reply);
-    }).catch(
-      (e: Error) => { if (generation === loadGeneration.current) setError(e?.message || "could not reach /api/connectors"); }
-    );
-  }, []);
-  useEffect(load, [load]);
-
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const refresh = () => {
-      clearTimeout(timer);
-      timer = setTimeout(load, 100);
-    };
-    const events = ["ishti-connectors-updated", "ishti-ws-connected", "ishti-state-resync"];
-    events.forEach((name) => window.addEventListener(name, refresh));
-    return () => { clearTimeout(timer); events.forEach((name) => window.removeEventListener(name, refresh)); };
-  }, [load]);
-
-  // WebSocket changes refresh immediately; polling recovers completion after a dropped connection.
-  useEffect(() => {
-    if (!(data?.connectors ?? []).some((c) => c.progress?.state === "waiting")) return;
-    const t = setInterval(() => { if (!document.hidden) load(); }, 2000);
-    return () => clearInterval(t);
-  }, [data?.connectors, load]);
-
-  const rows = (data?.connectors ?? []).filter((c) => group === "all" || c.family === group);
-
-  const act = async (path: string, service: string, body?: unknown) => {
-    setBusy(service); setNotice("");
-    try {
-      const r = await postJSON<{ ok: boolean; reply: string }>(path, body);
-      if (!r.ok) throw new Error(r.reply || "The connector action did not complete.");
-      setNotice(r.reply); setEditing(null); setCid(""); setCsec(""); load();
-    } catch (e) {
-      setNotice((e as Error).message);
-    } finally { setBusy(""); }
-  };
-  const saveCreds = (s: string) => act(`/api/connectors/${s}/credentials`, s, { client_id: cid, client_secret: csec });
-  const connect = (s: string) => act(`/api/connectors/${s}/connect`, s);
-  const disconnect = (s: string) => act(`/api/connectors/${s}/disconnect`, s);
-
-  // Render as a function: an inline component type remounts the credential inputs on every keystroke.
-  const renderConnector = (c: Connector) => {
-    const waiting = c.progress?.state === "waiting";
-    return (
-      <div key={c.service} className="flex flex-col rounded-xl border border-border bg-card p-4 shadow-xs">
-        <div className="flex items-start gap-2">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-foreground">{c.name}</span>
-              <span className={cn("rounded-full border px-1.5 py-0.5 text-[10px] font-medium",
-                CONN_TONE[c.state] || CONN_TONE.empty)}>
-                {c.state === "connected" ? "connected" : c.state === "ready" ? "ready" : c.state === "reconnect" ? "reconnect" : "not set up"}
-              </span>
-            </div>
-            <div className="mt-0.5 text-[11px] text-muted-foreground">
-              {FAMILY_LABEL[c.family] || c.family} · {c.kind === "token" ? "token" : "OAuth 2.0"}
-              {c.scopes.length ? ` · ${c.scopes.length} scopes` : ""}
-            </div>
-          </div>
-        </div>
-
-        {c.connected ? (
-          <div className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
-            {c.account && <div>Signed in as <span className="text-foreground">{c.account}</span></div>}
-            <div>{c.has_refresh ? "Refresh token stored - stays signed in."
-              : "No refresh token - may need reconnecting."}</div>
-          </div>
-        ) : (
-          <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">{c.status_text}</p>
-        )}
-
-        {c.capabilities && <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">{c.capabilities}</p>}
-
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {!c.connected && c.kind === "oauth" && (
-            <>
-              {c.service === "google" && !c.has_credentials && (
-                <a
-                  href={c.website || "https://accounts.google.com"}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-lg border border-accent bg-accent/10 px-2.5 py-1 text-[11px] font-medium text-accent hover:bg-accent/20 cursor-pointer"
-                >
-                  Continue with Google (Web)
-                </a>
-              )}
-              <button type="button" disabled={busy === c.service || waiting}
-                onClick={() => (c.has_credentials ? connect(c.service)
-                  : (setEditing(c.service), setCid(""), setCsec("")))}
-                className={cn("rounded-lg px-2.5 py-1 text-[11px] font-medium cursor-pointer",
-                  c.has_credentials ? "bg-accent text-white" : "border border-border bg-card hover:border-accent/40",
-                  (busy === c.service || waiting) && "opacity-60")}>
-                {waiting ? "Waiting for consent…" : c.has_credentials ? (c.service === "google" ? "Continue with Google" : c.family === "google" ? "Connect to Google" : `Connect to ${FAMILY_LABEL[c.family] || c.name}`) : (c.service === "google" ? "Configure API Client" : "Advanced setup")}
-              </button>
-            </>
-          )}
-          {c.kind === "token" && (
-            <a href="#settings" className="rounded-lg border border-border bg-card px-2.5 py-1 text-[11px] hover:border-accent/40">Remote channel settings</a>
-          )}
-          {c.connected && c.kind === "oauth" && (
-            <button type="button" disabled={busy === c.service} onClick={() => disconnect(c.service)}
-              className="rounded-lg border border-border bg-card px-2.5 py-1 text-[11px] font-medium hover:border-red-500/50 cursor-pointer disabled:opacity-60">
-              Disconnect
-            </button>
-          )}
-          {c.setup?.console && (
-            <a href={c.setup.console} target="_blank" rel="noreferrer"
-              className="rounded-lg border border-border bg-card px-2.5 py-1 text-[11px] hover:border-accent/40">
-              Open console
-            </a>
-          )}
-        </div>
-
-        {editing === c.service && (
-          <div className="mt-3 space-y-2 rounded-lg border border-border bg-background p-2.5">
-            <div className="rounded border border-accent/20 bg-accent/5 p-2 text-[11px] space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-foreground">Callback / Redirect URI:</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void navigator.clipboard.writeText(c.setup?.callback_url || "http://127.0.0.1:8765/");
-                    setNotice(`Callback URL copied: ${c.setup?.callback_url || "http://127.0.0.1:8765/"}`);
-                  }}
-                  className="rounded border border-border bg-card px-2 py-0.5 text-[10px] font-medium hover:bg-muted cursor-pointer"
-                >
-                  Copy Callback URL
-                </button>
-              </div>
-              <code className="block select-all rounded bg-card px-2 py-1 font-mono text-[10.5px] text-foreground border border-border">
-                {c.setup?.callback_url || "http://127.0.0.1:8765/"}
-              </code>
-              <div className="text-[10px] text-muted-foreground leading-normal">
-                {c.family === "google"
-                  ? "In Google Cloud Console, choose Application type: Desktop app (no callback URL needed in console) OR Web application with this exact redirect URI."
-                  : "Paste this exact redirect URL into your provider app registration settings."}
-              </div>
-            </div>
-
-            <input value={cid} onChange={(e) => setCid(e.target.value)} placeholder={c.family === "google" ? "Client ID (from Google Cloud Console)" : "Client ID"} aria-label={`${c.name} client ID`}
-              className="w-full rounded-md border border-border bg-card px-2 py-1 text-[11px]" />
-            <input value={csec} onChange={(e) => setCsec(e.target.value)} placeholder={c.service === "microsoft" || c.family === "google" ? "Client secret (optional for desktop apps)" : "Client secret"} aria-label={`${c.name} client secret`}
-              type="password" className="w-full rounded-md border border-border bg-card px-2 py-1 text-[11px]" />
-            <div className="flex gap-1.5">
-              <button type="button" disabled={busy === c.service || !cid.trim()} onClick={() => saveCreds(c.service)}
-                className="rounded-md bg-accent px-2.5 py-1 text-[11px] text-white disabled:opacity-50 cursor-pointer">
-                Save &amp; Connect
-              </button>
-              <button type="button" onClick={() => setEditing(null)}
-                className="rounded-md border border-border px-2.5 py-1 text-[11px] cursor-pointer">
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
-        {c.setup?.steps && (
-          <details className="mt-2">
-            <summary className="cursor-pointer text-[11px] text-accent">Advanced app setup</summary>
-            <p className="mt-1 text-[10.5px] leading-relaxed text-muted-foreground">{c.setup.steps}</p>
-            {c.setup.note && <p className="mt-1 text-[10.5px] text-muted-foreground/80">{c.setup.note}</p>}
-          </details>
-        )}
-      </div>
-    );
-  };
-
-  return (
-    <Page
-      title="Connectors"
-      subtitle="Connect your accounts. ISHTI uses an available connector first and Chrome when the requested action needs the website."
-      onToggleNav={onToggleNav}
-      action={
-        <button type="button" onClick={load}
-          className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium hover:border-accent/40 cursor-pointer">
-          Refresh
-        </button>
-      }
-    >
-      {error && (
-        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400">{error}</div>
-      )}
-      {notice && (
-        <div className="rounded-xl border border-accent/30 bg-accent/10 p-3 text-xs text-foreground">{notice}</div>
-      )}
-      {!data && !error && <div className="text-sm text-muted-foreground">Reading the connectors…</div>}
-
-      {data && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: "Connected", value: String(data.connected) },
-              { label: "Ready", value: String(data.ready) },
-              { label: "Available", value: String(data.total) },
-            ].map((s) => (
-              <div key={s.label} className="rounded-xl border border-border bg-card p-3 shadow-xs">
-                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{s.label}</div>
-                <div className="mt-1 text-xl font-semibold text-foreground">{s.value}</div>
-              </div>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-            {["all", ...data.families].map((f) => (
-              <button key={f} type="button" onClick={() => setGroup(f)}
-                className={cn("rounded-xl px-3 py-1.5 text-xs font-medium shrink-0 cursor-pointer",
-                  group === f ? "bg-accent text-white"
-                    : "border border-border bg-card/60 text-muted-foreground hover:text-foreground")}>
-                {f === "all" ? "All" : FAMILY_LABEL[f] || f}
-              </button>
-            ))}
-          </div>
-
-          <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-            {rows.map(renderConnector)}
-          </div>
-
-          <p className="text-[11px] text-muted-foreground">{data.note}</p>
-        </div>
-      )}
     </Page>
   );
 }
@@ -2225,7 +1955,7 @@ const CATEGORY_METAS: Record<
   },
   "Web & Internet": {
     label: "Web & Internet",
-    desc: "Browser automation, web search, web tools, and live data fetching",
+    desc: "Web search, page reading, web tools and live data fetching",
     color: "text-sky-500",
     bg: "bg-sky-500/10",
     border: "border-sky-500/25",
@@ -2233,7 +1963,7 @@ const CATEGORY_METAS: Record<
   "Communication & Social": {
     label: "Communication & Social",
     desc: "Chatting, WhatsApp, email drafting, and contact records",
-    color: "text-emerald-500",
+    color: "text-emerald-700 dark:text-emerald-500",
     bg: "bg-emerald-500/10",
     border: "border-emerald-500/25",
   },
@@ -2321,7 +2051,7 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
 
   const tone = (s: string) =>
     s === "working"
-      ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
+      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-500 border border-emerald-500/20"
       : s === "broken"
       ? "bg-red-500/10 text-red-500 border border-red-500/20"
       : "bg-amber-500/10 text-amber-500 border border-amber-500/20";
@@ -2391,7 +2121,7 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
   };
   const statusBadge = (status: string) =>
     status === "working"
-      ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-500"
+      ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-500"
       : status === "broken"
       ? "border-red-500/25 bg-red-500/10 text-red-500"
       : "border-amber-500/25 bg-amber-500/10 text-amber-500";
@@ -2966,8 +2696,8 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
                           >
                             {copiedKey === `path-${activeSkill.name}` ? (
                               <>
-                                <Check className="h-3.5 w-3.5 text-emerald-500" />
-                                <span className="text-emerald-500">Copied!</span>
+                                <Check className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-500" />
+                                <span className="text-emerald-700 dark:text-emerald-500">Copied!</span>
                               </>
                             ) : (
                               <>
@@ -3349,8 +3079,8 @@ export function Skills({ onToggleNav }: { onToggleNav?: () => void }) {
                       >
                         {copiedKey === `path-${activeSkill.name}` ? (
                           <>
-                            <Check className="h-3.5 w-3.5 text-emerald-500" />
-                            <span className="text-emerald-500">Copied!</span>
+                            <Check className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-500" />
+                            <span className="text-emerald-700 dark:text-emerald-500">Copied!</span>
                           </>
                         ) : (
                           <>
@@ -3595,7 +3325,6 @@ export function Settings({ onToggleNav, children }: { onToggleNav?: () => void; 
     appearance: false,
     chatSize: false,
     sideChats: false,
-    chrome: false,
     models: false,
     voice: false,
     whisper: false,
@@ -3612,7 +3341,6 @@ export function Settings({ onToggleNav, children }: { onToggleNav?: () => void; 
       appearance: expand,
       chatSize: expand,
       sideChats: expand,
-      chrome: expand,
       models: expand,
       voice: expand,
       whisper: expand,
@@ -3767,6 +3495,7 @@ export function Settings({ onToggleNav, children }: { onToggleNav?: () => void; 
               {/* 1. Appearance Card */}
               <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
                 <div
+                  role="button" tabIndex={0}
                   className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
                   onClick={() => toggleCard("appearance")}
                 >
@@ -3850,6 +3579,7 @@ export function Settings({ onToggleNav, children }: { onToggleNav?: () => void; 
               {/* 3. Side Chats Width Card */}
               <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
                 <div
+                  role="button" tabIndex={0}
                   className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
                   onClick={() => toggleCard("sideChats")}
                 >
@@ -3966,11 +3696,12 @@ export function Settings({ onToggleNav, children }: { onToggleNav?: () => void; 
               {/* 2. Chat Text Size Card */}
               <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
                 <div
+                  role="button" tabIndex={0}
                   className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
                   onClick={() => toggleCard("chatSize")}
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-emerald-500/15 text-emerald-500">
+                    <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-emerald-500/15 text-emerald-700 dark:text-emerald-500">
                       <Type className="h-4 w-4" />
                     </div>
                     <div className="min-w-0">
@@ -4088,6 +3819,7 @@ export function Settings({ onToggleNav, children }: { onToggleNav?: () => void; 
           </div>
           <Card className="p-0 overflow-hidden shadow-xs border-border/80 bg-card/40">
             <div
+              role="button" tabIndex={0}
               className="flex items-center justify-between gap-3 p-4 cursor-pointer hover:bg-muted/30 transition-colors"
               onClick={() => toggleCard("system")}
             >

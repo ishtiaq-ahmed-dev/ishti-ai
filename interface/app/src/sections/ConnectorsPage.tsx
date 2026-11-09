@@ -3,6 +3,7 @@
 // secrets). Remote-policy editor here (local only). T2 risk notices before first connect.
 // Owner update: Inputs is MERGED here (sensors + accounts + OAuth catalog in one section);
 // #inputs deep links land on this page. Nothing was removed from Inputs.
+import { Modal } from "@/components/Modal";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Cable, Check, ClipboardCheck, MessageCircle, Mic, MicOff, PanelLeft, Plus, QrCode, RefreshCw, Send, Shield, Trash2, X } from "lucide-react";
@@ -128,7 +129,7 @@ function WhatsAppCard({ row, reload }: { row?: Connector; reload: () => void }) 
   return (
     <div className="rounded-xl border border-border bg-card p-4" data-testid="connector-whatsapp">
       <div className="flex items-center gap-2">
-        <MessageCircle className="h-4 w-4 text-emerald-500" aria-hidden />
+        <MessageCircle className="h-4 w-4 text-emerald-700 dark:text-emerald-500" aria-hidden />
         <h3 className="text-sm font-bold text-foreground">WhatsApp</h3>
         {row && <StatusPill status={row.status} />}
       </div>
@@ -277,7 +278,7 @@ function TelegramCard({ row, reload }: { row?: Connector; reload: () => void }) 
           Or open <span className="font-mono">{deepLink}</span> — pairing confirms the owner's account.
         </p>
       )}
-      {okMsg && <p className="mt-1.5 text-[11px] text-emerald-500" role="status">{okMsg}</p>}
+      {okMsg && <p className="mt-1.5 text-[11px] text-emerald-700 dark:text-emerald-500" role="status">{okMsg}</p>}
       {err && <div className="mt-2 text-xs text-destructive" role="alert">{err}</div>}
 
       <div className="mt-3 border-t border-border pt-2.5">
@@ -360,7 +361,7 @@ type InputChannel = {
 type InputsPayload = { channels: InputChannel[]; accounts: { service: string; connected: boolean }[]; note?: string };
 
 const IN_STATE_TONE: Record<string, string> = {
-  on: "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20",
+  on: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-500 border border-emerald-500/20",
   waiting: "bg-amber-500/10 text-amber-500 border border-amber-500/20",
   ready: "bg-sky-500/10 text-sky-500 border border-sky-500/20",
   off: "bg-muted text-muted-foreground border border-border",
@@ -502,7 +503,7 @@ function InputsPanel() {
     <section data-testid="inputs-panel">
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Inputs · sensors &amp; devices</h3>
-        <span className="text-[11px] font-mono text-emerald-500 font-semibold">{live} live now</span>
+        <span className="text-[11px] font-mono text-emerald-700 dark:text-emerald-500 font-semibold">{live} live now</span>
       </div>
       {error && <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3.5 text-xs text-red-400">{error}</div>}
       {!data && !error && <div className="text-xs text-muted-foreground">Reading active input channels…</div>}
@@ -523,7 +524,7 @@ function InputsPanel() {
       {/* WHATSAPP QR CODE SCANNER MODAL (unchanged from the Inputs page) */}
       <AnimatePresence>
         {qrModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
+          <Modal label="Link WhatsApp" onClose={() => setQrModalOpen(false)} className="items-center justify-center p-4 bg-black/75 backdrop-blur-md">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
               className="relative w-full max-w-md rounded-3xl border border-border bg-card p-6 shadow-2xl overflow-hidden">
               <button type="button" onClick={() => setQrModalOpen(false)}
@@ -531,7 +532,7 @@ function InputsPanel() {
                 <X className="h-4 w-4" />
               </button>
               <div className="flex items-center gap-3 mb-5">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-600/15 text-emerald-500 font-bold border border-emerald-500/25"><QrCode className="h-5 w-5" /></div>
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-600/15 text-emerald-700 dark:text-emerald-500 font-bold border border-emerald-500/25"><QrCode className="h-5 w-5" /></div>
                 <div>
                   <h3 className="text-base font-bold text-foreground">Link WhatsApp Account</h3>
                   <p className="text-xs text-muted-foreground">Scan with WhatsApp on your phone to link locally</p>
@@ -549,7 +550,7 @@ function InputsPanel() {
                   <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"><Check className="h-7 w-7" /></div>
                   <h4 className="text-sm font-bold text-foreground">WhatsApp is Connected!</h4>
                   <p className="text-xs text-muted-foreground font-mono">{qrData.me || "Device Authenticated"}</p>
-                  <p className="text-xs text-emerald-500 font-medium">Messages stream live 100% locally through your machine.</p>
+                  <p className="text-xs text-emerald-700 dark:text-emerald-500 font-medium">The bridge runs on your machine (WAHA in Docker); messages still travel through WhatsApp's own servers.</p>
                   <div className="pt-2">
                     <button type="button" onClick={() => setQrModalOpen(false)}
                       className="rounded-xl bg-emerald-600 px-6 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors cursor-pointer shadow-xs">Done</button>
@@ -598,7 +599,7 @@ function InputsPanel() {
                 </div>
               )}
             </motion.div>
-          </div>
+          </Modal>
         )}
       </AnimatePresence>
     </section>

@@ -16,7 +16,7 @@
   --accent-foreground: #ffffff;
   --success: #1f9d6b;
   --warning: #d98a1c;
-  --danger: #d9454a;
+  --danger: #c43a3f;  /* 5.2:1 with white text and as text on white */
   --graph-bg: #ffffff;
   --brand-navy: #13243e;
   --brand-gold: #ce8418;
@@ -62,12 +62,12 @@
   --muted: #121217;
   --muted-foreground: #9ca3af;
   --border: #1e1e24;
-  --accent: #8b75ff;
+  --accent: #7560ec;  /* 4.5:1 with white text AND as text on black */
   --accent-soft: #201a38;
   --accent-foreground: #ffffff;
   --success: #22c55e;
   --warning: #f59e0b;
-  --danger: #ef4444;
+  --danger: #d23f45;  /* same window: white-on-red and red-on-black both >= 4.5:1 */
   --graph-bg: #000000;
   --brand-text: #ffffff;
 }
