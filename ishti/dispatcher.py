@@ -942,6 +942,12 @@ def _handle_session(text, sid, channel, on_token, on_event, shared, conv) -> dic
                     "session_id": sid, "channel": channel, "route": {}, "latency_ms": round((time.perf_counter() - t0) * 1000)}
         if type(exc).__name__ == "Cancelled" or not isinstance(exc, Exception):
             raise  # barge-in / shutdown: not a failure to report
+        if type(exc).__name__ == "ModelUnavailable":  # provider refused/unreachable: a plain, actionable sentence
+            audit.record("model unavailable", str(exc)[:200], skill="dispatcher", session=sid)
+            _persist_reply(str(exc), "dispatcher")
+            s["trace"](type="done", skill=None, ms=round((time.perf_counter() - t0) * 1000))
+            return {"request": text, "final_answer": str(exc), "mode": "MODEL_UNAVAILABLE", "skill": None, "sources": [],
+                    "session_id": sid, "channel": channel, "route": {}, "latency_ms": round((time.perf_counter() - t0) * 1000)}
         ErrorLogger.log_error(subsystem="DISPATCHER", error=exc, user_prompt=mask(text, typed_secrets), context="dispatcher.handle")
         log_need("error", "dispatcher", mask(text, typed_secrets), f"{type(exc).__name__}: {str(exc)[:120]}")
         audit.record("request failed", f"{type(exc).__name__}: {str(exc)[:200]}", skill="dispatcher", session=sid)

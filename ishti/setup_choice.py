@@ -12,9 +12,10 @@ from ishti import ROOT
 from ishti.test_mode import scratch_path
 
 PATH = scratch_path(os.path.join(ROOT, "data", "setup.json"))
-PROVIDERS = ("openai", "anthropic", "gemini", "openrouter")
+PROVIDERS = ("openai", "anthropic", "gemini", "openrouter", "agentrouter")
 DEFAULT_MODELS = {"openai": "gpt-4.1-mini", "anthropic": "claude-haiku-5-5",
-                  "gemini": "gemini-2.5-flash", "openrouter": "openai/gpt-4.1-mini"}
+                  "gemini": "gemini-2.5-flash", "openrouter": "openai/gpt-4.1-mini",
+                  "agentrouter": "gpt-6.1-sol"}
 
 
 def load() -> dict | None:

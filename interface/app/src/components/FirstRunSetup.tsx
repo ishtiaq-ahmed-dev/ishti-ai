@@ -16,6 +16,7 @@ const API_PROVIDERS = [
   { id: "openai", label: "OpenAI (ChatGPT)" },
   { id: "gemini", label: "Google Gemini" },
   { id: "openrouter", label: "OpenRouter (many models)" },
+  { id: "agentrouter", label: "AgentRouter (gpt-6.1-sol)" },
 ];
 
 export function FirstRunSetup() {

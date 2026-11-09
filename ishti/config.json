@@ -1,11 +1,13 @@
 {
   "llm": {
-    "provider": "local",
+    "provider": "api",
     "api": {
-      "provider": "anthropic",
+      "provider": "agentrouter",
       "base_url": "",
-      "model": "claude-haiku-5-5",
-      "api_key_env": "ISHTI_API_KEY"
+      "model": "gpt-6.1-sol",
+      "api_key_env": "ISHTI_API_KEY",
+      "failover_local_model": "gemma3:4b",
+      "note": "Key: OS credential store (Settings card) or the ISHTI_API_KEY variable, never this file. failover_local_model answers only while the cloud refuses, and only if Ollama is already running with it pulled; empty string disables failover."
     },
     "base_url": "http://127.0.0.1:11434/v1",
     "models": {

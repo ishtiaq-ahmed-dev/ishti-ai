@@ -32,6 +32,8 @@ tests/test_lifecycle.py is a special case: it calls sys.exit() at import time, w
 with INTERNALERROR. Its contract-style sibling tests/test_lifecycle_contract.py is a real pytest module
 (e2e-marked) and still runs.
 """
+import os
+
 import pytest
 
 
@@ -74,6 +76,44 @@ def _offline_network_boundary(request, monkeypatch):
         return connect_ex(sock, address)
     monkeypatch.setattr(socket.socket, 'connect', guarded_connect)
     monkeypatch.setattr(socket.socket, 'connect_ex', guarded_connect_ex)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _isolated_model_provider(request, monkeypatch, tmp_path):
+    """Tests never see the owner's saved provider choice (data/setup.json) or the OS credential store.
+
+    Without this a test's provider depended on what the owner last picked in the first-run card, and an
+    "API key missing" test silently read the owner's real key from Windows Credential Manager. Every
+    non-e2e test starts on the local provider with no saved choice and an empty keyring; a test that
+    needs API mode sets ISHTI_LLM_PROVIDER / ISHTI_API_KEY itself (monkeypatch wins, it runs later).
+    """
+    if request.node.get_closest_marker("e2e"):
+        yield
+        return
+    monkeypatch.setenv("ISHTI_LLM_PROVIDER", "local")
+    monkeypatch.setenv("ISHTI_NO_FAILOVER", "1")
+    if not os.environ.get("ISHTI_STORAGE_KEY"):
+        try:  # sealed records use a throwaway per-test key, never a data key created in the owner's keychain
+            from cryptography.fernet import Fernet
+            monkeypatch.setenv("ISHTI_STORAGE_KEY", Fernet.generate_key().decode("ascii"))
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        import keyring
+        monkeypatch.setattr(keyring, "get_password", lambda *a, **k: None)
+        def _refuse(*a, **k):
+            raise RuntimeError("tests must not write to the OS credential store")
+        monkeypatch.setattr(keyring, "set_password", _refuse)
+    except Exception:  # noqa: BLE001 - keyring is optional for collection
+        pass
+    try:
+        import ishti.setup_choice as setup_choice
+        monkeypatch.setattr(setup_choice, "PATH", str(tmp_path / "setup.json"))
+        import ishti.llm as llm
+        monkeypatch.setitem(llm._cloud_state, "until", 0.0)
+    except Exception:  # noqa: BLE001
+        pass
     yield
 
 

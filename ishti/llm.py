@@ -81,7 +81,40 @@ PROVIDERS = {
     "anthropic": "https://api.anthropic.com/v1/",
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
     "openrouter": "https://openrouter.ai/api/v1",
+    "agentrouter": "https://agentrouter.org/v1",
 }
+
+
+class ModelUnavailable(RuntimeError):
+    """The configured model provider refused or could not be reached. The message is safe to show the owner:
+    it names the provider and the fix, never the key or the raw response body."""
+
+
+def _provider_error(exc, provider_name: str) -> ModelUnavailable:
+    """One plain sentence for a cloud provider failure (auth, client allow-list, quota, network)."""
+    import openai
+    status = getattr(exc, "status_code", None)
+    body = str(getattr(exc, "body", "") or exc).lower()
+    who = provider_name or "the model provider"
+    if "unauthorized client" in body:
+        msg = (f"{who} rejected this app: the key only works from the provider's allow-listed clients. "
+               "Ask the provider to enable API access for the key, or choose another provider in Settings.")
+    elif isinstance(exc, openai.AuthenticationError) or status == 401:
+        msg = f"{who} rejected the API key. Check the key in Settings -> Model provider."
+    elif isinstance(exc, openai.PermissionDeniedError) or status == 403:
+        msg = f"{who} refused access for this key or model. Check the model name and the key's permissions."
+    elif isinstance(exc, openai.RateLimitError) or status == 429:
+        msg = f"{who} is rate-limiting or out of quota right now. Try again in a minute."
+    elif isinstance(exc, openai.NotFoundError) or status == 404:
+        msg = f"{who} does not offer the configured model. Pick another model in Settings."
+    elif isinstance(exc, (openai.APITimeoutError, openai.APIConnectionError)):
+        msg = f"{who} could not be reached (network or timeout). Check the connection and try again."
+    else:
+        msg = f"{who} returned an error ({status or type(exc).__name__}). Try again shortly."
+    err = ModelUnavailable(msg)
+    # how long the breaker skips the provider: a refused key will not fix itself in seconds; a blip might
+    err.retry_s = 600 if status in (401, 403, 404) else 60 if status == 429 else 20
+    return err
 
 
 def provider() -> str:
@@ -121,13 +154,13 @@ def api_key() -> str:
 # paid by every `import ishti.llm` (26 skill modules import it) even when the request is answered by a
 # reflex/rule route with no LLM call. The client is created on first use instead.
 
-def _get_client():
+def _get_client(local: bool = False):
     """The OpenAI client to Ollama's /v1 endpoint, created on first use. Replaces the module-level
     `_client = OpenAI(...)` (which forced the openai package to import at boot); the base URL is read
     per call so ISHTI_OLLAMA_URL set later still applies.
 """
     global _client, _api_client, _api_client_key
-    if provider() == "api":
+    if provider() == "api" and not local:
         key = api_key()
         if not key:
             raise RuntimeError(f"No API key: set the {api_settings().get('api_key_env', 'ISHTI_API_KEY')} environment variable.")
@@ -176,6 +209,8 @@ def model_for(role: str) -> str:
     """The model to use for a role right now: the configured one (with fallbacks below), unless the VRAM governor has
     moved the role to a lighter rung (planner downshifted while a heavy job runs, vision tier 2/3)."""
     if provider() == "api":  # one model for every role: one model call per pass, and no VRAM to govern
+        if _cloud_open() and (fallback := failover_model()):
+            return fallback  # the cloud is refusing: name the model that actually answers
         return api_settings()["model"]
     from ishti import vram
     if role in ("vision2", "vision3"):  # no config entry: the ladder's best installed rung
@@ -223,29 +258,21 @@ def _create(**args):
     import requests
     role = args.pop("_role", None)
     recover = args.pop("_recover", True)
-    if provider() == "api":  # a cloud model: no GPU to govern and no local service to restart
-        args.pop("reasoning_effort", None)  # Ollama's "none" is not a value cloud APIs accept
-        from ishti import privacy
-        cfg = api_settings()
-        if cfg.get("provider") == "anthropic":
-            # Newer Claude models reject sub-1 temperatures/top-p overrides.
-            # Omit sampling controls instead of changing the chosen model.
-            args.pop("temperature", None)
-            args.pop("top_p", None)
-        base = cfg.get("base_url") or PROVIDERS.get(cfg.get("provider", "openai"), PROVIDERS["openai"])
-        def generate():
-            with privacy.inference(base):
-                response = _create_call(args, openai)
-                try:
-                    yield from response
-                finally:
-                    close = getattr(response, "close", None)
-                    if close:
-                        close()
-        if args.get("stream"):
-            return generate()
-        with privacy.inference(base):
-            return _create_call(args, openai)
+    local = args.pop("_local", False)
+    if provider() == "api" and not local:  # a cloud model: no GPU to govern and no local service to restart
+        fallback = failover_model()
+        if not (fallback and _cloud_open()):  # the breaker is only honoured when something can answer instead
+            try:
+                return _create_api(dict(args), openai)
+            except ModelUnavailable as exc:
+                if not fallback:
+                    raise
+                _trip(exc)
+        from ishti import calltrace
+        calltrace.note("failover", "model", model=fallback, why=_cloud_state["error"])
+        args.pop("stream_options", None)
+        args.update(model=fallback, reasoning_effort="none")
+        return _create(**args, _role=None, _recover=recover, _local=True)
     if role in ("main", "validation"):  # arch2's roles are the planner: same rung, same pinning
         role = "planner"
     lease = None
@@ -281,7 +308,7 @@ def _create(**args):
             vram.release(lease)
     try:
         models.used(args["model"])  # D3: usage decides how long the model stays in VRAM
-        out = _create_call(args, openai)
+        out = _create_call(args, openai, local=True) if local else _create_call(args, openai)
     except openai.APIConnectionError:
         done()
         if not recover:
@@ -295,7 +322,7 @@ def _create(**args):
             raise RuntimeError("The local model service did not become ready; try again.")
         # A restarted service has lost the previous residency state and lease.
         # Re-enter the governor before sending any replacement generation.
-        return _create(**args, _role=role, _recover=False)
+        return _create(**args, _role=role, _recover=False, _local=local)
     except BaseException:
         done()
         raise
@@ -311,9 +338,94 @@ def _create(**args):
     return stream()
 
 
-def _create_call(args, openai):
+def _create_api(args, openai):
+    """One cloud call. Provider failures become ModelUnavailable (one plain sentence); a stream keeps the narrow
+    network grant open until it is closed. The request is sent eagerly, so a refusal surfaces here, where the
+    caller can still fail over, instead of at the first token."""
+    import contextlib
+    from ishti import privacy
+    args.pop("reasoning_effort", None)  # Ollama's "none" is not a value cloud APIs accept
+    cfg = api_settings()
+    if cfg.get("provider") == "anthropic":
+        # Newer Claude models reject sub-1 temperatures/top-p overrides. Omit sampling controls instead.
+        args.pop("temperature", None)
+        args.pop("top_p", None)
+    base = cfg.get("base_url") or PROVIDERS.get(cfg.get("provider", "openai"), PROVIDERS["openai"])
+    name = cfg.get("provider", "")
+    grant = contextlib.ExitStack()
+    try:
+        grant.enter_context(privacy.inference(base))
+        response = _create_call(args, openai)
+    except openai.APIError as exc:
+        grant.close()
+        raise _provider_error(exc, name) from None
+    except privacy.EgressBlocked as exc:
+        grant.close()
+        raise ModelUnavailable(str(exc)) from None
+    except BaseException:
+        grant.close()
+        raise
+    if not args.get("stream"):
+        grant.close()
+        _cloud_state["until"] = 0.0
+        return response
+
+    def stream():
+        with grant:
+            try:
+                yield from response
+                _cloud_state["until"] = 0.0
+            except openai.APIError as exc:
+                raise _provider_error(exc, name) from None
+            finally:
+                close = getattr(response, "close", None)
+                if close:
+                    close()
+    return stream()
+
+
+# Circuit breaker: after the cloud refuses, calls skip it for retry_s and go straight to the failover model, so a
+# refused key is not hit (and the owner not kept waiting) on every request. Reset by the first successful call.
+_cloud_state = {"until": 0.0, "error": ""}
+_failover_cache = {"at": -1e9, "name": ""}
+
+
+def _cloud_open() -> bool:
+    import time
+    return time.monotonic() < _cloud_state["until"]
+
+
+def _trip(exc: "ModelUnavailable"):
+    import time
+    _cloud_state.update(until=time.monotonic() + getattr(exc, "retry_s", 60), error=str(exc))
+    print(f"[llm] cloud model unavailable, failing over for {getattr(exc, 'retry_s', 60)} s: {exc}")
+
+
+def failover_model() -> str:
+    """The light local model that answers while the cloud refuses ('' = none). Used only when Ollama is ALREADY
+    running with that model pulled: failover never starts a service, installs, or picks a heavy model.
+    Probed at most once a minute with a 0.3 s connect timeout (a closed port costs ~2 s on Windows)."""
+    import time
+    name = str(api_settings().get("failover_local_model") or "").strip()
+    if not name or os.environ.get("ISHTI_NO_FAILOVER") == "1":
+        return ""
+    if time.monotonic() - _failover_cache["at"] < 60:
+        return _failover_cache["name"]
+    import requests
+    found = ""
+    try:
+        base = (os.environ.get("ISHTI_OLLAMA_URL") or _cfg["base_url"].removesuffix("/v1")).rstrip("/")
+        tags = {m.get("name") for m in requests.get(base + "/api/tags", timeout=(0.3, 2)).json().get("models", [])}
+        found = name if name in tags or f"{name}:latest" in tags else ""
+    except Exception:
+        found = ""
+    _failover_cache.update(at=time.monotonic(), name=found)
+    return found
+
+
+def _create_call(args, openai, local: bool = False):
     from ishti import calltrace
-    client = _get_client()
+    client = _get_client(local)
     left = calltrace.remaining()
     if left is not None and callable(getattr(client, "with_options", None)):
         client = client.with_options(timeout=min(left, float(_cfg["timeout_s"])))
@@ -387,7 +499,7 @@ def _chat(messages, role="planner", system=STYLE, tools=None, temperature=0.3, m
     context = " ".join(str(m.get("content", "")) for m in messages if m.get("role") == "user")
     from ishti import calltrace
     calltrace.remaining()
-    if provider() == "api" and api_settings().get("provider") in ("openai", "openrouter"):
+    if provider() == "api" and api_settings().get("provider") in ("openai", "openrouter", "agentrouter"):
         args["stream_options"] = {"include_usage": True} if not tools else None
         if args["stream_options"] is None:
             args.pop("stream_options")
