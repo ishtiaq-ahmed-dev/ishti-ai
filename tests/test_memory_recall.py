@@ -100,3 +100,16 @@ def test_same_subject_new_value_supersedes_without_a_model(mem, monkeypatch):
     mem.reconcile("my favourite colour is green actually", source="explicit_user")
     assert [r["content"] for r in mem.search(mtype="semantic")] == ["my favourite colour is green"]
     assert mem.reconcile("My favourite colour is green.", source="explicit_user")["action"] == "NOOP"
+
+
+def test_round6_regressions_lists_days_between_knowledge():
+    from ishti import reflex
+    from ishti.skills.chat.skill import KNOWLEDGE
+    from ishti.skills.checklist import skill as checklist
+    from ishti.skills.owner import skill as owner
+    assert reflex.answer("how many days between 1 January 2026 and 9 November 2026?")[0].startswith("**312 days**")
+    assert reflex.answer("how many days from 2026-03-01 to 2026-03-31")[0].startswith("**30 days**")
+    assert KNOWLEDGE.match("who wrote Pride and Prejudice?")
+    assert checklist.match("add milk and eggs to my shopping list") and not owner.match("add milk and eggs to my shopping list")
+    assert checklist.SHOW.match("what's on my shopping list?").group("name3") == "shopping"
+    assert not checklist.match("my spotify playlist")

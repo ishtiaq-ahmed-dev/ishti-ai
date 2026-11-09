@@ -107,10 +107,13 @@ def asks_about_me(t):
 def match(text):
     t = text.strip()
     return (any(rx.match(t) for rx in (AUDIO_OFF, AUDIO_ON, WHO, KNOW, CAN, DOCTOR, VOICE_SET)) or bool(VOICE_LIST.search(t))
-            or bool((TELL.match(t) or SAVE_MEMORY.search(t)) and not SCHEDULING.search(t) and not PERSON.search(t))
+            or bool((TELL.match(t) or SAVE_MEMORY.search(t)) and not SCHEDULING.search(t) and not PERSON.search(t)
+                    and not LIST_ITEM.search(t))
             or bool(SELF.search(t)) or asks_about_me(t))
 
 
+# "add milk to my shopping list": a list item (the checklist skill's), not a fact about the owner
+LIST_ITEM = re.compile(r"\b(?:to|on(?:to)?|from|off)\s+(?:the\s+|my\s+)?[\w &'-]{2,40}?\s+(?:check)?list\b", re.I)
 # "add a meeting to my calendar", "add a reminder": scheduling, not a fact about the owner
 SCHEDULING = re.compile(r"\b(?:calendar|meeting|appointment|event|reminder|alarm|timer|schedule|invoice|expense)\b", re.I)
 

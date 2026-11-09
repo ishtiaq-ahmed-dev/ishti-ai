@@ -17,10 +17,18 @@ _lock = threading.Lock()
 I = re.I
 
 NEW = re.compile(r"^\s*(?:new\s+)?checklist\s+(?:for|named|called)\s+(?P<name>[\w &'-]{2,40}?)\s*[:\-]\s*(?P<items>.+)$", I)
-ADD = re.compile(r"^\s*add\s+(?P<item>[\w &'-]{2,60}?)\s+to\s+(?:the\s+|my\s+)?(?P<name>[\w &'-]{2,40}?)\s+checklist\s*$", I)
+# "<name> list" is a checklist too: "add milk and eggs to my shopping list" was filed as a fact about the owner
+L = r"\s+(?:check)?list"
+ADD = re.compile(rf"^\s*(?:please\s+)?(?:add|put)\s+(?P<item>[\w ,&'-]{{2,120}}?)\s+(?:to|on(?:to)?)\s+(?:the\s+|my\s+)?"
+                 rf"(?P<name>[\w &'-]{{2,40}}?){L}\s*[.!]?$", I)
+REMOVE = re.compile(rf"^\s*(?:remove|delete|take)\s+(?P<item>[\w ,&'-]{{2,60}}?)\s+(?:off|from)\s+(?:the\s+|my\s+)?"
+                    rf"(?P<name>[\w &'-]{{2,40}}?){L}\s*[.!]?$", I)
 TICK = re.compile(r"^\s*(?:tick|check)\s+off\s+(?P<item>[\w &'-]{2,60})\s*$|^\s*(?:tick|mark)\s+(?P<item2>[\w &'-]{2,60}?)\s+(?:as\s+)?done\s*$", I)
-SHOW = re.compile(r"^\s*(?:my\s+|the\s+)?(?P<name>[\w &'-]{2,40}?)\s+checklist\s*$|^\s*(?:show|open)\s+(?:the\s+|my\s+)?(?P<name2>[\w &'-]{2,40}?)\s+checklist\s*$", I)
-LEFT = re.compile(r"^\s*what(?:'s| is)\s+left\s+on\s+(?:the\s+|my\s+)?(?P<name>[\w &'-]{2,40}?)\s+checklist\s*$", I)
+# order matters: the "what's on" / "show" forms first, or the bare form reads "what's on my shopping" as a list name
+SHOW = re.compile(rf"^\s*what(?:'s|\s+is)\s+on\s+(?:the\s+|my\s+)?(?P<name3>[\w &'-]{{2,40}}?){L}\s*\??$|"
+                  rf"^\s*(?:show|open|read)\s+(?:me\s+)?(?:the\s+|my\s+)?(?P<name2>[\w &'-]{{2,40}}?){L}\s*\??$|"
+                  rf"^\s*(?:my\s+|the\s+)?(?P<name>[\w&'-]+(?:\s+[\w&'-]+){{0,3}}?){L}\s*\??$", I)
+LEFT = re.compile(rf"^\s*what(?:'s| is)\s+left\s+on\s+(?:the\s+|my\s+)?(?P<name>[\w &'-]{{2,40}}?){L}\s*\??$", I)
 RESET = re.compile(r"^\s*reset\s+(?:the\s+|my\s+)?(?P<name>[\w &'-]{2,40}?)\s+checklist\s*$", I)
 LISTS = re.compile(r"^\s*(?:my\s+)?checklists?\s*$", I)
 
@@ -54,6 +62,15 @@ def _add_items(name, items):
     if dup:
         out += f" (already there: {', '.join(dup)})"
     return out + "."
+
+
+def _remove(name, items):
+    name, gone = _norm(name), []
+    with _lock, _db() as c:
+        for it in [x.strip() for x in re.split(r"[,;]|\band\b", items) if x.strip()]:
+            if c.execute("DELETE FROM items WHERE list=? AND LOWER(item)=?", (name, it.lower())).rowcount:
+                gone.append(it)
+    return f"Removed {', '.join(gone)} from **{name}**." if gone else f"Nothing like that on the {name} list."
 
 
 def _tick(item):
@@ -95,7 +112,7 @@ def match(text):
         from ishti.skills.reminders.skill import _done_rows
         if _done_rows(t):
             return False
-    return bool(NEW.match(t) or ADD.match(t) or TICK.match(t) or LEFT.match(t)
+    return bool(NEW.match(t) or ADD.match(t) or REMOVE.match(t) or TICK.match(t) or LEFT.match(t)
                 or RESET.match(t) or LISTS.match(t) or SHOW.match(t))
 
 
@@ -107,6 +124,9 @@ def run(text, session):
     m = ADD.match(t)
     if m:
         return {"reply": _add_items(m.group("name"), m.group("item")), "sources": []}
+    m = REMOVE.match(t)
+    if m:
+        return {"reply": _remove(m.group("name"), m.group("item")), "sources": []}
     m = TICK.match(t)
     if m:
         return {"reply": _tick(m.group("item") or m.group("item2")), "sources": []}
@@ -127,7 +147,7 @@ def run(text, session):
         return {"reply": _lists(), "sources": []}
     m = SHOW.match(t)
     if m:
-        return {"reply": _show(m.group("name") or m.group("name2")), "sources": []}
+        return {"reply": _show(m.group("name") or m.group("name2") or m.group("name3")), "sources": []}
     return None
 
 

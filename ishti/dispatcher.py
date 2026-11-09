@@ -720,16 +720,19 @@ RECOVER = _recover()  # what the previous run was still doing when it stopped
 def _verify_reply(name, text, out, s):
     """Honesty checks on a finished reply: a skill that could not confirm an action may not sound like it did, and the
     model may not claim an irreversible action that no tool ran (the brain's direct answers are checked too)."""
-    if out.get("verified") is False and CLAIM.search(str(out.get("reply", ""))):
+    # models write "I’ve" with a curly apostrophe: the claim patterns spell "i've", so check a straightened copy
+    said = str(out.get("reply") or "").translate({0x2019: "'", 0x2018: "'"})
+    if out.get("verified") is False and CLAIM.search(said):
         out["reply"] = str(out["reply"]) + "\n\n(I couldn't confirm that actually went through - please check.)"
         s["trace"](type="tool", name="verify", label="the action couldn't be confirmed, so I said so", status="error")
-    if name in ("chat", "brain") and not out.get("tools") and FALSE_ACTION.search(str(out.get("reply") or "")):
+    if name in ("chat", "brain") and not out.get("tools") and FALSE_ACTION.search(said):
         # "Did you send it?" is answered from the conversation on purpose (chat.skill.did_you); everything else gets the correction.
         from ishti.skills.chat.skill import DID_YOU
         is_status = bool(re.search(r"^\s*(?:is|are|was|were|status|check\s+if)\b", text, re.I))
         if not DID_YOU.match(text) and not is_status and not (re.search(r"\bdraft\b", str(out.get("reply") or ""), re.I) and re.search(r"\bdraft\b", text, re.I)):
-            out["reply"] = ("I haven't actually done that yet - nothing was sent or changed just now. "
-                            "Say the word and I'll go ahead.")
+            # nothing is pending, so "say yes" would be a promise with nothing behind it: say how to ask for it instead
+            out["reply"] = ("I haven't actually done that - nothing was set, sent or changed. Ask me directly "
+                            "(for example \"remind me tomorrow at 7am\") and I'll do it.")
             s["trace"](type="tool", name="verify", label="the reply claimed an action no tool ran - corrected", status="error")
 
 

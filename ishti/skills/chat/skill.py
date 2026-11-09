@@ -74,6 +74,8 @@ ADVICE = re.compile(r"\bshould\s+i\s+(?:buy|sell|invest|hold|short)\b|\b(?:buy|s
 # Contractions matter here: "What's the capital of Kazakhstan?" was NOT claimed (only "what is" matched) and the
 # weaker arch2 model answered "Azerbaijan" - a wrong fact. "Define X" / "what does X mean" are knowledge too.
 KNOWLEDGE = re.compile(r"^\s*(?:(?:what|who|where|when|which|why|how)(?:'s|s\b|\s+(?:is|are|was|were|does|do|did|many|much|far|long|old|big|likely|probably|around|about))\b|"
+                       # "who wrote Pride and Prejudice?" went to research: 3 model calls and a sourced essay for one name
+                       r"who\s+(?:wrote|invented|discovered|painted|founded|composed|directed|designed|built|sang)\b|"
                        r"(?:define|what\s+does|meaning\s+of|what's\s+the\s+definition\s+of)\s+['\"]?[A-Za-z][\w'-]*)", re.I)
 # also anything dated ("how many days until eid" was answered with an invented date): the calendar moves, the model's memory doesn't.
 # "for me"/"to me" is polite filler in knowledge questions ("define X for me" is a general fact), so bare "me" is NOT here -

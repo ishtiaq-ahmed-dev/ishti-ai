@@ -135,9 +135,25 @@ def _days_until(m, text):
     return f"**{days} day{'s' if days != 1 else ''}** - {when:%A %d %B %Y}." if days else f"That's today ({when:%A %d %B %Y})."
 
 
+def _days_between(m, text):
+    """"How many days between 1 January 2026 and 9 November 2026?" - the model answered 343 (it is 312)."""
+    from dateutil import parser as dparser
+    def day(s):  # ISO stays ISO; "1/3/2026" is 1 March (day first, as written in Pakistan)
+        s = s.strip(" ?.!")
+        return dt.date.fromisoformat(s) if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s) else dparser.parse(s, dayfirst=True).date()
+    try:
+        a, b = day(m["a"]), day(m["b"])
+    except (ValueError, OverflowError):
+        return None
+    days = abs((b - a).days)
+    return f"**{days} day{'s' if days != 1 else ''}** between {a:%d %B %Y} and {b:%d %B %Y}."
+
+
 TABLE = [
     (re.compile(r"^\W*how\s+(?:many|much)\s+days?\s+(?:are\s+)?(?:left\s+|remain(?:ing)?\s+)?(?:until|till|til|to|before)\s+"
                 r"(?P<what>[\w' /,.-]{3,40}?)\W*$", I), _days_until),
+    (re.compile(r"^\W*how\s+many\s+days\s+(?:are\s+(?:there\s+)?)?(?:between|from)\s+(?P<a>[\w ,/.-]{4,30}?)\s+(?:and|to|until|till)\s+"
+                r"(?P<b>[\w ,/.-]{4,30}?)\W*$", I), _days_between),
     (re.compile(r"^\W*(?:never\s*mind|forget\s+it|cancel(?:\s+that)?|abort|nvm)" + END, I), _cancel),
     (re.compile(r"^\W*schedule\s+(?:this\s+)?video\s+to\s+publish\b.*$", I), _schedule_video),
     (re.compile(r"^\W*(?:can\s+you\s+)?help\s+me\s+with\s+that\s+thing\??\s*$", I), _vague_help),

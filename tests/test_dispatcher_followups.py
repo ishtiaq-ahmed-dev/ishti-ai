@@ -131,7 +131,7 @@ with scratch_memory():
         # ("...couldn't confirm that actually went through") or FALSE_ACTION's stronger replacement
         # ("I haven't actually done that yet..."), which fires first for a first-person send claim.
         assert ("couldn't confirm that actually went through" in res["final_answer"]
-                or "haven't actually done that yet" in res["final_answer"]), res["final_answer"]
+                or "haven't actually done that" in res["final_answer"]), res["final_answer"]
     finally:
         D._rule_owned = saved_rule_owned
         D._remember, D._learn, D.route = saved_remember, saved_learn, saved_route

@@ -276,6 +276,10 @@ def run(text, session, now=None):
         # "set a reminder for yesterday at 5pm" was set for tomorrow, text "for yesterday"
         return {"reply": "That time has already passed - reminders only go forward. Did you mean today or tomorrow at "
                          "that time?", "sources": []}
+    if SET.match(t) and re.search(r"\b(?:don'?t|do\s+not|never)\s+remind\b", t, I):
+        # "remind me at 5pm and also don't remind me at 5pm" was set as a reminder with that text
+        return {"reply": "You asked me both to remind you and not to - which one? Say \"remind me at ...\" to set it, "
+                         "or nothing and I'll leave it.", "sources": []}
     if SET.match(t) and _CONDITIONAL.search(t):
         return {"reply": "I can't set a reminder that only fires on a condition - I do fixed times and "
                          "simple every-day repeats, not 'only if X'. Closest thing I can do: set a plain "
