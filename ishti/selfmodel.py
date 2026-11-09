@@ -119,9 +119,13 @@ def probe_models() -> dict:
 
 
 def probe_skills() -> dict:
-    """The real capability list, read from the loader - so a newly registered skill appears by itself."""
-    from ishti.skills import load_skills
-    loaded = load_skills()
+    """The real capability list, read from the live registry - so a newly registered skill appears by itself. Inside the
+    running app the dispatcher's already-loaded SKILLS are reused; re-running the loader cost ~3.5 s of CPU each refresh."""
+    import sys
+    loaded = getattr(sys.modules.get("ishti.dispatcher"), "SKILLS", None)
+    if not loaded:
+        from ishti.skills import load_skills
+        loaded = load_skills()
     rows = {}
     for n, s in sorted(loaded.items()):
         m = getattr(s, "manifest", {}) or {}
