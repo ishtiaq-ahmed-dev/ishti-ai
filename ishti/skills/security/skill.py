@@ -66,6 +66,8 @@ def run(text, session):
         if m := rx.search(text):
             trace(session, "security", name.replace("_", " "))
             out = globals()["op_" + name](m, text, session)
+            if out is None:  # declined (e.g. "my password is wrong, how do I reset it?" is a question, not a password)
+                continue
             return out if isinstance(out, dict) else {"reply": out, "sources": []}
     return None
 

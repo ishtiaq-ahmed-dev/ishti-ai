@@ -293,6 +293,10 @@ def run(text, session, now=None):
         if re.match(r"^\s*(?:no|n|nope|cancel|stop|don'?t|keep)\b", t, I):
             session["pending"] = None
             return {"reply": "OK - I kept your reminders.", "sources": []}
+    bad = re.search(r"\bat\s+(?P<h>\d{1,3})(?::(?P<m>\d{1,3}))?\s*(?P<ap>[ap]\.?m\.?)?\b", t, I)
+    if bad and (int(bad["h"]) > (12 if bad["ap"] else 23) or int(bad["m"] or 0) > 59):
+        # "at 99pm" / "at 25:00" went to the model, which invented 23:00
+        return {"reply": f"\"{bad.group(0)[3:].strip()}\" isn't a real time - what time did you mean?", "sources": []}
     if _SECRET_ASSIGN.search(t):
         return {"reply": "That one contains a password, key or code, so I won't put it in your reminders - "
                          "reminder text is kept as plain text in your task list and shown on screen when it "
