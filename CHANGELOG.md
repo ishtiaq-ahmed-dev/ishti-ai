@@ -65,6 +65,25 @@ with automatic local failover, and every turn makes fewer model calls.
   Real phone numbers were removed from tests. `owner_profile.yaml`, `reports/`, `metrics/` and `audit/` are untracked.
 - The email skill no longer returns invented invoices or test results.
 - Tests no longer read the owner's saved provider choice or the OS credential store.
+- **OWASP LLM Top 10 (2025) / Agentic Top 10 (2026) audit fixes:**
+  - running code from the `dev` skill asks first, and remote channels can never trigger code execution;
+  - a T1 workflow step fed another step's output (web, file or message text) asks first;
+  - standing automations and scheduled tasks are approved at creation and rate-limited;
+  - third-party skills are installed as T2 with no network scope, after package vetting;
+  - memory is extracted only from the owner's words, and a model-proposed "forget" needs the owner's ask;
+  - remote channels classify the raw text, and forwarded WhatsApp messages are treated as data;
+  - webtools downloads go through the SSRF guard;
+  - secrets are redacted by pattern in the audit and route logs;
+  - approvals expire after 10 minutes and fail closed;
+  - prompt-extraction requests, weapon instructions, money transfers and mass deletion are refused before any
+    model call.
+- **Cost and tokens:**
+  - the decision prompt keeps an identical cacheable opening block for cloud providers;
+  - the duplicate conversation-state block is gone;
+  - Anthropic JSON mode no longer fails;
+  - a malformed request no longer trips failover;
+  - cached tokens are recorded per call;
+  - memory extraction can run on the local light model (`api.background_local`).
 
 ## [0.1.0] - 2026-10-16
 
