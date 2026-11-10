@@ -37,6 +37,8 @@ def test_endpoint_runs_the_instruction(monkeypatch):
     hook_id, token = webhooks.create("ping", "say pong")
     client = TestClient(server.app)
     assert client.post(f"/api/hooks/{hook_id}", content=b"{}", headers={"X-ISHTI-Token": "bad"}).status_code == 404
+    big = client.post(f"/api/hooks/{hook_id}", content=b"x" * 70000, headers={"X-ISHTI-Token": token})
+    assert big.status_code == 413
     r = client.post(f"/api/hooks/{hook_id}", content=b"{}", headers={"X-ISHTI-Token": token})
     assert r.status_code == 202
     import time

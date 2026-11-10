@@ -1117,6 +1117,8 @@ async def webhook_call(hook_id: str, request: Request):
         return JSONResponse({"error": "unknown hook"}, status_code=404)
     if not webhooks.allow(hook_id):
         return JSONResponse({"error": "rate limited"}, status_code=429)
+    if int(request.headers.get("content-length") or 0) > 65536:  # a public endpoint never buffers a huge body
+        return JSONResponse({"error": "body too large"}, status_code=413)
     body = (await request.body())[:16384].decode("utf-8", "replace")
     webhooks.record_call(hook_id)
 
