@@ -55,6 +55,23 @@ with automatic local failover, and every turn makes fewer model calls.
 - **UI:** keyboard and screen-reader access throughout (native dialogs, Stop button and Esc, aria-live replies,
   labelled icon buttons, focusable rows), right-to-left text, reduced motion, 4.5:1 contrast, starter prompts, and
   on-demand loading of LiveMode, activity graphs and the code highlighter.
+- **Finishes whole tasks.** A multi-step plan runs every step in one turn, keeps going past a step that failed when
+  nothing later depends on it, and ends with "2 of 5 steps didn't work: ..." instead of stopping halfway. A new request
+  closes a stale half-done plan and says so. WhatsApp and email ask once, with their own recap, not twice.
+- **No invented results.** If a reply claims an action ISHTI did not take ("I've set the reminder") or promises one
+  ("I'll remind you"), ISHTI now does it through the real skill, or says plainly that nothing was set, sent or changed.
+- **Golden-conversation regression gate** (`tests/test_golden.py`, `tests/golden/*.yaml`): 28 scripted conversations
+  checked for the skill used, model-call count, reply wording, confirmation questions and exactly what changed in
+  each store. Runs offline: the model is stubbed and network sockets are refused.
+- **Export everything** (Privacy panel, `/api/privacy/export-all`): one archive of every store. Uploads, remote voice
+  files, chat trash and old run snapshots are deleted daily after their retention period. `SECURITY.md` documents a
+  complete erase.
+- **Daily store check with rotating backups** of every database, and self-heal reports only what it actually fixed.
+  A logging failure can no longer silence logging for the rest of the session.
+- **Routing:** creative, definition, translation and advice requests ("write a haiku about rain", "history of the
+  calendar", "my manager says I talk too fast, any tips?") go to conversation instead of weather, calendar or
+  relationships. Cues need a real task: a weather question, a trip with a destination, a folder listing, or a
+  statement about a person. "Who is the president / CEO of ..." is treated as current information and looked up.
 
 ### Changed
 
@@ -95,9 +112,14 @@ with automatic local failover, and every turn makes fewer model calls.
   drive root); SYSTEM and Administrators keep access for backups and antivirus.
 - **Less leaves the PC:** a cloud prompt carries only the people the question is about (not every family and friend
   line), and the fine-tuning log of every exchange is now opt-in (`learning.collect_finetune_data`).
-- **WhatsApp number protection:** sends are paced like a person (seen, typing, pause, at least 2 s apart), WhatsApp's
+- **WhatsApp number protection:** sends are paced like a person (typing, pause, at least 2 s apart, without marking the contact's messages read), WhatsApp's
   rate-limit errors say "wait, don't re-link", a first message to a stranger gets a ban-risk warning, media is no
   longer auto-downloaded, and a newly pinned WAHA image actually replaces the running one.
+- **Secrets stay out of history:** a password or key typed in chat is masked in the transcript, the run log, the
+  conversation state and the audit trail. Memory and facts refuse to store one, and "my wifi password is on the fridge"
+  no longer saves "on" to the vault.
+- **Tests never touch your data:** the suite and every ad-hoc check run in scratch mode (`ISHTI_SCRATCH=1`), which
+  moves every store to a temporary folder. A full run leaves `data/` unchanged.
 - **The test suite never writes your data folder** (it wrote into the real audit log, facts and learning stores).
 - The launcher checks that the app on port 8888 is ISHTI before focusing it; the packaged exe is no longer UPX-packed.
 - **Voice:** "Hey Ishtiaq" no longer wakes ISHTI (the fuzzy wake match was too loose), the wake model uses its own
