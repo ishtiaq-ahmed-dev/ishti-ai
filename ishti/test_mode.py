@@ -36,7 +36,8 @@ def gated_reply(skill: str, gate: str, tier: str = "T2") -> dict:
     from ishti import audit
     audit.record(f"TEST-MODE DRY {tier} {skill}: {(gate or '')[:120]}", "", skill=skill,
                  initiator="test-harness", tier=tier, confirmed=None, request="[test-mode]")
-    req = re.sub(r"^run\s+", "", (gate or "").strip()).strip(" '\"")
+    from ishti.audit import SECRETISH  # the dry-run echo repeated a typed password verbatim
+    req = SECRETISH.sub("[redacted]", re.sub(r"^run\s+", "", (gate or "").strip()).strip(" '\""))
     if _ACTION.search(req):
         return {"reply": f"Shall I go ahead and {req[:130]}? Confirm with yes or no and I'll act.",
                 "sources": [], "test_mode_dry": True, "confirm_required": True}

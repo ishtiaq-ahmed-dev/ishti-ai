@@ -1,0 +1,34 @@
+# Second pass: corrected store targets / wording (my first assertions were wrong, product was right),
+# plus a privacy follow-up for the secret found in state.db.
+- id: typed_secret_privacy_followup
+  turns:
+    - say: "my wifi password is Hv3#pQw9x"
+      expect: {llm_calls: 0, store: {facts: {lacks: ["hv3#pqw9x"]}, memories: {lacks: ["hv3#pqw9x"]},
+                                    state: {lacks: ["hv3#pqw9x"]}}}
+    - say: "what should I cook tonight"
+      expect: {prompt_not: ["Hv3#pQw9x"]}
+
+- id: forget_everything_asks_first_v2
+  turns:
+    - say: "my brother is Irfan"
+      expect: {llm_calls: 0, store: {relationships: {has: ["me&brother&irfan"]}}}
+    - say: "forget everything"
+      expect: {llm_calls: 0, asks_confirmation: true, reply_re: "can't be undone.*\\(yes/no\\)"}
+    - say: "no"
+      expect: {llm_calls: 0, asks_confirmation: false, reply_has: ["nothing was done"],
+               store: {memories: {has: ["irfan"]}, relationships: {delta: 0}}}
+
+- id: illogical_units_v2
+  turns:
+    - say: "100 kg to light years"
+      expect: {skill: utilities, llm_calls: 0, reply_re: "don't convert|different|can't convert"}
+    - say: "asdfgh qwerty zxcvb"
+      expect: {skill: reflex, llm_calls: 0, asks_question: true}
+    - say: "asdkjh qwpoeiru zxmcnv"
+      expect: {llm_calls: 0, asks_question: true}
+
+- id: open_question_one_call
+  turns:
+    - say: "what do you think about remote work"
+      model: ["Remote work suits focused tasks; offices help onboarding."]
+      expect: {skill: [chat, brain], llm_calls: 1, reply_has: ["remote work"], reply_not: ["<<UNSCRIPTED"]}

@@ -34,6 +34,8 @@ BRAND_WORDS = cstate.BRAND_WORDS
 # an explicit verb with its own target is the owner's request: context may be added, never substituted
 ACTION = re.compile(r"\b(?:send|forward|delete|remove|open|call|message|text|email|share|save|rename|move|copy|post|book|pay|buy)\b", re.I)
 AMBIG_ONE = re.compile(r"\b(?:the\s+)?(?:cheapest|best|better)\s+one\b", re.I)
+DONE_REPORT = re.compile(r"^\s*(?:ok(?:ay)?[,\s]+)?(?:i\s+(?:did|have\s+done|'ve\s+done|finished|completed|fixed)\s+(?:it|that|this)"
+                         r"|(?:it'?s|that'?s|all)\s+done|done(?:\s+with\s+(?:it|that|this))?|finished(?:\s+it)?)\s*[.!]*\s*$", re.I)
 GREETING_ONLY = re.compile(r"^\s*(?:hi|hello|hey|yo|thanks|thank\s+you|ok(?:ay)?|good\s*(?:morning|evening|night)"
                            r"|salam|aoa|bye)\b[!.?\s]*$", re.I)  # "ishti" alone is NOT a greeting (memory skill)
 META_QUESTION = re.compile(r"^\s*(?:what(?:'s| is)\s+(?:up|new)|who\s+are\s+you|what\s+can\s+you\s+do)\b", re.I)
@@ -97,6 +99,11 @@ class QueryResolver:
         if has_subject and (not st.active_topic or not referenced):
             return Resolved(original=text, request=text, changed=False, followup=False,
                             trace_note={"subject": subj} if subj else {})
+
+        # "I did it" / "done with that" reports a finished task; it is not "do the last thing again" (after "remind me to
+        # fix the kit", "I did it" became "continue on: remind me to fix the kit" and set a second reminder)
+        if DONE_REPORT.match(text):
+            return Resolved(original=text, request=text, changed=False, followup=False, trace_note={})
 
         # 2. subject-less but task-carrying, or explicit references -> follow-up on state
         followup = referenced or bool(task) or bool(cstate.FOLLOWUP_HINTS.search(text))

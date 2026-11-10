@@ -1,0 +1,7 @@
+- id: vault_secret_real_t2
+  real_t2: true
+  turns:
+    - say: "my wifi password is Hv3#pQw9x"
+      expect: {skill: security, llm_calls: 0, reply_not: ["Hv3#pQw9x"], store: {facts: {lacks: ["hv3#pqw9x"]}}}
+    - say: "my gmail password is wrong, how do I reset it?"
+      expect: {reply_not: ["saved"]}

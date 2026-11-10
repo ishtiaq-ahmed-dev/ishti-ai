@@ -331,6 +331,10 @@ class ConversationStateManager:
         text = (text or "").strip()
         if not text:
             return
+        # the state is persisted (state.db) and summarised into later prompts: a typed password became the "active
+        # topic" in plain text before the turn's own masking ran
+        from ishti.audit import SECRETISH
+        text = SECRETISH.sub("[redacted]", text)
         low = text.lower().strip(" .!?")
         is_greeting = low in GREETINGS or bool(META_Q.match(text))
         is_followup = bool(FOLLOWUP_HINTS.search(text))

@@ -206,8 +206,28 @@ def gibberish(text):
 
     def mash(w):
         return w in _MASH or (len(w) >= 4 and not re.search(r"[aeiou]", w)) or \
-            bool(re.search(r"[bcdfghjklmnpqrstvwxz]{5,}", w))
+            bool(re.search(r"[bcdfghjklmnpqrstvwxz]{5,}", w)) or _one_row_nonword(w)
     return all(mash(w) for w in words)
+
+
+_ROWS = ("qwertyuiop", "asdfghjkl", "zxcvbnm")
+_KNOWN = None
+
+
+def _one_row_nonword(w):
+    """"asdkjh qwpoeiru zxmcnv" has vowels, so it passed the vowel rules and cost a model call: a word typed from one
+    keyboard row that is no English word or name (zxcvbn's 30k-word lists) is mash. Real one-row words ("pretty",
+    "power", "salad") are in the lists; Roman Urdu words span several rows."""
+    global _KNOWN
+    if len(w) < 5 or not any(set(w) <= set(row) for row in _ROWS):
+        return False
+    if _KNOWN is None:
+        try:
+            from zxcvbn.frequency_lists import FREQUENCY_LISTS
+            _KNOWN = frozenset(x for k, v in FREQUENCY_LISTS.items() if k != "passwords" for x in v)
+        except ImportError:
+            _KNOWN = frozenset()
+    return bool(_KNOWN) and w not in _KNOWN
 
 
 def answer(text):
