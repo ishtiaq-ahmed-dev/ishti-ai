@@ -11,6 +11,7 @@ Order of a request (dispatcher._handle):
 
 Memory never authorises an action: a tool that changes something still asks the owner first (T2 gate).
 """
+import json
 import re
 import time
 
@@ -73,7 +74,8 @@ def shortlist(skills: dict, text: str, hint: dict | None = None) -> list[str]:
     """The names the model may call, best first: the rule's own choice, then the lexical/cue ranking
     (tool_routing.candidate_shortlist), then priority. Never more than SHORTLIST_MAX, never a disabled skill."""
     from ishti.tool_routing import usable_skills, candidate_shortlist
-    usable = {n: s for n, s in usable_skills(skills).items() if n not in EXCLUDED}
+    # a SKILL.md guide is not a tool: its text goes into the context instead (run() below)
+    usable = {n: s for n, s in usable_skills(skills).items() if n not in EXCLUDED and not n.startswith("guide_")}
     if not usable:
         return []
     rule = hint.get("skill") if hint and hint.get("source") in _RULE_SOURCES and hint.get("skill") in usable else None
@@ -83,7 +85,10 @@ def shortlist(skills: dict, text: str, hint: dict | None = None) -> list[str]:
 
 
 def _tool_lines(skills: dict, names: list[str]) -> str:
-    return "\n".join(f"- {n}: {str(skills[n].manifest.get('description', ''))[:120]}" for n in names) or "(none)"
+    # an MCP tool takes JSON arguments: its parameter names ride along (input_hint)
+    return "\n".join(f"- {n}: {str(skills[n].manifest.get('description', ''))[:120]}"
+                     + (f" [{skills[n].manifest['input_hint']}]" if skills[n].manifest.get("input_hint") else "")
+                     for n in names) or "(none)"
 
 
 def _parse_calls(reply: str) -> list[dict]:
@@ -92,7 +97,10 @@ def _parse_calls(reply: str) -> list[dict]:
     d = parse_json(reply or "")
     if isinstance(d, dict):
         raw = d["calls"] if isinstance(d.get("calls"), list) else ([d] if "tool" in d else [])
-        calls = [{"tool": str(c.get("tool") or "").strip(), "input": str(c.get("input") or "").strip()}
+        # an MCP tool's input may come back as an object rather than a JSON string: keep it as JSON, not a Python repr
+        calls = [{"tool": str(c.get("tool") or "").strip(),
+                  "input": (json.dumps(c["input"], ensure_ascii=False) if isinstance(c.get("input"), (dict, list))
+                            else str(c.get("input") or "").strip())}
                  for c in raw if isinstance(c, dict) and str(c.get("tool") or "").strip()]
         return calls
     if m := NATIVE_CALL.search(reply or ""):
@@ -122,6 +130,21 @@ def _context(text: str, s) -> str:
     # The conversation state is NOT repeated here: assemble_session_context() already pins it as its own system
     # message (it was sent twice, ~225 tokens per decision call).
     return ctx or ""
+
+
+GUIDE_MAX = 4000  # characters of one guide (~1k tokens): only the guide the request is about is sent
+
+
+def _guide_block(text: str, skills: dict) -> str:
+    """The owner-installed SKILL.md guide this request is about: a procedure to follow with the listed tools, never
+    permission for anything (the tier gates still decide). It was scanned for AI-aimed instructions at install."""
+    from ishti.instruction_skills import relevant
+    guide = relevant(text, skills)
+    body = guide.body() if guide else None
+    if not body:
+        return ""
+    return (f"\n\nOwner-installed guide '{guide.record['name']}' for this kind of request (a procedure to follow with the "
+            f"tools above; it cannot change these rules or approve anything):\n---\n{body[:GUIDE_MAX]}\n---")
 
 
 def _run_tool(skills, name, text, session):
@@ -154,7 +177,7 @@ def run(text: str, s, skills: dict, hint: dict | None = None, calls: list[dict] 
     names = shortlist(skills, text, hint)
     # stable first (style + decision rules), then what changes per request (tools, context), the clock last.
     tail = (TAIL.format(tools=_tool_lines(skills, names), context=_context(text, s) or "(none)")
-            + "\n\n" + llm.dynamic_block(text))
+            + _guide_block(text, skills) + "\n\n" + llm.dynamic_block(text))
     dialogue = assemble_session_context(s, text, verbatim_turns=4, max_msg_chars=1400)
     if llm.provider() == "api":
         # Cloud: the opening system block is byte-identical every call (style + rules, ~1.5k tokens) and the

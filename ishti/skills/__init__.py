@@ -219,7 +219,8 @@ def load_skills() -> dict:
                     s = Skill(sub, rel_dir=f"{d}/{sub}")
                     if s.name not in skills:
                         skills[s.name] = s
-    if os.environ.get("ISHTI_INSTRUCTION_SKILLS"):
+    from ishti.instruction_skills import default_roots
+    if default_roots():
         from ishti.instruction_skills import guides, InstructionSkill
         import yaml
         try:
@@ -232,6 +233,9 @@ def load_skills() -> dict:
             if guide.name in skills:
                 raise ValueError("Instruction guide collides with a native skill")
             skills[guide.name] = guide
+    # the owner's MCP servers: each tool is a skill (cached list at boot; an uncached server is listed in the background)
+    from ishti import mcp_client
+    mcp_client.load(skills, log=lambda msg: log_need("error", "mcp", "load", msg))
     return skills
 
 

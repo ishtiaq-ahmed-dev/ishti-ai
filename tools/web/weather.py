@@ -7,7 +7,9 @@ and always names the city it actually used.
 """
 
 import re
+import time
 from datetime import date, timedelta
+from functools import lru_cache
 from typing import Dict, Any, Optional
 
 import requests
@@ -71,11 +73,16 @@ def which_day(prompt: str, today: Optional[date] = None) -> int:
     return 0
 
 
+@lru_cache(maxsize=256)  # a city's coordinates don't move: one lookup per city per run (errors are not cached)
 def geocode(city: str, timeout: int = 8) -> Optional[Dict[str, Any]]:
     r = requests.get(GEOCODE_URL, params={"name": city, "count": 1, "language": "en"}, timeout=timeout)
     r.raise_for_status()
     hits = r.json().get("results") or []
     return hits[0] if hits else None
+
+
+FORECAST_TTL_S = 600  # a forecast asked twice in 10 minutes is answered from memory: no wait, no extra API call
+_FORECAST: Dict[tuple, tuple] = {}
 
 
 def get_weather(city: str, day_offset: int = 0, timeout: int = 10) -> Dict[str, Any]:
@@ -91,19 +98,25 @@ def get_weather(city: str, day_offset: int = 0, timeout: int = 10) -> Dict[str, 
             return out
 
         day_offset = max(0, min(day_offset, 6))
-        r = requests.get(
-            FORECAST_URL,
-            params={
-                "latitude": place["latitude"],
-                "longitude": place["longitude"],
-                "daily": "temperature_2m_max,temperature_2m_min,weather_code",
-                "timezone": "auto",
-                "forecast_days": day_offset + 1,
-            },
-            timeout=timeout,
-        )
-        r.raise_for_status()
-        daily = r.json().get("daily") or {}
+        key = (place["latitude"], place["longitude"], day_offset + 1)
+        hit = _FORECAST.get(key)
+        if hit and time.time() - hit[0] < FORECAST_TTL_S:
+            daily = hit[1]
+        else:
+            r = requests.get(
+                FORECAST_URL,
+                params={
+                    "latitude": place["latitude"],
+                    "longitude": place["longitude"],
+                    "daily": "temperature_2m_max,temperature_2m_min,weather_code",
+                    "timezone": "auto",
+                    "forecast_days": day_offset + 1,
+                },
+                timeout=timeout,
+            )
+            r.raise_for_status()
+            daily = r.json().get("daily") or {}
+            _FORECAST[key] = (time.time(), daily)
 
         # Verification, not assumption: the payload must actually carry the day we asked for.
         if len(daily.get("temperature_2m_max", [])) <= day_offset:

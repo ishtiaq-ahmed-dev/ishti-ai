@@ -22,10 +22,58 @@ _OPS = [
     ("total", re.compile(r"^\s*(?:what\s+)?if\b(?=.*\d.*\band\b.*\d)(?P<body>.+?)(?:,|\?)\s*(?:how\s+much|what\s+(?:is|are)\s+the\s+total|total)\b.*$", I)),
     ("gcd", re.compile(r"^\s*(?:gcd|hcf|lcm)\s+of\s+(?P<a>\d+)\s*(?:,|and)\s*(?P<b>\d+)\s*$", I)),
 ]
+# plain arithmetic ("5*7+2", "what is 12 x 4", "15 divided by 4") is computed here, instantly - it used to cost a
+# model call (and with the model down, fell through to unrelated skills)
+ARITH = re.compile(r"^\s*(?:what(?:'s|\s+is)\s+|calculate\s+|compute\s+|solve\s+)?(?P<body>[-+(]*\s*\d[\d\s.,+\-*/^()×÷x]*"
+                   r"|.*?\d.*?\b(?:times|plus|minus|divided\s+by|multiplied\s+by|to\s+the\s+power\s+of)\b.*?)\s*[=?]*\s*$", I)
+_WORDS = (("divided by", "/"), ("multiplied by", "*"), ("to the power of", "**"), ("times", "*"), ("plus", "+"),
+          ("minus", "-"))
+_DATE_OR_PHONE = re.compile(r"^\s*\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}\s*$|^\s*\d{4,5}-\d{6,8}\s*$")
+
+
+def _arith_expr(text: str) -> str:
+    """The Python arithmetic for a plain sum, or '' when the text isn't one."""
+    m = ARITH.match(text.strip())
+    if not m or _DATE_OR_PHONE.match(m["body"]):
+        return ""
+    expr = m["body"].lower()
+    for word, op in _WORDS:
+        expr = expr.replace(word, op)
+    expr = re.sub(r"(?<=\d)\s*[x×]\s*(?=[\d(])", "*", expr).replace("÷", "/").replace("^", "**").replace(",", "")
+    if not re.fullmatch(r"[\d\s.+\-*/()]+", expr) or not re.search(r"\d\s*(?:\*\*|[-+*/])\s*[-+(]*\s*\d", expr):
+        return ""
+    return expr.strip()
+
+
+def _arith(expr: str):
+    import ast
+    import operator
+    ops = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv,
+           ast.Pow: operator.pow, ast.Mod: operator.mod, ast.FloorDiv: operator.floordiv}
+
+    def ev(node):
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return node.value
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            value = ev(node.operand)
+            return value if isinstance(node.op, ast.UAdd) else -value
+        if isinstance(node, ast.BinOp) and type(node.op) in ops:
+            a, b = ev(node.left), ev(node.right)
+            if isinstance(node.op, ast.Pow) and (abs(b) > 1000 or (abs(a) > 1e6 and b > 20)):
+                raise OverflowError("that power is too large to show")  # "9**9**9" must not hang the PC
+            return ops[type(node.op)](a, b)
+        raise ValueError("not plain arithmetic")
+    return ev(ast.parse(expr, mode="eval").body)
+
+
+def _number(value) -> str:
+    if isinstance(value, float) and value.is_integer() and abs(value) < 1e15:
+        value = int(value)
+    return f"{value:,}" if isinstance(value, int) else f"{value:,.10g}"
 
 
 def match(text):
-    return any(rx.match(text.strip()) for _n, rx in _OPS)
+    return any(rx.match(text.strip()) for _n, rx in _OPS) or bool(_arith_expr(text))
 
 
 # parse_expr EVALUATES its input as Python: "simplify __import__('os').getpid()" ran real code (reachable from the
@@ -65,6 +113,14 @@ def _latex_free(expr) -> str:
 
 def run(text, session):
     t = text.strip()
+    if expr := _arith_expr(t):  # before the sympy ops: no import, no model, instant
+        try:
+            return {"reply": f"{expr.replace('**', '^')} = {_number(_arith(expr))}", "sources": []}
+        except ZeroDivisionError:
+            return {"reply": "That divides by zero, so it has no answer.", "sources": []}
+        except (OverflowError, ValueError, SyntaxError, RecursionError) as exc:
+            if isinstance(exc, OverflowError):
+                return {"reply": f"I can't show that: {exc}.", "sources": []}
     for name, rx in _OPS:
         m = rx.match(t)
         if not m:

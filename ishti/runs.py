@@ -318,6 +318,22 @@ def last_messages(chat_id: str, limit: int = 200) -> list[dict]:
     return [dict(r) for r in reversed(rows)]
 
 
+def search_messages(words, since: float = 0, limit: int = 400, profile: str | None = None) -> list[dict]:
+    """Messages of live chats in one profile that contain any of the words, newest first.
+    ponytail: a LIKE scan of the messages table; an FTS5 index is the upgrade once history reaches ~10^6 messages."""
+    words = [str(w) for w in words if w][:8]
+    if not words:
+        return []
+    profile = _profiles.valid(profile or _profiles.active())
+    like = " OR ".join("m.text LIKE ?" for _ in words)
+    with _lock:
+        rows = conn().execute(
+            "SELECT m.chat_id, m.role, m.text, m.ts, c.title FROM messages m JOIN chats c ON c.chat_id = m.chat_id "
+            f"WHERE c.profile = ? AND c.deleted_at IS NULL AND m.ts >= ? AND ({like}) ORDER BY m.seq DESC LIMIT ?",
+            (profile, float(since or 0), *[f"%{w}%" for w in words], int(limit))).fetchall()
+    return [dict(r) for r in rows]
+
+
 def chat_title(text: str) -> str:
     """First line of the first user message, trimmed - the sidebar label (mirrored in chat-store.ts)."""
     t = " ".join(str(text).split())

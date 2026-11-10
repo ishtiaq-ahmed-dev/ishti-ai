@@ -106,7 +106,8 @@ def _start_local_search():
 async def require_token_for_remote(request: Request, call_next):
     if not request_origin_ok(request):
         return JSONResponse({"error": "foreign origin"}, status_code=403)
-    public = request.url.path in {"/login", "/api/remote/login"}
+    # a webhook is called by another service: it authenticates with its own per-hook token (ishti/webhooks.py)
+    public = request.url.path in {"/login", "/api/remote/login"} or request.url.path.startswith("/api/hooks/")
     if public:
         return await call_next(request)
     if not authorized(request):
@@ -1103,6 +1104,33 @@ def run_scheduled(t):
 
 _LAST_RESULT: dict = {}
 _FAIL_STREAK: dict = {}
+
+
+@app.post("/api/hooks/{hook_id}")
+async def webhook_call(hook_id: str, request: Request):
+    """An inbound webhook: the token (X-ISHTI-Token header or ?token=) must match; the instruction then runs like a
+    scheduled task, off the request thread, and the caller gets 202 at once."""
+    from ishti import webhooks
+    token = request.headers.get("x-ishti-token") or request.query_params.get("token", "")
+    hook = webhooks.verify(hook_id, token)
+    if not hook:
+        return JSONResponse({"error": "unknown hook"}, status_code=404)
+    if not webhooks.allow(hook_id):
+        return JSONResponse({"error": "rate limited"}, status_code=429)
+    body = (await request.body())[:16384].decode("utf-8", "replace")
+    webhooks.record_call(hook_id)
+
+    def job():
+        reply = run_scheduled(webhooks.task_text(hook, body))
+        if reply:
+            notifications_store.add("job", f"Webhook '{hook.get('name')}': {reply[:300]}", body=reply[:2000])
+            try:
+                from ishti.channels import service as _remote
+                _remote.get().push("webhook", f"Webhook '{hook.get('name')}': {reply[:1500]}")
+            except Exception as exc:
+                swallowed("interface/web_ui/server.py:webhook_call.push", exc)
+    threading.Thread(target=job, daemon=True, name="ishti-webhook").start()
+    return JSONResponse({"accepted": True}, status_code=202)
 
 
 @app.post("/api/notifications/{nid}/answer")

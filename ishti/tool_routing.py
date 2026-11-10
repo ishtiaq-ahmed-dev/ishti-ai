@@ -325,6 +325,11 @@ def route(text: str, skills: dict, exclude=(), *, session: dict | None = None) -
                     "parts": [{"skill": first["skill"], "text": parts[0]},
                               {"skill": second["skill"], "text": parts[1]}]}
 
+    # A skill whose trigger is a whole sentence form owns it before the noun cues below: "what did we talk about the
+    # weather" is a history search, not a forecast; "add mcp server ..." is an extension, not a folder or web request.
+    for name, skill in live.items():
+        if (getattr(skill, "manifest", {}) or {}).get("claims_first") and _safe_match(skill, text):
+            return {"skill": name, "confidence": 1.0, "source": "rule", "scores": [(name, 1.0)]}
     # Creative, definition, translation and advice asks are conversation, whatever nouns they carry: "write a haiku about
     # rain" went to weather, "a story where a robot sets an alarm" to reminders, "history of the calendar" to calendar.
     if NOT_A_TASK.search(text) and "chat" in live:
@@ -357,7 +362,8 @@ def route(text: str, skills: dict, exclude=(), *, session: dict | None = None) -
                 "scores": [(disabled[0][0], 1.0)]}
 
     candidates = candidate_shortlist(text, skills, exclude=exclude)
-    positive = [(name, score) for name, score in candidates if score > 0]
+    # a SKILL.md guide is read by the model (brain.py), never run as the answer
+    positive = [(name, score) for name, score in candidates if score > 0 and not name.startswith("guide_")]
     if positive:
         top_name, top_score = positive[0]
         margin = top_score - (positive[1][1] if len(positive) > 1 else 0.0)
@@ -372,5 +378,7 @@ def route(text: str, skills: dict, exclude=(), *, session: dict | None = None) -
 
     # Timeless questions and conversation stay with chat.  The local reranker is
     # not woken when no tool cue exists.
-    default = "chat" if "chat" in live else (next(iter(live), None))
+    # Without chat (excluded after it declined or failed) there is no default: the first skill in the registry is not a
+    # fallback. "5*7+2" with the model down walked 15 skills alphabetically until CapCut asked which video to edit.
+    default = "chat" if "chat" in live else None
     return {"skill": default, "confidence": 0.0, "source": "default", "scores": []}

@@ -100,8 +100,43 @@ def result(plan, extra=None):
                       for s, r in zip(plan["steps"], plan["results"])]}
 
 
+PARALLEL_MAX = 4  # read-only steps run at once ("weather in Lahore, Karachi and Dubai" takes one step's time)
+
+
+def _parallel_batch(plan, skills):
+    """The upcoming run of read-only (T0) steps that use no earlier result: safe to run at the same time."""
+    batch = []
+    for i in range(plan["next"], min(len(plan["steps"]), plan["next"] + PARALLEL_MAX)):
+        step, skill = plan["steps"][i], skills.get(plan["steps"][i]["tool"])
+        if skill is None or skill.manifest.get("tier") != "T0" or "{{step:" in step["input"]:
+            break
+        batch.append(i)
+    return batch
+
+
+def _prefetch(batch, plan, run_tool, skills, session):
+    """{step index: output} for a batch, run concurrently. The executor below consumes them in order, so journaling,
+    failure handling and the reply are exactly as if they had run one by one."""
+    from concurrent.futures import ThreadPoolExecutor
+    from ishti import calltrace
+    with ThreadPoolExecutor(max_workers=len(batch), thread_name_prefix="ishti-step") as pool:
+        futures = {i: pool.submit(calltrace.carry(run_tool), skills, plan["steps"][i]["tool"],
+                                  plan["steps"][i]["input"], session) for i in batch}
+    out = {}
+    for i, future in futures.items():
+        try:
+            out[i] = future.result()
+        except Exception as exc:
+            if type(exc).__name__ == "Cancelled":  # the kill switch stops the whole plan, not one step
+                raise
+            out[i] = {"reply": f"The {plan['steps'][i]['tool']} step failed ({type(exc).__name__}).",
+                      "verified": False, "status": "failed"}
+    return out
+
+
 def execute(session, plan, run_tool, skills):
     from ishti import killswitch
+    prefetched = {}
     with LOCK:
         if plan["state"] in ("executing", "unknown", "blocked"):
             if plan["state"] == "executing":
@@ -145,7 +180,10 @@ def execute(session, plan, run_tool, skills):
                 return result(plan, {**out, "confirm_required": True})
             plan["state"] = "executing"
             save(session, plan)  # durable BEFORE dispatch, so a crash cannot auto-replay
-            out = run_tool(skills, step["tool"], text, session)
+            if plan["next"] not in prefetched and len(batch := _parallel_batch(plan, skills)) > 1:
+                prefetched.update(_prefetch(batch, plan, run_tool, skills, session))
+            out = (prefetched.pop(plan["next"]) if plan["next"] in prefetched
+                   else run_tool(skills, step["tool"], text, session))
             if not isinstance(out, dict):
                 out = {"reply": "The tool returned an invalid result.", "verified": False, "status": "failed"}
             if out.get("confirm_required"):

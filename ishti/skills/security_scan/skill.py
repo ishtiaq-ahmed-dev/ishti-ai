@@ -69,8 +69,7 @@ MANIFEST_RULES = [
 ]
 
 # Launchers an MCP server may use (local, inspectable tools). Anything else = finding.
-MCP_LAUNCHERS = {"node", "npx", "python", "python3", "uvx", "uv", "cmd", "powershell",
-                 "ishti-mcp-login"}
+from ishti.mcp_client import MCP_LAUNCHERS, SERVERS_PATH as MCP_SERVERS_PATH  # one allowlist: what runs = what's scanned
 
 
 def _rel(path: str, root: str | None = None) -> str:
@@ -171,7 +170,7 @@ def scan_mcp(config_path: str):
         if re.search(r"(?i)\b(token|secret|password|api[_-]?key)\b\s*=\s*\S+", joined):
             out.append(_finding("high", "mcp", rel, 0, "mcp-arg-secret",
                                 f"server '{name}' appears to embed a secret in its args",
-                                "use token_key indirection (data/mcp_tokens.json), never inline"))
+                                "put it in env as keyring:<name> (say: set mcp secret <name> <value>), never inline"))
         if spec.get("token_key") and os.path.isfile(os.path.join(ROOT, "data", "mcp_tokens.json")):
             pass  # indirection present: fine
     return out
@@ -210,8 +209,9 @@ def scan_all(root: str | None = None):
                     if f.endswith(".py"):
                         findings += scan_code(os.path.join(folder, f), root=root)
     cfg = os.path.join(root, "ishti", "config.json")
-    if os.path.isfile(cfg):
-        findings += scan_mcp(cfg)
+    for cfg in (cfg, MCP_SERVERS_PATH):  # hand-edited config.json and the servers added in chat
+        if os.path.isfile(cfg):
+            findings += scan_mcp(cfg)
     findings += scan_git_tracked(root)
     order = {"high": 0, "medium": 1, "low": 2}
     findings.sort(key=lambda f: (order.get(f["severity"], 3), f["file"], f["line"]))

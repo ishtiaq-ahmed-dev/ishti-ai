@@ -845,7 +845,9 @@ def _run(text, s, dec):
             if isinstance(exc, ScopeError):  # a permission boundary, not a bug: say it plainly
                 out = {"reply": f"I stopped: {exc}. If that should be allowed, widen the skill's \"scope\" in its manifest."}
             else:
-                out = {"reply": f"The {name} skill failed: {type(exc).__name__}: {str(exc)[:160]}"}
+                # a refused/unreachable model says what to do in one sentence (bad key, quota, offline), not a crash
+                out = {"reply": str(exc) if type(exc).__name__ == "ModelUnavailable"
+                       else f"The {name} skill failed: {type(exc).__name__}: {str(exc)[:160]}"}
                 tier = SKILLS[name].manifest.get("tier", "T1") if name in SKILLS else "T2"
                 if tier in ("T0", "T1"):  # a reader crashed: try the next skill that fits before giving the error
                     last_error, out = (name, out), None  # (never for T2: it may have acted before it failed)

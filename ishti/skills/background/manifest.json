@@ -1,0 +1,26 @@
+{
+  "name": "background",
+  "version": "1.0.0",
+  "description": "Run a request as a background task and deliver the answer to the bell when it's done: 'research the best laptops under 200k in the background', 'in the background: summarize my unread email', 'compare these phones and let me know when it's done'. Approvals still ask (in the bell).",
+  "route": "in the background, let me know when it's done, notify me when finished, work on this in the background",
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 14,
+  "status": "working",
+  "tier": "T1",
+  "claims_first": true,
+  "laya": false,
+  "scope": {
+    "write": [
+      "data"
+    ],
+    "net": [],
+    "apps": false
+  },
+  "category": "Productivity & Planning",
+  "test_file": "tests/skills/background/test_background.py"
+}

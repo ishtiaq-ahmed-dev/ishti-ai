@@ -1,0 +1,25 @@
+{
+  "name": "sandbox",
+  "version": "1.0.0",
+  "description": "Run Python code in an isolated Docker container (no network, no access to your files, 60 s, 256 MB) and show the output: 'run this in the sandbox: ```print(sum(range(10)))```'. Input is the Python code itself. Good for calculations, tables, statistics and parsing text.",
+  "route": "run this python, run this code in the sandbox, execute this script safely, test this code",
+  "input_hint": "input: the Python code",
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 20,
+  "status": "working",
+  "tier": "T1",
+  "claims_first": true,
+  "laya": false,
+  "scope": {
+    "write": [],
+    "net": [],
+    "apps": false
+  },
+  "category": "Development",
+  "test_file": "tests/skills/sandbox/test_sandbox.py"
+}

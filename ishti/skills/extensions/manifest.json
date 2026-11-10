@@ -1,0 +1,31 @@
+{
+  "name": "extensions",
+  "version": "1.0.0",
+  "description": "Extend ISHTI: MCP tool servers ('add mcp server github npx -y @modelcontextprotocol/server-github', 'set mcp secret github <token>', 'list mcp servers'), SKILL.md guides ('install skill from <folder or URL>') and Discord/Slack remote channels ('connect discord bot <token> owner <user id>'). Every addition asks first; secrets go to Windows Credential Manager.",
+  "route": "add mcp server, list mcp servers, refresh mcp, remove mcp server, set mcp secret, install skill from, remove skill guide, show extensions, connect discord bot, connect slack bot, disconnect discord",
+  "needs": {
+    "python": [
+      "mcp",
+      "keyring"
+    ],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 15,
+  "status": "working",
+  "tier": "T1",
+  "claims_first": true,
+  "laya": false,
+  "scope": {
+    "write": [
+      "data"
+    ],
+    "net": [
+      "*"
+    ],
+    "apps": false
+  },
+  "category": "Computer & System",
+  "test_file": "tests/skills/extensions/test_extensions.py"
+}

@@ -1,6 +1,6 @@
 # SKILLS: what ISHTI can do, and how skills are built
 
-Counted from `ishti/skills/*/manifest.json`: **119 skills** have a manifest, **117 `working`**, **2 `disabled`** (`internet_reach`, `security_scan`). Tiers: **T0: 68**, **T1: 40**, **T2: 11**, **T3: 0**.
+Counted from `ishti/skills/*/manifest.json`: **123 skills** have a manifest, **121 `working`**, **2 `disabled`** (`internet_reach`, `security_scan`). Tiers: **T0: 69**, **T1: 43**, **T2: 11**, **T3: 0**.
 Directories in `ishti/skills/` without a manifest (`legacy`, `_drafts`) are not counted as skills.
 
 How a skill is chosen is in [ARCHITECTURE.md](ARCHITECTURE.md) section 3; what the tiers and scopes mean is in
@@ -35,9 +35,10 @@ Development & Code) because the manifests were written in different sessions. Th
 |---|---|---|
 | Communication | 2 | `mailmerge` (T1), `sendlater` (T2) |
 | Communication & Social | 3 | `chat`, `email` (T2), `whatsapp` (T2) |
+| Computer & System | 1 | `extensions` (T1) |
 | Daily Life | 2 | `pantry`, `recipe` |
 | Data | 6 | `abtest`, `chart` (T1), `dataprep`, `forecast`, `infographic` (T1), `stats` |
-| Development | 2 | `devops`, `gitops` (T2) |
+| Development | 3 | `devops`, `gitops` (T2), `sandbox` (T1) |
 | Development & Code | 4 | `braintrain` (T1), `dev` (T1), `skill_creator` (T2), `skillsmith` (T2) |
 | Documents & Files | 4 | `doclayout`, `pdftables` (T1), `redact` (T1), `resumeparse` (T1) |
 | Files & Storage | 3 | `fileops` (T1), `files`, `folders` (T1) |
@@ -48,10 +49,10 @@ Development & Code) because the manifests were written in different sessions. Th
 | Knowledge & Intelligence | 5 | `deep_research`, `learning` (T1), `memory` (T1), `owner` (T1), `relationships` (T1) |
 | Learning | 4 | `citation`, `mnemonic`, `study`, `vocab` |
 | Media & Creative | 15 | `audioclean` (T1), `audiomark`, `audioquality`, `capcut` (T1), `chapters`, `chromakey` (T1), `extract` (T1), `highlights`, `imgcrop` (T1), `imgquality`, `media` (T1), `meme` (T1), `palette`, `scanqr` (T1), `video` (T1) |
-| Memory & Notes | 2 | `checklist`, `notes` |
+| Memory & Notes | 3 | `checklist`, `history`, `notes` |
 | Office | 1 | `formula` |
 | Productivity | 8 | `gantt`, `kanban`, `meetingcost`, `okr`, `prioritize`, `riskregister`, `standup`, `timeline` |
-| Productivity & Planning | 10 | `calendar` (T1), `chat_digest`, `digest`, `docs` (T1), `focus` (T1), `lifelog` (T1), `planners` (T1), `reminders` (T1), `taskctl` (T1), `workflows` (T2) |
+| Productivity & Planning | 11 | `background` (T1), `calendar` (T1), `chat_digest`, `digest`, `docs` (T1), `focus` (T1), `lifelog` (T1), `planners` (T1), `reminders` (T1), `taskctl` (T1), `workflows` (T2) |
 | Reasoning | 9 | `argumentcheck`, `bayes`, `calc`, `gametheory`, `montecarlo`, `optimize`, `quickcalc`, `sensitivity`, `sudoku` |
 | Security | 2 | `phishing_check`, `vulnscan` |
 | Security & Privacy | 1 | `security_scan` (T1) [disabled] |
@@ -67,7 +68,7 @@ Development & Code) because the manifests were written in different sessions. Th
 
 ### Skills with broad reach (from their manifest `scope`)
 
-- Unrestricted network (`net: ["*"]`): `deep_research`, `dev`, `digest`, `find_leads`, `ledger`, `markets`, `shopping`, `utilities`, `web_fetch`, `web_search`, `webtools`.
+- Unrestricted network (`net: ["*"]`): `deep_research`, `dev`, `digest`, `extensions`, `find_leads`, `ledger`, `markets`, `shopping`, `utilities`, `web_fetch`, `web_search`, `webtools`.
 - May launch apps or drive mouse/keyboard (`apps: true`): `apps`, `capcut`, `desktop`, `terminal`, `video`.
 - `ui_act` clicks and types only into one exact named control, after a yes; it is never reachable from a remote channel. It needs
   the external `cua-driver`; its availability must be checked on the target machine.

@@ -14,8 +14,8 @@
 </p>
 
 ISHTI is a desktop assistant that you can type to or talk to. It runs on your own PC. It answers questions, keeps
-reminders and notes, finds and reads your files, works with your Gmail, Calendar, WhatsApp and Telegram, and
-translates to and from Urdu and Pashto. It never acts behind your back: anything that sends, deletes, spends or
+reminders and notes, finds and reads your files, works with your Gmail, Calendar, WhatsApp, Telegram, Discord and
+Slack, plugs into any MCP tool server, and translates to and from Urdu and Pashto. It never acts behind your back: anything that sends, deletes, spends or
 installs waits for your explicit **yes**, and some actions, such as wiping a drive or moving money, are refused outright.
 
 It is **single-owner by design**: one person, one PC, one memory.
@@ -29,9 +29,22 @@ It is **single-owner by design**: one person, one PC, one memory.
 - **Your choice of brain.** A local model through [Ollama](https://ollama.com), or any OpenAI-compatible cloud API
   (OpenAI, Anthropic, Gemini, OpenRouter, AgentRouter, or a custom URL). If the cloud refuses, **automatic failover**
   switches to a light local model, and a circuit breaker stops ISHTI from retrying a dead provider on every message.
-- **About 120 skills:** reminders, calendar, notes, files, documents (PDF, Word, Excel, slides), charts, OCR, media,
+- **123 built-in skills:** reminders, calendar, notes, files, documents (PDF, Word, Excel, slides), charts, OCR, media,
   translation, web search with citations, markets, ledger, a CRM-style Business Desk, and more.
   See [docs/SKILLS.md](docs/SKILLS.md).
+- **Open to the agent ecosystem.** Any [MCP](https://modelcontextprotocol.io) server becomes a set of ISHTI tools
+  (`add mcp server github npx -y @modelcontextprotocol/server-github`), and ISHTI can itself be an MCP server.
+  [Agent Skills](https://agentskills.io) `SKILL.md` guides install from a folder or a URL and are read only when a
+  request needs them. A task done the same way twice is offered back as a reusable skill.
+- **Everywhere you chat.** The desktop app, the browser, your voice, WhatsApp, Telegram, Discord and Slack. Every
+  remote channel obeys only your account and supports `/kill` and `/lock`.
+- **Works while you don't.** Scheduled jobs, folder and page watches, inbound **webhooks**, and
+  `... in the background` tasks. Each one runs in its own session, and a step that needs your yes waits in the
+  notification bell. Independent read-only steps of a plan run in parallel.
+- **A real sandbox.** `run this in the sandbox: ...` executes Python in a throwaway Docker container with no network,
+  a read-only filesystem and no access to your files.
+- **Remembers conversations, not just facts.** `what did we talk about the visa last week` searches your past chats
+  locally.
 - **Real integrations, not screen scraping.** Gmail and Google Calendar through their official APIs (OAuth),
   Telegram through the Bot API, and WhatsApp through [WAHA](https://waha.devlike.pro), a local HTTP API.
   No headless browser drives your accounts.
@@ -46,7 +59,7 @@ It is **single-owner by design**: one person, one PC, one memory.
 
 ```mermaid
 flowchart LR
-    U([You: text, voice, WhatsApp, Telegram]) --> G{Guards}
+    U([You: text, voice, WhatsApp, Telegram, Discord, Slack, webhooks]) --> G{Guards}
     G -- "refuse: wipe a drive, move money,<br/>reveal instructions" --> R([Plain refusal])
     G --> D{Deterministic rules}
     D -- "rule owns it<br/>(0 model calls)" --> S[Skill]
@@ -122,6 +135,19 @@ container on shutdown, and the session survives in a Docker volume.
 Connect them under **Settings → Connectors**. Google services use OAuth with PKCE ([docs/OAUTH_SETUP.md](docs/OAUTH_SETUP.md)).
 Telegram uses a bot token and a one-time pairing code.
 
+### Discord and Slack
+
+Create a bot in the platform's developer portal, then tell ISHTI on the PC:
+`connect discord bot <token> owner <your Discord user id>` (or `connect slack bot <xoxb-token> owner <your Slack member id>`).
+ISHTI polls only your direct messages with that bot and answers there. The token goes to Windows Credential Manager.
+Slack needs the bot scopes `im:history`, `im:write` and `chat:write`. Discord needs no privileged intents for DMs.
+
+### MCP servers, skills and webhooks
+
+`add mcp server <name> <command or https address>`, `set mcp secret <name> <value>` (use it as `keyring:<name>` in the
+server's env), `list mcp servers`, `install skill from <folder or URL>`, `create a webhook called <name> that <instruction>`.
+Servers can also be listed in `ishti/config.json` under `mcp_servers`, in the same format Claude Desktop uses.
+
 ## Try it
 
 ```text
@@ -132,7 +158,33 @@ find my files named invoice
 summarize https://www.python.org/downloads/
 translate "good morning, how are you?" into Urdu
 send "running 10 minutes late" to Ahmed on WhatsApp      ← shows the draft and waits for your yes
+research the best laptops under 200k in the background  ← the answer arrives in the bell
+what did we talk about the embassy last week?
+run this in the sandbox: ```print(sum(x*x for x in range(100)))```
+add mcp server github npx -y @modelcontextprotocol/server-github
+install skill from https://github.com/<owner>/<repo>/tree/main/skills/<skill-name>
+connect discord bot <token> owner <your user id>
+create a webhook called door that tells me someone is at the door
 ```
+
+## How ISHTI compares
+
+ISHTI covers the same core as the popular open-source agents [OpenClaw](https://github.com/openclaw/openclaw) and
+[Hermes Agent](https://github.com/NousResearch/hermes-agent): your own hardware, any model, MCP, Agent Skills, chat
+channels and scheduled automation. It differs in where it puts the defaults:
+
+| | ISHTI |
+|---|---|
+| **Desktop** | A native Windows app with a wake word, on-device speech in both directions, desktop and file control |
+| **Cost per message** | Deterministic rules answer what they can for free; everything else takes at most one model call |
+| **Approvals** | Sending, deleting, paying and installing always wait for your yes, on every channel, in the background too |
+| **Extensions** | MCP servers and skills come from addresses you choose. There is no public marketplace to poison. A skill that carries instructions aimed at an AI is refused, and every addition asks first |
+| **Outside content** | Web pages, emails, tool output and webhook bodies are marked as data. Instruction-like text in them is flagged, never followed |
+| **Secrets** | Kept in Windows Credential Manager, masked in chat history, and never put into a cloud prompt |
+| **Code execution** | Shell commands that can run code ask first; the Docker sandbox runs Python with no network and none of your files |
+
+Their strengths are breadth: OpenClaw lists more than 20 chat platforms and a large community skill hub, and Hermes
+Agent runs on Linux, macOS and Android as well as Windows. ISHTI is single-owner and Windows-first by design.
 
 ## Safety and privacy
 

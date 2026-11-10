@@ -57,6 +57,7 @@ class RemoteService:
         self.poller: Poller | None = None
         self.gate: Gate | None = None
         self.whatsapp = None
+        self.dms: dict = {}  # discord / slack DMChannel by name
         self.started_at = 0.0
         if bridge is None:
             from ishti import wa_bridge as bridge
@@ -92,6 +93,18 @@ class RemoteService:
         elif not wa_on and self.whatsapp:
             self.whatsapp.stop()
             self.whatsapp = None
+        from ishti.channels import dm_channels
+        for name in dm_channels.APIS:  # Discord / Slack: the owner's DM with their own bot
+            running = self.dms.get(name)
+            if dm_channels.wanted(name, pol) and not (running and running.running):
+                try:
+                    self.dms[name] = dm_channels.make(name, pol)
+                    self.dms[name].start()
+                except Exception as exc:  # boot must never depend on a chat platform
+                    swallowed(f"ishti/channels/service.py:start.{name}", exc)
+            elif not dm_channels.wanted(name, pol) and running:
+                running.stop()
+                self.dms.pop(name, None)
         return self.health()
 
     def stop(self) -> dict:
@@ -103,6 +116,9 @@ class RemoteService:
         if self.whatsapp:
             stopped.append(f"whatsapp:{self.whatsapp.stop()}")
             self.whatsapp = None
+        for name, channel in list(self.dms.items()):
+            stopped.append(f"{name}:{channel.stop()}")
+        self.dms.clear()
         self.started_at = 0.0
         return {"stopped": stopped}
 
@@ -136,9 +152,14 @@ class RemoteService:
                                                 wa_running, wa_ack)},
             "pin_set": sec["pin_set"], "locked": sec["locked"], "lockout_s": sec["lockout_s"],
             "approvals_pending": approvals.pending(), "started_at": self.started_at,
-            "privacy_notice": "Telegram/WhatsApp messages pass through their servers - not local. "
+            "privacy_notice": "Telegram/WhatsApp/Discord/Slack messages pass through their servers - not local. "
                               "Sensitive-output redaction applies to remote replies.",
         }
+        for name in ("discord", "slack"):
+            cfg = pol.get(name) if isinstance(pol.get(name), dict) else {}
+            channel = self.dms.get(name)
+            out[name] = {"enabled": bool(cfg.get("enabled")), "owner_set": bool(cfg.get("owner_id")),
+                         **(channel.health() if channel else {"running": False, "last_error": "", "last_inbound_ts": 0.0})}
         return out
 
     # ------------------------------------------------------------ pairing (desktop-only)
@@ -171,6 +192,10 @@ class RemoteService:
                     for ch in output.prepare_reply(text)[0]:
                         self.client.send(chat_id, output.html_escape(ch))
                     return True
+                for channel in self.dms.values():  # no Telegram: the first live Discord/Slack DM gets it
+                    if channel.running and channel.dm:
+                        channel.send(text)
+                        return True
         except Exception as _exc:
             swallowed('ishti/channels/service.py:RemoteService.push', _exc)
         return False

@@ -11,6 +11,45 @@ sequence of tagged releases. One consequence is stated plainly because it matter
 `docs/ACCURACY.md` describes the measured state, and several numbers in it were produced against
 revisions that no longer exist.
 
+## [Unreleased]
+
+Everything the leading open-source agents (OpenClaw, Hermes Agent) share as their core, with ISHTI's approval rules.
+
+### Added
+
+- **MCP client** (`ishti/mcp_client.py`). Servers listed in `config.json` `mcp_servers` (the Claude Desktop format) or added
+  in chat (`add mcp server <name> <command or https URL>`) become tools the model can call. Their launchers are
+  allow-listed, they start with a minimal environment, secrets come from Credential Manager (`keyring:<name>`), and
+  each server's tool list is cached so startup launches nothing. A tool asks first unless it is read-only or allow-listed.
+- **Agent Skills that are actually used.** `SKILL.md` guides in `data/skills` (from `install skill from <folder or URL>`,
+  GitHub folder links included) are put in front of the model only when a request is about them. A guide carrying
+  instructions aimed at an AI is refused. Before, guides needed an environment variable and only showed for "show guide X".
+- **Discord and Slack channels** (`ishti/channels/dm_channels.py`): the owner's DMs with their own bot, over plain HTTPS
+  polling, with the same rules as WhatsApp and Telegram (owner-only, `/kill`, `/lock`, forbidden actions refused,
+  stale messages dropped, yes/no approvals). Notifications reach them when Telegram isn't set up.
+- **Inbound webhooks** (`ishti/webhooks.py`, `POST /api/hooks/<id>`). Each hook has its own token (only a hash is stored)
+  and a limit of 30 calls a minute. The request body reaches the instruction only where the owner wrote `{payload}`,
+  marked as outside data.
+- **Background tasks:** "... in the background" or "... and let me know when it's done" runs the request in its own
+  session. The answer, or a yes/no question, arrives in the bell.
+- **Docker code sandbox:** "run this in the sandbox: ..." runs Python with no network, a read-only root, no capabilities,
+  256 MB, 64 processes, an unprivileged user and a 60 s kill.
+- **Conversation search:** "what did we talk about the visa last week" searches saved chats locally. Trashed chats are
+  never searched.
+- **Parallel steps:** independent read-only steps of a plan run at the same time (up to 4). The reply and journal are
+  unchanged.
+
+### Fixed
+
+- With the model unavailable, a request no skill took was handed to the first skill in the registry. "5*7+2" walked
+  15 skills until CapCut asked which video to edit. Now nothing is picked, and the model's one-sentence reason is shown.
+- Plain arithmetic ("5*7+2", "what is 12 x 4", "15 divided by 4") is computed locally and instantly, with no model
+  call. Dates and phone numbers are not mistaken for sums, and huge powers are refused instead of hanging.
+- Weather looks up a city once per run and reuses a forecast for 10 minutes, so a repeat question no longer waits on
+  the network.
+- Sentence-form requests ("what did we talk about the weather", "check the weather in Swat in the background") are no
+  longer taken by the weather, flight or folder keyword cues.
+
 ## [0.2.0] - 2026-11-09
 
 A hardening release: browser automation is gone, WhatsApp moves to a proper HTTP API, cloud models are first-class

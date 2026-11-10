@@ -1,0 +1,24 @@
+{
+  "name": "history",
+  "version": "1.0.0",
+  "description": "Search past conversations with ISHTI: 'what did we talk about the visa last week', 'search my chats for the router reset', 'when did I ask you about Karachi flights', 'have we discussed CardioSense before'. Local word search over saved chats (no model call); trashed chats are never searched.",
+  "route": "what did we talk about, search my chats for, find the conversation where, when did I ask you about, have we discussed before",
+  "needs": {
+    "python": [],
+    "models": [],
+    "mcp": [],
+    "apis": []
+  },
+  "priority": 12,
+  "status": "working",
+  "tier": "T0",
+  "claims_first": true,
+  "laya": false,
+  "scope": {
+    "write": [],
+    "net": [],
+    "apps": false
+  },
+  "category": "Memory & Notes",
+  "test_file": "tests/skills/history/test_history.py"
+}

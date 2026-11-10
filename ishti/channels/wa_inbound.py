@@ -45,6 +45,42 @@ def _phone_candidates(row: dict) -> list[str]:
     return candidates
 
 
+def remote_command(text: str, send, channel: str) -> bool:
+    """The owner's slash commands on any remote channel (WhatsApp, Discord, Slack). True when text was one."""
+    low = text.strip().lower()
+    if security.locked() and not low.startswith(("/kill", "/unlock", "/status", "/help")):
+        send("ISHTI is locked. I refuse everything except /kill, /unlock <PIN>, /status and /help.")
+        return True
+    if low.startswith("/kill"):
+        from ishti import killswitch
+        stopped = killswitch.kill(f"remote {channel} /kill")
+        send(f"Kill switch: everything stopped ({'; '.join(stopped) or 'nothing was running'}).")
+    elif low.startswith("/lock"):
+        security.set_locked(True)
+        send("Locked. Use /unlock <PIN>, /kill, /status or /help.")
+    elif low.startswith("/unlock"):
+        pin = text.split()[-1] if len(text.split()) > 1 else ""
+        if security.lockout_remaining() > 0:
+            send("Too many wrong PINs. Try again after the lockout.")
+        elif security.check_pin(pin):
+            security.set_locked(False)
+            send("Unlocked.")
+        else:
+            security.register_pin_failure()
+            send("Wrong PIN.")
+    elif low.startswith("/status"):
+        send(Gate._status_text())
+    elif low.startswith("/tasks"):
+        send(Gate._tasks_text())
+    elif low.startswith("/help"):
+        send("Commands: /status /tasks /kill /lock /unlock <PIN> /help. Otherwise, ask naturally.")
+    elif low.startswith("/"):
+        send("Unknown command. Send /help for the supported commands.")
+    else:
+        return False
+    return True
+
+
 class WhatsAppInbound:
     def __init__(self, *, bridge=None, dispatch=None, policy_loader=None, cursor_path=None,
                  clock=time.time, alert=None, allow_message=None, initial_cursor_ms=None, background=False):
@@ -129,38 +165,7 @@ class WhatsAppInbound:
         return results
 
     def _command(self, chat: str, text: str) -> bool:
-        low = text.strip().lower()
-        if security.locked() and not low.startswith(("/kill", "/unlock", "/status", "/help")):
-            self._send(chat, "ISHTI is locked. I refuse everything except /kill, /unlock <PIN>, /status and /help.")
-            return True
-        if low.startswith("/kill"):
-            from ishti import killswitch
-            stopped = killswitch.kill("remote WhatsApp /kill")
-            self._send(chat, f"Kill switch: everything stopped ({'; '.join(stopped) or 'nothing was running'}).")
-        elif low.startswith("/lock"):
-            security.set_locked(True)
-            self._send(chat, "Locked. Use /unlock <PIN>, /kill, /status or /help.")
-        elif low.startswith("/unlock"):
-            pin = text.split()[-1] if len(text.split()) > 1 else ""
-            if security.lockout_remaining() > 0:
-                self._send(chat, "Too many wrong PINs. Try again after the lockout.")
-            elif security.check_pin(pin):
-                security.set_locked(False)
-                self._send(chat, "Unlocked.")
-            else:
-                security.register_pin_failure()
-                self._send(chat, "Wrong PIN.")
-        elif low.startswith("/status"):
-            self._send(chat, Gate._status_text())
-        elif low.startswith("/tasks"):
-            self._send(chat, Gate._tasks_text())
-        elif low.startswith("/help"):
-            self._send(chat, "Commands: /status /tasks /kill /lock /unlock <PIN> /help. Otherwise, ask naturally.")
-        elif low.startswith("/"):
-            self._send(chat, "Unknown command. Send /help for the supported commands.")
-        else:
-            return False
-        return True
+        return remote_command(text, lambda msg: self._send(chat, msg), "WhatsApp")
 
     def _handle(self, row: dict, pol: dict, linked: str):
         chat, mid = str(row.get("chat") or ""), str(row.get("id") or "")

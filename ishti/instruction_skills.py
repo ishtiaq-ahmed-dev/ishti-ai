@@ -7,7 +7,11 @@ import stat
 
 import yaml
 
+from ishti import ROOT
+from ishti.test_mode import scratch_path
+
 MAX_BYTES = 32_768
+DEFAULT_ROOT = scratch_path(os.path.join(ROOT, "data", "skills"))
 
 
 def read_skill(path):
@@ -37,8 +41,14 @@ def read_skill(path):
             "sha256": hashlib.sha256(raw).hexdigest(), "path": str(path)}
 
 
+def default_roots():
+    """data/skills (where "install skill from <folder>" puts guides) plus any ISHTI_INSTRUCTION_SKILLS folders."""
+    extra = [p for p in os.environ.get("ISHTI_INSTRUCTION_SKILLS", "").split(os.pathsep) if p]
+    return extra + ([DEFAULT_ROOT] if os.path.isdir(DEFAULT_ROOT) else [])
+
+
 def guides(roots=None):
-    roots = roots if roots is not None else [p for p in os.environ.get("ISHTI_INSTRUCTION_SKILLS", "").split(os.pathsep) if p]
+    roots = roots if roots is not None else default_roots()
     found = {}
     for root in roots:
         root = Path(root)
@@ -81,3 +91,31 @@ class InstructionSkill:
 
     def info(self):
         return {**self.manifest, "status": self.status, "path": self.path, "folder": self.folder, "problem": ""}
+
+    def body(self):
+        """The guide text as loaded, or None if the file changed since (an edited guide is re-reviewed at restart)."""
+        try:
+            current = read_skill(self.path)
+        except (ValueError, OSError, yaml.YAMLError):
+            return None
+        return current["body"] if current["sha256"] == self.record["sha256"] else None
+
+
+_STOP = frozenset("the and for with you your this that what how can from into about please want need make use using "
+                  "when where which will would could should have has are was were not but all any".split())
+
+
+def _words(text):
+    return {w for w in re.findall(r"[a-z0-9]{3,}", str(text).lower()) if w not in _STOP}
+
+
+def relevant(text, skills):
+    """The installed guide a request is about - the most content words shared with its name and description, at least
+    two - or None. Hermes and OpenClaw load a skill's body only when the request needs it; so does this."""
+    words, best, score = _words(text), None, 1
+    for skill in skills.values():
+        if isinstance(skill, InstructionSkill):
+            shared = len(words & _words(skill.record["name"].replace("-", " ") + " " + skill.record["description"]))
+            if shared > score:
+                best, score = skill, shared
+    return best
