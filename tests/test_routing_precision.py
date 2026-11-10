@@ -33,3 +33,28 @@ def test_cues_do_not_claim_lookalikes(text, not_skill):
 def test_cues_still_claim_the_real_thing(text, skill):
     from ishti import dispatcher, tool_routing
     assert tool_routing.route(text, dispatcher.SKILLS).get("skill") == skill
+
+
+@pytest.mark.parametrize("text", ["write a haiku about Peshawar rain", "write a story where a robot sets an alarm",
+                                  "what is the history of the calendar", "my manager says I talk too fast, any tips?",
+                                  "how do flights stay in the air", "how do I say schedule in Urdu",
+                                  "what does a 5 percent interest rate mean"])
+def test_creative_definition_and_advice_asks_are_conversation(text):
+    from ishti import dispatcher, tool_routing
+    assert tool_routing.route(text, dispatcher.SKILLS).get("skill") == "chat"
+
+
+@pytest.mark.parametrize("text,skill", [("is it cold outside", "weather"), ("will it rain tomorrow", "weather"),
+                                        ("Show evening flight times to Karachi", "web_search"),
+                                        ("what are the 3 newest files in my downloads", "folders"),
+                                        ("where is my order", "email"), ("who is my brother", "relationships")])
+def test_real_tasks_still_route(text, skill):
+    from ishti import dispatcher, tool_routing
+    assert tool_routing.route(text, dispatcher.SKILLS).get("skill") == skill
+
+
+def test_vault_refuses_a_preposition_as_a_password():
+    from ishti.skills.security import skill as security
+    m = next(rx.search(t) for n, rx in security.OPS for t in ["remember that my wifi password is on the fridge"]
+             if n == "vault_remember" and rx.search(t))
+    assert security.op_vault_remember(m, "remember that my wifi password is on the fridge", {}) is None

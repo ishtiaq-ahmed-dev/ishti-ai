@@ -267,7 +267,10 @@ def op_vault_remember(m, text, session):
     site = m["site"] if "kind" not in m.re.groupindex or m["site"] else m["kind"]  # "store my pin 4321" -> "pin"
     pw = m["pw"]
     # "my gmail password is wrong, how do I reset it?" overwrote the saved password with "wrong"
-    if pw.lower().strip("!?") in _NOT_A_SECRET or "?" in text or re.search(
+    # "my wifi password is on the fridge" would have saved "on": a value is 4+ characters (or a numeric PIN), not a
+    # preposition or plain word
+    if (pw.lower().strip("!?") in _NOT_A_SECRET or (len(pw) < 4 and not pw.isdigit())
+            or re.match(r"(?:on|in|at|under|behind|inside|written|stored|kept|saved|with|near)$", pw, I)) or "?" in text or re.search(
             r"\b(?:how|why|reset|forgot|forgotten|recover|change|isn'?t|not\s+working|doesn'?t)\b", text, I):
         return None
     _hide(session, pw)

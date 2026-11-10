@@ -83,7 +83,9 @@ KNOWLEDGE = re.compile(r"^\s*(?:(?:what|who|where|when|which|why|how)(?:'s|s\b|\
 # is timeless; the live case ("who is the president now") is caught by now/latest/current below.
 PERSONAL = re.compile(r"\b(?:my|mine|i|i'm|our|we|ishti|this\s+pc|today|tonight|tomorrow|now|latest|current|price|weather|"
                       r"until|till|left|next|upcoming|this\s+year|20\d\d|date|days|score|won|winner|election|"
-                      r"news|trending|this\s+week|released?|maintained|right\s+now|as\s+of\s+today)\b", re.I)
+                      r"news|trending|this\s+week|released?|maintained|right\s+now|as\s+of\s+today|"
+                      # who holds an office changes with elections and appointments: not timeless knowledge
+                      r"president|prime\s+minister|ceo|chancellor|governor|mayor|king|queen|captain|champion|coach)\b", re.I)
 
 
 

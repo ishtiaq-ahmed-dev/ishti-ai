@@ -36,6 +36,13 @@ _ALIASES = {
     "schedule": "calendar", "meeting": "calendar", "whatsapp": "whatsapp",
     "outlook": "apps",
 }
+NOT_A_TASK = re.compile(
+    r"^\s*(?:please\s+|can\s+you\s+)?(?:write|compose|make\s+up|tell\s+me)\s+(?:me\s+)?(?:a|an|some)\s+(?:short\s+|funny\s+|little\s+|"
+    r"cute\s+|sad\s+)?(?:poem|haiku|story|song|essay|joke|limerick|rap|riddle)\b"
+    r"|\b(?:history|origin|meaning|definition|etymology)\s+of\s+(?:the\s+)?\w+"
+    r"|\bwhat\s+(?:does|do|is)\s+.{0,40}\bmean\b|\bhow\s+do\s+(?:i|you)\s+say\b"
+    r"|\b(?:any\s+)?(?:tips|advice)\b(?!.{0,20}\b(?:remind|schedule|send)\b)"
+    r"|\bhow\s+do\s+(?:flights?|planes?|airplanes?|calendars?|alarms?)\s+\w+", re.I)
 _CUES = (
     # "when a pdf appears in my downloads, tell me its name" is a standing rule, not a folder listing: a trigger
     # clause (when/whenever ... appears/contains/goes above ...) outranks the nouns inside it
@@ -61,7 +68,10 @@ _CUES = (
     ("budget", re.compile(r"\bi spent\s+(?:rs\.?\s*|pkr\s*|\$\s*)?\d|\b(?:spending|expenses?|budget limit|dining limit|log (?:salary )?income|"
                            r"monthly .{0,12}limit)\b", re.I)),
     ("study", re.compile(r"\b(?:quiz me|flashcards?|explain .{0,30} simply|study plan|grade my answer|exam prep)\b", re.I)),
-    ("web_search", re.compile(r"\b(?:flights?|airfare|hotels?|place to stay)\b", re.I)),
+    # a trip needs a place: "how do flights stay in the air" / "a hotel in Monopoly" are knowledge questions
+    ("web_search", re.compile(r"\b(?:cheap(?:est)?\s+)?flights?\s+(?:to|from|for|between)\b|\bflight\s+(?:times?|schedules?|"
+                              r"prices?|fares?|status|deals?)\b|\bairfare\b|"
+                              r"\bhotels?\s+(?:in|near|at|for)\s+(?!monopoly)|\bplace\s+to\s+stay\b", re.I)),
     ("shopping", re.compile(r"\b(?:cheapest|compare .{0,20}prices?|verified price|official store|retailers?|"
                              r"where can i buy|genuine .{0,20}(?:battery|ssd|monitor|product))\b", re.I)),
     ("markets", re.compile(r"\b(?:stock price|shares?|crypto|btc|bitcoin|gold price|silver|currency rate|"
@@ -73,17 +83,25 @@ _CUES = (
                          r"\b\d[\d.,]*\s+(?:plus|minus|times|divided\s+by|multiplied\s+by|over)\s+\d[\d.,]*\b", re.I)),
     ("calendar", re.compile(r"\b(?:calendar|schedule|free slots?|add (?:a )?(?:meeting|event)|cancel .{0,20}event|ics)\b", re.I)),
     ("reminders", re.compile(r"\b(?:remind|reminder|timer|alarm|wake me|utha dena|uthao|yaad dila|alarm lagao)\b", re.I)),
+    # a statement or question ABOUT the person: "my manager says I talk too fast, tips?" / "a gift for my sister" are advice
     ("relationships", re.compile(r"\bmy\s+(?:elder\s+|younger\s+|best\s+|older\s+)?(?:brother|sister|mother|father|wife|husband|client|"
-                                  r"classmate|colleague|cousin|manager|friend|boss)s?\b|\b(?:brother|sister|mother|father|wife|husband|"
-                                  r"cousin|friend)s?\s+(?:is|name|named|called)\b", re.I)),
+                                  r"classmate|colleague|cousin|manager|friend|boss)(?:'s)?\s+(?:is|name|named|called|lives|birthday|"
+                                  r"number|phone|works|studies)\b|\b(?:who|where|when)\s+is\s+my\s+(?:brother|sister|mother|father|wife|husband|cousin|"
+                                  r"friend|boss|manager|client|colleague|uncle|aunt)\b|\b(?:brother|sister|mother|"
+                                  r"father|wife|husband|cousin|friend)s?\s+(?:is|name|named|called)\b", re.I)),
     ("memory", re.compile(r"\b(?:remember that|what do you remember|forget the saved|project .{0,25}(?:status|is in)|"
                            r"update the status of project|where did i store)\b", re.I)),
     ("files", re.compile(r"\b(?:find|locate|where is|search my pc for)\b.{0,70}\b(?:file|folder|pdf|docx|csv|png|"
                           r"downloads?|containing|named|logo|proposal)\b", re.I)),
-    ("weather", re.compile(r"\b(?:weather|forecast|temperature|rain|umbrella|how hot|how cold|mausam|hawa|barish|mosam)\b|موسم", re.I)),
+    # a weather question, not a word: "a haiku about rain", "umbrella term" are not forecasts
+    ("weather", re.compile(r"\b(?:weather|forecast|temperature|how hot|how cold|mausam|hawa|barish|mosam)\b|"
+                           r"\b(?:will|is|going\s+to)\s+(?:it\s+)?(?:going\s+to\s+)?rain(?:ing)?\b|\b(?:need|take|bring)\s+(?:an\s+)?"
+                           r"umbrella\b|\bis\s+it\s+(?:cold|hot|raining|sunny|windy|humid)\b|موسم", re.I)),
     # the owner's own PC locations: "3 newest files in downloads" is a folder question, never a web search
-    ("folders", re.compile(r"\b(?:in|from|on|inside)\s+(?:my\s+|the\s+)?(?:downloads?|desktop|documents|pictures)\b"
-                           r"|\bmy\s+(?:downloads?|desktop|documents|pictures)\b"
+    # a folder QUESTION (list / count / newest / organise): "summarize the pdf in my downloads" is the docs skill's
+    ("folders", re.compile(r"\b(?:list|show|open|what'?s\s+in|how\s+many|count|largest|biggest|newest|latest|recent|oldest|"
+                           r"organi[sz]e|clean\s+up|sort|tidy)\b.{0,40}\b(?:in|from|on|inside|my|the)\s+(?:my\s+|the\s+)?"
+                           r"(?:downloads?|desktop|documents|pictures)\b(?!\s+(?:wallpaper|icons?|environment))"
                            r"|\b(?:list|show|open|what'?s\s+in|how\s+many\s+\w+\s+in|organi[sz]e|clean\s+up)\b.{0,20}\b[A-Za-z]:\\(?![^\s]*\.\w{2,4}\b)", re.I)),
     ("web_search", re.compile(r"\b(?:search the web|look up|(?:the\s+)?(?:latest|newest)\s+(?!i\b|you\b|we\b)\w+|today'?s? .{0,25}news|currently leads|"
                               r"actively maintained|what changed in)\b", re.I)),
@@ -307,6 +325,10 @@ def route(text: str, skills: dict, exclude=(), *, session: dict | None = None) -
                     "parts": [{"skill": first["skill"], "text": parts[0]},
                               {"skill": second["skill"], "text": parts[1]}]}
 
+    # Creative, definition, translation and advice asks are conversation, whatever nouns they carry: "write a haiku about
+    # rain" went to weather, "a story where a robot sets an alarm" to reminders, "history of the calendar" to calendar.
+    if NOT_A_TASK.search(text) and "chat" in live:
+        return {"skill": "chat", "confidence": 0.9, "source": "rule", "scores": [("chat", 0.9)]}
     cues = [name for name in _cue_names(text) if name in live]
     if cues:
         if "writing" in cues and re.search(r"\b(?:draft|declining)\b", text, re.I):
