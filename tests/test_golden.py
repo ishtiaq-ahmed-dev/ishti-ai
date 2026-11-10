@@ -24,24 +24,29 @@ SENTINEL = "<<UNSCRIPTED-MODEL-CALL>>"
 
 
 def _stores():
-    from ishti import CONFIG
+    """Where each store REALLY writes right now - asked of the module, not derived: other tests repoint module paths."""
+    from ishti import audit, rgraph
     from ishti.core import state
     from ishti.facts import get_facts
-    d = os.path.dirname(CONFIG["memory"]["db_path"])
+    from ishti.memstore import memory
+    from ishti.skills.checklist import skill as checklist
+    from ishti.skills.notes import skill as notes
     real = os.path.normcase(os.path.join(os.path.dirname(HERE), "data"))
-    assert not os.path.normcase(d).startswith(real), "golden scenarios must never touch the owner's data folder"
+    paths = {"checklist": checklist.DB, "notes": notes.DB, "audit": audit.DB, "memories": memory.db_path(),
+             "relationships": rgraph.DB_PATH, "state": state.default_db_path()}
+    for name, p in paths.items():
+        assert not os.path.normcase(p).startswith(real), f"golden scenarios must never touch the owner's {name} store"
     facts_db = get_facts().db  # conftest swaps the facts store per test
     return {
         "reminders": (facts_db, "SELECT text, due FROM reminders WHERE done=0"),
         "facts": (facts_db, "SELECT key, attr, value FROM facts"),
-        "checklist": (os.path.join(d, "checklists.db"), "SELECT list, item, done FROM items"),
-        "notes": (os.path.join(d, "notes.db"), "SELECT body FROM notes"),
-        "audit": (os.path.join(d, "audit.db"), "SELECT skill, action, detail FROM actions"),
-        "memories": (os.path.join(d, "arch2_memory.db"), "SELECT content, status FROM memories"),
-        "relationships": (os.path.join(d, "rgraph.db"), "SELECT a.name, e.rel, b.name FROM edges e "
-                                                         "JOIN nodes a ON a.id=e.src JOIN nodes b ON b.id=e.dst"),
-        "state": (state._db_path() if hasattr(state, "_db_path") else os.path.join(d, "convo_state.db"),
-                  "SELECT * FROM convo_state"),
+        "checklist": (paths["checklist"], "SELECT list, item, done FROM items"),
+        "notes": (paths["notes"], "SELECT body FROM notes"),
+        "audit": (paths["audit"], "SELECT skill, action, detail FROM actions"),
+        "memories": (paths["memories"], "SELECT content, status FROM memories"),
+        "relationships": (paths["relationships"], "SELECT a.name, e.rel, b.name FROM edges e "
+                                                  "JOIN nodes a ON a.id=e.src JOIN nodes b ON b.id=e.dst"),
+        "state": (paths["state"], "SELECT * FROM convo_state"),
     }
 
 
