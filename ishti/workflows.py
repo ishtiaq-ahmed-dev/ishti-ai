@@ -14,7 +14,7 @@ import uuid
 
 LOCK = threading.RLock()
 MAX_STEPS = 12
-PER_TURN = 3
+PER_TURN = MAX_STEPS
 
 
 def _path():
@@ -85,10 +85,14 @@ def result(plan, extra=None):
         replies.append("The interrupted step may have taken effect. Reconcile its outcome before retrying; it was not repeated.")
     elif plan["state"] == "cancelled":
         replies.append("The remaining workflow steps were cancelled.")
+    failed = plan.get("failed") or []
+    if failed:
+        replies.append(f"{len(failed)} of {len(plan['steps'])} step(s) didn't work: "
+                       + ", ".join(plan["steps"][i]["tool"] for i in failed) + " - the others are done.")
     sources = [s for r in plan["results"] for s in r.get("sources", [])]
     return {**(extra or {}), "reply": "\n\n".join(replies), "sources": sources,
             "mode": "BRAIN", "workflow_id": plan["id"], "workflow_state": plan["state"],
-            "status": "succeeded" if plan["state"] == "completed" else "partial",
+            "status": "succeeded" if plan["state"] == "completed" and not failed else "partial",
             "remaining_steps": remaining,
             "verified": (False if plan["state"] != "completed" or any(r.get("verified") is False for r in plan["results"])
                          else True if plan["results"] and all(r.get("verified") is True for r in plan["results"]) else None),
@@ -154,9 +158,22 @@ def execute(session, plan, run_tool, skills):
                 return {**result(plan, out), "declined": True}
             if (out.get("execution_blocked") or out.get("needs_input") or out.get("verified") is False
                     or out.get("test_mode_blocked") or out.get("status") in ("failed", "partial", "needs_input", "unknown")):
-                plan["state"] = "blocked"
+                ref = f"{{{{step:{plan['next'] + 1}}}}}"
+                # only a definite failure (nothing took effect) is skipped past; an unconfirmed or unknown outcome may
+                # have happened, so it still stops the plan and is reported as uncertain
+                if out.get("status") != "failed" or any(ref in later["input"] for later in plan["steps"][plan["next"] + 1:]):
+                    plan["state"] = "blocked"  # a later step needs this one's output (or the owner must answer)
+                    save(session, plan)
+                    return result(plan, out)
+                # nothing depends on it: record the failure and carry on (weather ok, search failed, calc still runs)
+                plan["results"].append({"reply": out.get("reply", "That step failed."), "verified": False,
+                                        "status": "failed"})
+                plan.setdefault("failed", []).append(plan["next"])
+                step["state"] = "failed"
+                plan["next"] += 1
+                plan["state"] = "ready"
                 save(session, plan)
-                return result(plan, out)
+                continue
             plan["results"].append({k: out[k] for k in ("reply", "sources", "verified", "status") if k in out})
             step["state"] = "completed"
             plan["next"] += 1

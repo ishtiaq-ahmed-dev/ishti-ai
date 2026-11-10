@@ -79,9 +79,9 @@ def test_several_parts_run_in_order_and_are_capped(stubs):
     many = ",".join('{"tool": "calc", "input": "%d+1"}' % i for i in range(9))
     replies.append('{"calls": [%s]}' % many)
     out = brain.run("add one to nine numbers", _session(), _skills())
-    assert len(calls["tools"]) == brain.MAX_CALLS
-    assert out["reply"].count("calc did:") == brain.MAX_CALLS
-    assert out["remaining_steps"] == 6 and out["workflow_state"] == "paused"
+    assert len(calls["tools"]) == 9  # every step in one turn (the 12-step plan cap still applies)
+    assert out["reply"].count("calc did:") == 9
+    assert out["remaining_steps"] == 0 and out["workflow_state"] == "completed"
 
 
 def test_an_approval_request_is_returned_as_is(stubs, monkeypatch):

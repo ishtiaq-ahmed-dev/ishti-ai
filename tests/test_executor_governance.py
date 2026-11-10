@@ -174,3 +174,17 @@ def test_kill_exception_is_not_swallowed(invoke, monkeypatch):
     with pytest.raises(Cancelled):
         invoke({"tool": fake()})
 
+
+
+def test_a_skill_that_gates_itself_asks_once(monkeypatch, isolated_executor):
+    monkeypatch.setattr(test_mode, "enabled", lambda: False)
+    calls, session = [], {}
+
+    def prepare(_text, current_session):
+        return ask_first(current_session, "tool", "Send exactly 'hello' to Synthetic Recipient",
+                         lambda: calls.append(1) or {"reply": "sent synthetic"})
+    skill = fake("T2", run=prepare)
+    skill.manifest["gates_itself"] = True
+    out = execution.execute({"tool": skill}, "tool", "send hello", session)
+    assert out["reply"] == "Send exactly 'hello' to Synthetic Recipient? (yes/no)"  # its own recap, first and only
+    assert session["pending"]["action"]()["reply"] == "sent synthetic" and calls == [1]

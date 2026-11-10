@@ -195,9 +195,17 @@ def _execute_plan(s, skills: dict, calls: list[dict]) -> dict:
     brick the chat on every unrelated question until the magic words."""
     from ishti import workflows
     existing = workflows.load(s)
+    note = ""
     if existing and existing["state"] not in ("completed", "cancelled"):
-        return workflows.result(existing, {"reply": "A previous workflow remains open. "
-                                           "Say 'continue workflow' or 'cancel workflow' before starting another tool plan."})
+        pending = s.get("pending") or {}
+        if existing["state"] == "approval" and callable(pending.get("action")):
+            return workflows.result(existing, {"reply": "The earlier plan is waiting for your yes or no first."})
+        # a new request moves on: close the old plan instead of walling every later tool request until the owner
+        # said "continue workflow" / "cancel workflow" (its finished steps stay done; nothing is re-run)
+        left = len(existing["steps"]) - existing["next"]
+        existing["state"] = "cancelled"
+        workflows.save(s, existing)
+        note = f"(Closed the earlier unfinished plan - {left} step(s) were left.)\n\n"
     if len(calls) > workflows.MAX_STEPS:
         return {"reply": f"This request contains {len(calls)} steps; the limit is {workflows.MAX_STEPS}. "
                          "Split the request into smaller groups. No tools were run.",
@@ -206,6 +214,8 @@ def _execute_plan(s, skills: dict, calls: list[dict]) -> dict:
     out = workflows.execute(s, plan, _run_tool, skills)
     if out.get("declined") and len(calls) == 1:
         return None  # the chosen skill did not claim the request: the deterministic route answers instead
+    if note:
+        out = {**out, "reply": note + str(out.get("reply") or "")}
     return out
 
 

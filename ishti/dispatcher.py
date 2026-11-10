@@ -618,6 +618,10 @@ T2_ACTION = re.compile(r"\b(?:send|message|reply|delete|remove|erase|pay|buy|ord
 # while running zero tools - nothing was stored, so a later "delete the data about my cardiologist
 # collaborator" had nothing to remove (checklist 237). A save claim with no tool behind it must be caught
 # here and handed to the skills, exactly like a false "reminder set" claim.
+# a promise of a future action the reply has no tool for ("I'll remind you at 9", "I'll let you know when BTC drops")
+PROMISE = re.compile(r"\bi(?:'ll|\s+will|\s+am\s+going\s+to)\s+(?:remind|let\s+you\s+know|notify|ping|alert|check\s+(?:back|again|"
+                     r"on\s+it)|keep\s+(?:an\s+)?eye|follow\s+up|set\s+(?:a|an|the|your)\s+(?:reminder|alarm|timer)|send|text|"
+                     r"message|email|book|order|watch|track)\b", re.I)
 ACTION_CLAIM = re.compile(r"\b(?:reminder|timer|alarm|task|message|video|file|event|meeting|"
                           r"memor(?:y|ies)|facts?|notes?|records?|details?|preferences?)s?\b[^.\n]{0,40}"
                           r"\b(?:has\s+been|have\s+been|is|was|been|are)\s+"
@@ -742,21 +746,44 @@ def _verify_reply(name, text, out, s):
     if out.get("verified") is False and CLAIM.search(said):
         out["reply"] = str(out["reply"]) + "\n\n(I couldn't confirm that actually went through - please check.)"
         s["trace"](type="tool", name="verify", label="the action couldn't be confirmed, so I said so", status="error")
-    if name in ("chat", "brain") and not out.get("tools") and FALSE_ACTION.search(said):
+    if name in ("chat", "brain") and not out.get("tools") and (FALSE_ACTION.search(said) or PROMISE.search(said)):
         # "Did you send it?" is answered from the conversation on purpose (chat.skill.did_you); everything else gets the correction.
         from ishti.skills.chat.skill import DID_YOU
         is_status = bool(re.search(r"^\s*(?:is|are|was|were|status|check\s+if)\b", text, re.I))
         if not DID_YOU.match(text) and not is_status and not (re.search(r"\bdraft\b", str(out.get("reply") or ""), re.I) and re.search(r"\bdraft\b", text, re.I)):
-            # nothing is pending, so "say yes" would be a promise with nothing behind it: say how to ask for it instead
+            # the model claimed or promised an action no tool ran ("I've set an alarm", "I'll remind you at 9"): hand the
+            # request to the skill that can really do it, through the normal gates, before settling for the correction
+            done = _act_on_claim(text, s, exclude={name, "chat", "brain"})
+            if done:
+                out.clear()
+                out.update(done)
+                s["trace"](type="tool", name="verify", label="the reply only promised it - the right skill did it", status="done")
+                return
             out["reply"] = ("I haven't actually done that - nothing was set, sent or changed. Ask me directly "
                             "(for example \"remind me tomorrow at 7am\") and I'll do it.")
             s["trace"](type="tool", name="verify", label="the reply claimed an action no tool ran - corrected", status="error")
+
+
+def _act_on_claim(text, s, exclude):
+    """The skill the request actually belongs to, run once through the governed executor (T2 gates unchanged) - or
+    None when no concrete skill claims it by rule."""
+    dec = route(text, SKILLS, exclude=exclude)
+    if not dec.get("skill") or dec.get("source") not in ("rule", "shortlist", "learned"):
+        return None
+    try:
+        from ishti.skill_execution import execute
+        res = execute(SKILLS, dec["skill"], text, s)
+    except Exception as exc:
+        print(f"[dispatcher] acting on a promised action skipped: {type(exc).__name__}")
+        return None
+    return res if isinstance(res, dict) and res.get("reply") else None
 
 
 def _run(text, s, dec):
     """Run the decided skill; if it declines ("not mine"), fall through to the next best one."""
     from ishti import calltrace
     tried, out, name = set(), None, None
+    last_error = None  # (skill, reply) of a read/compute skill that crashed: the answer of last resort
     clean_explicit = re.sub(r"^(?:\[skill:[a-z0-9_-]+\]|/(?:use|skill)\s+[a-z0-9_-]+)\s*", "", text, flags=re.I).strip()
     if clean_explicit:
         text = clean_explicit
@@ -819,6 +846,9 @@ def _run(text, s, dec):
                 out = {"reply": f"I stopped: {exc}. If that should be allowed, widen the skill's \"scope\" in its manifest."}
             else:
                 out = {"reply": f"The {name} skill failed: {type(exc).__name__}: {str(exc)[:160]}"}
+                tier = SKILLS[name].manifest.get("tier", "T1") if name in SKILLS else "T2"
+                if tier in ("T0", "T1"):  # a reader crashed: try the next skill that fits before giving the error
+                    last_error, out = (name, out), None  # (never for T2: it may have acted before it failed)
         if out is not None:
             _verify_reply(name, text, out, s)
             s["trace"](type="step", skill=name, status="done", summary=str(out.get("reply") or "")[:160])
@@ -829,6 +859,8 @@ def _run(text, s, dec):
         if pend and pend.get("sticky") and pend.get("skill") == name:
             s["pending"] = None  # it asked a question but this wasn't the answer: stop holding the message
         dec = route(text, SKILLS, exclude=tried)
+    if out is None and last_error:
+        name, out = last_error
     if out is None:
         log_need("gap", "none", text, "no skill could handle this request")
         creator = SKILLS.get("skill_creator")

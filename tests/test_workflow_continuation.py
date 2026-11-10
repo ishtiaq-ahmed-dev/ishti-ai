@@ -17,12 +17,23 @@ def tool(skills, name, text, session):
 def test_remaining_steps_survive_a_fresh_session(session):
     calls = [{"tool": "calc", "input": str(i)} for i in range(5)]
     plan = workflows.new(session, calls)
-    out = workflows.execute(session, plan, tool, {})
-    assert out["remaining_steps"] == 2 and out["workflow_state"] == "paused"
-    restored = {"id": session["id"]}
-    out = workflows.execute(restored, workflows.load(restored), tool, {})
-    assert out["workflow_state"] == "completed" and len(out["tools"]) == 5
+    out = workflows.execute(session, plan, tool, {})  # all steps in one turn: no "continue workflow" ritual
+    assert out["remaining_steps"] == 0 and out["workflow_state"] == "completed" and len(out["tools"]) == 5
     assert out["reply"].splitlines()[0] == "0"
+    restored = {"id": session["id"]}  # a fresh session sees the finished plan, not a re-run
+    assert workflows.load(restored)["state"] == "completed"
+
+
+def test_a_failed_step_does_not_drop_independent_ones(session):
+    calls = [{"tool": "calc", "input": "1"}, {"tool": "search", "input": "x"}, {"tool": "calc", "input": "3"}]
+    def flaky(skills, name, text, s):
+        return {"reply": "search backend unreachable", "status": "failed"} if name == "search" else tool(skills, name, text, s)
+    out = workflows.execute(session, workflows.new(session, calls), flaky, {})
+    assert out["workflow_state"] == "completed" and out["status"] == "partial"
+    assert "3" in out["reply"] and "didn't work: search" in out["reply"]
+    dependent = [{"tool": "search", "input": "x"}, {"tool": "calc", "input": "{{step:1}}"}]
+    out = workflows.execute(session, workflows.new(session, dependent), flaky, {})
+    assert out["workflow_state"] == "blocked"  # the next step needs the failed one's output
 
 
 def test_approval_retains_completed_results_and_resumes_remaining(session):

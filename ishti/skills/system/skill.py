@@ -239,15 +239,42 @@ def _windows():
     return {"reply": f"{len(apps)} app window(s) open on this PC:\n" + "\n".join(apps[:20]), "sources": []}
 
 
+def _open_windows_update():
+    try:
+        import os
+        os.startfile("ms-settings:windowsupdate")
+        return True
+    except OSError:
+        return False
+
+
 def _win_updates():
-    return {"reply": "Checked Windows Update status: No pending updates available. Your system is up to date.", "sources": []}
+    """Asks Windows Update itself (it always answered "up to date" without checking before)."""
+    from ishti.skills.desktop.more import _ps
+    try:
+        out = _ps("$r=(New-Object -ComObject Microsoft.Update.Session).CreateUpdateSearcher().Search('IsInstalled=0 and IsHidden=0');"
+                  "'COUNT=' + $r.Updates.Count; $r.Updates | ForEach-Object { $_.Title }")
+    except Exception:
+        out = ""
+    lines = [l.strip() for l in (out or "").splitlines() if l.strip()]
+    if lines and lines[0].startswith("COUNT="):
+        n = int(lines[0][6:] or 0)
+        if not n:
+            return {"reply": "Windows Update has no pending updates.", "sources": [], "verified": True}
+        return {"reply": f"Windows Update has {n} pending update(s):\n" + "\n".join(f"- {t}" for t in lines[1:11]),
+                "sources": [], "verified": True}
+    opened = _open_windows_update()
+    return {"reply": "I couldn't read Windows Update from here" + (" - I opened its settings page so you can see what's "
+                     "pending." if opened else "."), "sources": [], "verified": False}
 
 
 def _win_install(session):
-    from ishti.skills import ask_first
-    def go():
-        return "Installation initiated: Applying pending updates. Note: A system reboot may be required to complete installation."
-    return ask_first(session, "system", "Install pending Windows updates (this may require a system restart and close active applications)", go)
+    # installing updates needs admin rights and can restart the PC: Windows' own page does it properly
+    opened = _open_windows_update()
+    return {"reply": ("I opened Windows Update - press Install there. I don't install Windows updates myself (it needs "
+                      "admin rights and can restart the PC mid-task).") if opened else
+            "Open Settings > Windows Update and press Install - I don't install Windows updates myself.",
+            "sources": [], "verified": False}
 
 
 def _cleanup():
@@ -270,16 +297,19 @@ def _cleanup():
     freed_mb = round(freed / (1024 * 1024), 1)
     if cleaned > 0 or freed_mb > 0:
         return {"reply": f"Cleaned temporary files: removed {cleaned} temporary files, freeing approximately {freed_mb} MB of space.", "sources": []}
-    return {"reply": "Cleaned up temporary directories. No large temporary files were pending removal; storage space is optimized.", "sources": []}
+    return {"reply": "Nothing to clean: the temp folder had no old .tmp/.log/.bak files.", "sources": []}
 
 
 def _gpu_driver():
     from desktop.computer_use import get_computer_use_agent
     d = get_computer_use_agent().get_system_telemetry()
     g = d.get("gpu") if isinstance(d.get("gpu"), dict) else {}
-    name = str(g.get("name") or "NVIDIA GeForce RTX 5070 Ti").replace("NVIDIA GeForce ", "")
-    driver = str(g.get("driver") or "610.88")
-    return {"reply": f"GPU Driver Status: Your {name} is running driver version {driver}. Your graphics driver is up to date. To check for future driver releases without risking an unstable auto-update, use NVIDIA App or GeForce Experience.", "sources": []}
+    name, driver = str(g.get("name") or "").replace("NVIDIA GeForce ", ""), str(g.get("driver") or "")
+    if not driver:  # it used to invent "610.88" and call it up to date
+        return {"reply": "I couldn't read the graphics driver version right now. The NVIDIA App shows it and any newer "
+                         "release.", "sources": [], "verified": False}
+    return {"reply": f"Your {name or 'graphics card'} is on driver {driver}. I can't check NVIDIA's latest release from "
+                     "here - the NVIDIA App shows whether a newer one exists.", "sources": [], "verified": True}
 
 
 def _printer():

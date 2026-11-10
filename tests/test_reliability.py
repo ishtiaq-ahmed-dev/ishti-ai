@@ -67,3 +67,18 @@ def test_recovered_cloud_clears_the_outage_text():
     src = open(llm.__file__, encoding="utf-8").read()
     assert src.count('_cloud_state.update(until=0.0, error="")') == 2
     llm._cloud_state.update(until=0.0, error="")
+
+
+def test_a_promised_action_is_done_by_the_right_skill():
+    from ishti import dispatcher as D
+    from ishti.facts import get_facts
+    from ishti.skills.reminders import skill as reminders
+    reminders._db()
+    s = {"id": "promise", "history": [], "trace": lambda **kw: None}
+    out = {"reply": "Sure - I'll remind you at 5pm to call mom."}  # the chat model's promise, no tool behind it
+    D._verify_reply("chat", "remind me at 5pm to call mom", out, s)
+    assert out["reply"].startswith("Reminder set") and "call mom" in out["reply"]
+    assert any("call mom" in r[0] for r in get_facts().db.execute("SELECT text FROM reminders WHERE done=0"))
+    nothing = {"reply": "I'll keep an eye on that for you."}
+    D._verify_reply("chat", "tell me something nice", nothing, s)
+    assert "haven't actually done that" in nothing["reply"]

@@ -265,9 +265,11 @@ def _table(out):
 
 def op_updates(m, text, session):
     trace(session, "winget", "checking for updates", status="start")
-    _, out = _winget("upgrade", "--include-unknown")
+    code, out = _winget("upgrade", "--include-unknown")
     rows = [r for r in _table(out) if r[3]]
     trace(session, "winget", f"{len(rows)} updates", status="done")
+    if not rows and (code != 0 and not _table(out)):  # winget failed: not the same as "up to date"
+        return f"winget couldn't check for updates (exit code {code}). Try again, or run `winget upgrade` yourself."
     if not rows:
         return "Everything winget knows about is up to date."
     return (f"{len(rows)} updates available:\n" + "\n".join(f"- {n}: {v} -> {a}" for n, _, v, a in rows[:25])

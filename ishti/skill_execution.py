@@ -136,13 +136,10 @@ specific recipient/action recap. A route value such as 'pending' grants nothing.
                 is_t2 = False
         except Exception as exc:  # fail closed: the tier stays T2 when the classifier cannot run
             swallowed("ishti/skill_execution.py:execute.security", exc)
-    if is_t2 and name == "whatsapp":
-        try:
-            from ishti.skills.whatsapp.skill import UNREAD, READ_CHAT, TOP_CHATS, OPEN_ONLY, SEND, SEND_TO
-            if (UNREAD.search(text) or READ_CHAT.search(text) or TOP_CHATS.search(text) or OPEN_ONLY.search(text)) and not (SEND.search(text) or SEND_TO.search(text)):
-                is_t2 = False
-        except Exception as exc:  # fail closed: a send stays T2 when the classifier cannot run
-            swallowed("ishti/skill_execution.py:execute.whatsapp", exc)
+    if is_t2 and skills[name].manifest.get("gates_itself"):
+        # the skill asks its own exact recap (recipient + text) before any side effect: a generic "Run whatsapp for:
+        # ...? (yes/no)" in front of it made the owner confirm one send twice, and gated read-only asks too
+        is_t2 = False
     if is_t2:
         from ishti.skills import ask_first
         out = ask_first(session, name, f"Run {name} for: {text[:240]}",

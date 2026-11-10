@@ -129,9 +129,9 @@ def op_rename_file(m, text, session):
     target = os.path.join(os.path.dirname(src_path), dst)
     if os.path.exists(target):
         return f"{target} already exists - pick a different name so nothing is overwritten."
-    return ask_first(session, "fileops", f"Rename {os.path.basename(src_path)} to {dst}",
-                     lambda: (os.rename(src_path, target),
-                              f"Renamed {os.path.basename(src_path)} to {dst}.")[1])
+    # reversible and never overwrites (checked above): it just runs, and the reply says how to undo it
+    os.rename(src_path, target)
+    return f"Renamed {os.path.basename(src_path)} to {dst} (in {os.path.dirname(target)}). Say \"rename {dst} to "            f"{os.path.basename(src_path)}\" to undo."
 
 
 def op_rename(m, text, session):
@@ -608,10 +608,9 @@ def op_copy(m, text, session):
     import shutil
     from ishti.skills.folders.skill import free_name
     dst_file = free_name(os.path.join(dst, os.path.basename(src_path)))  # "x (1).pdf" next to an existing "x.pdf"
-    return ask_first(session, "fileops", f"Copy {src_path} to {dst}" + (
-        f" (a file with that name is there - this one will be {os.path.basename(dst_file)})"
-        if os.path.basename(dst_file) != os.path.basename(src_path) else ""),
-                     lambda: (shutil.copy2(src_path, dst_file), f"Copied {os.path.basename(src_path)} to {dst}.")[1])
+    # a copy never overwrites (free_name) and changes nothing of the original: it just runs
+    shutil.copy2(src_path, dst_file)
+    return f"Copied {os.path.basename(src_path)} to {dst_file}."
 
 
 def op_move(m, text, session):
