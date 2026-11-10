@@ -100,6 +100,16 @@ def set_listener(fn) -> None:
 
 # ---------------------------------------------------------------- event log (global seq)
 
+def prune_deltas(older_than_s: float = 86400) -> int:
+    """Streamed-token events of finished runs: every token was an INSERT kept forever, yet the finished run holds the
+    whole text. Older than a day they only grow the store."""
+    with _lock:
+        c = conn()
+        n = c.execute("DELETE FROM event_log WHERE type='run_delta' AND ts<?", (time.time() - older_than_s,)).rowcount
+        c.commit()
+    return n
+
+
 def publish(type_: str, data: dict | None = None) -> dict:
     """Append to the durable log, then push to live subscribers. seq is global + monotonic."""
     env = {"type": str(type_), "data": data or {}, "ts": round(time.time(), 3)}

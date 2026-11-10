@@ -181,9 +181,13 @@ def _start():
     def loop():
         while True:
             time.sleep(EVERY_S)
-            if _load():  # the bell keeps it when the window is closed (the socket message alone was lost)
-                from ishti import notifications
-                check_watches(lambda msg: (HOOKS["emit"]("assistant_message", {"reply": msg}), notifications.add("alert", msg)))
+            try:  # one bad page must not end the watch loop for the rest of the session
+                if _load():  # the bell keeps it when the window is closed (the socket message alone was lost)
+                    from ishti import notifications
+                    check_watches(lambda msg: (HOOKS["emit"]("assistant_message", {"reply": msg}),
+                                               notifications.add("alert", msg)))
+            except Exception as exc:
+                print(f"[page-watch] pass skipped: {type(exc).__name__}")
     threading.Thread(target=loop, daemon=True, name="page-watch").start()
 
 

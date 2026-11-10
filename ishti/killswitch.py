@@ -33,6 +33,12 @@ def on_kill(fn):
     return fn
 
 
+def off(fn):
+    """Unregister a stop hook. Every Live call added two that kept its listener, talker and socket alive forever."""
+    if fn in _hooks:
+        _hooks.remove(fn)
+
+
 def begin():
     _local.gen = _gen
 

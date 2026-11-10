@@ -223,23 +223,22 @@ def trigger_heal(trigger: str = "manual", issues: List[str] | None = None) -> Di
     except Exception as exc:
         actions_taken.append(f"Orphan llama-server reaper: {exc}")
 
-    # 1. Ollama & Model Subsystem
+    # 1. Ollama & Model Subsystem - only when answers come from the local model. On a cloud provider a bare
+    # `ollama serve` (outside ISHTI's registry and settings) loaded nothing useful and competed for the GPU.
     try:
-        base_url = CONFIG["llm"]["base_url"].rsplit("/v1", 1)[0]
-        r = requests.get(f"{base_url}/api/tags", timeout=5)
-        if r.ok:
-            actions_taken.append("Verified Ollama API connectivity (responsive)")
+        from ishti import lifecycle, llm
+        if llm.provider() != "local":
+            actions_taken.append("Cloud model in use - Ollama left alone")
         else:
-            subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-            actions_taken.append("Restarted Ollama daemon service")
+            base_url = CONFIG["llm"]["base_url"].rsplit("/v1", 1)[0]
+            r = requests.get(f"{base_url}/api/tags", timeout=5)
+            if r.ok:
+                actions_taken.append("Verified Ollama API connectivity (responsive)")
+            else:
+                lifecycle.ensure_ollama()
+                actions_taken.append("Restarted Ollama through ISHTI's own launcher")
     except Exception as exc:
-        try:
-            subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-            actions_taken.append(f"Restarted Ollama daemon after connection error: {exc}")
-        except Exception:
-            actions_taken.append(f"Could not reach or restart Ollama: {exc}")
+        actions_taken.append(f"Could not reach or restart Ollama: {type(exc).__name__}")
 
     # Reset model router failure counters
     try:
@@ -258,11 +257,10 @@ def trigger_heal(trigger: str = "manual", issues: List[str] | None = None) -> Di
         if r.status_code == 200:
             actions_taken.append("SearXNG search service verified healthy")
         else:
-            # Trigger container restart
-            res = subprocess.run(["docker", "start", "searxng"], capture_output=True, text=True, timeout=10,
-                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-            if res.returncode == 0:
-                actions_taken.append("Restarted SearXNG Docker container")
+            # the real container is ishti-searxng ("docker start searxng" named one that doesn't exist)
+            from tools.web.search import ensure_searxng
+            if ensure_searxng(wait_s=30):
+                actions_taken.append("Restarted the SearXNG search container")
             else:
                 actions_taken.append("SearXNG container unavailable; fallback search active")
     except Exception as exc:

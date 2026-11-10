@@ -109,10 +109,13 @@ def start_price_watch():
     def loop():
         while True:
             time.sleep(CHECK_EVERY_S)
-            if _watches():  # the bell keeps it when the window is closed (the socket message alone was lost)
-                from ishti import notifications
-                check_price_watches(lambda msg: (HOOKS["emit"]("assistant_message", {"reply": msg}),
-                                                 notifications.add("alert", msg)))
+            try:  # one bad product page must not end the price watch for the rest of the session
+                if _watches():  # the bell keeps it when the window is closed (the socket message alone was lost)
+                    from ishti import notifications
+                    check_price_watches(lambda msg: (HOOKS["emit"]("assistant_message", {"reply": msg}),
+                                                     notifications.add("alert", msg)))
+            except Exception as exc:
+                print(f"[price-watch] pass skipped: {type(exc).__name__}")
     threading.Thread(target=loop, daemon=True, name="price-watch").start()
 
 

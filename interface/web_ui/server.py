@@ -1300,7 +1300,7 @@ async def live_ws(ws: WebSocket):
         asyncio.run_coroutine_threadsafe(_live_send(payload, binary=isinstance(msg, bytes)), loop)
     voice = RemoteTalker(send_audio)
     from ishti import killswitch
-    killswitch.on_kill(lambda: voice.stop() and "Live voice")  # the browser stops talking too
+    live_kill = killswitch.on_kill(lambda: voice.stop() and "Live voice")  # the browser stops talking too
 
     def on_command(text, on_token=None):
         res = ishti_handle(text, session_id=session_id, channel="voice", on_token=on_token,
@@ -1342,6 +1342,8 @@ async def live_ws(ws: WebSocket):
     finally:
         stop.set()
         voice.close()
+        killswitch.off(live_kill)  # unregister: each call's hooks kept its listener, talker and socket alive forever
+        killswitch.off(listener._killed)
 
 
 @app.websocket("/ws")

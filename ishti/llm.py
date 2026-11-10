@@ -402,14 +402,14 @@ def _create_api(args, openai):
         raise
     if not args.get("stream"):
         grant.close()
-        _cloud_state["until"] = 0.0
+        _cloud_state.update(until=0.0, error="")  # recovered: the next outage is news again
         return response
 
     def stream():
         with grant:
             try:
                 yield from response
-                _cloud_state["until"] = 0.0
+                _cloud_state.update(until=0.0, error="")  # recovered: the next outage is news again
             except openai.APIError as exc:
                 raise _provider_error(exc, name) from None
             finally:

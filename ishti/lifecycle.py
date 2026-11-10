@@ -139,6 +139,9 @@ def _fail(sid, message):
 _stream_fd = {"fd": None}
 
 
+_IN_WRITE = threading.local()  # per thread: is this thread already inside _Stream.write (logging's error path)?
+
+
 class _Stream(io.TextIOBase):
     """stdout/stderr -> the rotating log (and the console when there is one). pythonw has no stdout at all."""
     encoding = "utf-8"
@@ -159,9 +162,18 @@ class _Stream(io.TextIOBase):
             while len(self.buf) > 16_384:
                 lines.append(self.buf[:16_384])
                 self.buf = self.buf[16_384:]
-        for line in lines:
-            if line.strip():
-                logging.getLogger("stdout" if self.level == logging.INFO else "stderr").log(self.level, line.rstrip())
+        # A failing log write (disk full, a refused rotation) makes logging's handleError write to sys.stderr - this
+        # stream - which logs again, forever: every print() then raised RecursionError and the background loops that
+        # print their errors died silently. A write made while already inside one is dropped.
+        if getattr(_IN_WRITE, "on", False):
+            return len(s)
+        _IN_WRITE.on = True
+        try:
+            for line in lines:
+                if line.strip():
+                    logging.getLogger("stdout" if self.level == logging.INFO else "stderr").log(self.level, line.rstrip())
+        finally:
+            _IN_WRITE.on = False
         return len(s)
 
     def fileno(self):

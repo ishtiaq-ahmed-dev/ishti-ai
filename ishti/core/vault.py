@@ -247,6 +247,39 @@ def export_all(out_path: str | None = None, include_private: bool = True) -> str
     return out
 
 
+CHECKED_STORES = ("ishti.db", "runs.db", "arch2_memory.db", "rgraph.db")  # the owner's facts, chats, memories, people
+
+
+def daily_check_and_backup(stores=CHECKED_STORES) -> dict:
+    """quick_check each key store and keep one rotating copy per weekday (7 kept, data/backups/<store>-<Mon>.db).
+    Before this there was no integrity check except at shutdown and no backup at all unless the owner asked. A store
+    that fails the check is reported in the bell with where the good copies are; nothing is restored automatically."""
+    from ishti import CONFIG
+    from ishti.secure_store import restrict_to_owner
+    data = os.path.dirname(CONFIG["memory"]["db_path"])
+    day, out = time.strftime("%a"), {}
+    for name in stores:
+        src = os.path.join(data, name)
+        if not os.path.exists(src):
+            continue
+        try:
+            with sqlite3.connect(src, timeout=10) as c:
+                ok = c.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+        except sqlite3.Error:
+            ok = False
+        if not ok:
+            from ishti import notifications
+            notifications.add("error", f"{name} failed its integrity check",
+                              f"The last good copies are in {os.path.join(data, 'backups')} (one per weekday). "
+                              "ISHTI did not overwrite them; restore one by hand with ISHTI closed.")
+            out[name] = "failed"
+            continue
+        copy = backup(src, os.path.join(data, "backups", f"{os.path.splitext(name)[0]}-{day}.db"))
+        restrict_to_owner(copy)
+        out[name] = "ok"
+    return out
+
+
 def export_everything(out_path: str | None = None) -> str:
     """Everything ISHTI keeps about the owner in one ZIP (the right to a copy, GDPR art. 20 style): a consistent copy of
     every store in the data folder, the saved chats, and the readable memory export. Models, browser profiles and media

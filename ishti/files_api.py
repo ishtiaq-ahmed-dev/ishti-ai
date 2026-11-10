@@ -179,6 +179,13 @@ def maybe_retention(interval_s: float = 86400) -> dict:
         out["chat_trash"] = get_conversation_manager().purge_trash(max_age_s=86400)
     except Exception as exc:
         swallowed("ishti/files_api.py:maybe_retention.trash", exc)
+    try:  # the same daily pass keeps the stores healthy: token deltas pruned, key stores checked and backed up
+        from ishti import runs
+        from ishti.core import vault
+        out["run_deltas"] = runs.prune_deltas()
+        out["stores"] = vault.daily_check_and_backup()
+    except Exception as exc:
+        swallowed("ishti/files_api.py:maybe_retention.stores", exc)
     return out
 
 
