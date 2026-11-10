@@ -157,6 +157,31 @@ def prune(days=KEEP_DAYS, folder=None):
     return gone
 
 
+_RETENTION = {"last": 0.0}
+
+
+def maybe_retention(interval_s: float = 86400) -> dict:
+    """Daily clean-up of what is temporary by design (prune() and purge_trash() existed but nothing ever called them):
+    uploads older than KEEP_DAYS, channel voice-note leftovers older than 7 days, deleted chats past their undo window.
+    Real history (chats, memories, notes, ledger) is never touched here."""
+    if time.time() - _RETENTION["last"] < interval_s:
+        return {}
+    _RETENTION["last"] = time.time()
+    out = {"uploads": prune(KEEP_DAYS)}
+    try:
+        from ishti.channels import media
+        if os.path.isdir(media.UPLOAD_DIR):
+            out["remote_uploads"] = prune(7, media.UPLOAD_DIR)
+    except Exception as exc:
+        swallowed("ishti/files_api.py:maybe_retention.remote", exc)
+    try:
+        from orchestrator.memory.conversation import get_conversation_manager
+        out["chat_trash"] = get_conversation_manager().purge_trash(max_age_s=86400)
+    except Exception as exc:
+        swallowed("ishti/files_api.py:maybe_retention.trash", exc)
+    return out
+
+
 async def save_upload(file: UploadFile, folder=None):
     """Stream `file` into the uploads folder -> (info, None) or (None, (message, status)). Partial files never stay."""
     folder = folder or UPLOAD_DIR

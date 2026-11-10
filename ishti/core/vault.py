@@ -247,6 +247,41 @@ def export_all(out_path: str | None = None, include_private: bool = True) -> str
     return out
 
 
+def export_everything(out_path: str | None = None) -> str:
+    """Everything ISHTI keeps about the owner in one ZIP (the right to a copy, GDPR art. 20 style): a consistent copy of
+    every store in the data folder, the saved chats, and the readable memory export. Models, browser profiles and media
+    caches are left out. The file is locked to the owner's Windows account - it is the most sensitive file there is."""
+    import glob
+    import tempfile
+    from ishti import CONFIG
+    from ishti.secure_store import restrict_to_owner
+    data = os.path.dirname(CONFIG["memory"]["db_path"])
+    out = out_path or os.path.join(data, "backups", f"ishti-full-export-{time.strftime('%Y%m%d_%H%M')}.zip")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    tmp = tempfile.mkdtemp(prefix="ishti_export_")
+    stores = sorted(glob.glob(os.path.join(data, "*.db")))
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for db in stores:  # sqlite's backup API: a consistent copy even while ISHTI is writing
+            copy = os.path.join(tmp, os.path.basename(db))
+            try:
+                backup(db, copy)
+                z.write(copy, f"stores/{os.path.basename(db)}")
+            except sqlite3.Error as exc:
+                z.writestr(f"stores/{os.path.basename(db)}.error.txt", f"not copied: {exc}")
+        for chat in sorted(glob.glob(os.path.join(data, "sessions", "*.json"))):
+            z.write(chat, f"chats/{os.path.basename(chat)}")
+        try:
+            z.write(export_all(os.path.join(tmp, "memory.zip")), "memory-readable.zip")
+        except Exception as exc:
+            z.writestr("memory-readable.error.txt", f"not exported: {type(exc).__name__}")
+        z.writestr("manifest.json", json.dumps({"format": "ishti-full-export-v1", "created": time.time(),
+                                                "stores": [os.path.basename(s) for s in stores]}, indent=1))
+    restrict_to_owner(out)
+    import shutil
+    shutil.rmtree(tmp, ignore_errors=True)
+    return out
+
+
 def _dec_row(row, spec: dict | None = None) -> dict:
     d = dict(row)
     for col, val in list(d.items()):

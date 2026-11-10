@@ -2129,6 +2129,16 @@ async def memory_export(req: Request):
         return _learning_fail(exc)
 
 
+@learning_api.post("/api/privacy/export-all")
+async def privacy_export_all():
+    """One ZIP of everything ISHTI keeps (every store, the chats, readable memories), locked to the owner."""
+    try:
+        from ishti.core import vault
+        return {"path": await asyncio.to_thread(vault.export_everything)}
+    except Exception as exc:
+        return _learning_fail(exc)
+
+
 @learning_api.get("/api/memory/training-dry-run")
 async def memory_training_dry_run():
     """G3/G4: the offline pipeline's dry-run report (no training, no deployment)."""

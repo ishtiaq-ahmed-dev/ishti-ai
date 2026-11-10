@@ -35,6 +35,24 @@ Only the latest release on `main` receives security fixes.
 | **Kill switch and audit** | The stop control cancels running work at the next step. Every action is written to a local audit log with who started it. |
 | **Privacy** | `tools/privacy_report.py` lists every host the code can reach and why. Known telemetry endpoints are blocked even inside skills with broad network scope. |
 
+## Your data: copy, retention, erase
+
+- **Copy of everything:** Settings → Privacy → **Export everything** (or `POST /api/privacy/export-all`) writes one
+  ZIP with every store in the data folder, your saved chats and a readable memory export, locked to your Windows
+  account. Delete it when you no longer need it - it is the most sensitive file on the PC.
+- **Retention:** once a day ISHTI removes what is temporary by design - uploads older than 30 days, channel
+  voice-note leftovers older than 7 days, deleted chats past their undo window. Telegram voice notes are deleted as
+  soon as they are transcribed. Chats, memories, notes and the ledger are kept until you delete them.
+- **Forget one thing:** "forget that", "forget everything about Ali", or Learning → Memory → Forget.
+- **Erase everything** (deliberately manual, so no bug or injected instruction can trigger it):
+  1. Quit ISHTI (tray → Quit).
+  2. Delete the `data` folder inside the ISHTI folder, and `%LOCALAPPDATA%\ISHTI` (logs).
+  3. In **Windows Credential Manager → Windows Credentials**, remove the entries named `ishti`,
+     `ishti-sensitive-storage`, `ishti-model-provider`, `ishti-waha` and every `ISHTI:` entry (saved logins).
+  4. WhatsApp: on your phone, **Linked devices → log out** the ISHTI device; then
+     `docker rm -f ishti-waha` and `docker volume rm ishti_waha_sessions`.
+  5. If you used a cloud model, its provider's own retention applies to what was already sent - check their policy.
+
 ## Known limitations
 
 - ISHTI is not a sandbox. File and document readers run in separate processes with limits, but this is not an

@@ -408,6 +408,8 @@ def _learn_turn(text, reply, name, dec, sid, channel, message_id=None):
             from ishti.memstore import memory as _memstore
             _memstore.maybe_promote()
             _memstore.maybe_decay()  # daily; faded rows wait in Learning > Memory for the owner to confirm or forget
+            from ishti import files_api as _files_api
+            _files_api.maybe_retention()  # daily; temporary uploads and deleted-chat trash only, never real history
         except Exception as exc:
             print(f"[dispatcher] observation promotion skipped: {exc}")
     except Exception as exc:

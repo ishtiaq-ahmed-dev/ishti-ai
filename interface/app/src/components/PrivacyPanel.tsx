@@ -58,6 +58,21 @@ export function PrivacyPanel() {
     }
   };
 
+  const [exportMsg, setExportMsg] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const exportAll = async () => {
+    setExporting(true);
+    setExportMsg("");
+    try {
+      const res = await postJSON<{ path?: string; error?: string }>("/api/privacy/export-all", {});
+      setExportMsg(res.path ? `Saved to ${res.path}` : (res.error || "Export failed."));
+    } catch (e) {
+      setExportMsg(String((e as Error).message || e));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const handleVaultCleanup = async () => {
     setVaultBusy(true);
     setVaultMsg("");
@@ -104,7 +119,8 @@ export function PrivacyPanel() {
             <div className="min-w-0">
               <div className="font-semibold text-foreground text-sm">Privacy</div>
               <div className="text-xs text-muted-foreground">
-                Your data stays on this PC. Nothing is sent anywhere unless you ask a web skill (search, weather, markets...) to look something up.
+                Everything ISHTI remembers is stored on this PC only. With a cloud model, each message - and only the
+                context it needs - goes to that provider to be answered; web skills reach only the sites you ask for.
               </div>
             </div>
           </div>
@@ -126,6 +142,15 @@ export function PrivacyPanel() {
           <span className="ml-2 font-medium text-foreground">
             {p ? `${p.allowed_total} allowed, ${p.blocked_total} blocked so far` : ""}
           </span>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 px-4 py-2.5 text-xs">
+          <span className="text-muted-foreground">
+            {exportMsg || "Your data: one ZIP of everything ISHTI keeps, locked to your Windows account."}
+          </span>
+          <button type="button" disabled={exporting} onClick={exportAll}
+            className="rounded-lg border border-border px-2.5 py-1 font-medium text-foreground hover:bg-muted disabled:opacity-50 cursor-pointer">
+            {exporting ? "Exporting…" : "Export everything"}
+          </button>
         </div>
         <button
           type="button"
