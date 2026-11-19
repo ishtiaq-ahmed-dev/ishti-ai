@@ -1,0 +1,21 @@
+name: Feature or skill request
+description: A new skill, integration or improvement.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What do you want ISHTI to do?
+      description: Describe it as something you would say to ISHTI, plus the result you expect.
+      placeholder: '"track my water intake and remind me every 2 hours" - a daily total and a gentle reminder'
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why does it matter to you?
+  - type: dropdown
+    id: help
+    attributes:
+      label: Would you like to build it?
+      options: ["Yes, I'd like to open a PR", "Maybe, with guidance", "No, just suggesting"]

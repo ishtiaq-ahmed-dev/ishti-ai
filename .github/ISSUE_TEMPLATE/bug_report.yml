@@ -1,0 +1,42 @@
+name: Bug report
+description: Something ISHTI did wrong, or a crash.
+labels: ["bug", "needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Never paste API keys, phone numbers or personal chats.** Replace them with `<redacted>`.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you said or clicked, what ISHTI did, and what you expected instead.
+      placeholder: |
+        I said: "remind me next Friday at 5pm to call Ali"
+        ISHTI replied: ...
+        I expected: ...
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Model mode
+      options: ["Local (Ollama)", "Cloud API (OpenAI-compatible)", "Not sure"]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ISHTI version
+      description: "Run `venv\\Scripts\\python -m ishti --version`."
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: From `%LOCALAPPDATA%\ISHTI\logs`. Remove anything personal.
+      render: text

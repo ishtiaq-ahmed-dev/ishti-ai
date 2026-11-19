@@ -1,0 +1,20 @@
+{
+  "projectName": "ISHTI",
+  "projectOwner": "ishtiaq-ahmed-dev",
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "files": ["README.md"],
+  "imageSize": 80,
+  "commit": false,
+  "commitConvention": "angular",
+  "contributorsPerLine": 7,
+  "contributors": [
+    {
+      "login": "ishtiaq-ahmed-dev",
+      "name": "Ishtiaq Ahmed",
+      "avatar_url": "https://github.com/ishtiaq-ahmed-dev.png",
+      "profile": "https://github.com/ishtiaq-ahmed-dev",
+      "contributions": ["code", "design", "doc", "ideas", "maintenance", "test"]
+    }
+  ]
+}

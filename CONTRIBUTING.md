@@ -12,7 +12,8 @@ under the same license.
 - **Security problems:** do not open a public issue. Message the maintainer on GitHub (<https://github.com/ishtiaq-ahmed-dev>).
 - **Maintainer:** Ishtiaq Ahmed ([@ishtiaq-ahmed-dev](https://github.com/ishtiaq-ahmed-dev)).
 
-Look for issues labelled `good first issue` or `help wanted`.
+Look for issues labelled `good first issue` or `help wanted`. Every contributor is credited in the README with
+[All Contributors](https://allcontributors.org): code, docs, tests, design, ideas and bug reports all count.
 
 ## Set up for development
 

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/ishtiaq-ahmed-dev/ISHTI/discussions
+    about: Ask how to do something, or share an idea before writing code.
+  - name: Security problem
+    url: https://github.com/ishtiaq-ahmed-dev/ISHTI/security/advisories/new
+    about: Report a vulnerability privately. Please don't open a public issue.

@@ -1,61 +1,140 @@
 <p align="center">
-  <img src="assets/ishti_logo_dark.png#gh-dark-mode-only" alt="ISHTI" width="420" />
-  <img src="assets/ishti_logo.png#gh-light-mode-only" alt="ISHTI" width="420" />
+  <img src="assets/ishti_logo_dark.png#gh-dark-mode-only" alt="ISHTI" width="380" />
+  <img src="assets/ishti_logo.png#gh-light-mode-only" alt="ISHTI" width="380" />
 </p>
 
-<h3 align="center">A private, safety-first personal AI assistant for Windows</h3>
+<h3 align="center">A private, local-first personal AI assistant for Windows</h3>
+
+<p align="center">
+  Talk or type. ISHTI remembers, reminds, searches, reads your files, runs 120+ skills and plugs into any MCP tool,<br/>
+  on a local model or the cloud API you choose. Nothing is sent, deleted or paid without your <b>yes</b>.
+</p>
 
 <p align="center">
   <a href="https://github.com/ishtiaq-ahmed-dev/ISHTI/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/ishtiaq-ahmed-dev/ISHTI/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/ishtiaq-ahmed-dev/ISHTI/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/ishtiaq-ahmed-dev/ISHTI?style=flat&logo=github"></a>
   <img alt="Version" src="https://img.shields.io/badge/version-0.2.0-blue">
-  <img alt="Python" src="https://img.shields.io/badge/python-3.11-3776AB">
-  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6">
+  <img alt="Python" src="https://img.shields.io/badge/python-3.11-3776AB?logo=python&logoColor=white">
+  <img alt="Platform" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows&logoColor=white">
+  <img alt="MCP" src="https://img.shields.io/badge/MCP-client%20%2B%20server-8A2BE2">
+  <a href="https://github.com/ishtiaq-ahmed-dev/ISHTI/issues?q=is%3Aopen+label%3A%22good+first+issue%22"><img alt="Good first issues" src="https://img.shields.io/github/issues/ishtiaq-ahmed-dev/ISHTI/good%20first%20issue?color=7057ff&label=good%20first%20issues"></a>
+  <a href="CONTRIBUTING.md"><img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-lightgrey"></a>
 </p>
 
-ISHTI is a desktop assistant that you can type to or talk to. It runs on your own PC. It answers questions, keeps
-reminders and notes, finds and reads your files, works with your Gmail, Calendar, WhatsApp, Telegram, Discord and
-Slack, plugs into any MCP tool server, and translates to and from Urdu and Pashto. It never acts behind your back: anything that sends, deletes, spends or
-installs waits for your explicit **yes**, and some actions, such as wiping a drive or moving money, are refused outright.
+<p align="center">
+  <a href="#-quick-start">Quick start</a> ·
+  <a href="#-features">Features</a> ·
+  <a href="#-screenshots">Screenshots</a> ·
+  <a href="#-how-it-works">How it works</a> ·
+  <a href="#-how-ishti-compares">Compare</a> ·
+  <a href="#-contributing">Contribute</a>
+</p>
 
-It is **single-owner by design**: one person, one PC, one memory.
+<p align="center">
+  <img src="docs/screenshots/chat.png" alt="ISHTI chat: weather, a reminder, a calculation and a search of past conversations, each answered by the skill named above it" width="900" />
+</p>
 
 ---
 
-## Highlights
+## ✨ Why ISHTI
 
-- **One decision per request.** Deterministic rules handle what they can with no model call. Everything else gets
-  **at most one** model call, which either answers or picks the right skill. Ordinary turns cost 0–1 calls.
-- **Your choice of brain.** A local model through [Ollama](https://ollama.com), or any OpenAI-compatible cloud API
-  (OpenAI, Anthropic, Gemini, OpenRouter, AgentRouter, or a custom URL). If the cloud refuses, **automatic failover**
-  switches to a light local model, and a circuit breaker stops ISHTI from retrying a dead provider on every message.
-- **123 built-in skills:** reminders, calendar, notes, files, documents (PDF, Word, Excel, slides), charts, OCR, media,
-  translation, web search with citations, markets, ledger, a CRM-style Business Desk, and more.
-  See [docs/SKILLS.md](docs/SKILLS.md).
-- **Open to the agent ecosystem.** Any [MCP](https://modelcontextprotocol.io) server becomes a set of ISHTI tools
-  (`add mcp server github npx -y @modelcontextprotocol/server-github`), and ISHTI can itself be an MCP server.
-  [Agent Skills](https://agentskills.io) `SKILL.md` guides install from a folder or a URL and are read only when a
-  request needs them. A task done the same way twice is offered back as a reusable skill.
-- **Everywhere you chat.** The desktop app, the browser, your voice, WhatsApp, Telegram, Discord and Slack. Every
-  remote channel obeys only your account and supports `/kill` and `/lock`.
-- **Works while you don't.** Scheduled jobs, folder and page watches, inbound **webhooks**, and
-  `... in the background` tasks. Each one runs in its own session, and a step that needs your yes waits in the
-  notification bell. Independent read-only steps of a plan run in parallel.
-- **A real sandbox.** `run this in the sandbox: ...` executes Python in a throwaway Docker container with no network,
-  a read-only filesystem and no access to your files.
-- **Remembers conversations, not just facts.** `what did we talk about the visa last week` searches your past chats
-  locally.
-- **Real integrations, not screen scraping.** Gmail and Google Calendar through their official APIs (OAuth),
-  Telegram through the Bot API, and WhatsApp through [WAHA](https://waha.devlike.pro), a local HTTP API.
-  No headless browser drives your accounts.
-- **Voice.** Optional wake word, Whisper speech-to-text and Kokoro text-to-speech, all on-device. The microphone
-  is off by default.
-- **Learns from you, safely.** Corrections become lessons and preferences, which you can inspect and delete under
-  *Learning*. Model weights are never changed at runtime.
-- **Token-efficient.** The system prompt is ordered for provider prompt caching (stable prefix first). Measured
-  facts about your PC are only attached when you ask about it, and background extractors skip ordinary task messages.
+| 🔒 **Private by default** | ⚡ **Fast and frugal** | 🧩 **Open to the ecosystem** |
+|---|---|---|
+| Runs on your PC and listens on `127.0.0.1`. Keys live in Windows Credential Manager. Secrets you type are masked in history and never reach a cloud prompt. | Deterministic rules answer what they can with **zero** model calls; everything else takes **at most one**. Typical replies take about 0.3 s, plus model time. | Any **MCP** server becomes ISHTI tools, ISHTI is an MCP server itself, and **Agent Skills** (`SKILL.md`) install from a folder or a URL. |
 
-## How it works
+## 🚀 Quick start
+
+**You need:** Windows 10 or 11 and Python 3.11. For local models, an NVIDIA GPU (8 GB minimum, 16 GB recommended).
+For cloud mode, an API key from any OpenAI-compatible provider.
+
+```bat
+git clone https://github.com/ishtiaq-ahmed-dev/ISHTI.git C:\ISHTI
+cd C:\ISHTI
+install.bat              :: or: install.bat --provider api   (lightweight, no GPU models)
+start.bat
+```
+
+On first start ISHTI asks how it should think, **On this PC** (Ollama) or **Cloud API**, and remembers the choice.
+Then just ask:
+
+```text
+remind me tomorrow at 9 to submit the report
+what's the weather in Lahore this weekend?
+what is 18% of 45,000?
+find my files named invoice
+summarize https://www.python.org/downloads/
+research the best laptops under 200k in the background  ← the answer arrives in the bell
+what did we talk about the client demo last week?
+send "running 10 minutes late" to Ahmed on WhatsApp      ← shows the draft and waits for your yes
+```
+
+## 🧠 Features
+
+<table>
+<tr><td width="50%" valign="top">
+
+**Everyday assistant**
+- Reminders, timers, calendar, notes, lists, habits and a spending log
+- Weather, prices, news and web search with sources
+- Reads PDFs, Word, Excel and slides; charts, OCR, media tools
+- English, Urdu and Pashto, typed or Roman script
+- Searches your **past conversations**, not just saved facts
+
+</td><td width="50%" valign="top">
+
+**Agent features**
+- **MCP client and server**: `add mcp server github npx -y @modelcontextprotocol/server-github`
+- **Agent Skills** (`SKILL.md`), read only when a request needs them
+- **Background tasks**, **scheduled jobs**, folder and page watches, inbound **webhooks**
+- Independent read-only steps of a plan run **in parallel**
+- **Docker sandbox** for Python: no network, no access to your files
+
+</td></tr>
+<tr><td valign="top">
+
+**Everywhere you chat**
+- Desktop app, browser and voice (wake word, on-device Whisper and Kokoro)
+- WhatsApp through [WAHA](https://waha.devlike.pro), Telegram, Discord and Slack
+- Every remote channel obeys only your account and supports `/kill` and `/lock`
+
+</td><td valign="top">
+
+**Safe by design**
+- Sending, deleting, paying and installing always ask first; the yes is single-use
+- Wiping a drive or moving money is refused outright
+- Web pages, emails and tool output are data: instructions inside them are flagged, never followed
+- A kill switch stops all running work at the next step
+
+</td></tr>
+</table>
+
+**Your choice of brain:** a local model through [Ollama](https://ollama.com), or OpenAI, Anthropic, Gemini,
+OpenRouter, AgentRouter or any OpenAI-compatible URL. If the cloud refuses, **automatic failover** answers with a light
+local model, and a circuit breaker stops ISHTI retrying a dead provider on every message.
+
+## 📸 Screenshots
+
+<table>
+<tr>
+<td><img src="docs/screenshots/overview.png" alt="Overview: the request pipeline, from input to answer, with live counts" /></td>
+<td><img src="docs/screenshots/connectors.png" alt="Connectors: microphone, wake word, files, WhatsApp, calendar and other inputs with their live state" /></td>
+</tr>
+<tr>
+<td align="center"><b>Overview</b> - the pipeline with live counts</td>
+<td align="center"><b>Connectors</b> - every input and channel, read live</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/skills.png" alt="Skills: 123 skills grouped into categories" /></td>
+<td><img src="docs/screenshots/learning.png" alt="Learning: lessons, feedback, mistakes and memory, each reversible" /></td>
+</tr>
+<tr>
+<td align="center"><b>Skills</b> - 123 skills by category</td>
+<td align="center"><b>Learning</b> - what it learned, all reversible</td>
+</tr>
+</table>
+
+## 🔧 How it works
 
 ```mermaid
 flowchart LR
@@ -76,163 +155,133 @@ flowchart LR
 |---|---|---|
 | Guards | `ishti/dispatcher.py` | Hard boundaries run before any model call; injected "skip confirmation" text is refused |
 | Rules | `ishti/tool_routing.py` | A skill whose own trigger owns the request runs directly |
-| Brain | `ishti/brain.py` | One model call over a shortlist of at most 12 skills; multi-step plans become a journaled workflow |
+| Brain | `ishti/brain.py` | One model call over a shortlist of skills; multi-step plans become a journaled workflow |
 | Execution | `ishti/skill_execution.py` | Tier gates (T0 read-only to T3 blocked), scope checks, single-use approvals, audit log |
-| Models | `ishti/llm.py` | One code path for local and cloud models: GPU governor, failover, kill switch, output caps |
+| Models | `ishti/llm.py` | One code path for local and cloud: GPU governor, failover, kill switch, output caps |
 
-Deeper dives: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/SAFETY.md](docs/SAFETY.md),
-[docs/API_CONTRACT.md](docs/API_CONTRACT.md).
+More detail: [Architecture](docs/ARCHITECTURE.md) · [Safety](docs/SAFETY.md) · [API contract](docs/API_CONTRACT.md) ·
+[Skills](docs/SKILLS.md)
 
-## Quick start
+## ⚙️ Setup guides
 
-**Requirements:** Windows 10 or 11 and Python 3.11. For **local** models, an NVIDIA GPU (8 GB minimum, 16 GB
-recommended). For **API** mode, an API key. Docker Desktop is needed only if you want WhatsApp.
-
-```bat
-git clone https://github.com/ishtiaq-ahmed-dev/ISHTI.git C:\ISHTI
-cd C:\ISHTI
-install.bat              :: or: install.bat --provider api   (lightweight, no GPU models)
-start.bat
-```
-
-On first start, ISHTI asks how it should think, **Local** or **API**, and saves the choice. API keys go to the
-**Windows Credential Manager**, never to a file.
-
-### Model providers
+<details>
+<summary><b>Model providers</b> (local or cloud)</summary>
 
 | Mode | Runs on | Configure |
 |---|---|---|
-| Local | Ollama on this PC, with the GPU governed so models never spill to the CPU | `install.bat` downloads the models |
+| Local | Ollama on this PC; the GPU is governed so models never spill to the CPU | `install.bat` downloads the models |
 | API | `openai`, `anthropic`, `gemini`, `openrouter`, `agentrouter`, or any OpenAI-compatible `base_url` | First-run card, or `llm.api` in [`ishti/config.json`](ishti/config.json) |
 
 ```jsonc
 "llm": {
   "provider": "api",
   "api": {
-    "provider": "agentrouter",           // or openai | anthropic | gemini | openrouter
-    "model": "gpt-6.1-sol",
-    "api_key_env": "ISHTI_API_KEY",      // or save the key from the first-run card (Credential Manager)
-    "failover_local_model": "gemma3:4b"  // answers while the cloud refuses; "" disables failover
+    "provider": "openrouter",             // or openai | anthropic | gemini | agentrouter
+    "model": "<model name>",
+    "api_key_env": "ISHTI_API_KEY",       // or save the key from the first-run card (Credential Manager)
+    "failover_local_model": "gemma3:4b"   // answers while the cloud refuses; "" disables failover
   }
 }
 ```
 
-Provider failures (bad key, quota, network, a client allow-list) are reported as one plain sentence. Failover only
-uses a model Ollama **already** has pulled; it never downloads or starts anything heavy.
+Failover only uses a model Ollama **already** has; it never downloads or starts anything heavy.
+</details>
 
-### WhatsApp (optional)
+<details>
+<summary><b>WhatsApp</b> (optional, through WAHA)</summary>
 
-ISHTI runs [WAHA](https://waha.devlike.pro) in its **own** Docker container, `ishti-waha`. The container listens on
-`127.0.0.1:3747` only, the image is pinned by digest, and the GOWS engine runs without a browser. Open
-**Settings → Connectors → WhatsApp → Link** and scan the QR code with *WhatsApp → Linked devices*. The API key is
-generated once and stored in Credential Manager; the container only receives its SHA-512 hash. ISHTI stops the
-container on shutdown, and the session survives in a Docker volume.
+ISHTI runs [WAHA](https://waha.devlike.pro) in its **own** Docker container, listening on `127.0.0.1` only, with the
+image pinned by digest. Open **Settings → Connectors → WhatsApp → Link** and scan the QR code under *WhatsApp →
+Linked devices*. The API key is kept in Credential Manager; the container only gets its SHA-512 hash.
 
-> WhatsApp access is unofficial (WhatsApp Web protocol). It can get a number banned. Use a number you can afford to lose.
+> WhatsApp access is unofficial (WhatsApp Web protocol) and can get a number banned. Use a number you can afford to lose.
+</details>
 
-### Gmail, Calendar, Telegram
+<details>
+<summary><b>Gmail, Calendar, Telegram, Discord, Slack</b></summary>
 
-Connect them under **Settings → Connectors**. Google services use OAuth with PKCE ([docs/OAUTH_SETUP.md](docs/OAUTH_SETUP.md)).
-Telegram uses a bot token and a one-time pairing code.
+- **Google:** Settings → Connectors, OAuth with PKCE ([guide](docs/OAUTH_SETUP.md)).
+- **Telegram:** a bot token and a one-time pairing code.
+- **Discord / Slack:** create a bot, then say on the PC `connect discord bot <token> owner <your user id>` (or
+  `connect slack bot <xoxb-token> owner <member id>`). ISHTI reads only your DMs with that bot. Slack needs the scopes
+  `im:history`, `im:write` and `chat:write`.
+</details>
 
-### Discord and Slack
-
-Create a bot in the platform's developer portal, then tell ISHTI on the PC:
-`connect discord bot <token> owner <your Discord user id>` (or `connect slack bot <xoxb-token> owner <your Slack member id>`).
-ISHTI polls only your direct messages with that bot and answers there. The token goes to Windows Credential Manager.
-Slack needs the bot scopes `im:history`, `im:write` and `chat:write`. Discord needs no privileged intents for DMs.
-
-### MCP servers, skills and webhooks
-
-`add mcp server <name> <command or https address>`, `set mcp secret <name> <value>` (use it as `keyring:<name>` in the
-server's env), `list mcp servers`, `install skill from <folder or URL>`, `create a webhook called <name> that <instruction>`.
-Servers can also be listed in `ishti/config.json` under `mcp_servers`, in the same format Claude Desktop uses.
-
-## Try it
+<details>
+<summary><b>MCP servers, skills, webhooks, sandbox</b></summary>
 
 ```text
-remind me tomorrow at 9 to submit the report
-what's the weather in Peshawar this weekend?
-convert 10 km to miles and what is 15% of 2400?
-find my files named invoice
-summarize https://www.python.org/downloads/
-translate "good morning, how are you?" into Urdu
-send "running 10 minutes late" to Ahmed on WhatsApp      ← shows the draft and waits for your yes
-research the best laptops under 200k in the background  ← the answer arrives in the bell
-what did we talk about the embassy last week?
+add mcp server <name> <command or https address>
+set mcp secret <name> <value>        ← use it as keyring:<name> in the server's env
+list mcp servers
+install skill from <folder or URL>
+create a webhook called <name> that <instruction>
 run this in the sandbox: ```print(sum(x*x for x in range(100)))```
-add mcp server github npx -y @modelcontextprotocol/server-github
-install skill from https://github.com/<owner>/<repo>/tree/main/skills/<skill-name>
-connect discord bot <token> owner <your user id>
-create a webhook called door that tells me someone is at the door
 ```
 
-## How ISHTI compares
+Servers can also go in `ishti/config.json` under `mcp_servers`, in the format Claude Desktop uses. Adding a server, a
+skill, a channel or a webhook always asks first.
+</details>
+
+## 🆚 How ISHTI compares
 
 ISHTI covers the same core as the popular open-source agents [OpenClaw](https://github.com/openclaw/openclaw) and
 [Hermes Agent](https://github.com/NousResearch/hermes-agent): your own hardware, any model, MCP, Agent Skills, chat
-channels and scheduled automation. It differs in where it puts the defaults:
+channels and scheduled automation. It differs in its defaults:
 
 | | ISHTI |
 |---|---|
-| **Desktop** | A native Windows app with a wake word, on-device speech in both directions, desktop and file control |
-| **Cost per message** | Deterministic rules answer what they can for free; everything else takes at most one model call |
-| **Approvals** | Sending, deleting, paying and installing always wait for your yes, on every channel, in the background too |
-| **Extensions** | MCP servers and skills come from addresses you choose. There is no public marketplace to poison. A skill that carries instructions aimed at an AI is refused, and every addition asks first |
-| **Outside content** | Web pages, emails, tool output and webhook bodies are marked as data. Instruction-like text in them is flagged, never followed |
-| **Secrets** | Kept in Windows Credential Manager, masked in chat history, and never put into a cloud prompt |
-| **Code execution** | Shell commands that can run code ask first; the Docker sandbox runs Python with no network and none of your files |
+| **Desktop** | A native Windows app with a wake word, on-device speech both ways, desktop and file control |
+| **Cost per message** | Rules answer what they can for free; everything else takes at most one model call |
+| **Approvals** | Sending, deleting, paying and installing wait for your yes on every channel, in the background too |
+| **Extensions** | MCP servers and skills come from addresses you choose, with no public marketplace to poison; AI-aimed instructions in a skill are refused |
+| **Outside content** | Web pages, emails, tool output and webhook bodies are data; instruction-like text is flagged |
+| **Secrets** | In Windows Credential Manager, masked in chat history, never put into a cloud prompt |
+| **Code execution** | Shell commands that can run code ask first; the Docker sandbox has no network and none of your files |
 
 Their strengths are breadth: OpenClaw lists more than 20 chat platforms and a large community skill hub, and Hermes
-Agent runs on Linux, macOS and Android as well as Windows. ISHTI is single-owner and Windows-first by design.
+Agent runs on Linux, macOS and Android too. ISHTI is single-owner and Windows-first by design.
 
-## Safety and privacy
+## 🤝 Contributing
 
-- **Approvals.** T2 actions (send, delete, pay, install, control the PC) need your yes. That yes is single-use and
-  bound to the exact draft and recipient. T3 actions are refused.
-- **Untrusted content stays data.** Web pages, files, emails and messages can never authorise an action.
-- **Local by default.** The backend binds to `127.0.0.1`. Remote access is opt-in and authenticated.
-- **No secrets in files.** Keys live in Credential Manager. The API token file is owner-only.
-- **Auditable.** Every action is logged with who started it. `tools/privacy_report.py` lists every host the code can
-  reach and why.
-- **Kill switch.** One control stops all running work at the next step.
+ISHTI is built in the open and **contributions are very welcome**, from typo fixes to new skills.
 
-Report vulnerabilities privately: see [SECURITY.md](SECURITY.md).
-
-## Development
+1. Pick an issue labelled [`good first issue`](https://github.com/ishtiaq-ahmed-dev/ISHTI/issues?q=is%3Aopen+label%3A%22good+first+issue%22)
+   or [`help wanted`](https://github.com/ishtiaq-ahmed-dev/ISHTI/issues?q=is%3Aopen+label%3A%22help+wanted%22).
+2. Read [CONTRIBUTING.md](CONTRIBUTING.md). The offline test suite needs no model, no network and none of your data.
+3. Open a pull request. Every contributor is credited below with [All Contributors](https://allcontributors.org).
 
 ```bat
 python -m venv venv && venv\Scripts\pip install -r requirements.txt
 set ISHTI_OFFLINE_EVAL=1
 venv\Scripts\python -m pytest              :: offline suite: no model, no network, scratch data
-venv\Scripts\ruff check ishti tests
-cd interface\app && npm ci && npm run build
 ```
 
-Tests never touch your real data, saved provider choice or Credential Manager. See [CONTRIBUTING.md](CONTRIBUTING.md)
-and [docs/TESTING.md](docs/TESTING.md).
+### Contributors
 
-```text
-ishti/            core: dispatcher, brain, routing, LLM, memory, learning, channels, skills/
-interface/        FastAPI server (web_ui/) and the React dashboard (app/)
-desktop/          pywebview window, tray, launcher
-orchestrator/     research engine, persona, diagnostics
-tools/            installer, web search/fetch, privacy report, QA harnesses
-tests/            offline pytest suite, per-skill suites, task suites
-docs/             architecture, safety, API contract, setup guides
-```
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<table>
+  <tr>
+    <td align="center" valign="top" width="14%"><a href="https://github.com/ishtiaq-ahmed-dev"><img src="https://github.com/ishtiaq-ahmed-dev.png" width="80px;" alt="Ishtiaq Ahmed"/><br /><sub><b>Ishtiaq Ahmed</b></sub></a><br />💻 🎨 📖 🤔 🚧 ⚠️</td>
+  </tr>
+</table>
+<!-- ALL-CONTRIBUTORS-LIST:END -->
 
-## Known limitations
+## 🛡️ Safety, privacy and limits
 
-- **Windows only**, tested on one NVIDIA card. Other hardware is unverified.
-- **Accuracy is only partly measured.** See [docs/ACCURACY.md](docs/ACCURACY.md). Small local models make more
-  mistakes than cloud models; check important answers.
-- Pages that only render with JavaScript or sit behind a login can't be read: there is no browser automation, by design.
-- Uploaded files are not encrypted at rest yet.
+- **Local by default.** The backend binds to `127.0.0.1`; remote access is opt-in and authenticated.
+- **Auditable.** Every action is logged with who started it; `tools/privacy_report.py` lists every host the code can reach.
+- **Report vulnerabilities privately:** see [SECURITY.md](SECURITY.md).
+- **Limits:** Windows only, tested on one NVIDIA card. Small local models make more mistakes than cloud models
+  ([accuracy notes](docs/ACCURACY.md)). Pages that need JavaScript or a login can't be read; there is no browser
+  automation, by design. Uploaded files are not encrypted at rest yet.
 
-## License
+## 📄 License
 
-[PolyForm Noncommercial 1.0.0](LICENSE). Free for personal and non-commercial use. Third-party notices are in
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), and the release history is in [CHANGELOG.md](CHANGELOG.md).
+[PolyForm Noncommercial 1.0.0](LICENSE): free for personal and non-commercial use. Third-party notices are in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); release history is in [CHANGELOG.md](CHANGELOG.md).
 
-Created by **[Ishtiaq Ahmed](https://github.com/ishtiaq-ahmed-dev)**.
+<p align="center">
+  Built by <a href="https://github.com/ishtiaq-ahmed-dev"><b>Ishtiaq Ahmed</b></a> ·
+  if ISHTI is useful to you, a ⭐ helps other people find it.
+</p>
