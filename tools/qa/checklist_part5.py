@@ -164,7 +164,7 @@ TASKS = [
     # --- 45. Freelance & client work management (263-268) ---
     {"id": 263, "diff": "Easy", "task": "What client work do I have due this week?",
      "turns": ["What client work do I have due this week?"],
-     "want": [r"client|due|week|project|jq ai|khattak|nothing due|deadline|schedule|milestone"], "bad": [],
+     "want": [r"client|due|week|project|jq ai|kestrel|nothing due|deadline|schedule|milestone"], "bad": [],
      "note": "client work schedule recall from real data"},
     {"id": 264, "diff": "Medium", "task": "Create an invoice draft for the JQ AI Solutions work this month",
      "turns": ["Create an invoice draft for the JQ AI Solutions work this month"],
@@ -176,7 +176,7 @@ TASKS = [
      "note": "T2 confirmation gate with recap before invoice send"},
     {"id": 266, "diff": "Medium", "task": "What's the status of the Kestrel Scanner deployment?",
      "turns": ["What's the status of the Kestrel Scanner deployment?"],
-     "want": [r"khattak|scanner|deployment|status|progress|active|on file|verified"], "bad": [],
+     "want": [r"kestrel|scanner|deployment|status|progress|active|on file|verified"], "bad": [],
      "note": "accurate status reporting for specific client project"},
     {"id": 267, "diff": "Medium", "task": "Remind me to follow up with this client if they haven't replied in 3 days",
      "turns": ["Remind me to follow up with this client if they haven't replied in 3 days"],
@@ -184,7 +184,7 @@ TASKS = [
      "note": "conditional or timed reminder with honest boundary disclosure"},
     {"id": 268, "diff": "Hard", "task": "Summarize all my active client projects and their current status",
      "turns": ["Summarize all my active client projects and their current status"],
-     "want": [r"client|project|status|jq ai|khattak|active|summary|work"], "bad": [],
+     "want": [r"client|project|status|jq ai|kestrel|active|summary|work"], "bad": [],
      "note": "per-project recall without padding or hallucinated clients"},
 
     # --- 46. YouTube & content workflow (269-274) ---

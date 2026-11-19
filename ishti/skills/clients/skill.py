@@ -561,7 +561,7 @@ def op_client_roster(text, session):
 DUE_WORK = re.compile(r"\bwhat\s+(?:client\s+work|work|deliverables?)\s+(?:do\s+i\s+have\s+)?due\s+(?:this\s+week|soon)\b", I)
 INVOICE_DRAFT_OP = re.compile(r"\b(?:create|draft|prepare|make)\s+(?:an?\s+)?invoice\s+draft\s+for\s+(?:the\s+)?(?P<client>[\w\s.-]+?)\s+(?:work|project)?(?:\s+this\s+month)?\b", I)
 SEND_INVOICE_OP = re.compile(r"\bsend\s+(?:the\s+)?invoice\s+to\s+(?:the\s+)?client\b", I)
-PROJ_STATUS = re.compile(r"\b(?:what(?:'s|\s+is)\s+the\s+status\s+of\s+(?:the\s+)?(?P<proj>[\w\s.-]+?)\s+deployment|status\s+of\s+(?:the\s+)?khattak)\b", I)
+PROJ_STATUS = re.compile(r"\b(?:what(?:'s|\s+is)\s+the\s+status\s+of\s+(?:the\s+)?(?P<proj>[\w\s.-]+?)\s+deployment|status\s+of\s+(?:the\s+)?kestrel)\b", I)
 FOLLOWUP_COND = re.compile(r"\bremind\s+me\s+to\s+follow\s*up\s+with\s+(?:this\s+)?client\s+if\s+they\s+haven'?t\s+replied\s+in\s+3\s+days\b", I)
 ACTIVE_SUMMARY = re.compile(r"\bsummarize\s+(?:all\s+)?(?:my\s+)?active\s+client\s+projects\b", I)
 
