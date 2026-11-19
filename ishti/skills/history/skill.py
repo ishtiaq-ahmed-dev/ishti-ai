@@ -62,7 +62,7 @@ def _rows(words, since):
                 yield meta["session_id"], meta.get("title") or "Untitled chat", m.get("role"), text, _ts(m.get("timestamp"))
 
 
-def search(query: str, since: float = 0.0, exclude: str = "", limit: int = 5) -> list[dict]:
+def search(query: str, since: float = 0.0, exclude: str = "", limit: int = 5, exclude_chat: str = "") -> list[dict]:
     """The chats that best match the query's content words: [{title, when, snippet}], best first."""
     words = sorted({w for w in re.findall(r"\w{3,}", query.lower()) if w not in STOP})
     if not words:
@@ -70,7 +70,8 @@ def search(query: str, since: float = 0.0, exclude: str = "", limit: int = 5) ->
     need = len(words) if len(words) <= 2 else (len(words) + 1) // 2  # short queries need every word
     best = {}
     for chat, title, role, text, ts in _rows(words, since):
-        if ts < since or text.strip() == exclude.strip() or (role != "user" and text.startswith(HEADER)):
+        if (ts < since or text.strip() == exclude.strip() or (role != "user" and text.startswith(HEADER))
+                or (exclude_chat and chat == exclude_chat)):  # the chat you're in is not "a past conversation"
             continue
         low = text.lower()
         hits = [w for w in words if re.search(rf"\b{re.escape(w)}", low)]
@@ -97,7 +98,7 @@ def run(text, session):
     when = WHEN.search(query)
     since = _since(when["w"]) if when else 0.0
     query = WHEN.sub(" ", query).strip()
-    found = search(query, since=since, exclude=text)
+    found = search(query, since=since, exclude=text, exclude_chat=str((session or {}).get("id") or ""))
     period = f" ({when['w'].lower()})" if when else ""
     if not found:
         return {"reply": f"I couldn't find \"{query}\" in our past chats{period}.", "sources": []}

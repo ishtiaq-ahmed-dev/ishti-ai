@@ -469,7 +469,11 @@ def handle_command(text: str, session=None) -> str | None:  # noqa: C901
     if m:
         memory.reconcile(m.group("fact").strip().rstrip("."), source="explicit_user",
                          importance=0.8, confidence=0.95)
-        return f"Remembered: {m.group('fact').strip().rstrip('.')}"
+        fact = m.group("fact").strip().rstrip(".")
+        # said back from ISHTI's side: "I like green tea" -> "you like green tea"
+        said = re.sub(r"\b(I am|I'm|I|my|mine|me|myself)\b", lambda w: {"i am": "you are", "i'm": "you're", "i": "you",
+                      "my": "your", "mine": "yours", "me": "you", "myself": "yourself"}[w.group(1).lower()], fact)
+        return f"Remembered: {said}."
     if FORGET_ALL_RE.search(t):  # before FORGET_RE: "delete all my memories" has no "forget" in it
         return _confirm_wipe(session)
     m = FORGET_RE.search(t)

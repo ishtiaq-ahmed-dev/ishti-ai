@@ -24,7 +24,7 @@ import type { OrbState } from "@/lib/agent-state";
 
 type Overview = {
   requests: number; by_source: Record<string, number>; by_skill: Record<string, number>;
-  laya: { loaded: boolean; error: string; model: string }; models: Record<string, string>;
+  models: Record<string, string>; active_model?: string;
   voice: Record<string, string>; reminders: number; memories: number;
   skills: { name: string; version: string; route: string; status: string; uses: number; problem?: string; category?: string; path?: string; folder?: string }[];
   owner: { attr: string; value: string }[]; facts: { entity: string; attr: string; value: string }[];
@@ -260,11 +260,11 @@ export function Overview({ onToggleNav }: { onToggleNav?: () => void }) {
   const stages = [
     { icon: <MessageSquareText className="h-4 w-4" />, orbState: "listening" as OrbState, title: "Input", lines: ["Text in this app", `Voice · whisper ${o.voice.whisper_model}`, `Hands-free · "hey ishti"`], count: o.requests, label: "requests" },
     { icon: <Sparkles className="h-4 w-4" />, orbState: "solving" as OrbState, title: "Understand", lines: ["Follow-ups rewritten with the chat", "\"this year\" → real dates"], count: undefined },
-    { icon: <Route className="h-4 w-4" />, orbState: "working" as OrbState, title: "Route", lines: ["Skill patterns first", `Laya ${o.laya.model} ${o.laya.loaded ? "· loaded" : ""}`], count: src("rule") + src("laya"), label: `${src("rule")} rule · ${src("laya")} Laya` },
+    { icon: <Route className="h-4 w-4" />, orbState: "working" as OrbState, title: "Route", lines: ["Skill rules first (no model call)", "Otherwise one model call picks the tool"], count: src("rule") + src("shortlist"), label: `${src("rule") + src("shortlist")} by rule` },
     { icon: <GitBranch className="h-4 w-4" />, orbState: "weaving" as OrbState, title: "Plan", lines: ["Several tasks → steps", "Answers carried between steps"], count: src("plan"), label: "plan steps" },
     { icon: <Wrench className="h-4 w-4" />, orbState: "shaping" as OrbState, title: "Skills", lines: [`${o.skills.length} skills`, `${o.skills.filter((s) => s.status !== "broken").length} working`], count: o.skills.length, label: "skills" },
-    { icon: <Brain className="h-4 w-4" />, orbState: "connecting" as OrbState, title: "Tools & memory", lines: [`LLM ${o.models.planner}`, "SearXNG · WAHA · FFmpeg", `${o.facts.length + o.owner.length} facts · ${o.memories} memories`] },
-    { icon: <CheckCheck className="h-4 w-4" />, orbState: "solving" as OrbState, title: "Verify", lines: ["Answer check by the local model", "Falls short → next skill"], count: src("escalation"), label: "escalations" },
+    { icon: <Brain className="h-4 w-4" />, orbState: "connecting" as OrbState, title: "Tools & memory", lines: [`LLM ${o.active_model || o.models.planner}`, "MCP · SearXNG · WAHA · FFmpeg", `${o.facts.length + o.owner.length} facts · ${o.memories} memories`] },
+    { icon: <CheckCheck className="h-4 w-4" />, orbState: "solving" as OrbState, title: "Verify", lines: ["No claimed action without a tool", "A skill declines → the next one tries"], count: src("escalation"), label: "escalations" },
     { icon: <AudioLines className="h-4 w-4" />, orbState: "composing" as OrbState, title: "Answer", lines: ["Streamed with its reasoning", `Voice ${o.prefs.audio_output ? "on" : "off"} · ${o.voice.piper_voice}`] },
   ];
 
@@ -550,7 +550,7 @@ export function Overview({ onToggleNav }: { onToggleNav?: () => void }) {
                 {Object.keys(o.models).length + 1} roles
               </span>
             }
-            preview={`Planner: ${o.models.planner || "configured"} · Router: Laya ${o.laya.model}`}
+            preview={`Planner: ${o.models.planner || "configured"} · Router: rules + one model call`}
           >
             <div className="p-4 text-sm">
               <div className="space-y-2">
@@ -562,7 +562,7 @@ export function Overview({ onToggleNav }: { onToggleNav?: () => void }) {
                 ))}
                 <div className="flex items-center justify-between border-t border-border pt-2 text-xs sm:text-sm">
                   <span className="w-20 uppercase tracking-wider text-xs text-muted-foreground">router</span>
-                  <span className="font-mono text-foreground font-medium">Laya {o.laya.model}</span>
+                  <span className="font-mono text-foreground font-medium">rules + one model call</span>
                 </div>
               </div>
             </div>

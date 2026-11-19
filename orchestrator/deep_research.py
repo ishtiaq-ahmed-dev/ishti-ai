@@ -41,7 +41,8 @@ except Exception:  # pragma: no cover
         return None
 
 
-RESEARCH_MEM_DIR = os.path.join(ROOT_DIR, "orchestrator", "memory", "research")
+from ishti.test_mode import scratch_path as _scratch_path
+RESEARCH_MEM_DIR = _scratch_path(os.path.join(ROOT_DIR, "orchestrator", "memory", "research"))  # scratch mode: a temp copy
 os.makedirs(RESEARCH_MEM_DIR, exist_ok=True)
 
 

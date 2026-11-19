@@ -125,11 +125,11 @@ def run(text, session):
         m = rx.match(t)
         if not m:
             continue
-        try:
-            import sympy
-            from sympy import symbols, Eq, solve as sym_solve, diff, integrate, simplify as sym_simp, gcd, lcm  # noqa
-        except ImportError:
-            return None  # keep routing honest: no sympy -> not our request
+        if name in _SYMBOLIC:
+            try:
+                import sympy  # noqa: F401  (~1.5 s the first time: only symbolic maths pays it)
+            except ImportError:
+                return None  # keep routing honest: no sympy -> not our request
         body = (m.groupdict().get("body") or "").strip()
         try:
             return _op(name, m, body, t)
@@ -139,9 +139,13 @@ def run(text, session):
     return None
 
 
+_SYMBOLIC = {"solve", "derivative", "integral", "simplify", "prime"}
+
+
 def _op(name, m, body, t):
-    import sympy
-    from sympy import symbols, Eq, solve as sym_solve, diff, integrate, simplify as sym_simp, gcd, lcm  # noqa
+    if name in _SYMBOLIC:
+        import sympy
+        from sympy import symbols, Eq, solve as sym_solve, diff, integrate, simplify as sym_simp  # noqa
     if name == "solve":
         expr = body.replace("^", "**").rstrip(".?!")
         if "=" in expr:
@@ -167,13 +171,12 @@ def _op(name, m, body, t):
         return {"reply": f"{body} = {_latex_free(s)}", "sources": []}
     if name == "percent":
         g = m.groupdict()
+        num = lambda s: float(s.replace(",", "").rstrip("."))  # noqa: E731
         if g.get("p"):
-            val = _sympify(g["p"]) * _sympify(g["n"]) / 100
-            return {"reply": f"{g['p']}% of {g['n']} = {_latex_free(val)}", "sources": []}
-        if _sympify(g["n3"]) == 0:  # "240 is what percent of 0" answered "zoo%"
+            return {"reply": f"{g['p']}% of {g['n']} = {_number(num(g['p']) * num(g['n']) / 100)}", "sources": []}
+        if num(g["n3"]) == 0:  # "240 is what percent of 0" answered "zoo%"
             return {"reply": "A percentage of 0 isn't defined - nothing can be a share of zero.", "sources": []}
-        val = _sympify(g["n2"]) / _sympify(g["n3"]) * 100
-        return {"reply": f"{g['n2']} / {g['n3']} = {_latex_free(val)}%", "sources": []}
+        return {"reply": f"{g['n2']} / {g['n3']} = {_number(num(g['n2']) / num(g['n3']) * 100)}%", "sources": []}
     if name == "tip":
         amt = float(m.group("amt").replace(",", ""))
         pct = float(m.group("pct") or 15)
@@ -201,7 +204,8 @@ def _op(name, m, body, t):
     if name == "gcd":
         a, b = int(m.group("a")), int(m.group("b"))
         op = "gcd" if t.lower().startswith(("gcd", "hcf")) else "lcm"
-        val = gcd(a, b) if op == "gcd" else lcm(a, b)
+        import math
+        val = math.gcd(a, b) if op == "gcd" else math.lcm(a, b)
         return {"reply": f"{op.upper()}({a}, {b}) = {val}", "sources": []}
     return None
 

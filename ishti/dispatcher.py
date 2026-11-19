@@ -738,9 +738,18 @@ def _drop_questions():
 RECOVER = _recover()  # what the previous run was still doing when it stopped
 
 
+FILLER = re.compile(r"^\s*(?:okay|ok|sure|certainly|absolutely|of\s+course|alright|great)[,!.]?\s+here(?:'s|’s|\s+is|\s+are)\b"
+                    r"[^\n:]{0,160}:\s*", re.I)
+
+
 def _verify_reply(name, text, out, s):
     """Honesty checks on a finished reply: a skill that could not confirm an action may not sound like it did, and the
     model may not claim an irreversible action that no tool ran (the brain's direct answers are checked too)."""
+    # small models open with "Okay, here's a summary of the sources you provided:" - filler before the answer itself
+    reply = str(out.get("reply") or "")
+    trimmed = FILLER.sub("", reply, count=1)
+    if trimmed != reply and trimmed.strip():
+        out["reply"] = trimmed[:1].upper() + trimmed[1:]
     # models write "I’ve" with a curly apostrophe: the claim patterns spell "i've", so check a straightened copy
     said = str(out.get("reply") or "").translate({0x2019: "'", 0x2018: "'"})
     if out.get("verified") is False and CLAIM.search(said):
@@ -1233,6 +1242,18 @@ def _handle(text, sid, conv, s, events, t0, channel):
     if continued is not None:
         return _finish(text, sid, conv, s, events, t0, channel, "brain", continued,
                        {"skill": "brain", "source": "workflow", "confidence": 1.0})
+
+    # A bare yes/no with nothing waiting for it, after a reply that asked nothing: say so plainly. It reached the model,
+    # which answered "no" with "I didn't understand, could you repeat the request?" (live check 2026-11-19).
+    # Only the bare words: "cancel my reminder" / "don't remind me" are requests, not answers.
+    from ishti.skills import YES as _YES_WORDS, NO as _NO_WORDS
+    bare = text.strip().lower().strip(" .!")
+    prev = next((str(m.get("content") or "") for m in reversed(s.get("history", [])) if m.get("role") == "assistant"), "")
+    if (bare in _YES_WORDS or bare in _NO_WORDS) and not s.get("pending") and not prev.rstrip().endswith("?"):
+        out = {"reply": "Okay - nothing is waiting for a yes or no right now." if bare in _NO_WORDS
+               else "There's nothing waiting for a yes right now. Tell me what you'd like me to do.", "sources": []}
+        return _finish(text, sid, conv, s, events, t0, channel, "chat", out,
+                       {"skill": "chat", "source": "rule", "confidence": 1.0})
 
     # 1b. An unresolved ambiguous reference ("the cheapest one"): the owner's answer picks
     # the topic (T3). "iphone" / "the sony" completes the resolution; anything else moves on.
@@ -2216,6 +2237,15 @@ async def system_endpoint():
     return await asyncio.get_running_loop().run_in_executor(None, get_computer_use_agent().get_system_telemetry)
 
 
+def _active_model() -> str:
+    """What actually answers now: the cloud provider and model, or the local planner (the config's local names are
+    shown under Models). The Overview said 'LLM qwen3-c4k:14b' while a cloud model was answering."""
+    from ishti import llm
+    if llm.provider() == "api":
+        return f"{llm.api_settings().get('provider') or 'cloud'} · {llm.model_for('planner')}"
+    return f"local · {llm.model_for('planner')}"
+
+
 @api.get("/api/overview")
 async def overview_endpoint():
     """Everything the Overview page shows: pipeline stage counts, skills, the owner's data."""
@@ -2240,7 +2270,9 @@ async def overview_endpoint():
     prefs = get_user_memory().get_preferences()
     return {
         "requests": total, "by_source": by_source, "by_skill": by_skill,
-        "models": CONFIG["llm"]["models"], "voice": {k: CONFIG["voice"][k] for k in ("whisper_model", "piper_voice", "wake_model")},
+        "models": CONFIG["llm"]["models"], "active_model": _active_model(),
+        # a model name, not the owner's folder path (the page is shown in screenshots and over remote access)
+        "voice": {k: os.path.basename(str(CONFIG["voice"][k]).rstrip("\\/")) for k in ("whisper_model", "piper_voice", "wake_model")},
         "skills": [{**s.info(), "uses": by_skill.get(n, 0)} for n, s in SKILLS.items()],
         "owner": [{"entity": e, "attr": a, "value": v} for e, a, v in facts if e == "owner"],
         "facts": [{"entity": e, "attr": a, "value": v} for e, a, v in facts if e != "owner"],

@@ -214,6 +214,10 @@ def op_list(m, text, session):
     a, b, label = _range(text)
     items = occurrences(a, b)
     if not items:
+        from ishti import oauth
+        if not oauth.token("calendar"):  # "nothing" from ISHTI's own calendar must not read as "your Google Calendar is empty"
+            return (f"Nothing on ISHTI's calendar {label}. Google Calendar isn't connected, so its events aren't "
+                    f"included - say \"connect calendar\" to link it.")
         return f"Nothing on your calendar {label}."
     return f"Your calendar {label}:\n" + "\n".join(f"- {s:%a %H:%M}-{e:%H:%M} **{t}**" + (f" ({p})" if p else "") for s, e, t, p, _ in items)
 

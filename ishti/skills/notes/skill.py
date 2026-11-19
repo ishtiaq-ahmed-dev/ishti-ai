@@ -94,9 +94,30 @@ def _delete(q: str, session=None):
     return ask_first(session, "notes", f"Delete the note \"{victims[0][1][:80]}\"", remove)
 
 
+DELETE_ALL = re.compile(r"^(?:please\s+)?(?:delete|remove|clear|erase|wipe)\s+(?:all\s+(?:of\s+)?)?(?:my\s+|the\s+)?"
+                        r"(?:notes|all\s+notes)\s*[.!]?\s*$", I)
+
+
+def _delete_all(session):
+    """'delete all my notes' asked the model, which answered as if it were deleting: now it counts and asks first."""
+    with _lock, _db() as c:
+        n = c.execute("SELECT COUNT(*) FROM notes").fetchone()[0]
+    if not n:
+        return "You have no notes - nothing to delete."
+
+    def remove():
+        with _lock, _db() as c:
+            gone = c.execute("DELETE FROM notes").rowcount
+        return f"Deleted all {gone} note(s)."
+    if session is None:
+        return f"You have {n} note(s). Say it in a chat to delete them (I ask first)."
+    from ishti.skills import ask_first
+    return ask_first(session, "notes", f"Delete all {n} of your notes (this can't be undone)", remove)
+
+
 def match(text):
     return bool(ADD.match(text.strip()) or LIST.match(text.strip()) or FIND.match(text.strip())
-                or DELETE.match(text.strip()))
+                or DELETE.match(text.strip()) or DELETE_ALL.match(text.strip()))
 
 
 def run(text, session):
@@ -110,6 +131,9 @@ def run(text, session):
     m = FIND.match(t)
     if m:
         return {"reply": _find(m.group("q") or m.group("q2") or ""), "sources": []}
+    if DELETE_ALL.match(t):  # before DELETE: "delete all my notes" is not a note about "all my notes"
+        out = _delete_all(session)
+        return out if isinstance(out, dict) else {"reply": out, "sources": []}
     m = DELETE.match(t)
     if m:
         out = _delete(m.group("q"), session)

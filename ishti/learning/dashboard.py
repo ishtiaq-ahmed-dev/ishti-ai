@@ -15,6 +15,26 @@ from ishti.learning import observe as obs_module
 from ishti.learning import store
 from ishti.learning import workflows as wf_module
 
+def _memory_count() -> int:
+    """Active long-term memories (0 when the store isn't there yet)."""
+    import sqlite3
+    from ishti.memstore import memory
+    if not os.path.isfile(memory.db_path()):
+        return 0
+    try:
+        with sqlite3.connect(memory.db_path()) as c:
+            return c.execute("SELECT COUNT(*) FROM memories WHERE status='active'").fetchone()[0]
+    except sqlite3.Error as exc:
+        from ishti.core.logutil import swallowed
+        swallowed("ishti/learning/dashboard.py:_memory_count", exc)
+        return 0
+
+
+def _skill_count() -> int:
+    from ishti.dispatcher import SKILLS
+    return len(SKILLS)
+
+
 def overview() -> Dict[str, Any]:
     """Overview payload: counts, confidence buckets, loops, thresholds, settings, recent activity."""
     st = ls_module.stats()
@@ -35,11 +55,9 @@ def overview() -> Dict[str, Any]:
         "weak": 0, "possible": 0, "probable": 0, "strong": 0, "confirmed": cnts["confirmed"]
     }
     recent_activity = obs_module.recent(limit=20)
-    loops = {
-        "memory": "Exact facts, locations, and personal state in SQLite",
-        "skills": "61 registered capabilities & route matcher table",
-        "learning": "Reinforcement-style mistake signatures & prioritized lessons"
-    }
+    # real counts for the three loop cards (they showed "-": the values were descriptions, and "61 skills" was stale)
+    loops = {"memory": {"count": cnts["people"] + _memory_count()}, "skills": {"count": _skill_count()},
+             "learning": {"count": cnts["lessons"] + cnts["feedback"] + cnts["mistakes"]}}
     return {
         "enabled": store.enabled(),
         "db": store.db_path(),

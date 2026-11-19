@@ -60,9 +60,11 @@ def which_day(prompt: str, today: Optional[date] = None) -> int:
     """Days from today: tomorrow, day after tomorrow, a weekday name, or the weekend (-> Saturday,
     or today if it is already Sunday). Anything else = today. Open-Meteo covers 0-6."""
     p = prompt.lower()
-    if "day after tomorrow" in p:  # before "tomorrow", which it contains
+    if "day after tomorrow" in p or re.search(r"\b(?:parson|parsoon|parso)\b", p):  # before "tomorrow"
         return 2
-    if "tomorrow" in p:
+    # Roman Urdu "kal" is tomorrow in a forecast ("kal ka mausam kaisa hoga"); it means yesterday only in the past
+    # tense, which a forecast can't answer anyway
+    if "tomorrow" in p or (re.search(r"\b(?:kal|kl)\b", p) and not re.search(r"\b(?:tha|thi|the)\b", p)):
         return 1
     dow = (today or date.today()).weekday()
     if "weekend" in p:

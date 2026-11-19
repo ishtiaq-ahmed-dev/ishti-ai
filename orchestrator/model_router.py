@@ -18,7 +18,8 @@ except Exception:  # pragma: no cover
 
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
-REFLECTIONS_PATH = os.path.join(os.path.dirname(__file__), "memory", "reflections.md")
+from ishti.test_mode import scratch_path as _scratch_path
+REFLECTIONS_PATH = _scratch_path(os.path.join(os.path.dirname(__file__), "memory", "reflections.md"))
 
 
 class ModelRouter:

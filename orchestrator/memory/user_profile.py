@@ -15,10 +15,19 @@ from dataclasses import dataclass, asdict, field
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MEMORY_DIR = os.path.join(ROOT_DIR, "orchestrator", "memory")
-USER_PROFILE_PATH = os.path.join(MEMORY_DIR, "user_profile.json")
-PREFERENCES_PATH = os.path.join(MEMORY_DIR, "preferences.json")
-PROJECTS_PATH = os.path.join(MEMORY_DIR, "projects.json")
-CONTEXT_PATH = os.path.join(MEMORY_DIR, "important_context.json")
+
+
+def _scratch(path):
+    # ISHTI_SCRATCH=1 (tests, demos, live checks): the owner's profile is neither read nor written - only data/ stores
+    # were rebased, so a scratch server greeted the owner by name and its writes would have reached these real files
+    from ishti.test_mode import scratch_path
+    return scratch_path(path)
+
+
+USER_PROFILE_PATH = _scratch(os.path.join(MEMORY_DIR, "user_profile.json"))
+PREFERENCES_PATH = _scratch(os.path.join(MEMORY_DIR, "preferences.json"))
+PROJECTS_PATH = _scratch(os.path.join(MEMORY_DIR, "projects.json"))
+CONTEXT_PATH = _scratch(os.path.join(MEMORY_DIR, "important_context.json"))
 
 os.makedirs(MEMORY_DIR, exist_ok=True)
 

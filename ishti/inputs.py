@@ -92,6 +92,29 @@ def channels() -> list:
                 "source": "tools/wa_bridge",
                 "action": "view_qr", "qr_available": qr_avail})
 
+    # Discord / Slack DMs, MCP servers and webhooks: set up in chat, shown here
+    try:
+        from ishti.channels import policy as _policy
+        from ishti import mcp_client, webhooks
+        pol = _policy.load()
+        for name in ("discord", "slack"):
+            cfg = pol.get(name) if isinstance(pol.get(name), dict) else {}
+            on = bool(cfg.get("enabled") and cfg.get("owner_id"))
+            out.append({"id": name, "name": name.title(), "icon": "chat", "kind": "status", "state": "on" if on else "off",
+                        "detail": "Your DMs with your bot are answered." if on else "Not connected.",
+                        "source": f"connect {name} bot <token> owner <your id>"})
+        servers = mcp_client.servers()
+        out.append({"id": "mcp", "name": "MCP tool servers", "icon": "cloud", "kind": "status",
+                    "state": "on" if servers else "off",
+                    "detail": f"{len(servers)} server(s): {', '.join(list(servers)[:4])}" if servers else "None added yet.",
+                    "source": "add mcp server <name> <command or https URL>"})
+        hooks = webhooks.hooks()
+        out.append({"id": "webhooks", "name": "Webhooks", "icon": "cloud", "kind": "status",
+                    "state": "on" if hooks else "off", "detail": f"{len(hooks)} webhook(s)." if hooks else "None yet.",
+                    "source": "create a webhook called <name> that <instruction>"})
+    except Exception:  # noqa: BLE001
+        swallowed('ishti/inputs.py:channels:extensions')
+
     for rec in accounts():
         out.append({"id": "oauth:" + rec["service"], "name": rec["service"].capitalize(),
                     "icon": "cloud", "kind": "account", "detail": rec["detail"],

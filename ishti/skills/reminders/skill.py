@@ -234,7 +234,8 @@ def what(text):
 
 def _fmt(due: float, now: dt.datetime):
     d = dt.datetime.fromtimestamp(due)
-    day = "" if d.date() == now.date() else " tomorrow" if d.date() == now.date() + dt.timedelta(days=1) \
+    # tomorrow keeps its weekday: "next Friday" asked on a Thursday must visibly land on Friday
+    day = "" if d.date() == now.date() else d.strftime(" tomorrow, %a") if d.date() == now.date() + dt.timedelta(days=1) \
         else d.strftime(" on %a %d %b")
     secs = due - now.timestamp()
     mins = round(secs / 60)

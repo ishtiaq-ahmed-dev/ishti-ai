@@ -154,9 +154,10 @@ def test_owner_identity_is_absent_from_the_resident_block():
         assert host not in block, "hostname in the resident block"
 
 
-def test_outbound_queries_are_stripped_of_owner_identity():
-    owner = (sm.profile().get("owner") or {})
-    name = owner.get("preferred_address") or "Ishtiaq"
+def test_outbound_queries_are_stripped_of_owner_identity(monkeypatch):
+    # hermetic: a stand-in profile, not the owner's real (git-ignored) owner_profile.yaml, which may not exist
+    monkeypatch.setattr(sm, "profile", lambda: {"owner": {"name": "Ishtiaq Ahmed", "preferred_address": "Ishtiaq"}})
+    name = "Ishtiaq"
     probe = f"who is {name} and what is my PC"
     assert sm.assert_local_only(probe), "the chokepoint must catch the owner's name"
     assert name not in sm.sanitize_outbound(probe)
