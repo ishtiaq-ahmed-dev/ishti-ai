@@ -16,9 +16,10 @@ def _add(text, due):
 
 def test_zero_interval_is_clamped_and_cannot_spin():
     assert reminders.repeat_of("remind me every 0 minutes to drink water") == "every:60"
-    start = time.monotonic()
-    nxt = reminders.next_due(time.time() - 86400, "every:0", time.time())  # a stored zero from before the guard
-    assert nxt > time.time() and time.monotonic() - start < 1
+    start, now = time.monotonic(), time.time()
+    nxt = reminders.next_due(now - 86400, "every:0", now)  # a stored zero from before the guard
+    # compared with the same `now`: the next tick can be milliseconds away, so a later time.time() raced it
+    assert nxt > now and time.monotonic() - start < 1
 
 
 def test_pronoun_done_closes_nothing_and_whole_words_only():
