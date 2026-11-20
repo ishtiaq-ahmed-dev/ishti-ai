@@ -13,6 +13,8 @@ revisions that no longer exist.
 
 ## [Unreleased]
 
+**License: now MIT** (was PolyForm Noncommercial): free to use, change and share, including commercially.
+
 Everything the leading open-source agents (OpenClaw, Hermes Agent) share as their core, with ISHTI's approval rules.
 
 ### Added
