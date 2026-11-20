@@ -19,7 +19,7 @@
   <img alt="MCP" src="https://img.shields.io/badge/MCP-client%20%2B%20server-8A2BE2">
   <a href="https://github.com/ishtiaq-ahmed-dev/ishti-ai/issues?q=is%3Aopen+label%3A%22good+first+issue%22"><img alt="Good first issues" src="https://img.shields.io/github/issues/ishtiaq-ahmed-dev/ishti-ai/good%20first%20issue?color=7057ff&label=good%20first%20issues"></a>
   <a href="CONTRIBUTING.md"><img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen"></a>
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-lightgrey"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
 
 <p align="center">
@@ -278,7 +278,7 @@ venv\Scripts\python -m pytest              :: offline suite: no model, no networ
 
 ## 📄 License
 
-[PolyForm Noncommercial 1.0.0](LICENSE): free for personal and non-commercial use. Third-party notices are in
+[MIT](LICENSE): free to use, change and share, including commercially. Keep the copyright notice. Third-party notices are in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); release history is in [CHANGELOG.md](CHANGELOG.md).
 
 <p align="center">

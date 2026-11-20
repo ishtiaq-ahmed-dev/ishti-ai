@@ -29,7 +29,7 @@ def main():
             directory.mkdir(parents=True, exist_ok=True)
             path = directory / "SKILL.md"
             text = "---\n" + yaml.safe_dump({"name": portable, "description": record["description"] or name,
-                                               "license": "PolyForm Noncommercial 1.0.0; see ISHTI LICENSE"}, sort_keys=False) + "---\n\n"
+                                               "license": "MIT; see ISHTI LICENSE"}, sort_keys=False) + "---\n\n"
             text += f"Use the ISHTI MCP tool `{name}` with one `input` string. Tier: {record['tier']}.\n\n"
             text += "The owner must authorize execution locally. This document grants no permissions and contains no executable scripts.\n"
             with path.open("x", encoding="utf-8") as target:

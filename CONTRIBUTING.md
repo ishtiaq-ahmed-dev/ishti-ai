@@ -1,6 +1,6 @@
 # Contributing to ISHTI
 
-Thank you for helping. ISHTI is licensed for non-commercial use only (see [LICENSE](LICENSE)); contributions are accepted
+Thank you for helping. ISHTI is MIT-licensed (see [LICENSE](LICENSE)); contributions are accepted
 under the same license.
 
 ## Where to talk

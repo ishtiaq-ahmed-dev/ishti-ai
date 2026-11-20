@@ -33,7 +33,7 @@ def inventory():
     return {"schema": 1, "revision": revision, "working_tree_dirty": dirty, "dependency_pins": pins,
             "installed_packages_not_all_shipped": sorted(installed, key=lambda d: d["name"] or ""),
             "source_hashes": files, "npm_lock_sha256": hashlib.sha256((ROOT/'interface/app/package-lock.json').read_bytes()).hexdigest(),
-            "commercial_review": {"main_license": "PolyForm Noncommercial; separate commercial terms required",
+            "commercial_review": {"main_license": "MIT",
                                   "third_party_review": "unresolved: verify shipped Rare UI redistribution permissions and all model/asset terms",
                                   "approval": False},
             "limits": "Inventory inputs, not a license clearance, vulnerability scan, signed release or complete packaged SBOM."}
