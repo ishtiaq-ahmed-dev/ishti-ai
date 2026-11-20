@@ -6,7 +6,7 @@ are taken seriously. This page explains how to report one and what the security 
 ## Reporting a vulnerability
 
 **Do not open a public issue for a security problem.** Use GitHub's private
-[security advisory](https://github.com/ishtiaq-ahmed-dev/ISHTI/security/advisories/new) form, or message the maintainer
+[security advisory](https://github.com/ishtiaq-ahmed-dev/ishti-ai/security/advisories/new) form, or message the maintainer
 on GitHub ([@ishtiaq-ahmed-dev](https://github.com/ishtiaq-ahmed-dev)). Please include:
 
 - the ISHTI version (`venv\Scripts\python -m ishti --version`) and whether you use Local or API mode;

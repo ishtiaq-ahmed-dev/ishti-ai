@@ -11,13 +11,13 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ishtiaq-ahmed-dev/ISHTI/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/ishtiaq-ahmed-dev/ISHTI/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/ishtiaq-ahmed-dev/ISHTI/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/ishtiaq-ahmed-dev/ISHTI?style=flat&logo=github"></a>
+  <a href="https://github.com/ishtiaq-ahmed-dev/ishti-ai/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/ishtiaq-ahmed-dev/ishti-ai/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/ishtiaq-ahmed-dev/ishti-ai/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/ishtiaq-ahmed-dev/ishti-ai?style=flat&logo=github"></a>
   <img alt="Version" src="https://img.shields.io/badge/version-0.2.0-blue">
   <img alt="Python" src="https://img.shields.io/badge/python-3.11-3776AB?logo=python&logoColor=white">
   <img alt="Platform" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows&logoColor=white">
   <img alt="MCP" src="https://img.shields.io/badge/MCP-client%20%2B%20server-8A2BE2">
-  <a href="https://github.com/ishtiaq-ahmed-dev/ISHTI/issues?q=is%3Aopen+label%3A%22good+first+issue%22"><img alt="Good first issues" src="https://img.shields.io/github/issues/ishtiaq-ahmed-dev/ISHTI/good%20first%20issue?color=7057ff&label=good%20first%20issues"></a>
+  <a href="https://github.com/ishtiaq-ahmed-dev/ishti-ai/issues?q=is%3Aopen+label%3A%22good+first+issue%22"><img alt="Good first issues" src="https://img.shields.io/github/issues/ishtiaq-ahmed-dev/ishti-ai/good%20first%20issue?color=7057ff&label=good%20first%20issues"></a>
   <a href="CONTRIBUTING.md"><img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-lightgrey"></a>
 </p>
@@ -49,7 +49,7 @@
 For cloud mode, an API key from any OpenAI-compatible provider.
 
 ```bat
-git clone https://github.com/ishtiaq-ahmed-dev/ISHTI.git C:\ISHTI
+git clone https://github.com/ishtiaq-ahmed-dev/ishti-ai.git C:\ISHTI
 cd C:\ISHTI
 install.bat              :: or: install.bat --provider api   (lightweight, no GPU models)
 start.bat
@@ -246,8 +246,8 @@ Agent runs on Linux, macOS and Android too. ISHTI is single-owner and Windows-fi
 
 ISHTI is built in the open and **contributions are very welcome**, from typo fixes to new skills.
 
-1. Pick an issue labelled [`good first issue`](https://github.com/ishtiaq-ahmed-dev/ISHTI/issues?q=is%3Aopen+label%3A%22good+first+issue%22)
-   or [`help wanted`](https://github.com/ishtiaq-ahmed-dev/ISHTI/issues?q=is%3Aopen+label%3A%22help+wanted%22).
+1. Pick an issue labelled [`good first issue`](https://github.com/ishtiaq-ahmed-dev/ishti-ai/issues?q=is%3Aopen+label%3A%22good+first+issue%22)
+   or [`help wanted`](https://github.com/ishtiaq-ahmed-dev/ishti-ai/issues?q=is%3Aopen+label%3A%22help+wanted%22).
 2. Read [CONTRIBUTING.md](CONTRIBUTING.md). The offline test suite needs no model, no network and none of your data.
 3. Open a pull request. Every contributor is credited below with [All Contributors](https://allcontributors.org).
 

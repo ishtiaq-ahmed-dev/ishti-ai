@@ -5,10 +5,10 @@ under the same license.
 
 ## Where to talk
 
-- **Bugs and feature requests:** open an [Issue](https://github.com/ishtiaq-ahmed-dev/ISHTI/issues). Include your Windows
+- **Bugs and feature requests:** open an [Issue](https://github.com/ishtiaq-ahmed-dev/ishti-ai/issues). Include your Windows
   version, whether you use Local or API mode, and the relevant lines from `%LOCALAPPDATA%\ISHTI\logs`. Never paste API keys
   or personal chats.
-- **Questions, ideas, and skill proposals:** open a [Discussion](https://github.com/ishtiaq-ahmed-dev/ISHTI/discussions).
+- **Questions, ideas, and skill proposals:** open a [Discussion](https://github.com/ishtiaq-ahmed-dev/ishti-ai/discussions).
 - **Security problems:** do not open a public issue. Message the maintainer on GitHub (<https://github.com/ishtiaq-ahmed-dev>).
 - **Maintainer:** Ishtiaq Ahmed ([@ishtiaq-ahmed-dev](https://github.com/ishtiaq-ahmed-dev)).
 
