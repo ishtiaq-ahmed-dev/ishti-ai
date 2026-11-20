@@ -99,7 +99,7 @@ goes stale, as 120 and 212 both did), memory
 round-trip, one live skill, one local-LLM answer, one compound request. The last four need Ollama;
 the routing eval does not.
 
-Two expectations recorded in [OWNER_LOOP.md](OWNER_LOOP.md) still need a live run. `ishti/check.py`
+Two loop expectations still need a live run. `ishti/check.py`
 now *reports* drift in its stored loop labels instead of asserting them — it prints how many turns
 still match the list and flags each one that does not. The `plan` expectation this paragraph used to
 explain has been replaced by `brain`: a continued workflow is routed as
