@@ -700,6 +700,16 @@ def _kin_possessive(t):
     return m
 
 
+def _detail_phrase(det):
+    """' who lives in Lahore' for a fact about the person, ' (from university)' for a context - the UI renders bold but
+    not *italics*, so 'Ali — *lives in Lahore*' showed literal asterisks."""
+    if not det:
+        return ""
+    if re.match(r"(?:lives?|works?|studies|stays?|is\s)", det, I):
+        return f", who {det}"
+    return f" ({det})"
+
+
 def _rel_with_context(t):
     """'my manager at the DevOps gig is Kamran' / 'my friend Hassan is from university': a relation plus
     the project/place it belongs to. The context is kept as the edge detail so an UPDATE later finds the
@@ -1083,14 +1093,14 @@ def _run_single(text, session):
             session["rel_last"] = names[0]
             sing = rels[0]
             det = next((e.get("detail") for e in edges if (e["d_name"] if e["s_name"] == "me" else e["s_name"]).strip().lower() == names[0].lower() and e.get("detail")), "")
-            det_str = f" — *{det}*" if det else ""
+            det_str = _detail_phrase(det)
             return {"reply": f"Your confirmed {sing} is **{names[0]}**{det_str}.", "sources": []}
         session.pop("rel_last", None)  # never let a plural kinship query silently pick one person
         plural = rel_label if (rel_label.endswith("s") or rel_label.endswith("members")) else rel_label + "s"
         lines = []
         for nm in sorted(names):
             det = next((e.get("detail") for e in edges if (e["d_name"] if e["s_name"] == "me" else e["s_name"]).strip().lower() == nm.lower() and e.get("detail")), "")
-            det_str = f" — *{det}*" if det else ""
+            det_str = _detail_phrase(det)
             lines.append(f"• **{nm}**{det_str}")
         return {"reply": f"Your confirmed {plural} are:\n\n" + "\n".join(lines), "sources": []}
 
