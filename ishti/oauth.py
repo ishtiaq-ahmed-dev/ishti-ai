@@ -433,12 +433,24 @@ def connect(service: str, client_id: str = "", client_secret: str = "", scopes=N
         def log_message(self, *a):
             pass
 
+    class _Exclusive(HTTPServer):
+        # HTTPServer sets SO_REUSEADDR, which on Windows lets a second program bind a port already in use: with another
+        # app on 8765 the browser's redirect reached that app and sign-in "timed out". Exclusive use makes a busy port
+        # fail here, so the fallback below picks a free one.
+        allow_reuse_address = False
+
+        def server_bind(self):
+            import socket
+            if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            super().server_bind()
+
     # Standard registered callback port is 8765; fall back to dynamic port 0 only if 8765 is occupied.
     try:
-        server = HTTPServer(("127.0.0.1", 8765), _Handler)
+        server = _Exclusive(("127.0.0.1", 8765), _Handler)
     except OSError:
         try:
-            server = HTTPServer(("127.0.0.1", 0), _Handler)
+            server = _Exclusive(("127.0.0.1", 0), _Handler)
         except OSError:
             return {"ok": False, "reply": "The local sign-in callback port is busy. Close the other sign-in flow and retry."}
     redirect = f"http://127.0.0.1:{server.server_address[1]}/"

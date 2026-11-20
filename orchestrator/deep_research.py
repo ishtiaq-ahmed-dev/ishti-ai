@@ -416,7 +416,15 @@ class DeepResearchEngine:
             answer = self.model_router.generate(
                 f"Today is {today}. Live sources fetched seconds ago:\n" + "\n\n".join(guard(c, "a search result") for c in context)
                 + f"\n\nOwner's question: {prompt}\n\nUse the most recent information in the sources; if a source is "
-                  "about an earlier year than the question asks for, say so instead of presenting it as current.\n\n"
+                  "about an earlier year than the question asks for, say so instead of presenting it as current.\n"
+                  # careful cloud models answered snippets with tables of "Not established" and a "verification status"
+                  # section: the owner asked for an answer, not an audit of the excerpts
+                  "These are short search snippets, not full pages. Prices, availability and anything recent must come "
+                  "from the sources, with their citation. Stable, widely documented facts (official specifications, "
+                  "release dates) may come from well-established knowledge - mark those 'per official specs'. Give the "
+                  "best concrete answer; never fill a table with 'not stated' or 'not established' and do not add a "
+                  "verification-status section - end with one short line on what to double-check, if anything. "
+                  "Keep it under about 200 words.\n\n"
                   "Formatting requirements:\n"
                   "- Structure the response cleanly with clear section headings.\n"
                   "- When listing updates, news, or items, summarize each with a clear bold title and bullet point.\n"

@@ -369,6 +369,11 @@ def check_provider() -> dict:
     return {"ok": True, "message": f"{cfg.get('provider', 'The provider')} answered with {cfg['model']}."}
 
 
+_TUNABLE = {"temperature", "top_p", "reasoning_effort", "presence_penalty", "frequency_penalty", "prompt_cache_key",
+            "stream_options", "max_completion_tokens"}
+_UNSUPPORTED: dict = {}  # model -> settings it refused (learned per run)
+
+
 def _create_api(args, openai):
     """One cloud call. Provider failures become ModelUnavailable (one plain sentence); a stream keeps the narrow
     network grant open until it is closed. The request is sent eagerly, so a refusal surfaces here, where the
@@ -385,12 +390,36 @@ def _create_api(args, openai):
         # prompts already ask for JSON and every caller parses leniently, so the hint is dropped.
         if (args.get("response_format") or {}).get("type") == "json_object":
             args.pop("response_format")
+    if cfg.get("provider") == "openai":
+        # OpenAI's current models take max_completion_tokens (max_tokens is a 400) and a reasoning effort; "low" is the
+        # cheapest value they accept. Older models that refuse either are learned below and not sent again.
+        if "max_tokens" in args:
+            args["max_completion_tokens"] = args.pop("max_tokens")
+        args["reasoning_effort"] = "low"
+    for param in _UNSUPPORTED.get(args.get("model"), ()):
+        args.pop(param, None)
     base = cfg.get("base_url") or PROVIDERS.get(cfg.get("provider", "openai"), PROVIDERS["openai"])
     name = cfg.get("provider", "")
     grant = contextlib.ExitStack()
     try:
         grant.enter_context(privacy.inference(base))
-        response = _create_call(args, openai)
+        for _attempt in range(4):
+            try:
+                response = _create_call(args, openai)
+                break
+            except openai.BadRequestError as exc:
+                # "temperature does not support 0.2 with this model": drop the tuning knob, remember it for this
+                # model, and ask again - a request is never refused over a sampling setting
+                param = str(getattr(exc, "param", "") or "")
+                if (getattr(exc, "code", "") not in ("unsupported_parameter", "unsupported_value")
+                        or param not in _TUNABLE or param not in args):
+                    raise
+                _UNSUPPORTED.setdefault(args.get("model"), set()).add(param)
+                value = args.pop(param)
+                if param == "max_completion_tokens":  # an older model: the limit goes back under its old name
+                    args["max_tokens"] = value
+        else:
+            raise ModelUnavailable(f"{name} kept refusing the request settings for {args.get('model')}.")
     except openai.APIError as exc:
         grant.close()
         raise _provider_error(exc, name) from None

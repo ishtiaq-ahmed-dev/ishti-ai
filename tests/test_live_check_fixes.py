@@ -58,3 +58,31 @@ def test_bare_yes_or_no_with_nothing_pending(word, expect):
 def test_cancel_my_reminder_is_still_a_request():
     from ishti import dispatcher, tool_routing
     assert tool_routing.route("cancel my 5pm reminder", dispatcher.SKILLS).get("skill") == "reminders"
+
+
+def test_kin_statement_keeps_the_pronoun_fact_and_answers_a_compound_question():
+    from ishti.skills.relationships import skill as rel
+    assert "lives in Lahore" in rel.run("My brother's name is Ali and he lives in Lahore.", {})["reply"]
+    assert rel.match("Who is my brother and where does he live?")
+    out = rel.run("Who is my brother and where does he live?", {})["reply"]
+    assert "Ali" in out and "Lahore" in out
+
+
+def test_shopping_ranks_one_currency_and_honours_the_country_asked(monkeypatch):
+    from types import SimpleNamespace
+    import tools.web.search as search
+    from ishti.skills.shopping import skill as shop
+    hits = [SimpleNamespace(url=f"https://s{i}.example") for i in range(3)]
+    monkeypatch.setattr(search, "get_search_manager", lambda: SimpleNamespace(search=lambda q, n: hits))
+    rows = {"https://s0.example": ("Flipkart", 99999.0, "INR"), "https://s1.example": ("PriceOye", 323999.0, "PKR"),
+            "https://s2.example": ("Daraz", 329999.0, "PKR")}
+    seen = []
+
+    def fake_fetch(hit, product, brand, cur_rx):
+        seen.append(cur_rx and cur_rx[0])
+        store, price, cur = rows[hit.url]
+        return {"store": store, "kind": "store", "price": price, "currency": cur, "url": hit.url}
+    monkeypatch.setattr(shop, "fetch", fake_fetch)
+    monkeypatch.setattr(shop, "product_of", lambda t: "Galaxy S24 Ultra")
+    out = shop.run("Samsung Galaxy S24 Ultra price in Pakistan", {})["reply"]
+    assert "Flipkart" not in out and "PKR 323,999" in out and set(seen) == {"PKR"}

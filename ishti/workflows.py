@@ -194,6 +194,14 @@ def execute(session, plan, run_tool, skills):
                 plan["state"] = "cancelled"
                 save(session, plan)
                 return {**result(plan, out), "declined": True}
+            if out.get("declined"):  # a step whose skill passed: skipped silently ("The shopping skill had nothing to
+                # do for this." was glued onto the real answer)
+                plan["results"].append({"reply": "", "status": "skipped"})
+                step["state"] = "skipped"
+                plan["next"] += 1
+                plan["state"] = "ready"
+                save(session, plan)
+                continue
             if (out.get("execution_blocked") or out.get("needs_input") or out.get("verified") is False
                     or out.get("test_mode_blocked") or out.get("status") in ("failed", "partial", "needs_input", "unknown")):
                 ref = f"{{{{step:{plan['next'] + 1}}}}}"

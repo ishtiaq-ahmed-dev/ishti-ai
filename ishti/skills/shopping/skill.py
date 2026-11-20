@@ -124,12 +124,18 @@ def product_of(text):
     example ("PlayStation 5 Slim") for "best laptop under 1000 dollars", so an answer sharing no word with the request
     is rejected, and no style prompt rides along on a 24-token extraction."""
     from ishti import llm
-    name = llm.ask("From the owner's message, write only the product or product category they want to buy - brand, "
-                   "model, variant and budget words exactly as they wrote them, nothing else.\n\nMessage: " + text,
-                   system=None, max_tokens=24, temperature=0).strip(" .\"'")
+    try:
+        name = llm.ask("From the owner's message, write only the product or product category they want to buy - brand, "
+                       "model, variant and budget words exactly as they wrote them, nothing else.\n\nMessage: " + text,
+                       system=None, max_tokens=24, temperature=0).strip(" .\"'")
+    except Exception as exc:  # no model (offline, refused, GPU busy): the plain-text fallback below finds the product
+        from ishti.core.logutil import swallowed
+        swallowed("ishti/skills/shopping/skill.py:product_of", exc)
+        name = ""
     said = {w for w in re.findall(r"[a-z0-9]{3,}", text.lower())}
     if not (0 < len(name) < 80) or not said & set(re.findall(r"[a-z0-9]{3,}", name.lower())):
         return re.sub(r"^\s*(?:what(?:'s|\s+is)\s+the\s+|find\s+me\s+(?:the\s+)?|i\s+want\s+to\s+buy\s+(?:an?\s+)?)"
+                      r"|\s+(?:price|cost)(?:\s+in\s+[a-z ]+)?(?=\s*[?.!]*\s*$)"
                       r"|\s*(?:right\s+now|today|please)?\s*[?.!]*\s*$", "", text, flags=re.I).strip() or text
     return name
 
@@ -223,7 +229,13 @@ def compare(product, country, trace_fn=lambda *a: None):
     trace_fn("search", f"search stores: {' · '.join(queries)}")
     with cf.ThreadPoolExecutor(8) as pool:
         _mgr = get_search_manager()
-        hits = [h for batch in pool.map(lambda q: _mgr.search(q, 12), queries) for h in batch]
+
+        def _search(q):  # offline or a provider refusing: no stores found (the dispatcher then escalates), not a crash
+            try:
+                return _mgr.search(q, 12)
+            except OSError:
+                return []
+        hits = [h for batch in pool.map(_search, queries) for h in batch]
         seen, unique = set(), []
         for h in hits:
             if h.url not in seen:
@@ -231,6 +243,10 @@ def compare(product, country, trace_fn=lambda *a: None):
                 unique.append(h)
         trace_fn("fetch", f"read {len(unique)} store pages")
         rows = [r for r in pool.map(lambda h: fetch(h, product, brand, cur_rx), unique[:24]) if r]
+    if rows:  # one currency only: an Indian store's INR 99,999 was ranked "cheapest" above PKR 323,999
+        from collections import Counter
+        want = cur_rx[0] if cur_rx else Counter(r["currency"] for r in rows).most_common(1)[0][0]
+        rows = [r for r in rows if r["currency"] == want]
     if rows:  # ponytail: drops accessories/instalments priced far below the product; a real price under 40% of the median is lost
         mid = sorted(r["price"] for r in rows)[len(rows) // 2]
         rows = [r for r in rows if r["price"] >= 0.4 * mid]
@@ -262,7 +278,9 @@ def run(text, session):
     if WATCH.search(text):
         return {"reply": watch(text, session), "sources": []}
     product = product_of(text)
-    country = get_facts().get("owner").get("country", "")
+    # a country named in the request ("price in Pakistan") wins over the owner's saved one
+    asked = next((c for c in CURRENCY if re.search(rf"\b{c}\b", text, re.I)), "")
+    country = asked or get_facts().get("owner").get("country", "")
     trace(session, "product", f"looking for: {product}" + (f" ({country})" if country else ""))
     rows = compare(product, country, lambda name, label: trace(session, name, label))
     reply = table(product, rows)

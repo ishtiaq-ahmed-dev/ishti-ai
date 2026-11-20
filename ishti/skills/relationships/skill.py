@@ -117,7 +117,11 @@ WHO_IS = re.compile(
     r"|(?:(?:my|your|y|ur)\s+)?" + ELDER + r"(?P<rel3>" + KIN_PLURALS + r")\s+names?"
     r"|names?\s+of\s+(?:(?:my|your|y|ur)\s+)?" + ELDER + r"(?P<rel4>" + KIN_PLURALS + r")"
     r"|who\s+are\s+they"
-    r")\s*\??$", I)
+    # "who is my brother and where does he live?": the answer carries the stored detail, so the tail is welcome
+    r")(?:\s*,?\s*(?:and\s+)?(?:where|what|how|when)\b[^?]*)?\s*\??$", I)
+# "my brother's name is Ali and he lives in Lahore": the pronoun clause is a fact about the person just named
+PRONOUN_FACT = re.compile(r"^(?P<head>.+?)\s*,?\s*\band\s+(?:he|she|they)\s+(?P<fact>(?:lives?|works?|studies|stays?|is\s+from|"
+                          r"is\s+based)\b.+?)\s*[.!]?\s*$", I)
 # Name corrections, full name declarations & renames:
 # "yes but irfan full name is irfan ahmed" / "irfan's full name is irfan ahmed" / "and rename the irfan to only irfan ahmed"
 NAME_UPDATE = re.compile(
@@ -1440,6 +1444,18 @@ def _run_single(text, session):
 def run(text, session):
     from ishti import rgraph
     t = _fix(text.strip())
+
+    if (m := PRONOUN_FACT.match(t)) and _matches_rel_clause(m["head"]):
+        # the second clause used to be dropped silently ("and he lives in Lahore" was never stored)
+        res = _run_single(m["head"], session)
+        edges = sorted(rgraph.edges_of("me"), key=lambda e: e.get("last_confirmed") or 0, reverse=True)
+        if res and res.get("reply") and edges:
+            e = edges[0]
+            fact = m["fact"].strip()
+            _eid, note = rgraph.set_detail(e["s_name"], e["rel"], e["d_name"], fact)
+            reply = res["reply"].rstrip(".") + f" ({fact})." + (f"\n\n{note}" if note else "")
+            return {**res, "reply": reply}
+        return res
 
     clauses = _split_clauses(t)
     if len(clauses) > 1:
