@@ -258,7 +258,7 @@ export function Overview({ onToggleNav }: { onToggleNav?: () => void }) {
   const src = (k: string) => o.by_source[k] ?? 0;
   const max = Math.max(1, ...o.skills.map((s) => s.uses));
   const stages = [
-    { icon: <MessageSquareText className="h-4 w-4" />, orbState: "listening" as OrbState, title: "Input", lines: ["Text in this app", `Voice · whisper ${o.voice.whisper_model}`, `Hands-free · "hey ishti"`], count: o.requests, label: "requests" },
+    { icon: <MessageSquareText className="h-4 w-4" />, orbState: "listening" as OrbState, title: "Input", lines: ["Text in this app", `Voice · ${(o.voice.whisper_model ?? "").startsWith("whisper") ? "" : "whisper "}${o.voice.whisper_model}`, `Hands-free · "hey ishti"`], count: o.requests, label: "requests" },
     { icon: <Sparkles className="h-4 w-4" />, orbState: "solving" as OrbState, title: "Understand", lines: ["Follow-ups rewritten with the chat", "\"this year\" → real dates"], count: undefined },
     { icon: <Route className="h-4 w-4" />, orbState: "working" as OrbState, title: "Route", lines: ["Skill rules first (no model call)", "Otherwise one model call picks the tool"], count: src("rule") + src("shortlist"), label: `${src("rule") + src("shortlist")} by rule` },
     { icon: <GitBranch className="h-4 w-4" />, orbState: "weaving" as OrbState, title: "Plan", lines: ["Several tasks → steps", "Answers carried between steps"], count: src("plan"), label: "plan steps" },
