@@ -216,7 +216,7 @@ def summary(data):
             "",
             "--- Exit-gate / audit ---",
             "This section is a Prompt-7-era record and is no longer accurate: tools/verify_audit.py and "
-            "tools/audit_log.py DO exist in this checkout, but the report-checkout companions they were "
+            "tools/audit_log.py have been removed, and the report-checkout companions they were "
             "written against (docs/build/AUDIT_LOG.jsonl, STATE.json, REQUIREMENTS.md, TRACEABILITY.md) "
             "have been retired, so the audit-chain verification, the TRACEABILITY update and the "
             "prompt_7_done flag are no longer meaningful. Reported as-is rather than fabricated."]

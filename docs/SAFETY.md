@@ -152,12 +152,8 @@ queryable by voice or text ("what did you do while I was away", "show me today's
 mode with `synchronous=NORMAL`: an app crash loses nothing, a power cut may lose the last few rows (a documented
 choice in the code). The log can be written by ISHTI's own process, so it is evidence of behavior, not tamper-proof.
 
-Separate from this, the *build* history of these documents had a hash-chained log at
-`docs/build/AUDIT_LOG.jsonl`, written and verified by `tools/audit_log.py` / `tools/verify_audit.py`.
-It recorded documentation and launcher work, not runtime actions. **`docs/build/` has since been
-retired**, so that log is no longer present; note that `verify_audit.py` reports a *deleted* log as
-"0 entries, chain intact" rather than as missing. The runtime log in the paragraph above is
-unaffected and is the one that matters for behavior.
+(An earlier hash-chained log of documentation work, `docs/build/AUDIT_LOG.jsonl`, has been retired along
+with its tools. It never recorded runtime actions; the runtime log above is the one that matters.)
 
 ## 7. Kill switch
 

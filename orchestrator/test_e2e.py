@@ -1,7 +1,7 @@
 """
 ISHTI End-to-End Acceptance Tests (brief section 12, tests A-L).
 
-Everything here hits the real stack: real Ollama, real internet, real browser, real TTS.
+Everything here hits the real stack: real model, real internet, real TTS.
 Nothing is mocked and nothing passes because a package is installed.
 
     venv\\Scripts\\python.exe orchestrator/test_e2e.py          # all tests
