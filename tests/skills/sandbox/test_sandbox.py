@@ -26,6 +26,11 @@ def test_container_is_locked_down():
         assert flag in cmd
 
 
+def test_image_is_pinned_by_digest():
+    assert "@sha256:" in sbx.IMAGE
+    assert sbx.IMAGE.startswith("python:3.12-slim@sha256:")
+
+
 def test_runs_and_reports(monkeypatch):
     calls = []
 

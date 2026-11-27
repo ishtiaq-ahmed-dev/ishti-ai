@@ -4,7 +4,9 @@
 The container has no network, a read-only root, all Linux capabilities dropped, no privilege escalation, 256 MB of
 memory, one CPU, 64 processes, an unprivileged user, and a fresh temp folder as its only writable place; it is killed
 after TIMEOUT_S. Your files are not visible inside it. Because nothing can leave it, it runs without asking.
-ponytail: the image is pinned by tag (python:3.12-slim); pin a digest if supply-chain drift ever matters here."""
+
+The image is pinned by multi-arch digest (python:3.12-slim@sha256:...) so it cannot change underneath users.
+To bump: run `docker buildx imagetools inspect python:3.12-slim` or query Docker Hub for the latest multi-arch index digest."""
 import os
 import re
 import shutil
@@ -12,7 +14,10 @@ import subprocess
 import tempfile
 import uuid
 
-IMAGE = "python:3.12-slim"
+# pinned by multi-arch digest; a floating tag could change underneath users.
+# To bump: run `docker buildx imagetools inspect python:3.12-slim` or query Docker Hub for the manifest list digest.
+DEFAULT_IMAGE = "python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b"
+IMAGE = os.environ.get("ISHTI_SANDBOX_IMAGE") or DEFAULT_IMAGE
 TIMEOUT_S = 60
 OUTPUT_MAX = 4000
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
